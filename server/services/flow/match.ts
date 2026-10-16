@@ -106,7 +106,8 @@ export async function matchInspection(inspectionId: string): Promise<MatchResult
         if (!matched) return { inspectionId, status: unmatched ? 'skipped' : 'ignored' }
         if (unmatched?.reason === 'CANCELLED_AFTER_MATCH') return { inspectionId, status: 'skipped' }
         // 人工关联过的（待确认记录已是 RESOLVED）同样要重新提示
-        const data = { reason: 'CANCELLED_AFTER_MATCH', status: 'PENDING' as const, resolvedBy: null, resolvedAt: null }
+        // createdAt 重置为重新进入待确认的时间，W1 从这里重新计时
+        const data = { reason: 'CANCELLED_AFTER_MATCH', status: 'PENDING' as const, resolvedBy: null, resolvedAt: null, createdAt: new Date() }
         if (unmatched) await tx.unmatchedInspection.update({ where: { qmsInspectionId: inspectionId }, data })
         else await tx.unmatchedInspection.create({ data: { qmsInspectionId: inspectionId, ...data } })
         return { inspectionId, status: 'unmatched', reason: 'CANCELLED_AFTER_MATCH' }

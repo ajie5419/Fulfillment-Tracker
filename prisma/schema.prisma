@@ -422,6 +422,15 @@ model NotifyRole {
   @@map("notify_role")
 }
 
+/// 后台任务防重叠的租约锁：lockedUntil 未过期即被占用；进程崩溃后租约到期自动失效，不依赖数据库连接。
+model JobLock {
+  name        String   @id @db.VarChar(40)
+  lockedUntil DateTime @db.DateTime(3)
+  holder      String?  @db.VarChar(64)
+
+  @@map("job_lock")
+}
+
 // ───────────── 登录会话 ─────────────
 
 /// 履约自己的会话（30 天）。id 存的是 cookie 令牌的 SHA-256，库里不存明文令牌。

@@ -74,6 +74,6 @@ docker compose up -d
 | `NUXT_DEV_TOOLS` | 仅本地开发：`1` 开启演示数据和模拟报检，默认关闭 |
 | `NUXT_ADMIN_USER_IDS` | 管理员（设置页：阈值、停工日、通知对象、工单项目经理），逗号分隔的 QMS 用户 ID；演示时用 `u-001` |
 
-预警扫描 `scan-rules` 由 Nitro scheduledTasks 每 15 分钟执行一次（`server/tasks/scan-rules.ts`），`pnpm dev` 和构建产物都会跑；多实例时用 MySQL `GET_LOCK` 防重叠。
+预警扫描 `scan-rules` 由 Nitro scheduledTasks 每 15 分钟执行一次（`server/tasks/scan-rules.ts`），`pnpm dev` 和构建产物都会跑；用 `job_lock` 表上的租约锁防重叠（进程崩溃后 10 分钟自动失效）。
 
 缺少必填项时服务启动即报错退出。

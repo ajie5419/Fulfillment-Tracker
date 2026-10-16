@@ -3,10 +3,11 @@
  *
  * 幂等：同一对象同一规则只有一条活动预警（alert.activeKey 唯一）；同一人同一预警同一级别只有一条提醒
  * （reminder 上 alertId+level+userId 唯一）。每轮都会把当前级别该收到的人补齐，所以中途失败下一轮自动补上。
- * 整个扫描用 MySQL GET_LOCK 防重叠，拿不到锁直接返回。
+ * 整个扫描用 job_lock 租约锁防重叠，拿不到锁直接返回。
  *
  * TODO(R5)：W4 异常超期、红色预警自动转为异常，跟异常模块（录入、受理、处理界面）一起做。
  */
+import { randomUUID } from 'node:crypto'
 import type { Alert, AlertLevel, NotifyRole } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { ARRANGE_SEND, ARRANGE_START } from '../flow/flow'
@@ -215,24 +216,37 @@ export interface ScanResult {
 
 const isUniqueViolation = (err: unknown) => (err as { code?: string })?.code === 'P2002'
 
+const LOCK_NAME = 'scan-rules'
+/** 租约时长：远大于一轮扫描的耗时；进程崩溃后最多这么久自动失效 */
+const LEASE_MS = 10 * 60_000
+
+/** 抢租约：lockedUntil 已过期才能抢到（条件更新，天然互斥）。用真实时间，不用注入的 now */
+async function acquireLease(holder: string): Promise<boolean> {
+  const real = new Date()
+  await prisma.jobLock.createMany({ data: [{ name: LOCK_NAME, lockedUntil: new Date(0) }], skipDuplicates: true })
+  const r = await prisma.jobLock.updateMany({
+    where: { name: LOCK_NAME, lockedUntil: { lt: real } },
+    data: { lockedUntil: new Date(real.getTime() + LEASE_MS), holder },
+  })
+  return r.count === 1
+}
+
+async function releaseLease(holder: string) {
+  await prisma.jobLock.updateMany({ where: { name: LOCK_NAME, holder }, data: { lockedUntil: new Date(), holder: null } })
+}
+
 /**
  * 跑一轮扫描。now 可注入（测试、演示"快进时钟"）。
- * 锁：GET_LOCK 是连接级的，用一个交互式事务占住一条连接持有锁，扫描本身用其他连接写库，
- * 进程崩溃时连接断开锁自动释放。
+ * 防重叠：job_lock 表上的租约锁，抢不到直接返回 skipped。
  */
 export async function scanRules(now = new Date()): Promise<ScanResult> {
-  return prisma.$transaction(
-    async (tx) => {
-      const [row] = await tx.$queryRaw<{ got: bigint | number | null }[]>`SELECT GET_LOCK('scan-rules', 0) AS got`
-      if (Number(row?.got) !== 1) return { skipped: true, created: 0, escalated: 0, cleared: 0, reminders: 0, active: 0 }
-      try {
-        return await runScan(now)
-      } finally {
-        await tx.$queryRaw`SELECT RELEASE_LOCK('scan-rules')`
-      }
-    },
-    { maxWait: 10_000, timeout: 600_000 },
-  )
+  const holder = randomUUID()
+  if (!(await acquireLease(holder))) return { skipped: true, created: 0, escalated: 0, cleared: 0, reminders: 0, active: 0 }
+  try {
+    return await runScan(now)
+  } finally {
+    await releaseLease(holder)
+  }
 }
 
 async function runScan(now: Date): Promise<ScanResult> {

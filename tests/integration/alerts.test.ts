@@ -268,16 +268,17 @@ describe.skipIf(!DB)('预警与提醒', () => {
     }
   })
 
-  it('扫描加锁：锁被占用时直接跳过', async () => {
-    await db.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT GET_LOCK('scan-rules', 0)`
-      try {
-        expect(await s.scan.scanRules()).toMatchObject({ skipped: true })
-      } finally {
-        await tx.$queryRaw`SELECT RELEASE_LOCK('scan-rules')`
-      }
+  it('扫描加锁：租约被占用时直接跳过，租约过期后可再抢', async () => {
+    await db.jobLock.upsert({
+      where: { name: 'scan-rules' },
+      create: { name: 'scan-rules', lockedUntil: new Date(Date.now() + 60_000), holder: 'other' },
+      update: { lockedUntil: new Date(Date.now() + 60_000), holder: 'other' },
     })
+    expect(await s.scan.scanRules()).toMatchObject({ skipped: true })
+    // 模拟持锁进程崩溃：租约到期后自动可抢
+    await db.jobLock.update({ where: { name: 'scan-rules' }, data: { lockedUntil: new Date(Date.now() - 1) } })
     expect((await s.scan.scanRules()).skipped).toBe(false)
+    expect((await db.jobLock.findUniqueOrThrow({ where: { name: 'scan-rules' } })).holder).toBeNull()
   })
 
   it('提醒已读：单条、全部；新提醒轮询只返回未读黄红', async () => {

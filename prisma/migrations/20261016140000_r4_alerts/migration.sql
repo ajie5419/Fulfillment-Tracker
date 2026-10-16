@@ -11,6 +11,15 @@ CREATE TABLE `notify_role` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- CreateTable：后台任务租约锁
+CREATE TABLE `job_lock` (
+    `name` VARCHAR(40) NOT NULL,
+    `lockedUntil` DATETIME(3) NOT NULL,
+    `holder` VARCHAR(64) NULL,
+
+    PRIMARY KEY (`name`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- CreateIndex
 CREATE UNIQUE INDEX `reminder_alertId_level_userId_key` ON `reminder`(`alertId`, `level`, `userId`);
 
