@@ -1,13 +1,21 @@
 <script setup lang="ts">
-const { data: me } = useMe()
+const { data: me } = await useMe()
+const route = useRoute()
+const menu = computed(() => [
+  { key: '/', label: '我的提醒' },
+  { key: '/parts', label: '工件与工序链' },
+  { key: '/unmatched', label: '待确认匹配' },
+  ...(me.value?.devTools ? [{ key: '/dev', label: '演示工具' }] : []),
+])
+const selected = computed(() => [menu.value.find((m) => m.key !== '/' && route.path.startsWith(m.key))?.key ?? '/'])
 </script>
 
 <template>
   <a-layout style="min-height: 100vh">
     <a-layout-header class="header">
       <span class="brand">项目履约</span>
-      <a-menu theme="dark" mode="horizontal" :selected-keys="['reminders']" class="menu">
-        <a-menu-item key="reminders"><NuxtLink to="/">我的提醒</NuxtLink></a-menu-item>
+      <a-menu theme="dark" mode="horizontal" :selected-keys="selected" class="menu">
+        <a-menu-item v-for="m in menu" :key="m.key"><NuxtLink :to="m.key">{{ m.label }}</NuxtLink></a-menu-item>
       </a-menu>
       <span v-if="me" class="user">
         {{ me.name }}<template v-if="me.department"> · {{ me.department }}</template>

@@ -21,6 +21,7 @@
   "dependencies": {
     "@prisma/client": "6.19.3",
     "ant-design-vue": "4.2.6",
+    "dayjs": "1.11.23",
     "nuxt": "3.21.11",
     "vant": "4.10.2",
     "vue": "3.5.44",
