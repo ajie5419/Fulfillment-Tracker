@@ -363,6 +363,31 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     expect(part.currentStepId).toBe(p.paint.id) // 工件指针推进到下一道
   })
 
+  it('并发：同一步骤上两条不合格异常同时关闭，步骤仍恢复（不会两边都以为对方未关闭）', async () => {
+    const p = await makePart()
+    await send(p.weld.id)
+    const ins1 = await inspect(p, { qty: 1, fail: 1 })
+    await s.match.matchInspection(ins1)
+    const ins2 = `T-INS-${randomBytes(4).toString('hex')}`
+    await db.qmsInspection.create({
+      data: {
+        id: ins2, requestNo: `RQ-${ins2}`, workOrderNumber: WO, partName: '写错的名字', processName: '组焊', quantity: 1,
+        status: 'CLOSED', inspectionResult: 'FAIL', unqualifiedQuantity: 1, submittedAt: new Date(), closedAt: new Date(), updatedAt: new Date(),
+      },
+    })
+    await s.match.matchInspection(ins2)
+    await s.match.resolveUnmatched(ins2, p.weld.id, 'u-out')
+    const created = (await s.nonconforming.syncNonconforming()).created.filter((c) => c.stepId === p.weld.id)
+    expect(created).toHaveLength(2)
+    for (const c of created) {
+      await s.issues.acceptIssue(c.issueId, as('u-qa'))
+      await s.issues.resolveIssue(c.issueId, as('u-qa'), '返修')
+    }
+    const results = await Promise.all(created.map((c) => s.issues.closeIssue(c.issueId, admin)))
+    expect(results.filter((r) => r.stepRestored === 'DONE')).toHaveLength(1)
+    expect((await db.routeStep.findUniqueOrThrow({ where: { id: p.weld.id } })).status).toBe('DONE')
+  })
+
   it('红色自动转异常（A4）：同事务生成异常、预警已转异常；不再重复生成预警、不再通知', async () => {
     const p = await makePart()
     await send(p.weld.id)

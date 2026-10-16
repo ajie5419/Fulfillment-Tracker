@@ -8,7 +8,10 @@ const MAX_REQUEST_BYTES = MAX_FILES_PER_REQUEST * MAX_UPLOAD_BYTES + 64 * 1024
  * 按文件头魔数只收 JPG/PNG/WebP，每张 ≤ 8MB；返回 upload_file 的 id，上报异常时带上。
  */
 export default defineFlowHandler(async (event, user) => {
-  const length = Number(getRequestHeader(event, 'content-length') ?? 0)
+  // readMultipartFormData 会把整个请求体读进内存且不限大小：没有 Content-Length（分块传输）的一律拒绝
+  const raw = getRequestHeader(event, 'content-length')
+  const length = raw === undefined ? Number.NaN : Number(raw)
+  if (!Number.isFinite(length)) throw createError({ statusCode: 411, statusMessage: 'Length Required', message: '缺少 Content-Length' })
   if (length > MAX_REQUEST_BYTES) throw createError({ statusCode: 413, statusMessage: 'Payload Too Large', message: '照片太大：每张不能超过 8MB，一次最多 3 张' })
   const parts = (await readMultipartFormData(event).catch(() => undefined)) ?? []
   const files = parts.filter((p) => p.name === 'file' && p.filename !== undefined)

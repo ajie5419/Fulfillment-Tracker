@@ -220,7 +220,7 @@ async function collectW4(now: Date, t: Thresholds, offDays: string[]): Promise<T
       key: alertKey('W4', 'issue', i.id),
       workOrderNumber: i.workOrderNumber,
       ownerIds: i.responsibleUserId ? [i.responsibleUserId] : fallback,
-      deptNames: dept ? [dept] : [],
+      deptNames: dept ? [dept] : undefined,
       startAt: i.status === 'OPEN' && !r.overdueDays ? i.createdAt : (i.dueDate ?? i.createdAt),
       level: r.level,
       subject: `异常 ${i.issueNo}（${CATEGORY_TEXT[i.category]}）`,

@@ -399,7 +399,11 @@ export async function rejectIssue(id: string, actor: Actor, note: string) {
  * 关联的是工序步骤（QMS 不合格）且该步骤没有其他未关闭异常时，步骤从"有异常"恢复。
  */
 export async function closeIssue(id: string, actor: Actor, note?: string | null) {
+  const ref = await prisma.issue.findUnique({ where: { id }, select: { refType: true, refId: true } })
   return prisma.$transaction(async (tx) => {
+    // 关联步骤的异常：事务第一条语句先锁步骤，把同一步骤上的并发关闭串行化，
+    // 后面"还有没有其他未关闭异常"的普通读快照建立在拿到锁之后，能看到对方已提交的关闭
+    if (ref?.refType === 'STEP' && ref.refId) await tx.$queryRaw`SELECT id FROM route_step WHERE id = ${ref.refId} FOR UPDATE`
     const issue = await guard(tx, id, actor, 'close')
     await move(tx, issue, 'CLOSED', {}, joinNote(['确认关闭', note]), actor.userId)
     await clearAlertKeys(tx, [alertKey('W4', 'issue', id)])

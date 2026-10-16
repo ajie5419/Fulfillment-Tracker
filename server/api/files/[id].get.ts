@@ -11,7 +11,7 @@ export default defineFlowHandler(async (event, user) => {
   setResponseHeaders(event, {
     'Content-Type': r.file.mime,
     'Content-Length': String(r.data.length),
-    'Cache-Control': 'private, max-age=86400',
+    'Cache-Control': 'private, no-store',
     'X-Content-Type-Options': 'nosniff',
     'Content-Disposition': 'inline',
   })

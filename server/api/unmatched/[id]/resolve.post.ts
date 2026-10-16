@@ -11,6 +11,7 @@ export default defineFlowHandler(async (event, user) => {
   await assertCanSeeInspection(event, id)
   await assertCanSeeStep(event, stepId)
   const r = await resolveUnmatched(id, stepId, user.qmsUserId)
-  await syncNonconforming()
+  // 关联已提交；这里生成不合格异常失败不影响本次结果，定时扫描会补上
+  await syncNonconforming().catch((err) => console.error('[unmatched/resolve] syncNonconforming 失败', err))
   return r
 })

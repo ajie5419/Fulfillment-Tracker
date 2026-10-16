@@ -23,10 +23,12 @@ export const ARRANGE_START = 'ARRANGE_START'
 
 /** 锁住步骤行再读，保证同一步骤的返厂、发出串行执行（判断"第一次返厂"、累计数量不会算重） */
 export async function lockStep(tx: Tx, stepId: string): Promise<RouteStep & { part: Part }> {
-  await tx.$queryRaw`SELECT id FROM route_step WHERE id = ${stepId} FOR UPDATE`
+  // 状态取自加锁读：事务里之前若有过普通读，普通读用的是旧快照，可能是过期状态
+  const [locked] = await tx.$queryRaw<{ status: RouteStep['status'] }[]>`SELECT status FROM route_step WHERE id = ${stepId} FOR UPDATE`
+  if (!locked) throw new FlowError('步骤不存在或已删除')
   const step = await tx.routeStep.findUnique({ where: { id: stepId }, include: { part: true } })
   if (!step) throw new FlowError('步骤不存在或已删除')
-  return step
+  return { ...step, status: locked.status }
 }
 
 /** 立即消除该步骤上指定规则的活动预警（扫描任务也会兜底消除，这里让页面马上看到） */

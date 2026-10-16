@@ -189,6 +189,14 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     // 超过 3 × 8MB 的请求体：413
     const big = await upload(worker, [{ data: new Uint8Array(25 * 1024 * 1024), name: 'big.jpg', type: 'image/jpeg' }])
     expect(big.status).toBe(413)
+    // 分块传输（没有 Content-Length）：411，不读进内存
+    const chunked = await fetch(`${base}/api/uploads`, {
+      method: 'POST',
+      headers: { cookie: cookieHeader(worker), 'content-type': 'multipart/form-data; boundary=x' },
+      body: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('--x--')); c.close() } }),
+      duplex: 'half',
+    } as RequestInit)
+    expect(chunked.status).toBe(411)
     // 单张超 8MB：400
     const one = new Uint8Array(8 * 1024 * 1024 + 10)
     one.set([0xff, 0xd8, 0xff])

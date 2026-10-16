@@ -65,7 +65,7 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
     const judged = open.map((i) => judgeW4({ status: i.status, createdAt: i.createdAt, dueDate: i.dueDate, now, offDays }, thresholds.W4))
     const overdueIssues = judged.filter((j) => j.overdueDays > 0).length
     const issueRed = judged.some((j) => j.overdueDays >= thresholds.W4.redDays)
-    const issueYellow = judged.some((j) => !!j.level)
+    const issueYellow = judged.some((j) => !!j.level || j.overdueDays > 0)
     const mine = alerts.filter((a) => alertWo.get(a.id) === wo)
     const red = mine.filter((a) => a.level === 'RED').length
     const yellow = mine.length - red
