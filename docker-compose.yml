@@ -1,0 +1,19 @@
+# 生产：与 QMS 同机，加入 QMS 现有的 qms-network，经内网 http://qms-backend:3000 调用身份桥。
+# 端口只绑本机，由 443 入口反向代理。
+services:
+  fulfillment:
+    build: .
+    image: fulfillment-tracker:latest
+    container_name: fulfillment
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NUXT_QMS_API_BASE: http://qms-backend:3000
+    ports:
+      - "127.0.0.1:3100:3100"
+    networks:
+      - qms-network
+
+networks:
+  qms-network:
+    external: true
