@@ -4,4 +4,8 @@ import { stepFields } from '../../schemas/flow'
 
 const body = z.object(stepFields).partial().strict()
 
-export default defineFlowHandler(async (event) => updateStep(routeId(event), await parseBody(event, body)))
+export default defineFlowHandler(async (event) => {
+  const id = routeId(event)
+  await assertCanSeeStep(event, id)
+  return updateStep(id, await parseBody(event, body))
+})

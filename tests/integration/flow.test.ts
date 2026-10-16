@@ -38,6 +38,7 @@ describe.skipIf(!DB)('外协主链路', () => {
     await db.flowEvent.deleteMany()
     await db.todo.deleteMany()
     await db.alert.deleteMany()
+    await db.issue.deleteMany()
     await db.unmatchedInspection.deleteMany()
     await db.routeStep.deleteMany()
     await db.part.deleteMany()

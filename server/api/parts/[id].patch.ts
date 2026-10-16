@@ -5,5 +5,7 @@ import { partFields } from '../../schemas/flow'
 const body = z.object(partFields).partial().strict()
 
 export default defineFlowHandler(async (event) => {
-  return updatePart(routeId(event), await parseBody(event, body))
+  const id = routeId(event)
+  await assertCanSeePart(event, id)
+  return updatePart(id, await parseBody(event, body))
 })

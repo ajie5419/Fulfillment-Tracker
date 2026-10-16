@@ -5,5 +5,7 @@ const body = z.object({ direction: z.enum(['up', 'down']) }).strict()
 
 export default defineFlowHandler(async (event) => {
   const { direction } = await parseBody(event, body)
-  return moveStep(routeId(event), direction)
+  const id = routeId(event)
+  await assertCanSeeStep(event, id)
+  return moveStep(id, direction)
 })

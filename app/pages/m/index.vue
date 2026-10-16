@@ -13,6 +13,11 @@ async function openReminder(item: ReminderItem) {
   if (item.mobileLink) return navigateTo(item.mobileLink)
   if (item.rule === 'W1' && !item.cleared) showToast('待确认匹配请在电脑端处理')
 }
+const digestOpen = ref(false)
+async function openDigest() {
+  digestOpen.value = !digestOpen.value
+  if (data.value?.digest) await readDigest(data.value.digest)
+}
 async function readAll() {
   try {
     await readAllReminders()
@@ -72,6 +77,19 @@ async function transfer(action: { id: string }) {
       </van-cell>
     </van-cell-group>
 
+    <div class="entries">
+      <van-button type="danger" icon="warning-o" round block @click="navigateTo('/m/issue-new')">上报异常</van-button>
+      <van-button type="primary" plain icon="todo-list-o" round block @click="navigateTo('/m/issues')">我的异常</van-button>
+    </div>
+
+    <!-- 每日汇总置顶（方案 6.3） -->
+    <div v-if="data?.digest" class="digest" :class="[`lv-${data.digest.level}`, { unread: !data.digest.readAt }]" @click="openDigest">
+      <div class="digest-title"><van-tag type="primary">每日汇总</van-tag> {{ data.digest.title }}</div>
+      <ol v-if="digestOpen || !data.digest.readAt" class="digest-lines">
+        <li v-for="(l, i) in data.digest.lines" :key="i">{{ l }}</li>
+      </ol>
+    </div>
+
     <div class="section">我的待办<van-badge v-if="todos.length" :content="todos.length" class="count" /></div>
     <van-loading v-if="todosPending" class="center" />
     <van-empty v-else-if="!todos.length" description="暂时没有待办" image-size="80" />
@@ -97,7 +115,7 @@ async function transfer(action: { id: string }) {
           v-for="item in g.items"
           :key="item.id"
           :title="item.title"
-          :label="`${timeText(item.createdAt)}${item.cleared ? '　已消除' : ''}`"
+          :label="`${timeText(item.createdAt)}${item.cleared ? '　已消除' : ''}${item.issueNo ? `　已转异常 ${item.issueNo}` : ''}`"
           :class="{ unread: !item.readAt }"
           :is-link="!!item.mobileLink"
           center
@@ -127,6 +145,13 @@ async function transfer(action: { id: string }) {
 
 <style scoped>
 .me { margin: 12px 0; }
+.entries { display: flex; gap: 12px; padding: 0 16px; }
+.digest { margin: 12px 16px 0; padding: 10px 12px; border-radius: 8px; background: #ecf5ff; border: 1px solid #b3d8ff; font-size: 14px; }
+.digest.lv-RED { background: #fff1f0; border-color: #ffa39e; }
+.digest.lv-YELLOW { background: #fff7e6; border-color: #ffd591; }
+.digest:not(.unread) .digest-title { color: #969799; }
+.digest.unread .digest-title { font-weight: 600; }
+.digest-lines { margin: 6px 0 0 20px; padding: 0; color: #646566; font-size: 13px; }
 .section { padding: 16px 16px 8px; color: #646566; font-size: 14px; }
 .count { margin-left: 6px; }
 .center { display: flex; justify-content: center; padding: 32px; }

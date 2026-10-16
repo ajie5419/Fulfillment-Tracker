@@ -41,6 +41,8 @@ describe.skipIf(!DB)('预警与提醒', () => {
     db = (await import('../../server/utils/prisma')).prisma
     await db.reminder.deleteMany()
     await db.alert.deleteMany()
+    await db.uploadFile.deleteMany()
+    await db.issue.deleteMany() // 处理日志级联删除
     await db.notifyRole.deleteMany()
     await db.workOrderExt.deleteMany()
     await db.offDay.deleteMany()
@@ -123,7 +125,7 @@ describe.skipIf(!DB)('预警与提醒', () => {
   const remindersOf = async (alertId: string) =>
     (await db.reminder.findMany({ where: { alertId }, orderBy: [{ level: 'asc' }, { userId: 'asc' }] })).map((r) => `${r.level}:${r.userId}`)
 
-  it('Q12 重演（A4）：第 3 天 W2 黄，第 5 天红；重复扫描不重复提醒；登记发出后消除', async () => {
+  it('Q12 重演（A4）：第 3 天 W2 黄，第 5 天红并自动转异常；重复扫描不重复提醒；登记发出后释放', async () => {
     const { paint, t0 } = await weldReturned()
     const key = `W2:step:${paint.id}`
 
@@ -156,7 +158,10 @@ describe.skipIf(!DB)('预警与提醒', () => {
     await s.scan.scanRules(at(t0, 4 * DAY))
     await s.scan.scanRules(at(t0, 4 * DAY + HOUR))
     const [red] = await alertOf(key)
-    expect(red).toMatchObject({ id: alert!.id, level: 'RED', status: 'ACTIVE' })
+    // 红色自动转异常（R5）：预警改为已转异常，activeKey 保留
+    expect(red).toMatchObject({ id: alert!.id, level: 'RED', status: 'CONVERTED', activeKey: key })
+    const issue = await db.issue.findUniqueOrThrow({ where: { sourceKey: `ALERT:${alert!.id}` } })
+    expect(issue).toMatchObject({ source: 'ALERT', category: 'OUTSOURCE_SCHEDULE', refType: 'STEP', refId: paint.id, responsibleUserId: 'u-out', status: 'OPEN' })
     expect(await remindersOf(alert!.id)).toEqual([
       'YELLOW:u-head', 'YELLOW:u-out', 'YELLOW:u-pm',
       'RED:u-head', 'RED:u-lead', 'RED:u-out', 'RED:u-pdh', 'RED:u-pm',
@@ -166,15 +171,16 @@ describe.skipIf(!DB)('预警与提醒', () => {
 
     // 我的提醒：领导能看到，带跳转到工件页
     const mine = await s.reminders.listReminders('u-lead')
-    expect(mine.items[0]).toMatchObject({ level: 'RED', rule: 'W2', cleared: false, link: `/parts?wo=${WO}`, mobileLink: `/m/send?stepId=${paint.id}` })
+    // 已转异常：提醒跳到生成的异常
+    expect(mine.items[0]).toMatchObject({ level: 'RED', rule: 'W2', cleared: false, issueNo: issue.issueNo, link: `/issues?id=${issue.id}` })
     expect(mine.unread).toBe(1)
 
-    // 登记发出 → W2 消除；再扫描也不会重新出现
+    // 登记发出 → 已转异常的预警只释放 activeKey，状态不变；异常不随之关闭；再扫描也不会重新出现
     await send(paint.id)
-    expect((await alertOf(key))[0]).toMatchObject({ status: 'CLEARED', activeKey: null })
+    expect((await alertOf(key))[0]).toMatchObject({ status: 'CONVERTED', activeKey: null })
     await s.scan.scanRules(at(t0, 6 * DAY))
-    expect((await db.alert.findMany({ where: { rule: 'W2', refId: paint.id } })).map((a) => a.status)).toEqual(['CLEARED'])
-    expect((await s.reminders.listReminders('u-lead')).items[0]!.cleared).toBe(true)
+    expect((await db.alert.findMany({ where: { rule: 'W2', refId: paint.id } })).map((a) => a.status)).toEqual(['CONVERTED'])
+    expect((await db.issue.findUniqueOrThrow({ where: { id: issue.id } })).status).toBe('OPEN')
   })
 
   it('扫描兜底消除：对象离开待开工（未经 sendStep），下一轮扫描消除', async () => {

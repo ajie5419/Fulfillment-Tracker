@@ -1,10 +1,11 @@
 <script setup lang="ts">
-/** 演示工具（仅 NUXT_DEV_TOOLS=1）：写入/清除演示数据，模拟 QMS 返厂报检 */
+/** 演示工具（仅 NUXT_DEV_TOOLS=1）：写入/清除演示数据，模拟 QMS 返厂报检和检验结论，预警扫描，每日汇总 */
 const { data: me } = await useMe()
 const { data: workOrders, refresh: refreshWo } = await useWorkOrders()
 const { data: master, refresh: refreshMaster } = await useMaster()
 const { data: transit, refresh: refreshTransit } = await useFetch('/api/transit', { default: () => [] })
 type TransitRow = (typeof transit.value)[number]
+const { data: inspections, refresh: refreshInspections } = await useFetch('/api/dev/inspections', { default: () => [] })
 
 const busy = ref(false)
 const lastResult = ref<string>('')
@@ -15,7 +16,7 @@ async function run(path: string, label: string) {
     const r = await $fetch(path, { method: 'POST' })
     lastResult.value = `${label}：${JSON.stringify(r)}`
     message.success(`${label}完成`)
-    await Promise.all([refreshWo(), refreshMaster(), refreshTransit(), refreshNuxtData(['todos', 'me'])])
+    await Promise.all([refreshWo(), refreshMaster(), refreshTransit(), refreshInspections(), refreshNuxtData(['todos', 'me'])])
   } catch (e) {
     message.error(apiError(e))
   } finally {
@@ -30,7 +31,41 @@ async function scan(plusDays: number) {
     const r = await $fetch('/api/dev/scan', { method: 'POST', body: { plusDays } })
     lastResult.value = r.skipped
       ? '另一轮扫描正在进行，本次跳过'
-      : `扫描完成（按 ${timeText(r.now)} 计）：新建 ${r.created}、升级 ${r.escalated}、消除 ${r.cleared}，写入提醒 ${r.reminders} 条，活动预警 ${r.active} 条`
+      : `扫描完成（按 ${timeText(r.now)} 计）：新建 ${r.created}、升级 ${r.escalated}、消除 ${r.cleared}，写入提醒 ${r.reminders} 条，活动预警 ${r.active} 条，红色转异常 ${r.converted} 条，QMS 不合格转异常 ${r.nonconforming} 条`
+    message.success(lastResult.value)
+    await refreshNuxtData('reminders')
+  } catch (e) {
+    message.error(apiError(e))
+  } finally {
+    busy.value = false
+  }
+}
+
+// ───── 模拟 QMS 检验结论（不合格）→ 自动生成"外协-质量"异常（验收 A7） ─────
+const verdict = reactive({ id: undefined as string | undefined, unqualifiedQuantity: 1 })
+async function fail() {
+  if (!verdict.id) return message.warning('请选择报检')
+  busy.value = true
+  try {
+    const send = $fetch as unknown as (u: string, o: { method: 'POST'; body: object }) => Promise<{ nonconforming: { created: { issueNo: string }[] } }>
+    const r = await send(`/api/dev/inspections/${encodeURIComponent(verdict.id)}/verdict`, { method: 'POST', body: { unqualifiedQuantity: verdict.unqualifiedQuantity } })
+    const nos = r.nonconforming.created.map((c) => c.issueNo)
+    lastResult.value = nos.length ? `已判不合格，生成异常 ${nos.join('、')}（步骤置为"有异常"）` : '已判不合格；该报检还没关联到步骤（先在"待确认匹配"里关联），或异常已经生成过'
+    message.info(lastResult.value)
+    await refreshInspections()
+  } catch (e) {
+    message.error(apiError(e))
+  } finally {
+    busy.value = false
+  }
+}
+
+/** 立即生成今日汇总（不看 07:30） */
+async function digest() {
+  busy.value = true
+  try {
+    const r = await ($fetch as unknown as (u: string, o: { method: 'POST' }) => Promise<{ day: string; recipients: number; created: number }>)('/api/dev/digest', { method: 'POST' })
+    lastResult.value = `今日汇总（${r.day}）：收件人 ${r.recipients} 人，新生成 ${r.created} 条（同人同日只一条）`
     message.success(lastResult.value)
     await refreshNuxtData('reminders')
   } catch (e) {
@@ -95,7 +130,7 @@ async function submit() {
           ? `没匹配上（${REASON_TEXT[res.reason]}），已进入"待确认匹配"`
           : `结果：${JSON.stringify(res)}`
     message.info(lastResult.value)
-    await Promise.all([refreshTransit(), refreshNuxtData('todos')])
+    await Promise.all([refreshTransit(), refreshInspections(), refreshNuxtData('todos')])
   } catch (e) {
     message.error(apiError(e))
   } finally {
@@ -125,6 +160,23 @@ async function submit() {
         <a-button type="primary" :loading="busy" @click="scan(0)">立即扫描</a-button>
         <a-button :loading="busy" @click="scan(3)">快进 3 天扫描</a-button>
         <a-button :loading="busy" @click="scan(5)">快进 5 天扫描</a-button>
+        <a-button :loading="busy" @click="digest">立即生成今日汇总</a-button>
+      </a-space>
+      <p class="muted" style="margin-top: 8px">红色预警自动转为异常；每日汇总平时由定时任务在 07:30（北京时间）后生成。</p>
+    </a-card>
+
+    <a-card title="模拟 QMS 检验结论">
+      <p class="muted">把一条模拟报检改为"已关闭 + 不合格"，系统随即生成"外协-质量"异常（责任方是该外协单位），关联的步骤显示"有异常"。</p>
+      <a-space wrap>
+        <a-select
+          v-model:value="verdict.id"
+          style="width: 520px"
+          placeholder="选择一条模拟报检"
+          :options="inspections.map((i) => ({ value: i.id, label: `${i.workOrderNumber} · ${i.partName} · ${i.processName}（${i.supplierName ?? '—'}，${i.quantity} 件）${i.status === 'CLOSED' ? `　已判${i.inspectionResult === 'FAIL' ? '不合格' : '合格'}` : ''}${i.matched ? '' : '　未关联'}` }))"
+        />
+        <span>不合格数量</span>
+        <a-input-number v-model:value="verdict.unqualifiedQuantity" :min="0" />
+        <a-button type="primary" danger :loading="busy" @click="fail">判不合格</a-button>
       </a-space>
     </a-card>
 

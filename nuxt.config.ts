@@ -12,6 +12,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     devTools: false, // NUXT_DEV_TOOLS=1 时开启演示数据和模拟报检（/api/dev/*），生产不要开
     adminUserIds: '', // NUXT_ADMIN_USER_IDS，逗号分隔的 QMS 用户 ID，可进设置页
+    uploadDir: './data/uploads', // NUXT_UPLOAD_DIR，异常照片的存放目录（相对路径按启动目录算）
     qms: {
       apiBase: 'http://qms-backend:3000', // NUXT_QMS_API_BASE
       authorizeUrl: '', // NUXT_QMS_AUTHORIZE_URL，如 http://<IP>/#/identity/authorize
@@ -21,7 +22,7 @@ export default defineNuxtConfig({
     },
   },
 
-  // 后台任务：scan-rules 每 15 分钟一次（server/tasks/scan-rules.ts）
+  // 后台任务：scan-rules 每 15 分钟一次（server/tasks/scan-rules.ts）：QMS 不合格转异常、W1–W4 扫描、每日汇总
   nitro: {
     experimental: { tasks: true },
     scheduledTasks: { '*/15 * * * *': ['scan-rules'] },

@@ -9,11 +9,18 @@ const ACTION_TEXT: Record<string, string> = {
   [ARRANGE_START]: '安排开工',
 }
 
-export async function listMyTodos(userId: string) {
-  const todos = await prisma.todo.findMany({ where: { ownerId: userId, status: 'OPEN' }, orderBy: { createdAt: 'asc' } })
+/** visibleWorkOrders：可见工单（undefined = 全部）；不可见工单上的待办不列出 */
+export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) {
+  let todos = await prisma.todo.findMany({ where: { ownerId: userId, status: 'OPEN' }, orderBy: { createdAt: 'asc' } })
   if (!todos.length) return []
   const stepIds = todos.filter((t) => t.refType === 'step').map((t) => t.refId)
-  const steps = await prisma.routeStep.findMany({ where: { id: { in: stepIds } }, include: { part: true } })
+  let steps = await prisma.routeStep.findMany({ where: { id: { in: stepIds } }, include: { part: true } })
+  if (visibleWorkOrders) {
+    const visible = new Set(visibleWorkOrders)
+    const hidden = new Set(steps.filter((s) => !visible.has(s.part.workOrderNumber)).map((s) => s.id))
+    steps = steps.filter((s) => !hidden.has(s.id))
+    todos = todos.filter((t) => !(t.refType === 'step' && hidden.has(t.refId)))
+  }
   // 上一道（触发待办的那道）
   const prevSteps = !steps.length ? [] : await prisma.routeStep.findMany({
     where: { OR: steps.map((s) => ({ partId: s.partId, seq: { lt: s.seq } })) },

@@ -2,6 +2,7 @@ node_modules
 .nuxt
 .output
 .data
+/data/
 dist
 coverage
 .env

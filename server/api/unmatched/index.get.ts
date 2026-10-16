@@ -1,4 +1,4 @@
 import { listUnmatched } from '../../services/flow/match'
 
 /** 待确认匹配列表 */
-export default defineFlowHandler(async () => listUnmatched())
+export default defineFlowHandler(async (event) => listUnmatched(scopeWorkOrders(await getScope(event))))

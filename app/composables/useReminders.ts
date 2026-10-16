@@ -10,6 +10,8 @@ export interface ReminderItem {
   rule: 'W1' | 'W2' | 'W3' | 'W4' | null
   /** 预警已消除（对象状态已变化） */
   cleared: boolean
+  /** 已转为异常时的异常编号 */
+  issueNo: string | null
   /** 电脑端跳转地址 */
   link: string | null
   /** 手机端跳转地址 */
@@ -21,8 +23,26 @@ export const LEVEL_COLOR = { RED: 'red', YELLOW: 'orange', REMIND: 'blue' } as c
 export const LEVEL_ORDER: AlertLevelKey[] = ['RED', 'YELLOW', 'REMIND']
 export const RULE_TEXT = { W1: 'W1 待确认匹配超时', W2: 'W2 转序停滞', W3: 'W3 外协逾期未返', W4: 'W4 异常超期' } as const
 
+/** 每日汇总（置顶） */
+export interface DigestItem {
+  id: string
+  title: string
+  level: AlertLevelKey
+  readAt: string | null
+  createdAt: string
+  /** 前 5 项，一行一项 */
+  lines: string[]
+}
+
 export function useReminders() {
-  return useFetch<{ items: ReminderItem[]; unread: number }>('/api/reminders', { key: 'reminders' })
+  return useFetch<{ items: ReminderItem[]; unread: number; digest: DigestItem | null }>('/api/reminders', { key: 'reminders' })
+}
+
+/** 汇总标为已读 */
+export async function readDigest(d: DigestItem) {
+  if (d.readAt) return
+  await $fetch(`/api/reminders/${d.id}/read`, { method: 'POST' }).catch(() => {})
+  await refreshNuxtData('reminders')
 }
 
 /** 按红、黄、提醒分组，组内未读在前 */

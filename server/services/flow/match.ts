@@ -8,6 +8,7 @@
  */
 import type { Prisma, QmsInspection, StepMode, StepStatus } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
+import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
 import { FlowError } from './errors'
 import { recordReturn } from './flow'
@@ -160,9 +161,13 @@ export async function matchPendingInspections(): Promise<MatchResult[]> {
 
 // ───────────── 待确认匹配 ─────────────
 
-export async function listUnmatched() {
-  const rows = await prisma.unmatchedInspection.findMany({ where: { status: 'PENDING' }, orderBy: { createdAt: 'asc' } })
-  const inspections = await prisma.qmsInspection.findMany({ where: { id: { in: rows.map((r) => r.qmsInspectionId) } } })
+/** visibleWorkOrders：可见工单（undefined = 全部） */
+export async function listUnmatched(visibleWorkOrders?: string[]) {
+  let rows = await prisma.unmatchedInspection.findMany({ where: { status: 'PENDING' }, orderBy: { createdAt: 'asc' } })
+  const inspections = await prisma.qmsInspection.findMany({
+    where: { id: { in: rows.map((r) => r.qmsInspectionId) }, ...(visibleWorkOrders ? { workOrderNumber: { in: visibleWorkOrders } } : {}) },
+  })
+  if (visibleWorkOrders) rows = rows.filter((r) => inspections.some((i) => i.id === r.qmsInspectionId))
   const byId = new Map(inspections.map((i) => [i.id, i]))
   // 撤销的那条要显示当初匹配到哪个步骤
   const events = await prisma.flowEvent.findMany({
@@ -198,8 +203,7 @@ async function lockPendingUnmatched(tx: Prisma.TransactionClient, id: string) {
 }
 
 /** 已处理的待确认记录：立即消除 W1（扫描任务也会兜底） */
-const clearW1 = (tx: Prisma.TransactionClient, id: string) =>
-  tx.alert.updateMany({ where: { activeKey: alertKey('W1', 'unmatched', id) }, data: { status: 'CLEARED', activeKey: null } })
+const clearW1 = (tx: Prisma.TransactionClient, id: string) => clearAlertKeys(tx, [alertKey('W1', 'unmatched', id)])
 
 /** 人工关联：与自动匹配走同一个 recordReturn，同一事务里把待确认记录置为已处理 */
 export async function resolveUnmatched(id: string, stepId: string, actorId: string) {

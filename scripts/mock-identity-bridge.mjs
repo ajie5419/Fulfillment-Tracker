@@ -154,6 +154,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       'u-003': { name: '测试项目经理', active: true },
       'u-004': { name: '测试项目部负责人', active: true },
       'u-005': { name: '测试分管领导', active: true },
+      'u-006': { name: '测试质量负责人', active: true },
     },
   })
   console.log(`mock identity bridge listening on ${url}`)

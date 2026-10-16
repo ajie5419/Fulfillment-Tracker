@@ -7,5 +7,7 @@ const body = z.object({ qty: z.number().int().min(1, '数量至少为 1').max(10
 /** 补登返厂（QMS 漏报时的兜底） */
 export default defineFlowHandler(async (event, user) => {
   const input = await parseBody(event, body)
-  return manualReturn({ ...input, stepId: routeId(event), actorId: user.qmsUserId })
+  const stepId = routeId(event)
+  await assertCanSeeStep(event, stepId)
+  return manualReturn({ ...input, stepId, actorId: user.qmsUserId })
 })
