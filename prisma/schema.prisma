@@ -1,0 +1,429 @@
+// 履约系统数据表（第一期）。依据：技术选型与MVP范围.md 第 4 节、系统方案设计.md 第 4.2/4.3 节。
+// qms_ 开头的表是 QMS 只读副本，只允许同步任务（R2 sync-qms）写入。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────── QMS 只读副本 ─────────────
+
+model QmsWorkOrder {
+  workOrderNumber String   @id @db.VarChar(64)
+  customerName    String
+  projectName     String?
+  division        String?
+  quantity        Int
+  deliveryDate    DateTime
+  status          String   @db.VarChar(20) // OPEN / IN_PROGRESS / COMPLETED / CANCELLED
+  isDeleted       Boolean  @default(false)
+  updatedAt       DateTime // QMS 的 updatedAt，不是本地写入时间
+  syncedAt        DateTime @default(now()) @updatedAt
+
+  @@index([status])
+  @@map("qms_work_order")
+}
+
+model QmsSupplier {
+  id              String   @id @db.VarChar(64)
+  name            String
+  outsourcingMode String?
+  category        String?
+  isDeleted       Boolean  @default(false)
+  updatedAt       DateTime
+  syncedAt        DateTime @default(now()) @updatedAt
+
+  @@map("qms_supplier")
+}
+
+model QmsProcess {
+  id                      String   @id @db.VarChar(64)
+  name                    String
+  supplierSource          String   @db.VarChar(20) // QMS processes.supplierSource，默认 Supplier
+  responsibleDepartmentId String?  @db.VarChar(64)
+  isDeleted               Boolean  @default(false)
+  updatedAt               DateTime
+  syncedAt                DateTime @default(now()) @updatedAt
+
+  @@map("qms_process")
+}
+
+model QmsDepartment {
+  id        String   @id @db.VarChar(64)
+  name      String
+  parentId  String   @db.VarChar(64)
+  status    Int
+  isDeleted Boolean  @default(false)
+  updatedAt DateTime
+  syncedAt  DateTime @default(now()) @updatedAt
+
+  @@map("qms_department")
+}
+
+model QmsUser {
+  id         String   @id @db.VarChar(64)
+  username   String
+  realName   String?
+  phone      String?
+  department String // QMS 中是字符串，按名称与 qms_department.name 关联
+  roleId     String   @db.VarChar(64)
+  roleName   String?
+  status     String   @db.VarChar(20) // ACTIVE / INACTIVE / LOCKED
+  isDeleted  Boolean  @default(false)
+  updatedAt  DateTime
+  syncedAt   DateTime @default(now()) @updatedAt
+
+  @@map("qms_user")
+}
+
+model QmsInspection {
+  id                  String    @id @db.VarChar(64)
+  requestNo           String    @db.VarChar(64)
+  workOrderNumber     String    @db.VarChar(64)
+  partId              String?   @db.VarChar(64)
+  partName            String
+  processId           String?   @db.VarChar(64)
+  processName         String
+  supplierId          String?   @db.VarChar(64)
+  supplierName        String?
+  responsibilityType  String?
+  quantity            Int
+  // 注意：QMS 的 inspectionResult 默认 PASS，判不合格必须同时 status=CLOSED 且 inspectionResult=FAIL
+  status              String    @db.VarChar(20) // SUBMITTED / DISPATCHED / INSPECTING / CLOSED / CANCELLED
+  inspectionResult    String    @db.VarChar(20) // PASS / FAIL / CONDITIONAL / NA
+  unqualifiedQuantity Int?
+  linkedIssueNo       String?
+  reporterId          String?   @db.VarChar(64)
+  submittedAt         DateTime
+  closedAt            DateTime?
+  isDeleted           Boolean   @default(false)
+  updatedAt           DateTime
+  syncedAt            DateTime  @default(now()) @updatedAt
+
+  @@index([workOrderNumber])
+  @@index([supplierId])
+  @@map("qms_inspection")
+}
+
+/// 每类资源一行；游标为 (since, afterId) 复合游标
+model SyncCursor {
+  resource  String    @id @db.VarChar(40)
+  since     DateTime?
+  afterId   String?   @db.VarChar(64)
+  lastRunAt DateTime?
+  lastError String?   @db.Text
+  failCount Int       @default(0)
+
+  @@map("sync_cursor")
+}
+
+// ───────────── 履约业务表 ─────────────
+
+model WorkOrderExt {
+  workOrderNumber  String  @id @db.VarChar(64)
+  projectManagerId String? @db.VarChar(64) // QMS 用户 ID
+  productLine      String?
+  isPilot          Boolean @default(false)
+
+  @@map("work_order_ext")
+}
+
+enum PartStatus {
+  ACTIVE
+  DONE
+}
+
+model Part {
+  id              String     @id @default(cuid())
+  workOrderNumber String     @db.VarChar(64)
+  name            String
+  drawingNo       String?
+  quantity        Int        @default(1)
+  qmsPartId       String?    @db.VarChar(64) // 引用 QMS BOM 物料 ID，用于报检匹配
+  currentStepId   String?
+  status          PartStatus @default(ACTIVE)
+  statusSince     DateTime   @default(now())
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  steps           RouteStep[]
+
+  @@index([workOrderNumber])
+  @@index([qmsPartId])
+  @@map("part")
+}
+
+enum StepMode {
+  SELF // 自制
+  IN_PLANT_OUTSOURCE // 厂内外协
+  EXTERNAL_OUTSOURCE // 厂外外协
+}
+
+// 方案 4.3 状态机：待开工 → 在外加工/加工中 → 已完成 ⇄ 有异常
+enum StepStatus {
+  PENDING // 待开工
+  OUT // 在外加工（厂外外协已发出）
+  IN_PROGRESS // 加工中（自制/厂内外协）
+  DONE // 已完成
+  BLOCKED // 有异常（检验不合格）
+}
+
+model RouteStep {
+  id                 String     @id @default(cuid())
+  partId             String
+  seq                Int
+  processId          String     @db.VarChar(64) // QMS processes.id
+  mode               StepMode
+  supplierId         String?    @db.VarChar(64) // QMS suppliers.id（外协时）
+  ownerId            String?    @db.VarChar(64) // 负责人，QMS 用户 ID
+  dueDate            DateTime?
+  promisedReturnDate DateTime?
+  startedAt          DateTime?
+  finishedAt         DateTime?
+  status             StepStatus @default(PENDING)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  part               Part       @relation(fields: [partId], references: [id], onDelete: Cascade)
+  events             FlowEvent[]
+
+  @@unique([partId, seq])
+  @@index([status])
+  @@index([supplierId])
+  @@map("route_step")
+}
+
+enum FlowEventType {
+  SEND // 发出
+  RETURN // 返厂（QMS 报检）
+  RETURN_MANUAL // 补登返厂（漏报兜底）
+  START // 开工
+  FINISH // 完工
+}
+
+enum FlowSource {
+  MOBILE
+  QMS_INSPECTION
+  PC
+}
+
+/// 只允许新增，不允许修改（T9）。服务层不提供 update/delete。
+model FlowEvent {
+  id              String        @id @default(cuid())
+  stepId          String
+  type            FlowEventType
+  qty             Int
+  source          FlowSource
+  qmsInspectionId String?       @unique @db.VarChar(64) // 同一报检重复同步时据此幂等跳过（T6）
+  actorId         String?       @db.VarChar(64)
+  occurredAt      DateTime
+  createdAt       DateTime      @default(now())
+  step            RouteStep     @relation(fields: [stepId], references: [id])
+
+  @@index([stepId])
+  @@map("flow_event")
+}
+
+enum TodoStatus {
+  OPEN
+  DONE
+  TRANSFERRED
+  CANCELLED
+}
+
+model Todo {
+  id        String     @id @default(cuid())
+  ownerId   String     @db.VarChar(64)
+  action    String     @db.VarChar(40) // 如 ARRANGE_SEND / ARRANGE_START / HANDLE_ISSUE / CONFIRM_MATCH
+  refType   String     @db.VarChar(20)
+  refId     String     @db.VarChar(64)
+  dueAt     DateTime?
+  status    TodoStatus @default(OPEN)
+  doneAt    DateTime?
+  createdAt DateTime   @default(now())
+
+  @@index([ownerId, status])
+  @@index([refType, refId])
+  @@map("todo")
+}
+
+enum UnmatchedStatus {
+  PENDING
+  RESOLVED
+  IGNORED
+}
+
+model UnmatchedInspection {
+  qmsInspectionId String          @id @db.VarChar(64)
+  reason          String          @db.VarChar(40) // NO_CANDIDATE / MULTIPLE / CANCELLED_AFTER_MATCH
+  candidates      Json?
+  status          UnmatchedStatus @default(PENDING)
+  resolvedBy      String?         @db.VarChar(64)
+  resolvedAt      DateTime?
+  createdAt       DateTime        @default(now())
+
+  @@index([status])
+  @@map("unmatched_inspection")
+}
+
+enum IssueCategory {
+  DESIGN // 设计
+  CHANGE // 变更
+  MATERIAL_PAYMENT // 物料-付款原因
+  MATERIAL_MGMT // 物料-管理原因
+  OUTSOURCE_SCHEDULE // 外协-进度
+  OUTSOURCE_QUALITY // 外协-质量
+  WORKSHOP // 车间
+  CUSTOMER // 客户
+  OTHER // 其他
+}
+
+enum IssueSource {
+  MANUAL
+  ALERT
+  QMS_NONCONFORMING
+}
+
+enum IssueStatus {
+  OPEN // 待受理
+  ACCEPTED // 处理中
+  RESOLVED // 已处理，待确认
+  CLOSED // 已关闭
+}
+
+model Issue {
+  id                 String        @id @default(cuid())
+  issueNo            String        @unique @db.VarChar(32)
+  workOrderNumber    String        @db.VarChar(64)
+  refType            String?       @db.VarChar(20)
+  refId              String?       @db.VarChar(64)
+  category           IssueCategory
+  description        String        @db.Text
+  photos             Json?
+  reporterId         String?       @db.VarChar(64)
+  source             IssueSource
+  responsibleDeptId  String?       @db.VarChar(64)
+  responsibleUserId  String?       @db.VarChar(64)
+  responsibleSupplierId String?    @db.VarChar(64)
+  dueDate            DateTime?
+  status             IssueStatus   @default(OPEN)
+  escalationLevel    Int           @default(0)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  logs               IssueLog[]
+
+  @@index([workOrderNumber, status])
+  @@map("issue")
+}
+
+model IssueLog {
+  id         String       @id @default(cuid())
+  issueId    String
+  fromStatus IssueStatus?
+  toStatus   IssueStatus?
+  note       String?      @db.Text
+  actorId    String?      @db.VarChar(64)
+  createdAt  DateTime     @default(now())
+  issue      Issue        @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([issueId])
+  @@map("issue_log")
+}
+
+enum AlertRule {
+  W1
+  W2
+  W3
+  W4
+}
+
+enum AlertLevel {
+  REMIND
+  YELLOW
+  RED
+}
+
+enum AlertStatus {
+  ACTIVE
+  CLEARED
+  CONVERTED // 已转异常
+}
+
+/// 同一对象同一规则只保留一条活动预警：MySQL 无部分唯一索引，
+/// 用 activeKey（活动时 = "rule:refType:refId"，消除后置 null）上的唯一约束实现。
+model Alert {
+  id             String      @id @default(cuid())
+  rule           AlertRule
+  refType        String      @db.VarChar(20)
+  refId          String      @db.VarChar(64)
+  level          AlertLevel
+  firstAt        DateTime
+  levelAt        DateTime
+  lastNotifiedAt DateTime?
+  status         AlertStatus @default(ACTIVE)
+  activeKey      String?     @unique @db.VarChar(120)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([refType, refId])
+  @@map("alert")
+}
+
+model Reminder {
+  id        String     @id @default(cuid())
+  userId    String     @db.VarChar(64)
+  alertId   String?
+  todoId    String?
+  title     String
+  level     AlertLevel @default(REMIND)
+  readAt    DateTime?
+  createdAt DateTime   @default(now())
+
+  @@index([userId, readAt])
+  @@map("reminder")
+}
+
+model Threshold {
+  rule        AlertRule @id
+  remindHours Int?
+  yellowDays  Int
+  redDays     Int
+
+  @@map("threshold")
+}
+
+model OffDay {
+  date DateTime @id @db.Date
+
+  @@map("off_day")
+}
+
+// ───────────── 登录会话 ─────────────
+
+/// 履约自己的会话（30 天）。id 存的是 cookie 令牌的 SHA-256，库里不存明文令牌。
+model Session {
+  id         String   @id @db.Char(64)
+  qmsUserId  String   @db.VarChar(64)
+  userName   String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([qmsUserId])
+  @@index([expiresAt])
+  @@map("session")
+}
+
+/// 登录进行中的临时记录（10 分钟）：state 一次性消费，code_verifier 只存在服务端。
+model LoginAttempt {
+  id           String   @id @db.Char(64) // state 的 SHA-256
+  codeVerifier String   @db.VarChar(128)
+  redirect     String   @db.VarChar(512)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("login_attempt")
+}

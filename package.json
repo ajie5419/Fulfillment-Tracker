@@ -1,0 +1,47 @@
+{
+  "name": "fulfillment-tracker",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "start": "node .output/server/index.mjs",
+    "postinstall": "nuxt prepare && prisma generate",
+    "typecheck": "nuxt typecheck && vue-tsc --noEmit -p server/tsconfig.json",
+    "test": "vitest run tests/unit",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "cert:local": "node scripts/local-cert.mjs",
+    "test:integration": "vitest run tests/integration"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "ant-design-vue": "4.2.6",
+    "nuxt": "3.21.11",
+    "vant": "4.10.2",
+    "vue": "3.5.44",
+    "vue-router": "4.6.4",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@ant-design-vue/nuxt": "1.4.6",
+    "@types/node": "^22.20.5",
+    "@vant/nuxt": "1.0.7",
+    "prisma": "6.19.3",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7",
+    "vue-tsc": "2.2.12"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma"
+    ]
+  }
+}
