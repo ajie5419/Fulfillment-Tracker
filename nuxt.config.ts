@@ -10,6 +10,7 @@ export default defineNuxtConfig({
 
   // 全部可被同名 NUXT_* 环境变量覆盖，见 .env.example
   runtimeConfig: {
+    devTools: false, // NUXT_DEV_TOOLS=1 时开启演示数据和模拟报检（/api/dev/*），生产不要开
     qms: {
       apiBase: 'http://qms-backend:3000', // NUXT_QMS_API_BASE
       authorizeUrl: '', // NUXT_QMS_AUTHORIZE_URL，如 http://<IP>/#/identity/authorize

@@ -32,13 +32,23 @@ node scripts/mock-identity-bridge.mjs         # 监听 4100，自动以"测试�
 # NUXT_QMS_CLIENT_SECRET="local-dev-secret-local-dev-secret-0"
 ```
 
+## 演示数据（R3，QMS 同步完成前）
+
+`.env` 加 `NUXT_DEV_TOOLS=1` 后重启，电脑端菜单出现"演示工具"：
+
+- 写入演示数据：2 个工单、5 个外协厂、5 道工序、u-001 测试外协专员 / u-002 测试生产经理，以及示例工件"主梁结构件"（组焊 → 涂装 → 装配）。ID 都带 `DEMO-` 前缀，可重复点
+- 模拟 QMS 返厂报检：可"按在途步骤填写"出一条能对上的报检，或"改成对不上的"，提交后立即匹配
+- 清除演示数据：只删 `DEMO-` 数据和引用它们的工件、步骤、流转记录、待办、待确认记录
+
+关闭时 `/api/dev/*` 一律 404。生产不要开。
+
 ## 检查
 
 | 命令 | 内容 |
 |---|---|
 | `pnpm typecheck` | 页面与服务端类型检查 |
 | `pnpm test` | 核心单元测试 |
-| `pnpm build && TEST_DATABASE_URL=mysql://…/fulfillment_test pnpm test:integration` | 登录走通集成测试（真实构建产物 + 真实 MySQL + 模拟身份桥）。测试库必须是专用库 |
+| `pnpm build && TEST_DATABASE_URL=mysql://…/fulfillment_test pnpm test:integration` | 集成测试：登录走通（真实构建产物 + 模拟身份桥）、外协主链路（服务层直连 MySQL）。测试库必须是专用库，测试会清空其中的业务表 |
 
 ## 部署（与 QMS 同机）
 
@@ -60,5 +70,6 @@ docker compose up -d
 | `NUXT_QMS_CLIENT_ID` / `NUXT_QMS_CLIENT_SECRET` | 与 QMS 的 `QMS_IDENTITY_CLIENT_ID` / `QMS_IDENTITY_CLIENT_SECRET` 一致，密钥 ≥32 位 |
 | `NUXT_QMS_CALLBACK_URL` | 回调地址，必须 https、不带 `?` `#`，与 QMS 的 `QMS_IDENTITY_CALLBACK` 完全一致 |
 | `DEV_HTTPS_KEY` / `DEV_HTTPS_CERT` | 仅本地开发：mkcert 证书路径 |
+| `NUXT_DEV_TOOLS` | 仅本地开发：`1` 开启演示数据和模拟报检，默认关闭 |
 
 缺少必填项时服务启动即报错退出。
