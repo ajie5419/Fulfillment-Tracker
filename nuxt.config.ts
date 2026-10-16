@@ -12,9 +12,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     qms: {
       apiBase: 'http://qms-backend:3000', // NUXT_QMS_API_BASE
-      authorizeUrl: '', // NUXT_QMS_AUTHORIZE_URL
-      tokenPath: '/api/identity-bridge/token', // NUXT_QMS_TOKEN_PATH
-      verifyPath: '/api/identity-bridge/verify', // NUXT_QMS_VERIFY_PATH
+      authorizeUrl: '', // NUXT_QMS_AUTHORIZE_URL，如 http://<IP>/#/identity/authorize
       clientId: 'fulfillment', // NUXT_QMS_CLIENT_ID
       clientSecret: '', // NUXT_QMS_CLIENT_SECRET
       callbackUrl: '', // NUXT_QMS_CALLBACK_URL，必须 https

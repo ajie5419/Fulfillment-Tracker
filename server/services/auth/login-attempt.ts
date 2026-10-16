@@ -11,7 +11,7 @@ export const LOGIN_TTL_MS = 10 * 60 * 1000
 type Db = Pick<PrismaClient, 'loginAttempt'>
 
 export async function startLogin(db: Db, redirect: string, now = new Date()) {
-  const state = randomToken(24)
+  const state = randomToken(32) // 43 位：QMS 要求 state 匹配 ^[\w-]{43,128}$
   const codeVerifier = createCodeVerifier()
   await db.loginAttempt.deleteMany({ where: { expiresAt: { lt: now } } })
   await db.loginAttempt.create({

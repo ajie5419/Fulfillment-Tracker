@@ -1,26 +1,32 @@
 /**
  * QMS 身份桥客户端（授权码 + PKCE）。
  *
- * 履约系统只通过本文件与身份桥交互；接口路径、参数名都集中在这里和 runtimeConfig.qms 中，
- * 与 QMS 身份桥代码核对后只需改这一处。
- *
- * 流程：
- *  1. buildAuthorizeUrl：浏览器跳到 QMS 授权页，带 client_id / redirect_uri / state / code_challenge
- *  2. exchangeCode：服务端用 code + code_verifier + 客户端密钥换身份凭证（走内网 qms-backend）
- *  3. verifyIdentity：用身份凭证查 {id, name, active}
+ * 接口依据 QMS 仓库 apps/backend/modules/identity-bridge（2026-10-15 版，ARCHITECTURE.md / schema.ts / handler.ts）：
+ *  1. 浏览器跳 QMS 授权页 /identity/authorize?clientId&redirectUri&state&challenge&method=S256
+ *     （QMS 生产用 hash 路由，即 http://<IP>/#/identity/authorize）。用户确认后 QMS 回跳 callback?code&state
+ *  2. POST /api/identity-bridge/exchange  客户端认证头 + {redirectUri, code, verifier} → {credential, expiresAt}
+ *     （body 为 strict 校验，不能多带字段；授权码 60 秒有效、一次性）
+ *  3. POST /api/identity-bridge/identity  客户端认证头 + Authorization: Bearer <credential> → {id, name, active}
+ *     账号停用或删除时返回 401，而不是 active:false
+ *  4. POST /api/identity-bridge/revoke    同上，幂等撤销凭证。履约只在登录时用一次凭证，用完即撤销
+ * 成功响应统一包在 { code: 0, data } 里。
  */
 import { z } from 'zod'
+
+export const BRIDGE_PATHS = {
+  exchange: '/api/identity-bridge/exchange',
+  identity: '/api/identity-bridge/identity',
+  revoke: '/api/identity-bridge/revoke',
+} as const
 
 export interface IdentityBridgeConfig {
   /** QMS 后端基地址，服务端调用用，生产为 http://qms-backend:3000 */
   apiBase: string
-  /** QMS 授权页的完整地址（浏览器访问），例如 http://localhost:5666/#/auth/identity-authorize */
+  /** QMS 授权页完整地址（浏览器访问）：本地 http://localhost:5666/identity/authorize，生产 http://<IP>/#/identity/authorize */
   authorizeUrl: string
-  tokenPath: string
-  verifyPath: string
   clientId: string
   clientSecret: string
-  /** 必须是 https，身份桥会拒绝 http 回调 */
+  /** 必须是 https、无 query/hash，并与 QMS 的 QMS_IDENTITY_CALLBACK 完全一致 */
   callbackUrl: string
 }
 
@@ -33,7 +39,7 @@ export interface VerifiedIdentity {
 export class IdentityBridgeError extends Error {
   constructor(
     message: string,
-    readonly stage: 'exchange' | 'verify',
+    readonly stage: 'exchange' | 'identity',
     readonly status?: number,
   ) {
     super(message)
@@ -41,75 +47,56 @@ export class IdentityBridgeError extends Error {
   }
 }
 
-const tokenResponse = z
-  .object({
-    identityToken: z.string().min(1).optional(),
-    accessToken: z.string().min(1).optional(),
-    access_token: z.string().min(1).optional(),
-  })
-  .transform((v) => v.identityToken ?? v.accessToken ?? v.access_token)
-  .pipe(z.string().min(1))
+const success = <T extends z.ZodTypeAny>(data: T) => z.object({ code: z.literal(0), data })
 
-const identityResponse = z.object({
-  id: z.coerce.string().min(1),
-  name: z.string(),
-  active: z.boolean(),
-})
+const exchangeResponse = success(z.object({ credential: z.string().regex(/^[\w-]{43}$/), expiresAt: z.string() }))
 
-/** 身份桥可能直接返回对象，也可能包在 QMS 通用的 { code, data } 里 */
-function unwrap(body: unknown): unknown {
-  if (body && typeof body === 'object' && 'data' in body && (body as { data: unknown }).data) {
-    return (body as { data: unknown }).data
-  }
-  return body
-}
+const identityResponse = success(z.object({ id: z.coerce.string().min(1), name: z.string(), active: z.boolean() }))
 
 export function buildAuthorizeUrl(
   cfg: IdentityBridgeConfig,
   params: { state: string; codeChallenge: string },
 ): string {
   const query = new URLSearchParams({
-    response_type: 'code',
-    client_id: cfg.clientId,
-    redirect_uri: cfg.callbackUrl,
+    clientId: cfg.clientId,
+    redirectUri: cfg.callbackUrl,
     state: params.state,
-    code_challenge: params.codeChallenge,
-    code_challenge_method: 'S256',
+    challenge: params.codeChallenge,
+    method: 'S256',
   })
-  // 授权页可能是 hash 路由（.../#/auth/...），参数要拼在 hash 部分之后
+  // hash 路由时参数必须拼在 # 之后，直接字符串拼接即可同时适配两种路由
   const sep = cfg.authorizeUrl.includes('?') ? '&' : '?'
   return `${cfg.authorizeUrl}${sep}${query.toString()}`
 }
 
-function clientHeaders(cfg: IdentityBridgeConfig): Record<string, string> {
+function clientHeaders(cfg: IdentityBridgeConfig, credential?: string): Record<string, string> {
   return {
     'Content-Type': 'application/json',
     'X-Identity-Client-Id': cfg.clientId,
     'X-Identity-Client-Secret': cfg.clientSecret,
+    ...(credential ? { Authorization: `Bearer ${credential}` } : {}),
   }
 }
 
-async function postJson(
-  url: string,
-  headers: Record<string, string>,
-  body: unknown,
-  stage: 'exchange' | 'verify',
+async function post(
+  cfg: IdentityBridgeConfig,
+  path: string,
+  init: { headers: Record<string, string>; body?: unknown },
+  stage: 'exchange' | 'identity',
   fetchImpl: typeof fetch,
 ): Promise<unknown> {
   let res: Response
   try {
-    res = await fetchImpl(url, {
+    res = await fetchImpl(new URL(path, cfg.apiBase).toString(), {
       method: 'POST',
-      headers,
-      body: JSON.stringify(body),
+      headers: init.headers,
+      body: JSON.stringify(init.body ?? {}),
       signal: AbortSignal.timeout(10_000),
     })
   } catch (err) {
     throw new IdentityBridgeError(`无法连接 QMS 身份桥：${(err as Error).message}`, stage)
   }
-  if (!res.ok) {
-    throw new IdentityBridgeError(`QMS 身份桥返回 ${res.status}`, stage, res.status)
-  }
+  if (!res.ok) throw new IdentityBridgeError(`QMS 身份桥返回 ${res.status}`, stage, res.status)
   return res.json().catch(() => {
     throw new IdentityBridgeError('QMS 身份桥返回的不是 JSON', stage, res.status)
   })
@@ -120,31 +107,46 @@ export async function exchangeCode(
   params: { code: string; codeVerifier: string },
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
-  const body = await postJson(
-    new URL(cfg.tokenPath, cfg.apiBase).toString(),
-    clientHeaders(cfg),
-    { grant_type: 'authorization_code', code: params.code, code_verifier: params.codeVerifier, redirect_uri: cfg.callbackUrl },
+  const body = await post(
+    cfg,
+    BRIDGE_PATHS.exchange,
+    {
+      headers: clientHeaders(cfg),
+      body: { redirectUri: cfg.callbackUrl, code: params.code, verifier: params.codeVerifier },
+    },
     'exchange',
     fetchImpl,
   )
-  const parsed = tokenResponse.safeParse(unwrap(body))
+  const parsed = exchangeResponse.safeParse(body)
   if (!parsed.success) throw new IdentityBridgeError('身份桥换取凭证的响应格式不符', 'exchange')
-  return parsed.data
+  return parsed.data.data.credential
 }
 
 export async function verifyIdentity(
   cfg: IdentityBridgeConfig,
-  identityToken: string,
+  credential: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<VerifiedIdentity> {
-  const body = await postJson(
-    new URL(cfg.verifyPath, cfg.apiBase).toString(),
-    clientHeaders(cfg),
-    { identityToken },
-    'verify',
-    fetchImpl,
-  )
-  const parsed = identityResponse.safeParse(unwrap(body))
-  if (!parsed.success) throw new IdentityBridgeError('身份核查的响应格式不符', 'verify')
-  return parsed.data
+  const body = await post(cfg, BRIDGE_PATHS.identity, { headers: clientHeaders(cfg, credential) }, 'identity', fetchImpl)
+  const parsed = identityResponse.safeParse(body)
+  if (!parsed.success) throw new IdentityBridgeError('身份核查的响应格式不符', 'identity')
+  return parsed.data.data
+}
+
+/** 尽力撤销凭证；失败不影响登录（凭证 1 小时后自然过期）。 */
+export async function revokeCredential(
+  cfg: IdentityBridgeConfig,
+  credential: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  try {
+    await fetchImpl(new URL(BRIDGE_PATHS.revoke, cfg.apiBase).toString(), {
+      method: 'POST',
+      headers: clientHeaders(cfg, credential),
+      body: '{}',
+      signal: AbortSignal.timeout(5_000),
+    })
+  } catch {
+    // 忽略
+  }
 }

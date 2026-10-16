@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto'
-import { IdentityBridgeError, exchangeCode, verifyIdentity } from '../../services/auth/identity-bridge'
+import { IdentityBridgeError, exchangeCode, revokeCredential, verifyIdentity } from '../../services/auth/identity-bridge'
 import { LOGIN_STATE_COOKIE, consumeLogin } from '../../services/auth/login-attempt'
 import { safeRedirectPath } from '../../services/auth/redirect'
 import { createSession } from '../../services/auth/session'
@@ -28,17 +28,25 @@ export default defineEventHandler(async (event) => {
 
   const cfg = identityConfig(event)
   let identity
+  let credential: string | undefined
   try {
-    const token = await exchangeCode(cfg, { code, codeVerifier: pending.codeVerifier })
-    identity = await verifyIdentity(cfg, token)
+    credential = await exchangeCode(cfg, { code, codeVerifier: pending.codeVerifier })
+    identity = await verifyIdentity(cfg, credential)
   } catch (err) {
     if (err instanceof IdentityBridgeError) {
       console.error(`[auth] identity bridge ${err.stage} failed`, err.status ?? '', err.message)
-      throw createError({ statusCode: 502, statusMessage: '登录失败：QMS 身份核查未通过' })
+      // 身份核查 401 = 账号停用或已删除（QMS 不返回 active:false）
+      if (err.stage === 'identity' && err.status === 401) {
+        throw createError({ statusCode: 403, statusMessage: '该 QMS 账号不可用或已停用' })
+      }
+      throw createError({ statusCode: 502, statusMessage: '登录失败：QMS 身份核查未通过，请重新登录' })
     }
     throw err
+  } finally {
+    // 履约有自己的会话，身份凭证只用这一次
+    if (credential) await revokeCredential(cfg, credential)
   }
-  if (!identity.active) throw createError({ statusCode: 403, statusMessage: '该 QMS 账号已停用' })
+  if (!identity.active) throw createError({ statusCode: 403, statusMessage: '该 QMS 账号不可用或已停用' })
 
   const { token, expiresAt } = await createSession(prisma, { qmsUserId: identity.id, userName: identity.name })
   setSessionCookie(event, token, expiresAt)

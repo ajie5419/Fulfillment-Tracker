@@ -62,9 +62,9 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
         HOST: '127.0.0.1',
         DATABASE_URL: DB,
         NUXT_QMS_API_BASE: bridge.url,
-        NUXT_QMS_AUTHORIZE_URL: `${bridge.url}/authorize`,
+        NUXT_QMS_AUTHORIZE_URL: `${bridge.url}/identity/authorize`,
         NUXT_QMS_CLIENT_ID: 'fulfillment',
-        NUXT_QMS_CLIENT_SECRET: 'local-dev-secret',
+        NUXT_QMS_CLIENT_SECRET: 'local-dev-secret-local-dev-secret-0',
         NUXT_QMS_CALLBACK_URL: 'https://localhost:3100/auth/callback',
       },
       stdio: ['ignore', 'ignore', 'inherit'],
@@ -156,9 +156,21 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
     expect((await get(`${cb.pathname}${cb.search}`)).status).toBe(400)
   })
 
-  it('QMS 账号已停用时拒绝', async () => {
-    const { res } = await login('/', 'u-002')
-    expect(res.status).toBe(403)
+  it('QMS 账号已停用时拿不到授权码，也就建不了会话', async () => {
+    const start = await get('/auth/login')
+    const authorize = new URL(start.headers.get('location')!)
+    authorize.searchParams.set('mock_user', 'u-002')
+    const denied = await fetch(authorize, { redirect: 'manual' })
+    expect(denied.status).toBe(401)
+  })
+
+  it('授权页收到的是 QMS 要求的参数名和格式', async () => {
+    const start = await get('/auth/login?redirect=%2Fm')
+    const q = new URL(start.headers.get('location')!).searchParams
+    expect([...q.keys()].sort()).toEqual(['challenge', 'clientId', 'method', 'redirectUri', 'state'])
+    expect(q.get('state')).toMatch(/^[\w-]{43,128}$/)
+    expect(q.get('challenge')).toMatch(/^[\w-]{43}$/)
+    expect(q.get('redirectUri')).toBe('https://localhost:3100/auth/callback')
   })
 
   it('回跳地址指向外站时回到首页', async () => {

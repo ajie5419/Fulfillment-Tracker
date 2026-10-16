@@ -18,8 +18,6 @@ export function identityConfig(event: H3Event): IdentityBridgeConfig {
   return {
     apiBase: qms.apiBase,
     authorizeUrl: qms.authorizeUrl,
-    tokenPath: qms.tokenPath,
-    verifyPath: qms.verifyPath,
     clientId: qms.clientId,
     clientSecret: qms.clientSecret,
     callbackUrl: qms.callbackUrl,

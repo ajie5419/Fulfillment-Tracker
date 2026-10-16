@@ -3,70 +3,96 @@ import {
   IdentityBridgeError,
   buildAuthorizeUrl,
   exchangeCode,
+  revokeCredential,
   verifyIdentity,
   type IdentityBridgeConfig,
 } from '../../server/services/auth/identity-bridge'
 
 const cfg: IdentityBridgeConfig = {
   apiBase: 'http://qms-backend:3000',
-  authorizeUrl: 'http://qms.local/#/auth/identity-authorize',
-  tokenPath: '/api/identity-bridge/token',
-  verifyPath: '/api/identity-bridge/verify',
+  authorizeUrl: 'http://10.0.0.1/#/identity/authorize',
   clientId: 'fulfillment',
-  clientSecret: 's3cret',
-  callbackUrl: 'https://localhost:3100/auth/callback',
+  clientSecret: 's'.repeat(32),
+  callbackUrl: 'https://10.0.0.1/auth/callback',
 }
 
+const CRED = 'c'.repeat(43)
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+const call = (fn: ReturnType<typeof vi.fn>, i = 0) => fn.mock.calls[i] as unknown as [string, RequestInit]
 
 describe('buildAuthorizeUrl', () => {
-  it('参数拼在 hash 路由之后，并带 S256 challenge', () => {
+  it('QMS 参数名，参数拼在 hash 路由之后', () => {
     const url = buildAuthorizeUrl(cfg, { state: 'st', codeChallenge: 'ch' })
-    expect(url.startsWith('http://qms.local/#/auth/identity-authorize?')).toBe(true)
-    const q = new URLSearchParams(url.split('?')[1])
-    expect(Object.fromEntries(q)).toEqual({
-      response_type: 'code',
-      client_id: 'fulfillment',
-      redirect_uri: 'https://localhost:3100/auth/callback',
+    expect(url.startsWith('http://10.0.0.1/#/identity/authorize?')).toBe(true)
+    expect(Object.fromEntries(new URLSearchParams(url.split('?')[1]))).toEqual({
+      clientId: 'fulfillment',
+      redirectUri: 'https://10.0.0.1/auth/callback',
       state: 'st',
-      code_challenge: 'ch',
-      code_challenge_method: 'S256',
+      challenge: 'ch',
+      method: 'S256',
     })
   })
 })
 
-describe('exchangeCode / verifyIdentity', () => {
-  it('带客户端认证头换凭证，并兼容 { data } 包装', async () => {
-    const fetchImpl = vi.fn(async () => json({ code: 0, data: { identityToken: 'tok' } }))
-    await expect(exchangeCode(cfg, { code: 'c', codeVerifier: 'v' }, fetchImpl)).resolves.toBe('tok')
-    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe('http://qms-backend:3000/api/identity-bridge/token')
-    expect(init.headers).toMatchObject({ 'X-Identity-Client-Id': 'fulfillment', 'X-Identity-Client-Secret': 's3cret' })
-    expect(JSON.parse(init.body as string)).toMatchObject({ code: 'c', code_verifier: 'v' })
-  })
-
-  it('身份核查返回 {id, name, active}', async () => {
-    const fetchImpl = vi.fn(async () => json({ id: 'u1', name: '张三', active: true }))
-    await expect(verifyIdentity(cfg, 'tok', fetchImpl)).resolves.toEqual({ id: 'u1', name: '张三', active: true })
+describe('exchangeCode', () => {
+  it('POST /exchange，客户端认证头，body 只有 redirectUri/code/verifier（QMS 为 strict 校验）', async () => {
+    const fetchImpl = vi.fn(async () => json({ code: 0, data: { credential: CRED, expiresAt: '2026-10-16T10:00:00Z' } }))
+    await expect(exchangeCode(cfg, { code: 'k', codeVerifier: 'v' }, fetchImpl)).resolves.toBe(CRED)
+    const [url, init] = call(fetchImpl)
+    expect(url).toBe('http://qms-backend:3000/api/identity-bridge/exchange')
+    expect(init.method).toBe('POST')
+    expect(init.headers).toMatchObject({ 'X-Identity-Client-Id': 'fulfillment', 'X-Identity-Client-Secret': 's'.repeat(32) })
+    expect(JSON.parse(init.body as string)).toEqual({ redirectUri: 'https://10.0.0.1/auth/callback', code: 'k', verifier: 'v' })
   })
 
   it('非 2xx 抛 IdentityBridgeError 并带阶段与状态码', async () => {
-    const fetchImpl = vi.fn(async () => json({ message: 'bad code' }, 400))
-    const err = await exchangeCode(cfg, { code: 'c', codeVerifier: 'v' }, fetchImpl).catch((e) => e)
+    const fetchImpl = vi.fn(async () => json({ code: -1, message: 'invalid' }, 401))
+    const err = await exchangeCode(cfg, { code: 'k', codeVerifier: 'v' }, fetchImpl).catch((e) => e)
     expect(err).toBeInstanceOf(IdentityBridgeError)
-    expect(err).toMatchObject({ stage: 'exchange', status: 400 })
+    expect(err).toMatchObject({ stage: 'exchange', status: 401 })
   })
 
-  it('响应缺字段视为失败，不放行', async () => {
-    const fetchImpl = vi.fn(async () => json({ id: 'u1' }))
-    await expect(verifyIdentity(cfg, 'tok', fetchImpl)).rejects.toBeInstanceOf(IdentityBridgeError)
+  it('响应不是 { code: 0, data: { credential } } 视为失败', async () => {
+    const fetchImpl = vi.fn(async () => json({ credential: CRED }))
+    await expect(exchangeCode(cfg, { code: 'k', codeVerifier: 'v' }, fetchImpl)).rejects.toBeInstanceOf(IdentityBridgeError)
+  })
+})
+
+describe('verifyIdentity', () => {
+  it('POST /identity，客户端认证头 + Bearer 凭证，返回 {id, name, active}', async () => {
+    const fetchImpl = vi.fn(async () => json({ code: 0, data: { id: 'u1', name: '张三', active: true } }))
+    await expect(verifyIdentity(cfg, CRED, fetchImpl)).resolves.toEqual({ id: 'u1', name: '张三', active: true })
+    const [url, init] = call(fetchImpl)
+    expect(url).toBe('http://qms-backend:3000/api/identity-bridge/identity')
+    expect(init.headers).toMatchObject({ Authorization: `Bearer ${CRED}`, 'X-Identity-Client-Id': 'fulfillment' })
   })
 
-  it('网络错误包装为 IdentityBridgeError', async () => {
-    const fetchImpl = vi.fn(async () => {
+  it('账号停用时 QMS 返回 401，带上 stage=identity 供回调区分', async () => {
+    const fetchImpl = vi.fn(async () => json({ code: -1 }, 401))
+    await expect(verifyIdentity(cfg, CRED, fetchImpl)).rejects.toMatchObject({ stage: 'identity', status: 401 })
+  })
+
+  it('缺字段视为失败；网络错误包装为 IdentityBridgeError', async () => {
+    await expect(verifyIdentity(cfg, CRED, vi.fn(async () => json({ code: 0, data: { id: 'u1' } })))).rejects.toBeInstanceOf(
+      IdentityBridgeError,
+    )
+    const down = vi.fn(async () => {
       throw new Error('ECONNREFUSED')
     })
-    await expect(verifyIdentity(cfg, 'tok', fetchImpl)).rejects.toMatchObject({ stage: 'verify' })
+    await expect(verifyIdentity(cfg, CRED, down)).rejects.toMatchObject({ stage: 'identity' })
+  })
+})
+
+describe('revokeCredential', () => {
+  it('POST /revoke 带凭证；失败不抛错', async () => {
+    const fetchImpl = vi.fn(async () => json({ code: 0, data: { revoked: true } }))
+    await revokeCredential(cfg, CRED, fetchImpl)
+    expect(call(fetchImpl)[0]).toBe('http://qms-backend:3000/api/identity-bridge/revoke')
+    await expect(
+      revokeCredential(cfg, CRED, vi.fn(async () => {
+        throw new Error('down')
+      })),
+    ).resolves.toBeUndefined()
   })
 })

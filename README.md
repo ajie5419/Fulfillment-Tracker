@@ -16,14 +16,14 @@ pnpm cert:local                               # mkcert 生成 https://localhost 
 pnpm dev                                      # https://localhost:3100
 ```
 
-登录走 QMS 身份桥。QMS 本地还没跑起来时，可以先用模拟身份桥：
+登录走 QMS 身份桥（接口见 `server/services/auth/identity-bridge.ts` 顶部注释，依据 QMS `apps/backend/modules/identity-bridge`）。QMS 本地还没跑起来时，可以先用模拟身份桥：
 
 ```bash
 node scripts/mock-identity-bridge.mjs         # 监听 4100，自动以"测试外协专员"同意授权
 # .env 中改为：
 # NUXT_QMS_API_BASE="http://localhost:4100"
 # NUXT_QMS_AUTHORIZE_URL="http://localhost:4100/authorize"
-# NUXT_QMS_CLIENT_SECRET="local-dev-secret"
+# NUXT_QMS_CLIENT_SECRET="local-dev-secret-local-dev-secret-0"
 ```
 
 ## 检查
@@ -50,10 +50,9 @@ docker compose up -d
 |---|---|
 | `DATABASE_URL` | 履约库连接串。生产账号只授予 `fulfillment` 库权限 |
 | `NUXT_QMS_API_BASE` | QMS 后端地址（服务端调用）。生产 `http://qms-backend:3000` |
-| `NUXT_QMS_AUTHORIZE_URL` | QMS 授权页完整地址（浏览器跳转） |
-| `NUXT_QMS_TOKEN_PATH` / `NUXT_QMS_VERIFY_PATH` | 身份桥换凭证、核查身份的接口路径 |
-| `NUXT_QMS_CLIENT_ID` / `NUXT_QMS_CLIENT_SECRET` | 与 QMS 的 `QMS_IDENTITY_CLIENT_ID` / 密钥一致 |
-| `NUXT_QMS_CALLBACK_URL` | 回调地址，必须 https，与 QMS 的 `QMS_IDENTITY_CALLBACK` 一致 |
+| `NUXT_QMS_AUTHORIZE_URL` | QMS 授权页完整地址（浏览器跳转）。本地 `http://localhost:5666/identity/authorize`，生产 `http://<IP>/#/identity/authorize` |
+| `NUXT_QMS_CLIENT_ID` / `NUXT_QMS_CLIENT_SECRET` | 与 QMS 的 `QMS_IDENTITY_CLIENT_ID` / `QMS_IDENTITY_CLIENT_SECRET` 一致，密钥 ≥32 位 |
+| `NUXT_QMS_CALLBACK_URL` | 回调地址，必须 https、不带 `?` `#`，与 QMS 的 `QMS_IDENTITY_CALLBACK` 完全一致 |
 | `DEV_HTTPS_KEY` / `DEV_HTTPS_CERT` | 仅本地开发：mkcert 证书路径 |
 
 缺少必填项时服务启动即报错退出。
