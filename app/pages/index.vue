@@ -1,7 +1,19 @@
 <script setup lang="ts">
 const { data, pending } = await useReminders()
-const levelColor = { RED: 'red', YELLOW: 'orange', REMIND: 'blue' } as const
-const levelText = { RED: '红色', YELLOW: '黄色', REMIND: '提醒' } as const
+const groups = computed(() => groupReminders(data.value?.items ?? []))
+
+/** 点一条：标记已读，跳到关联对象 */
+async function openReminder(item: ReminderItem) {
+  await readReminder(item)
+  if (item.link) await navigateTo(item.link)
+}
+async function readAll() {
+  try {
+    await readAllReminders()
+  } catch (e) {
+    message.error(apiError(e))
+  }
+}
 
 const { data: todos, pending: todosPending, refresh: refreshTodos } = await useTodos()
 const { data: master } = await useMaster()
@@ -70,18 +82,28 @@ async function transfer() {
 
     <a-card title="我的提醒" :loading="pending">
       <template #extra>
-        <a-badge :count="data?.unread ?? 0" />
+        <a-space>
+          <a-badge :count="data?.unread ?? 0" />
+          <a-button size="small" :disabled="!data?.unread" @click="readAll">全部已读</a-button>
+        </a-space>
       </template>
       <a-empty v-if="!data?.items.length" description="暂时没有提醒" />
-      <a-list v-else :data-source="data.items" item-layout="horizontal">
-        <template #renderItem="{ item }">
-          <a-list-item>
-            <a-tag :color="levelColor[item.level as keyof typeof levelColor]">{{ levelText[item.level as keyof typeof levelText] }}</a-tag>
-            <span :style="{ fontWeight: item.readAt ? 'normal' : 600 }">{{ item.title }}</span>
-            <template #extra>{{ new Date(item.createdAt).toLocaleString('zh-CN') }}</template>
-          </a-list-item>
-        </template>
-      </a-list>
+      <div v-for="g in groups" :key="g.level" class="group">
+        <div class="group-title" :class="`lv-${g.level}`">{{ LEVEL_TEXT[g.level] }}（{{ g.items.length }}）</div>
+        <a-list :data-source="g.items" item-layout="horizontal" size="small">
+          <template #renderItem="{ item }">
+            <a-list-item class="reminder" :class="[`lv-${item.level}`, { unread: !item.readAt }]" @click="openReminder(item)">
+              <a-space>
+                <a-badge :status="item.readAt ? 'default' : 'processing'" />
+                <a-tag :color="LEVEL_COLOR[item.level as AlertLevelKey]">{{ LEVEL_TEXT[item.level as AlertLevelKey] }}</a-tag>
+                <span class="title">{{ item.title }}</span>
+                <a-tag v-if="item.cleared" color="default">已消除</a-tag>
+              </a-space>
+              <template #extra><span class="muted">{{ timeText(item.createdAt) }}</span></template>
+            </a-list-item>
+          </template>
+        </a-list>
+      </div>
     </a-card>
   </a-space>
 
@@ -102,4 +124,13 @@ async function transfer() {
 
 <style scoped>
 .muted { color: #999; font-size: 12px; }
+.group + .group { margin-top: 12px; }
+.group-title { font-weight: 600; padding: 4px 8px; border-left: 4px solid; }
+.group-title.lv-RED { border-color: #f5222d; color: #cf1322; background: #fff1f0; }
+.group-title.lv-YELLOW { border-color: #fa8c16; color: #d46b08; background: #fff7e6; }
+.group-title.lv-REMIND { border-color: #1677ff; color: #0958d9; background: #e6f4ff; }
+.reminder { cursor: pointer; }
+.reminder:hover { background: #fafafa; }
+.reminder .title { color: #666; }
+.reminder.unread .title { font-weight: 600; color: rgba(0, 0, 0, 0.88); }
 </style>

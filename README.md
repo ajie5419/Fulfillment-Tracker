@@ -25,7 +25,7 @@ container exec -i <QMS MySQL 容器名> sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" 
 登录走 QMS 身份桥（接口见 `server/services/auth/identity-bridge.ts` 顶部注释，依据 QMS `apps/backend/modules/identity-bridge`）。QMS 本地还没跑起来时，可以先用模拟身份桥：
 
 ```bash
-node scripts/mock-identity-bridge.mjs         # 监听 4100，自动以"测试外协专员"同意授权
+node scripts/mock-identity-bridge.mjs         # 监听 4100，授权页上选择以哪个演示用户（u-001 ~ u-005）登录，也可带 ?as=u-003
 # .env 中改为：
 # NUXT_QMS_API_BASE="http://localhost:4100"
 # NUXT_QMS_AUTHORIZE_URL="http://localhost:4100/authorize"
@@ -36,9 +36,10 @@ node scripts/mock-identity-bridge.mjs         # 监听 4100，自动以"测试�
 
 `.env` 加 `NUXT_DEV_TOOLS=1` 后重启，电脑端菜单出现"演示工具"：
 
-- 写入演示数据：2 个工单、5 个外协厂、5 道工序、u-001 测试外协专员 / u-002 测试生产经理，以及示例工件"主梁结构件"（组焊 → 涂装 → 装配）。ID 都带 `DEMO-` 前缀，可重复点
+- 写入演示数据：2 个工单、5 个外协厂、5 道工序、5 个用户（u-001 测试外协专员、u-002 测试生产经理（生产部负责人）、u-003 测试项目经理、u-004 测试项目部负责人、u-005 测试分管领导）、通知对象、工单项目经理（u-003）、默认阈值，以及示例工件"主梁结构件"（组焊 → 涂装 → 装配）。ID 都带 `DEMO-` 前缀，可重复点
 - 模拟 QMS 返厂报检：可"按在途步骤填写"出一条能对上的报检，或"改成对不上的"，提交后立即匹配
-- 清除演示数据：只删 `DEMO-` 数据和引用它们的工件、步骤、流转记录、待办、待确认记录
+- 预警扫描（R4）："立即扫描"、"快进 3 天 / 5 天扫描"用 当前时间 + N 天 跑一轮，演示 Q12：返厂后不安排涂装，第 3 天 W2 黄、第 5 天红；换 u-005 登录可看到红色提醒
+- 清除演示数据：只删 `DEMO-` 数据和引用它们的工件、步骤、流转记录、待办、待确认记录、预警和提醒，并清掉演示的通知对象、工单项目经理，阈值恢复默认（停工日不动）
 
 关闭时 `/api/dev/*` 一律 404。生产不要开。
 
@@ -48,7 +49,7 @@ node scripts/mock-identity-bridge.mjs         # 监听 4100，自动以"测试�
 |---|---|
 | `pnpm typecheck` | 页面与服务端类型检查 |
 | `pnpm test` | 核心单元测试 |
-| `pnpm build && TEST_DATABASE_URL=mysql://…/fulfillment_test pnpm test:integration` | 集成测试：登录走通（真实构建产物 + 模拟身份桥）、外协主链路（服务层直连 MySQL）。测试库必须是专用库，测试会清空其中的业务表 |
+| `pnpm build && TEST_DATABASE_URL=mysql://…/fulfillment_test pnpm test:integration` | 集成测试：登录走通与设置页权限（真实构建产物 + 模拟身份桥）、外协主链路和预警（服务层直连 MySQL）。测试库必须是专用库，测试会清空其中的业务表 |
 
 ## 部署（与 QMS 同机）
 
@@ -71,5 +72,8 @@ docker compose up -d
 | `NUXT_QMS_CALLBACK_URL` | 回调地址，必须 https、不带 `?` `#`，与 QMS 的 `QMS_IDENTITY_CALLBACK` 完全一致 |
 | `DEV_HTTPS_KEY` / `DEV_HTTPS_CERT` | 仅本地开发：mkcert 证书路径 |
 | `NUXT_DEV_TOOLS` | 仅本地开发：`1` 开启演示数据和模拟报检，默认关闭 |
+| `NUXT_ADMIN_USER_IDS` | 管理员（设置页：阈值、停工日、通知对象、工单项目经理），逗号分隔的 QMS 用户 ID；演示时用 `u-001` |
+
+预警扫描 `scan-rules` 由 Nitro scheduledTasks 每 15 分钟执行一次（`server/tasks/scan-rules.ts`），`pnpm dev` 和构建产物都会跑；多实例时用 MySQL `GET_LOCK` 防重叠。
 
 缺少必填项时服务启动即报错退出。

@@ -10,13 +10,22 @@ export function defineFlowHandler<T>(handler: (event: H3Event, user: AuthUser) =
   return defineEventHandler(async (event) => {
     const user = requireUser(event)
     assertCanSee(user)
-    try {
-      return await handler(event, user)
-    } catch (err) {
-      if (err instanceof FlowError) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: err.message })
-      throw err
-    }
+    return runFlow(event, user, handler)
   })
+}
+
+/** 设置页接口：仅管理员（NUXT_ADMIN_USER_IDS），其他人 403。不能只靠前端隐藏菜单 */
+export function defineAdminHandler<T>(handler: (event: H3Event, user: AuthUser) => Promise<T>) {
+  return defineEventHandler(async (event) => runFlow(event, requireAdmin(event), handler))
+}
+
+async function runFlow<T>(event: H3Event, user: AuthUser, handler: (event: H3Event, user: AuthUser) => Promise<T>) {
+  try {
+    return await handler(event, user)
+  } catch (err) {
+    if (err instanceof FlowError) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: err.message })
+    throw err
+  }
 }
 
 function invalid(error: z.ZodError): never {

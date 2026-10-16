@@ -23,6 +23,23 @@ async function run(path: string, label: string) {
   }
 }
 
+/** 预警扫描；plusDays 把时钟往后拨，演示 Q12（返厂后第 3 天黄、第 5 天红） */
+async function scan(plusDays: number) {
+  busy.value = true
+  try {
+    const r = await $fetch('/api/dev/scan', { method: 'POST', body: { plusDays } })
+    lastResult.value = r.skipped
+      ? '另一轮扫描正在进行，本次跳过'
+      : `扫描完成（按 ${timeText(r.now)} 计）：新建 ${r.created}、升级 ${r.escalated}、消除 ${r.cleared}，写入提醒 ${r.reminders} 条，活动预警 ${r.active} 条`
+    message.success(lastResult.value)
+    await refreshNuxtData('reminders')
+  } catch (e) {
+    message.error(apiError(e))
+  } finally {
+    busy.value = false
+  }
+}
+
 const form = reactive({
   workOrderNumber: undefined as string | undefined,
   partId: '',
@@ -91,7 +108,7 @@ async function submit() {
   <a-result v-if="me && !me.devTools" status="404" title="演示工具未开启" sub-title="设置环境变量 NUXT_DEV_TOOLS=1 后重启" />
   <a-space v-else direction="vertical" size="large" style="width: 100%">
     <a-card title="演示数据">
-      <p class="muted">R2（QMS 同步）完成前，用演示数据走通外协主链路。所有演示数据的 ID 带 DEMO- 前缀；清除只删这些数据及引用它们的工件、步骤、流转记录、待办和待确认记录。</p>
+      <p class="muted">R2（QMS 同步）完成前，用演示数据走通外协主链路。所有演示数据的 ID 带 DEMO- 前缀；清除只删这些数据及引用它们的工件、步骤、流转记录、待办、待确认记录、预警和提醒，并清掉演示的通知对象、工单项目经理，阈值恢复默认。</p>
       <a-space>
         <a-button type="primary" :loading="busy" @click="run('/api/dev/seed', '写入演示数据')">写入演示数据</a-button>
         <a-button :loading="busy" @click="run('/api/dev/match', '执行一轮匹配')">执行一轮报检匹配</a-button>
@@ -100,6 +117,15 @@ async function submit() {
         </a-popconfirm>
       </a-space>
       <a-alert v-if="lastResult" :message="lastResult" type="info" style="margin-top: 16px" />
+    </a-card>
+
+    <a-card title="预警扫描">
+      <p class="muted">定时任务每 15 分钟扫描一次。"快进"只是用 当前时间 + N 天 判定一轮（不改数据），用来演示返厂后不安排下一道：第 3 天 W2 黄、第 5 天 W2 红。</p>
+      <a-space>
+        <a-button type="primary" :loading="busy" @click="scan(0)">立即扫描</a-button>
+        <a-button :loading="busy" @click="scan(3)">快进 3 天扫描</a-button>
+        <a-button :loading="busy" @click="scan(5)">快进 5 天扫描</a-button>
+      </a-space>
     </a-card>
 
     <a-card title="模拟 QMS 返厂报检">

@@ -5,6 +5,7 @@
  */
 import { randomBytes } from 'node:crypto'
 import { prisma } from '../../utils/prisma'
+import { DEFAULT_THRESHOLDS } from '../alerts/rules'
 import { FlowError } from '../flow/errors'
 import { matchPendingInspections } from '../flow/match'
 
@@ -37,11 +38,22 @@ const PROCESSES = [
   { id: `${P}PRC-ASSY`, name: '装配' },
 ]
 
-// 模拟身份桥默认以 u-001 登录，所以这两个 ID 不带前缀
+// 模拟身份桥按这些 ID 登录（授权页可选 u-001 ~ u-005），所以 ID 不带前缀
 const USERS = [
   { id: 'u-001', username: `${P}u-001`, realName: '测试外协专员', department: '生产部', roleId: `${P}ROLE-OUTSOURCE`, roleName: '外协专员' },
   { id: 'u-002', username: `${P}u-002`, realName: '测试生产经理', department: '生产部', roleId: `${P}ROLE-PM`, roleName: '生产经理' },
+  { id: 'u-003', username: `${P}u-003`, realName: '测试项目经理', department: '项目部', roleId: `${P}ROLE-PROJ`, roleName: '项目经理' },
+  { id: 'u-004', username: `${P}u-004`, realName: '测试项目部负责人', department: '项目部', roleId: `${P}ROLE-PROJ-HEAD`, roleName: '部门负责人' },
+  { id: 'u-005', username: `${P}u-005`, realName: '测试分管领导', department: '公司领导', roleId: `${P}ROLE-LEADER`, roleName: '领导' },
 ]
+
+// 预警升级阶梯的通知对象（方案 6.2）
+const NOTIFY_ROLES = [
+  { id: `${P}ROLE-1`, role: 'OUTSOURCE_COORDINATOR', userId: 'u-001', department: null },
+  { id: `${P}ROLE-2`, role: 'DEPT_HEAD', userId: 'u-002', department: '生产部' },
+  { id: `${P}ROLE-3`, role: 'PROJECT_DEPT_HEAD', userId: 'u-004', department: null },
+  { id: `${P}ROLE-4`, role: 'LEADER', userId: 'u-005', department: null },
+] as const
 
 const PART_ID = `${P}PART-001`
 const STEPS = [
@@ -67,6 +79,21 @@ export async function seedDemo() {
       // 已有同 ID 的真实用户（同步来的）时不覆盖
       await tx.qmsUser.upsert({ where: { id: u.id }, update: {}, create: { ...u, status: 'ACTIVE', updatedAt: now } })
     }
+    for (const r of NOTIFY_ROLES) {
+      await tx.notifyRole.upsert({ where: { id: r.id }, update: {}, create: r })
+    }
+    // 两个演示工单的项目经理都是 u-003
+    for (const wo of WORK_ORDERS) {
+      await tx.workOrderExt.upsert({
+        where: { workOrderNumber: wo.workOrderNumber },
+        update: {},
+        create: { workOrderNumber: wo.workOrderNumber, projectManagerId: 'u-003', isPilot: true },
+      })
+    }
+    // 默认阈值（迁移里也写了；这里补上被清掉的）
+    for (const [rule, t] of Object.entries(DEFAULT_THRESHOLDS)) {
+      await tx.threshold.upsert({ where: { rule: rule as keyof typeof DEFAULT_THRESHOLDS }, update: {}, create: { rule: rule as keyof typeof DEFAULT_THRESHOLDS, ...t } })
+    }
     await tx.part.upsert({
       where: { id: PART_ID },
       update: {},
@@ -82,10 +109,13 @@ export async function seedDemo() {
       create: { id: `${P}TODO-001`, ownerId: 'u-001', action: 'ARRANGE_SEND', refType: 'step', refId: `${P}STEP-001` },
     })
   })
-  return { workOrders: WORK_ORDERS.length, suppliers: SUPPLIERS.length, processes: PROCESSES.length, users: USERS.length, parts: 1 }
+  return { workOrders: WORK_ORDERS.length, suppliers: SUPPLIERS.length, processes: PROCESSES.length, users: USERS.length, notifyRoles: NOTIFY_ROLES.length, parts: 1 }
 }
 
-/** 只删 DEMO 数据，以及引用了它们的工件、步骤、事件、待办和待确认记录 */
+/**
+ * 只删 DEMO 数据，以及引用了它们的工件、步骤、事件、待办、待确认记录、预警和提醒；
+ * 通知对象、工单项目经理一并清掉，阈值恢复默认（删掉后按默认值，下次写入演示数据时再补上）。停工日不动。
+ */
 export async function resetDemo() {
   return prisma.$transaction(async (tx) => {
     const parts = await tx.part.findMany({ where: { OR: [{ id: { startsWith: P } }, { workOrderNumber: { startsWith: P } }] }, select: { id: true } })
@@ -101,7 +131,17 @@ export async function resetDemo() {
     // 开发工具专用：flow_event 平时只新增，这里是清理演示数据
     const events = await tx.flowEvent.deleteMany({ where: { OR: [{ stepId: { in: stepIds } }, { qmsInspectionId: { in: insIds } }] } })
     const todos = await tx.todo.deleteMany({ where: { OR: [{ id: { startsWith: P } }, { refType: 'step', refId: { in: stepIds } }] } })
-    const alerts = await tx.alert.deleteMany({ where: { refType: 'step', refId: { in: stepIds } } })
+    const alertRows = await tx.alert.findMany({
+      where: { OR: [{ refType: 'step', refId: { in: stepIds } }, { refType: 'unmatched', refId: { in: insIds } }] },
+      select: { id: true },
+    })
+    const alertIds = alertRows.map((a) => a.id)
+    const demoUsers = (await tx.qmsUser.findMany({ where: { username: { startsWith: P } }, select: { id: true } })).map((u) => u.id)
+    const reminders = await tx.reminder.deleteMany({ where: { OR: [{ alertId: { in: alertIds } }, { userId: { in: demoUsers } }] } })
+    const alerts = await tx.alert.deleteMany({ where: { id: { in: alertIds } } })
+    await tx.notifyRole.deleteMany({ where: { OR: [{ id: { startsWith: P } }, { userId: { in: demoUsers } }] } })
+    await tx.workOrderExt.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
+    await tx.threshold.deleteMany()
     const unmatched = await tx.unmatchedInspection.deleteMany({ where: { qmsInspectionId: { in: insIds } } })
     const stepsDeleted = await tx.routeStep.deleteMany({ where: { id: { in: stepIds } } })
     const partsDeleted = await tx.part.deleteMany({ where: { id: { in: partIds } } })
@@ -116,6 +156,7 @@ export async function resetDemo() {
       events: events.count,
       todos: todos.count,
       alerts: alerts.count,
+      reminders: reminders.count,
       unmatched: unmatched.count,
       inspections: insIds.length,
     }

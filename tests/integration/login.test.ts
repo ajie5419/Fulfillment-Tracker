@@ -51,7 +51,7 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
     await db.loginAttempt.deleteMany()
     await db.$disconnect()
     bridge = await startMockIdentityBridge({
-      users: { 'u-001': { name: '测试外协专员', active: true }, 'u-002': { name: '已停用', active: false } },
+      users: { 'u-001': { name: '测试外协专员', active: true }, 'u-002': { name: '已停用', active: false }, 'u-003': { name: '测试项目经理', active: true } },
     })
     const port = await freePort()
     base = `http://127.0.0.1:${port}`
@@ -66,6 +66,7 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
         NUXT_QMS_CLIENT_ID: 'fulfillment',
         NUXT_QMS_CLIENT_SECRET: 'local-dev-secret-local-dev-secret-0',
         NUXT_QMS_CALLBACK_URL: 'https://localhost:3100/auth/callback',
+        NUXT_ADMIN_USER_IDS: 'u-001',
       },
       stdio: ['ignore', 'ignore', 'inherit'],
     })
@@ -184,5 +185,23 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
     const out = await fetch(`${base}/auth/logout`, { method: 'POST', headers: { cookie: cookieHeader(session) } })
     expect(out.status).toBe(200)
     expect((await get('/api/me', session)).status).toBe(401)
+  })
+
+  it('设置页接口只给管理员（NUXT_ADMIN_USER_IDS）：非管理员 403', async () => {
+    const other = cookiesFrom((await login('/', 'u-003')).res)
+    expect(await (await get('/api/me', other)).json()).toMatchObject({ id: 'u-003', isAdmin: false })
+    expect((await get('/api/settings', other)).status).toBe(403)
+    const write = (path: string, method: string, body: unknown) =>
+      fetch(`${base}${path}`, { method, headers: { cookie: cookieHeader(other), 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    expect((await write('/api/settings/thresholds/W1', 'PUT', { remindHours: 1, yellowDays: 1, redDays: 1 })).status).toBe(403)
+    expect((await write('/api/settings/off-days', 'POST', { date: '2026-10-01' })).status).toBe(403)
+    expect((await write('/api/settings/roles', 'POST', { role: 'LEADER', userId: 'u-003' })).status).toBe(403)
+    expect((await write('/api/settings/work-orders/X', 'PUT', { projectManagerId: 'u-003' })).status).toBe(403)
+
+    const admin = cookiesFrom((await login('/')).res)
+    expect(await (await get('/api/me', admin)).json()).toMatchObject({ id: 'u-001', isAdmin: true })
+    const settings = await get('/api/settings', admin)
+    expect(settings.status).toBe(200)
+    expect((await settings.json()).thresholds.map((t: { rule: string }) => t.rule)).toEqual(['W1', 'W2', 'W3'])
   })
 })

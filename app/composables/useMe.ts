@@ -5,6 +5,8 @@ export interface Me {
   roleName: string | null
   /** 是否开启演示工具（NUXT_DEV_TOOLS=1） */
   devTools: boolean
+  /** 管理员（NUXT_ADMIN_USER_IDS），可进设置页 */
+  isAdmin: boolean
 }
 
 export function useMe() {
