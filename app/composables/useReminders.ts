@@ -1,11 +1,44 @@
+export type AlertLevelKey = 'REMIND' | 'YELLOW' | 'RED'
+
 export interface ReminderItem {
   id: string
   title: string
-  level: 'REMIND' | 'YELLOW' | 'RED'
+  level: AlertLevelKey
   readAt: string | null
   createdAt: string
+  alertId: string | null
+  rule: 'W1' | 'W2' | 'W3' | 'W4' | null
+  /** 预警已消除（对象状态已变化） */
+  cleared: boolean
+  /** 电脑端跳转地址 */
+  link: string | null
+  /** 手机端跳转地址 */
+  mobileLink: string | null
 }
+
+export const LEVEL_TEXT = { RED: '红色', YELLOW: '黄色', REMIND: '提醒' } as const
+export const LEVEL_COLOR = { RED: 'red', YELLOW: 'orange', REMIND: 'blue' } as const
+export const LEVEL_ORDER: AlertLevelKey[] = ['RED', 'YELLOW', 'REMIND']
+export const RULE_TEXT = { W1: 'W1 待确认匹配超时', W2: 'W2 转序停滞', W3: 'W3 外协逾期未返', W4: 'W4 异常超期' } as const
 
 export function useReminders() {
   return useFetch<{ items: ReminderItem[]; unread: number }>('/api/reminders', { key: 'reminders' })
+}
+
+/** 按红、黄、提醒分组，组内未读在前 */
+export function groupReminders(items: ReminderItem[]) {
+  return LEVEL_ORDER.map((level) => ({ level, items: items.filter((i) => i.level === level) })).filter((g) => g.items.length)
+}
+
+/** 标记已读（失败不打断跳转），并刷新列表 */
+export async function readReminder(item: ReminderItem) {
+  if (!item.readAt) {
+    await $fetch(`/api/reminders/${item.id}/read`, { method: 'POST' }).catch(() => {})
+    await refreshNuxtData('reminders')
+  }
+}
+
+export async function readAllReminders() {
+  await $fetch('/api/reminders/read-all', { method: 'POST' })
+  await refreshNuxtData('reminders')
 }

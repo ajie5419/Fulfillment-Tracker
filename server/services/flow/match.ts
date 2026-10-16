@@ -8,6 +8,7 @@
  */
 import type { Prisma, QmsInspection, StepMode, StepStatus } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
+import { alertKey } from '../alerts/rules'
 import { FlowError } from './errors'
 import { recordReturn } from './flow'
 import { loadNames } from './names'
@@ -105,7 +106,8 @@ export async function matchInspection(inspectionId: string): Promise<MatchResult
         if (!matched) return { inspectionId, status: unmatched ? 'skipped' : 'ignored' }
         if (unmatched?.reason === 'CANCELLED_AFTER_MATCH') return { inspectionId, status: 'skipped' }
         // 人工关联过的（待确认记录已是 RESOLVED）同样要重新提示
-        const data = { reason: 'CANCELLED_AFTER_MATCH', status: 'PENDING' as const, resolvedBy: null, resolvedAt: null }
+        // createdAt 重置为重新进入待确认的时间，W1 从这里重新计时
+        const data = { reason: 'CANCELLED_AFTER_MATCH', status: 'PENDING' as const, resolvedBy: null, resolvedAt: null, createdAt: new Date() }
         if (unmatched) await tx.unmatchedInspection.update({ where: { qmsInspectionId: inspectionId }, data })
         else await tx.unmatchedInspection.create({ data: { qmsInspectionId: inspectionId, ...data } })
         return { inspectionId, status: 'unmatched', reason: 'CANCELLED_AFTER_MATCH' }
@@ -195,6 +197,10 @@ async function lockPendingUnmatched(tx: Prisma.TransactionClient, id: string) {
   return row
 }
 
+/** 已处理的待确认记录：立即消除 W1（扫描任务也会兜底） */
+const clearW1 = (tx: Prisma.TransactionClient, id: string) =>
+  tx.alert.updateMany({ where: { activeKey: alertKey('W1', 'unmatched', id) }, data: { status: 'CLEARED', activeKey: null } })
+
 /** 人工关联：与自动匹配走同一个 recordReturn，同一事务里把待确认记录置为已处理 */
 export async function resolveUnmatched(id: string, stepId: string, actorId: string) {
   return prisma.$transaction(async (tx) => {
@@ -218,6 +224,7 @@ export async function resolveUnmatched(id: string, stepId: string, actorId: stri
       where: { qmsInspectionId: id },
       data: { status: 'RESOLVED', resolvedBy: actorId, resolvedAt: new Date() },
     })
+    await clearW1(tx, id)
     return r
   })
 }
@@ -229,6 +236,7 @@ export async function ignoreUnmatched(id: string, actorId: string) {
       where: { qmsInspectionId: id },
       data: { status: 'IGNORED', resolvedBy: actorId, resolvedAt: new Date() },
     })
+    await clearW1(tx, id)
     return { ok: true }
   })
 }

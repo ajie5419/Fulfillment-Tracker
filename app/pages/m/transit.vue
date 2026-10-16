@@ -3,7 +3,9 @@
 definePageMeta({ layout: 'mobile' })
 const { data: workOrders } = await useWorkOrders()
 const { data: master } = await useMaster()
-const workOrderNumber = ref('')
+const route = useRoute()
+// 从提醒跳过来时带 ?wo=，先按该工单筛选
+const workOrderNumber = ref((route.query.wo as string) || '')
 const supplierId = ref('')
 const { data: rows, pending, refresh } = await useFetch('/api/transit', {
   query: computed(() => ({ workOrderNumber: workOrderNumber.value || undefined, supplierId: supplierId.value || undefined })),

@@ -9,6 +9,7 @@
  */
 import type { FlowEventType, FlowSource, Part, Prisma, RouteStep } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
+import { alertKey } from '../alerts/rules'
 import { FlowError } from './errors'
 
 type Tx = Prisma.TransactionClient
@@ -25,6 +26,14 @@ export async function lockStep(tx: Tx, stepId: string): Promise<RouteStep & { pa
   const step = await tx.routeStep.findUnique({ where: { id: stepId }, include: { part: true } })
   if (!step) throw new FlowError('步骤不存在或已删除')
   return step
+}
+
+/** 立即消除该步骤上指定规则的活动预警（扫描任务也会兜底消除，这里让页面马上看到） */
+async function clearStepAlerts(tx: Tx, stepId: string, rules: ('W2' | 'W3')[]) {
+  await tx.alert.updateMany({
+    where: { activeKey: { in: rules.map((r) => alertKey(r, 'step', stepId)) } },
+    data: { status: 'CLEARED', activeKey: null },
+  })
 }
 
 /** 关闭该步骤上指定类型的未完成待办 */
@@ -71,6 +80,7 @@ export function sendStep(input: SendInput) {
       },
     })
     await closeTodos(tx, step.id, [ARRANGE_SEND], now)
+    await clearStepAlerts(tx, step.id, ['W2'])
     await tx.part.update({ where: { id: step.partId }, data: { currentStepId: step.id, statusSince: now } })
     return updated
   })
@@ -98,6 +108,7 @@ export function startStep(input: ActInput) {
       data: { stepId: step.id, type: 'START', qty: step.part.quantity, source: input.source, actorId: input.actorId, occurredAt: now },
     })
     await closeTodos(tx, step.id, [ARRANGE_START], now)
+    await clearStepAlerts(tx, step.id, ['W2'])
     await tx.part.update({ where: { id: step.partId }, data: { currentStepId: step.id, statusSince: now } })
     return updated
   })
@@ -242,8 +253,8 @@ async function applyReturn(
     await tx.part.update({ where: { id: step.partId }, data: { currentStepId: step.id, statusSince: now } })
   }
 
-  // 消除该步骤的 W3（承诺返回日逾期）预警。R4 才开始写预警，这里先把消除写好
-  await tx.alert.updateMany({ where: { activeKey: `W3:step:${step.id}` }, data: { status: 'CLEARED', activeKey: null } })
+  // 消除该步骤的 W3（承诺返回日逾期）预警；步骤已离开待开工，W2（转序停滞）也一并消除
+  await clearStepAlerts(tx, step.id, ['W2', 'W3'])
 
   return { duplicate: false, stepDone: done, todoCreated }
 }

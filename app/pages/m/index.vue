@@ -5,6 +5,22 @@ const { data, pending } = await useReminders()
 const { data: todos, pending: todosPending, refresh: refreshTodos } = await useTodos()
 const { data: master } = await useMaster()
 const levelType = { RED: 'danger', YELLOW: 'warning', REMIND: 'primary' } as const
+const groups = computed(() => groupReminders(data.value?.items ?? []))
+
+/** 点一条：标记已读，跳到能处理的手机页面；待确认匹配只有电脑端页面 */
+async function openReminder(item: ReminderItem) {
+  await readReminder(item)
+  if (item.mobileLink) return navigateTo(item.mobileLink)
+  if (item.rule === 'W1' && !item.cleared) showToast('待确认匹配请在电脑端处理')
+}
+async function readAll() {
+  try {
+    await readAllReminders()
+    showSuccessToast('已全部标为已读')
+  } catch (e) {
+    showFailToast(apiError(e))
+  }
+}
 type Todo = (typeof todos.value)[number]
 
 /** 安排发出 → 发出登记页（预填该步骤）；安排开工 → 确认后开工 */
@@ -67,16 +83,35 @@ async function transfer(action: { id: string }) {
       </van-cell>
     </van-cell-group>
 
-    <div class="section">我的提醒</div>
+    <div class="section">
+      我的提醒<van-badge v-if="data?.unread" :content="data.unread" class="count" />
+      <van-button v-if="data?.unread" size="mini" plain class="read-all" @click="readAll">全部已读</van-button>
+    </div>
     <van-loading v-if="pending" class="center" />
     <van-empty v-else-if="!data?.items.length" description="暂时没有提醒" image-size="80" />
-    <van-cell-group v-else inset>
-      <van-cell v-for="item in data.items" :key="item.id" :title="item.title" :label="new Date(item.createdAt).toLocaleString('zh-CN')">
-        <template #icon>
-          <van-tag :type="levelType[item.level]" class="tag">{{ item.level === 'RED' ? '红' : item.level === 'YELLOW' ? '黄' : '提醒' }}</van-tag>
-        </template>
-      </van-cell>
-    </van-cell-group>
+    <template v-else>
+      <template v-for="g in groups" :key="g.level">
+      <div :class="['group-title', `lv-${g.level}`]">{{ LEVEL_TEXT[g.level] }}（{{ g.items.length }}）</div>
+      <van-cell-group inset class="group">
+        <van-cell
+          v-for="item in g.items"
+          :key="item.id"
+          :title="item.title"
+          :label="`${timeText(item.createdAt)}${item.cleared ? '　已消除' : ''}`"
+          :class="{ unread: !item.readAt }"
+          :is-link="!!item.mobileLink"
+          center
+          @click="openReminder(item)"
+        >
+          <template #icon>
+            <van-badge :dot="!item.readAt" class="tag">
+              <van-tag :type="levelType[item.level]">{{ item.level === 'RED' ? '红' : item.level === 'YELLOW' ? '黄' : '提醒' }}</van-tag>
+            </van-badge>
+          </template>
+        </van-cell>
+      </van-cell-group>
+      </template>
+    </template>
 
     <van-action-sheet
       :show="!!transferring"
@@ -97,4 +132,10 @@ async function transfer(action: { id: string }) {
 .center { display: flex; justify-content: center; padding: 32px; }
 .tag { margin-right: 8px; align-self: center; }
 .transfer { margin-left: 8px; }
+.read-all { float: right; }
+.group-title { padding: 12px 32px 6px; font-size: 13px; font-weight: 600; color: #1989fa; }
+.group-title.lv-RED { color: #ee0a24; }
+.group-title.lv-YELLOW { color: #ff976a; }
+.group :deep(.van-cell__title) { color: #969799; }
+.group .unread :deep(.van-cell__title) { color: #323233; font-weight: 600; }
 </style>

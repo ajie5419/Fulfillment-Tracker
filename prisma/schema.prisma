@@ -382,9 +382,13 @@ model Reminder {
   createdAt DateTime   @default(now())
 
   @@index([userId, readAt])
+  // 同一个人在同一条预警的同一个级别上只收一条（alertId 为空的待办类提醒不受限，MySQL 唯一索引允许多个 NULL）
+  @@unique([alertId, level, userId])
   @@map("reminder")
 }
 
+/// 阈值表。各列含义按规则不同：W1 提醒为小时；W3 的 remindHours 是"承诺返回日前多少小时"（48 = 前 2 天），
+/// W3 的黄/红是超期天数。表里没有的规则用 services/alerts/rules.ts 的默认值。
 model Threshold {
   rule        AlertRule @id
   remindHours Int?
@@ -398,6 +402,33 @@ model OffDay {
   date DateTime @id @db.Date
 
   @@map("off_day")
+}
+
+enum NotifyRoleKind {
+  OUTSOURCE_COORDINATOR // 外协专员（W1 的责任人）
+  DEPT_HEAD // 部门负责人，department 填部门名（与 qms_user.department 对应）
+  PROJECT_DEPT_HEAD // 项目部负责人
+  LEADER // 分管领导
+}
+
+/// 预警升级阶梯的通知对象（方案 6.2）。QMS 里没有这些角色，先在设置页手工维护。
+model NotifyRole {
+  id         String         @id @default(cuid())
+  role       NotifyRoleKind
+  userId     String         @db.VarChar(64)
+  department String?        @db.VarChar(191)
+
+  @@index([role])
+  @@map("notify_role")
+}
+
+/// 后台任务防重叠的租约锁：lockedUntil 未过期即被占用；进程崩溃后租约到期自动失效，不依赖数据库连接。
+model JobLock {
+  name        String   @id @db.VarChar(40)
+  lockedUntil DateTime @db.DateTime(3)
+  holder      String?  @db.VarChar(64)
+
+  @@map("job_lock")
 }
 
 // ───────────── 登录会话 ─────────────

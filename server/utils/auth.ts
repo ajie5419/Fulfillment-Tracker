@@ -51,3 +51,18 @@ export function canSee(_user: AuthUser, _workOrderNumber: string | null): boolea
 export function assertCanSee(user: AuthUser, workOrderNumber: string | null = null) {
   if (!canSee(user, workOrderNumber)) throw createError({ statusCode: 403, statusMessage: '无权查看' })
 }
+
+/** 管理员：NUXT_ADMIN_USER_IDS 里列出的 QMS 用户 ID（逗号分隔）。设置页的接口都用它校验 */
+export function isAdmin(event: H3Event, user: AuthUser): boolean {
+  const ids = String(useRuntimeConfig(event).adminUserIds ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return ids.includes(user.qmsUserId)
+}
+
+export function requireAdmin(event: H3Event): AuthUser {
+  const user = requireUser(event)
+  if (!isAdmin(event, user)) throw createError({ statusCode: 403, statusMessage: 'Forbidden', message: '仅管理员可操作' })
+  return user
+}
