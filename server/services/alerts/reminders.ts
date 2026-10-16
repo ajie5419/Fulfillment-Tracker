@@ -78,6 +78,7 @@ const OVERLAP_MS = 60_000
 
 /**
  * 电脑端右上角弹出用：since 之后新建的、未读的黄色和红色提醒。
+ * 不截断条数：截断后游标照样推进，超出的就永远弹不出来了；条数多时由页面合并显示。
  * 不带 since 时以当前时间为起点：页面第一次调用拿到的只用来记住"已经见过"，不弹出（第一次进页面不弹旧提醒）。
  */
 export async function newReminders(userId: string, since: Date | null) {
@@ -86,7 +87,6 @@ export async function newReminders(userId: string, since: Date | null) {
   const items = await prisma.reminder.findMany({
     where: { userId, readAt: null, level: { in: ['YELLOW', 'RED'] }, createdAt: { gte: new Date(+since - OVERLAP_MS) } },
     orderBy: { createdAt: 'asc' },
-    take: 20,
     select: SELECT,
   })
   const links = await linksFor([...new Set(items.map((i) => i.alertId).filter((x): x is string => !!x))])

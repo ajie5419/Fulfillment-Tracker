@@ -281,6 +281,20 @@ describe.skipIf(!DB)('预警与提醒', () => {
     expect((await db.jobLock.findUniqueOrThrow({ where: { name: 'scan-rules' } })).holder).toBeNull()
   })
 
+  it('W1、W3 的提醒阈值不能清空；新提醒超过 20 条时游标不越过未取到的', async () => {
+    const settings = await import('../../server/services/alerts/settings')
+    await expect(settings.saveThreshold('W1', { remindHours: null, yellowDays: 1, redDays: 3 })).rejects.toThrow('必须设置提醒阈值')
+    await expect(settings.saveThreshold('W2', { remindHours: null, yellowDays: 2, redDays: 4 })).resolves.toBeTruthy()
+
+    const base = Date.now() - 5_000
+    await db.reminder.createMany({
+      data: Array.from({ length: 25 }, (_, i) => ({ userId: 'u-many', title: `t${i}`, level: 'YELLOW' as const, createdAt: new Date(base + i) })),
+    })
+    const r = await s.reminders.newReminders('u-many', new Date(base - 1))
+    expect(r.items).toHaveLength(25) // 不截断，避免游标越过没取到的
+    await db.reminder.deleteMany({ where: { userId: 'u-many' } })
+  })
+
   it('提醒已读：单条、全部；新提醒轮询只返回未读黄红', async () => {
     const mine = await s.reminders.listReminders('u-pm')
     expect(mine.unread).toBeGreaterThan(0)

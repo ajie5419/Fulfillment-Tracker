@@ -37,6 +37,7 @@ export async function getSettings() {
 
 export async function saveThreshold(rule: ScanRule, t: RuleThreshold) {
   if (t.redDays < t.yellowDays) throw new FlowError('红色阈值不能小于黄色阈值')
+  if (rule !== 'W2' && t.remindHours == null) throw new FlowError('W1 和 W3 必须设置提醒阈值')
   // W2 没有"提醒"一级
   const data = { remindHours: rule === 'W2' ? null : t.remindHours, yellowDays: t.yellowDays, redDays: t.redDays }
   return prisma.threshold.upsert({ where: { rule }, update: data, create: { rule, ...data } })

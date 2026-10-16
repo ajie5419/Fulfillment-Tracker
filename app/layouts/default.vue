@@ -26,7 +26,24 @@ async function poll() {
     const fresh = r.items.filter((i) => !shown.has(i.id))
     for (const i of fresh) shown.add(i.id)
     if (first || !fresh.length) return
-    for (const i of fresh) {
+    // 一次最多弹 3 条（红色优先），其余合并成一条，避免满屏
+    const sorted = [...fresh].sort((a, b) => (a.level === b.level ? 0 : a.level === 'RED' ? -1 : 1))
+    const rest = sorted.length - 3
+    if (rest > 0) {
+      notification.info({
+        key: 'reminders-more',
+        message: `另有 ${rest} 条新预警`,
+        description: '到"我的提醒"查看全部',
+        placement: 'topRight',
+        duration: 0,
+        style: { cursor: 'pointer' },
+        onClick: async () => {
+          notification.close('reminders-more')
+          await navigateTo('/')
+        },
+      })
+    }
+    for (const i of sorted.slice(0, 3)) {
       const open = notification[i.level === 'RED' ? 'error' : 'warning']
       open({
         key: i.id,

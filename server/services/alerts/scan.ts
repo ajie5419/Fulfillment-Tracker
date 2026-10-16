@@ -279,28 +279,35 @@ async function runScan(now: Date): Promise<ScanResult> {
         alert = await prisma.alert.findUnique({ where: { activeKey: target.key } }) // 并发下别处刚建好
         if (!alert) continue
       }
-    } else {
+    }
+    // 升级和写提醒在同一事务里，并先锁住预警行：业务事务（发出、返厂、关联）同时在消除它时，
+    // 两边串行，已消除的预警不会再被升级或补发提醒
+    const existed = alert
+    const outcome = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM alert WHERE id = ${existed.id} FOR UPDATE`
+      let a = await tx.alert.findUnique({ where: { id: existed.id } })
+      if (!a || a.status !== 'ACTIVE') return null
+      let escalated = false
       // 只升不降：阈值调大或计时变短都不退级
-      const next = maxLevel(alert.level, target.level)!
-      if (isHigher(next, alert.level)) {
-        alert = await prisma.alert.update({ where: { id: alert.id }, data: { level: next, levelAt: now } })
-        result.escalated++
+      const next = maxLevel(a.level, target.level)!
+      if (isHigher(next, a.level)) {
+        a = await tx.alert.update({ where: { id: a.id }, data: { level: next, levelAt: now } })
+        escalated = true
       }
-    }
-    result.active++
-
-    // 当前级别该收到的人补齐（已有的跳过）
-    const users = recipientsFor(alert.level, target, ctx)
-    if (!users.length) continue
-    const title = reminderTitle(alert.level, target.subject, target.summary, target.workOrderNumber)
-    const { count } = await prisma.reminder.createMany({
-      data: users.map((userId) => ({ userId, alertId: alert!.id, level: alert!.level, title })),
-      skipDuplicates: true,
+      // 当前级别该收到的人补齐（已有的跳过）
+      const users = recipientsFor(a.level, target, ctx)
+      let count = 0
+      if (users.length) {
+        const title = reminderTitle(a.level, target.subject, target.summary, target.workOrderNumber)
+        count = (await tx.reminder.createMany({ data: users.map((userId) => ({ userId, alertId: a!.id, level: a!.level, title })), skipDuplicates: true })).count
+        if (count) await tx.alert.update({ where: { id: a.id }, data: { lastNotifiedAt: new Date() } })
+      }
+      return { escalated, count }
     })
-    if (count) {
-      result.reminders += count
-      await prisma.alert.update({ where: { id: alert.id }, data: { lastNotifiedAt: new Date() } })
-    }
+    if (!outcome) continue
+    result.active++
+    if (outcome.escalated) result.escalated++
+    result.reminders += outcome.count
   }
 
   // 对象已离开规则关注的状态（已处理、已发出/开工、已返厂）→ 消除
