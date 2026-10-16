@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { data: me } = useMe()
+const { data: me } = await useMe()
 const route = useRoute()
 const menu = computed(() => [
   { key: '/', label: '我的提醒' },

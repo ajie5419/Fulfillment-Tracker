@@ -3,7 +3,7 @@
 const props = defineProps<{ step: { id: string; supplierId: string | null; title: string } | null }>()
 const emit = defineEmits<{ close: []; done: [] }>()
 
-const { data: master } = useMaster()
+const { data: master } = await useMaster()
 const supplierId = ref<string | undefined>()
 const promisedReturnDate = ref<string | undefined>()
 const saving = ref(false)

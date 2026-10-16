@@ -1,11 +1,11 @@
 <script setup lang="ts">
-const { data, pending } = useReminders()
+const { data, pending } = await useReminders()
 const levelColor = { RED: 'red', YELLOW: 'orange', REMIND: 'blue' } as const
 const levelText = { RED: '红色', YELLOW: '黄色', REMIND: '提醒' } as const
 
-const { data: todos, pending: todosPending, refresh: refreshTodos } = useTodos()
-const { data: master } = useMaster()
-const { data: me } = useMe()
+const { data: todos, pending: todosPending, refresh: refreshTodos } = await useTodos()
+const { data: master } = await useMaster()
+const { data: me } = await useMe()
 type Todo = (typeof todos.value)[number]
 
 const sending = ref<{ id: string; supplierId: string | null; title: string } | null>(null)

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'mobile' })
-const { data: me } = useMe()
-const { data, pending } = useReminders()
-const { data: todos, pending: todosPending, refresh: refreshTodos } = useTodos()
-const { data: master } = useMaster()
+const { data: me } = await useMe()
+const { data, pending } = await useReminders()
+const { data: todos, pending: todosPending, refresh: refreshTodos } = await useTodos()
+const { data: master } = await useMaster()
 const levelType = { RED: 'danger', YELLOW: 'warning', REMIND: 'primary' } as const
 type Todo = (typeof todos.value)[number]
 

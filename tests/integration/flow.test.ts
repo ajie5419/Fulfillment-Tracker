@@ -288,6 +288,29 @@ describe.skipIf(!DB)('外协主链路', () => {
     await expect(s.match.resolveUnmatched(matched, steps[0]!.id, 'u-out')).rejects.toBeInstanceOf(s.errors.FlowError)
   })
 
+  it('人工关联过的报检被撤销后重新提示；不能关联到别的工单的步骤', async () => {
+    const { steps } = await makePart()
+    await send(steps[0]!.id, 'S-WELD')
+    const id = await inspect({ partName: '写错的名字', processName: '组焊' })
+    await s.match.matchInspection(id)
+
+    // 别的工单下的步骤
+    await db.qmsWorkOrder.create({
+      data: { workOrderNumber: 'T-WO-2', customerName: '另一客户', quantity: 1, deliveryDate: day('2026-12-31'), status: 'IN_PROGRESS', updatedAt: new Date() },
+    })
+    const other = await s.steps.createPart('T-WO-2', { name: '别的件', quantity: 1 })
+    const otherStep = await s.steps.addStep(other.id, { processId: 'P-WELD', mode: 'EXTERNAL_OUTSOURCE', supplierId: 'S-WELD' }, 'u-out')
+    await expect(s.match.resolveUnmatched(id, otherStep.id, 'u-out')).rejects.toThrow('同一工单')
+    expect(await db.flowEvent.count({ where: { qmsInspectionId: id } })).toBe(0)
+
+    await s.match.resolveUnmatched(id, steps[0]!.id, 'u-out')
+    await db.qmsInspection.update({ where: { id }, data: { status: 'CANCELLED' } })
+    const results = await s.match.matchPendingInspections()
+    expect(results.find((r) => r.inspectionId === id)).toMatchObject({ status: 'unmatched', reason: 'CANCELLED_AFTER_MATCH' })
+    expect(await db.unmatchedInspection.findUniqueOrThrow({ where: { qmsInspectionId: id } })).toMatchObject({ status: 'PENDING', resolvedBy: null })
+    expect((await s.match.matchPendingInspections()).find((r) => r.inspectionId === id)).toBeUndefined()
+  })
+
   it('工序链：有流转记录的步骤不能删除、不能调顺序；复制工序链不带日期和状态', async () => {
     const { part, steps } = await makePart()
     await s.steps.updateStep(steps[0]!.id, { dueDate: day('2026-11-01') })

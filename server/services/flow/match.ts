@@ -97,17 +97,20 @@ export async function matchInspection(inspectionId: string): Promise<MatchResult
     return await prisma.$transaction(async (tx): Promise<MatchResult> => {
       const ins = await tx.qmsInspection.findUnique({ where: { id: inspectionId } })
       if (!ins || ins.isDeleted) return { inspectionId, status: 'ignored' }
-      if (await tx.unmatchedInspection.findUnique({ where: { qmsInspectionId: inspectionId }, select: { qmsInspectionId: true } })) {
-        return { inspectionId, status: 'skipped' }
-      }
+      const unmatched = await tx.unmatchedInspection.findUnique({ where: { qmsInspectionId: inspectionId } })
       const matched = await tx.flowEvent.findUnique({ where: { qmsInspectionId: inspectionId }, select: { id: true } })
 
       if (ins.status === 'CANCELLED') {
         // 匹配后又撤销：记下来让人看一眼，不回退步骤；没匹配过的直接忽略
-        if (!matched) return { inspectionId, status: 'ignored' }
-        await tx.unmatchedInspection.create({ data: { qmsInspectionId: inspectionId, reason: 'CANCELLED_AFTER_MATCH' } })
+        if (!matched) return { inspectionId, status: unmatched ? 'skipped' : 'ignored' }
+        if (unmatched?.reason === 'CANCELLED_AFTER_MATCH') return { inspectionId, status: 'skipped' }
+        // 人工关联过的（待确认记录已是 RESOLVED）同样要重新提示
+        const data = { reason: 'CANCELLED_AFTER_MATCH', status: 'PENDING' as const, resolvedBy: null, resolvedAt: null }
+        if (unmatched) await tx.unmatchedInspection.update({ where: { qmsInspectionId: inspectionId }, data })
+        else await tx.unmatchedInspection.create({ data: { qmsInspectionId: inspectionId, ...data } })
         return { inspectionId, status: 'unmatched', reason: 'CANCELLED_AFTER_MATCH' }
       }
+      if (unmatched) return { inspectionId, status: 'skipped' }
       if (matched) return { inspectionId, status: 'skipped' }
 
       const steps = await activeOutsourceSteps(tx, ins.workOrderNumber)
@@ -144,8 +147,9 @@ export async function matchPendingInspections(): Promise<MatchResult[]> {
     SELECT i.id FROM qms_inspection i
     LEFT JOIN unmatched_inspection u ON u.qmsInspectionId = i.id
     LEFT JOIN flow_event f ON f.qmsInspectionId = i.id
-    WHERE i.isDeleted = false AND u.qmsInspectionId IS NULL
-      AND (f.id IS NULL OR i.status = 'CANCELLED')
+    WHERE i.isDeleted = false
+      AND ((u.qmsInspectionId IS NULL AND (f.id IS NULL OR i.status = 'CANCELLED'))
+        OR (i.status = 'CANCELLED' AND f.id IS NOT NULL AND u.reason <> 'CANCELLED_AFTER_MATCH'))
     ORDER BY i.submittedAt, i.id`
   const results: MatchResult[] = []
   for (const { id } of rows) results.push(await matchInspection(id))
@@ -198,6 +202,9 @@ export async function resolveUnmatched(id: string, stepId: string, actorId: stri
     if (row.reason === 'CANCELLED_AFTER_MATCH') throw new FlowError('这条报检已撤销，只能忽略')
     const ins = await tx.qmsInspection.findUnique({ where: { id } })
     if (!ins) throw new FlowError('报检记录不存在')
+    const step = await tx.routeStep.findUnique({ where: { id: stepId }, select: { part: { select: { workOrderNumber: true } } } })
+    if (!step) throw new FlowError('步骤不存在或已删除')
+    if (step.part.workOrderNumber !== ins.workOrderNumber) throw new FlowError('只能关联到同一工单下的步骤')
     const r = await recordReturn(tx, {
       stepId,
       qty: ins.quantity,

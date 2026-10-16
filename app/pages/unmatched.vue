@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** 待确认匹配：没能自动匹配的返厂报检，从候选里选一个点"关联"，或点"忽略" */
-const { data: rows, pending, refresh } = useFetch('/api/unmatched', { default: () => [] })
+const { data: rows, pending, refresh } = await useFetch('/api/unmatched', { default: () => [] })
 type Row = (typeof rows.value)[number]
 const chosen = reactive<Record<string, string | undefined>>({})
 

@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /** 外协在途：已发出未全部返回的步骤；超期标红；可补登返厂（QMS 漏报时） */
 definePageMeta({ layout: 'mobile' })
-const { data: workOrders } = useWorkOrders()
-const { data: master } = useMaster()
+const { data: workOrders } = await useWorkOrders()
+const { data: master } = await useMaster()
 const workOrderNumber = ref('')
 const supplierId = ref('')
-const { data: rows, pending, refresh } = useFetch('/api/transit', {
+const { data: rows, pending, refresh } = await useFetch('/api/transit', {
   query: computed(() => ({ workOrderNumber: workOrderNumber.value || undefined, supplierId: supplierId.value || undefined })),
   default: () => [],
 })

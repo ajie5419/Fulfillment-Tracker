@@ -17,8 +17,8 @@ const day = (offset: number) => {
 }
 
 const WORK_ORDERS = [
-  { workOrderNumber: `${P}WO-001`, customerName: '演示客户（铁路局）', projectName: '高铁架桥机（演示）', division: '桥机事业部', quantity: 1, deliveryDate: day(60) },
-  { workOrderNumber: `${P}WO-002`, customerName: '演示客户（风电）', projectName: '风电叶片模具（演示）', division: '模具事业部', quantity: 2, deliveryDate: day(35) },
+  { workOrderNumber: `${P}WO-001`, customerName: '演示客户（铁路局）', projectName: '高铁架桥机（演示）', division: '桥机事业部', quantity: 1, deliveryDate: day(35) },
+  { workOrderNumber: `${P}WO-002`, customerName: '演示客户（风电）', projectName: '风电叶片模具（演示）', division: '模具事业部', quantity: 2, deliveryDate: day(60) },
 ]
 
 const SUPPLIERS = [

@@ -2,8 +2,8 @@
 /** 工件与工序链：选工单 → 工件列表 → 行内编辑工序链；可从同类工件复制 */
 const route = useRoute()
 const router = useRouter()
-const { data: workOrders } = useWorkOrders()
-const { data: master } = useMaster()
+const { data: workOrders } = await useWorkOrders()
+const { data: master } = await useMaster()
 
 const workOrderNumber = ref<string | undefined>((route.query.wo as string) || undefined)
 watch(workOrders, (list) => {
@@ -14,7 +14,7 @@ watch(workOrderNumber, (wo) => {
   if (import.meta.client) router.replace({ query: wo ? { wo } : {} })
 })
 
-const { data: parts, pending, refresh } = useFetch('/api/parts', {
+const { data: parts, pending, refresh } = await useFetch('/api/parts', {
   query: { workOrderNumber },
   default: () => [],
   immediate: !!workOrderNumber.value,
@@ -69,7 +69,7 @@ function removePart(p: PartRow) {
 
 // ───── 复制工序链 ─────
 const copyForm = reactive({ open: false, targetId: '', fromWo: undefined as string | undefined, fromPartId: undefined as string | undefined })
-const { data: copyParts } = useFetch('/api/parts', {
+const { data: copyParts } = await useFetch('/api/parts', {
   query: computed(() => ({ workOrderNumber: copyForm.fromWo })),
   default: () => [],
   immediate: false,

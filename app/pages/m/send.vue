@@ -6,8 +6,8 @@
  */
 definePageMeta({ layout: 'mobile' })
 const route = useRoute()
-const { data: workOrders } = useWorkOrders()
-const { data: master } = useMaster()
+const { data: workOrders } = await useWorkOrders()
+const { data: master } = await useMaster()
 
 const workOrderNumber = ref<string>('')
 const partId = ref<string>('')
@@ -16,7 +16,7 @@ const supplierId = ref<string>('')
 const promisedReturnDate = ref<string>('')
 const lastSupplierId = ref<string | null>(null)
 
-const { data: parts, refresh: refreshParts } = useFetch('/api/parts', {
+const { data: parts, refresh: refreshParts } = await useFetch('/api/parts', {
   query: computed(() => ({ workOrderNumber: workOrderNumber.value })),
   default: () => [],
   immediate: false,

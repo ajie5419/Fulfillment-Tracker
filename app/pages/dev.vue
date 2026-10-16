@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /** 演示工具（仅 NUXT_DEV_TOOLS=1）：写入/清除演示数据，模拟 QMS 返厂报检 */
-const { data: me } = useMe()
-const { data: workOrders, refresh: refreshWo } = useWorkOrders()
-const { data: master, refresh: refreshMaster } = useMaster()
-const { data: transit, refresh: refreshTransit } = useFetch('/api/transit', { default: () => [] })
+const { data: me } = await useMe()
+const { data: workOrders, refresh: refreshWo } = await useWorkOrders()
+const { data: master, refresh: refreshMaster } = await useMaster()
+const { data: transit, refresh: refreshTransit } = await useFetch('/api/transit', { default: () => [] })
 type TransitRow = (typeof transit.value)[number]
 
 const busy = ref(false)
