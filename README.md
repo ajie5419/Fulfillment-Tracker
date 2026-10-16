@@ -10,10 +10,16 @@
 ```bash
 pnpm install
 cp .env.example .env                          # 按注释填写
-docker compose -f docker-compose.local.yml up -d   # 本地 MySQL；已有 QMS 本地 MySQL 的话在那里建 fulfillment 库即可
+docker compose -f docker-compose.local.yml up -d   # 本地 MySQL；或复用 QMS 本地 MySQL，见下
 pnpm db:migrate                               # 建表
 pnpm cert:local                               # mkcert 生成 https://localhost 证书（身份桥只接受 https 回调）
 pnpm dev                                      # https://localhost:3100
+```
+
+复用 QMS 本地 MySQL 容器时，以 root 执行一次 `docker/mysql-init.sql`，`.env` 的端口按容器实际映射填写（例如 3307）：
+
+```bash
+container exec -i <QMS MySQL 容器名> sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot' < docker/mysql-init.sql
 ```
 
 登录走 QMS 身份桥（接口见 `server/services/auth/identity-bridge.ts` 顶部注释，依据 QMS `apps/backend/modules/identity-bridge`）。QMS 本地还没跑起来时，可以先用模拟身份桥：
