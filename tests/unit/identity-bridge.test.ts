@@ -33,6 +33,12 @@ describe('buildAuthorizeUrl', () => {
       method: 'S256',
     })
   })
+
+  it('forceLogin 时带 prompt=login（退出后要求 QMS 重新输入账号密码），默认不带', () => {
+    const q = (u: string) => new URLSearchParams(u.split('?')[1])
+    expect(q(buildAuthorizeUrl(cfg, { state: 'st', codeChallenge: 'ch', forceLogin: true })).get('prompt')).toBe('login')
+    expect(q(buildAuthorizeUrl(cfg, { state: 'st', codeChallenge: 'ch' })).has('prompt')).toBe(false)
+  })
 })
 
 describe('exchangeCode', () => {
