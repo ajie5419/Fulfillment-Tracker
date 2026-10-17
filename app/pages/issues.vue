@@ -26,6 +26,14 @@ watch(selected, (id) => {
   if (import.meta.client) router.replace({ query: { ...route.query, id: id || undefined } })
 })
 
+// 电脑端上报异常：提交后刷新列表并打开刚报的那条
+const reporting = ref(false)
+function onReported(issue: { id: string }) {
+  reporting.value = false
+  refresh()
+  selected.value = issue.id
+}
+
 /** 点一行打开详情 */
 const rowProps = (r: Record<string, unknown>) => ({ onClick: () => (selected.value = String(r.id)), style: 'cursor: pointer' })
 
@@ -72,9 +80,10 @@ const columns = [
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
         <a-button @click="refresh()">刷新</a-button>
+        <a-button type="primary" danger @click="reporting = true">上报异常</a-button>
       </a-space>
     </template>
-    <p class="muted">手机上报：打开手机端"异常"→"上报异常"。系统会把 QMS 检验不合格和红色预警自动转成异常。</p>
+    <p class="muted">电脑上点右上角"上报异常"；手机上打开手机端"异常"→"上报异常"。系统会把 QMS 检验不合格和红色预警自动转成异常。</p>
     <a-table
       :columns="columns"
       :data-source="rows"
@@ -109,6 +118,7 @@ const columns = [
   </a-card>
 
   <IssueDrawer :id="selected" @close="selected = null" @changed="refresh()" />
+  <IssueReportModal :open="reporting" :work-order-number="filter.workOrderNumber" @close="reporting = false" @done="onReported" />
 </template>
 
 <style scoped>
