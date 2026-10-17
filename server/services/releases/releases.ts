@@ -10,7 +10,7 @@
  * 不做审批、不做会签：发放人发出即生效；发错了由发放人或管理员作废（未签收的一并作废）。
  * 状态变化都在一个事务里，先锁发放单行（FOR UPDATE），同一发放单上的签收、作废、确认串行执行。
  */
-import type { Prisma, ReceiptStatus, Release, ReleaseType } from '@prisma/client'
+import { Prisma, type ReceiptStatus, type Release, type ReleaseType } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
@@ -247,6 +247,7 @@ async function autoClearHolds(tx: Tx, rel: Release, now: Date) {
   ])
   if (confirmTodos || notSigned || !held) return 0
   await tx.release.update({ where: { id: rel.id }, data: { changeConfirmedAt: now, changeConfirmedBy: null, changeConfirmNote: '接收人全部签收，自动解除等变更' } })
+  await clearAlertKeys(tx, [alertKey('W5', 'release', rel.id)])
   return clearHolds(tx, rel.id, now)
 }
 
@@ -260,7 +261,34 @@ export function rejectReceipt(receiptId: string, userId: string, reason: string)
 
 // ───────────── 作废 / 确认变更影响 ─────────────
 
-/** 作废（发错了）：发放人或管理员。未签收的签收记录、签收待办、确认待办一并作废，"等变更"解除 */
+/**
+ * 作废变更单时，它标的"等变更"工序如果也在更早一张仍有效、未确认的变更单范围里，就还给那一张（最新的那张），
+ * 免得旧变更还没确认、工序却恢复了 W2/W3 计时。返回 发放单 ID → 工序 ID。
+ */
+async function olderHolds(tx: Tx, rel: Release) {
+  const out = new Map<string, string[]>()
+  if (rel.type !== 'CHANGE') return out
+  const steps = await tx.routeStep.findMany({ where: { holdReleaseId: rel.id, status: 'PENDING' }, select: { id: true, partId: true } })
+  if (!steps.length) return out
+  const older = await tx.release.findMany({
+    where: { id: { not: rel.id }, type: 'CHANGE', status: 'ACTIVE', changeConfirmedAt: null, workOrderNumber: rel.workOrderNumber },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, partIds: true },
+  })
+  for (const s of steps) {
+    const to = older.find((o) => partIdsOf(o.partIds).includes(s.partId))
+    if (to) out.set(to.id, [...(out.get(to.id) ?? []), s.id])
+  }
+  if (!out.size) return out
+  // 锁住要还回去的发放单并复核仍有效、未确认（防止同时有人确认 / 作废它）
+  const ids = [...out.keys()]
+  const live = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM doc_release WHERE id IN (${Prisma.join(ids)}) AND status = 'ACTIVE' AND changeConfirmedAt IS NULL FOR UPDATE`
+  const ok = new Set(live.map((r) => r.id))
+  for (const id of ids) if (!ok.has(id)) out.delete(id)
+  return out
+}
+
+/** 作废（发错了）：发放人或管理员。未签收的签收记录、签收待办、确认待办一并作废，"等变更"解除（更早的有效变更单覆盖的工序还给它） */
 export async function voidRelease(id: string, actor: Actor) {
   return prisma.$transaction(async (tx) => {
     const rel = await lockRelease(tx, id)
@@ -274,8 +302,12 @@ export async function voidRelease(id: string, actor: Actor) {
       where: { status: 'OPEN', OR: [{ refType: 'receipt', refId: { in: pendingIds } }, { refType: 'release', refId: id }] },
       data: { status: 'CANCELLED', doneAt: now },
     })
-    await clearAlertKeys(tx, pendingIds.map((r) => alertKey('W5', 'receipt', r)))
+    await clearAlertKeys(tx, [...pendingIds.map((r) => alertKey('W5', 'receipt', r)), alertKey('W5', 'release', id)])
+    const restoreTo = await olderHolds(tx, rel)
     const holdsCleared = await clearHolds(tx, id, now)
+    for (const [releaseId, stepIds] of restoreTo) {
+      await tx.routeStep.updateMany({ where: { id: { in: stepIds }, holdReleaseId: null, status: 'PENDING' }, data: { holdReleaseId: releaseId } })
+    }
     await tx.release.update({ where: { id }, data: { status: 'VOID' } })
     return { cancelled: pendingIds.length, holdsCleared }
   })
@@ -296,6 +328,7 @@ export async function confirmChange(id: string, actor: Actor, note: string | nul
     const now = new Date()
     await tx.todo.updateMany({ where: { refType: 'release', refId: id, action: CONFIRM_CHANGE, status: 'OPEN' }, data: { status: 'DONE', doneAt: now } })
     await tx.release.update({ where: { id }, data: { changeConfirmedAt: now, changeConfirmedBy: actor.userId, changeConfirmNote: note?.trim() || null } })
+    await clearAlertKeys(tx, [alertKey('W5', 'release', id)])
     return { holdsCleared: await clearHolds(tx, id, now) }
   })
 }
@@ -343,7 +376,7 @@ export async function listReleases(filter: ReleaseFilter, viewerId: string) {
   if (filter.progress === 'REJECTED') and.push({ status: 'ACTIVE', receipts: { some: { status: 'REJECTED' } } })
   if (filter.mine === 'issued') and.push({ issuerId: viewerId })
   if (filter.mine === 'received') and.push({ receipts: { some: { userId: viewerId } } })
-  if (filter.visibleWorkOrders) and.push({ OR: [{ workOrderNumber: { in: filter.visibleWorkOrders } }, { receipts: { some: { userId: viewerId } } }] })
+  if (filter.visibleWorkOrders) and.push({ OR: [{ workOrderNumber: { in: filter.visibleWorkOrders } }, { issuerId: viewerId }, { receipts: { some: { userId: viewerId } } }] })
   const rows = await prisma.release.findMany({
     where: { AND: and },
     orderBy: { createdAt: 'desc' },
@@ -374,11 +407,24 @@ export async function listReleases(filter: ReleaseFilter, viewerId: string) {
   })
 }
 
-/** 详情可见：能看该工单，或者是接收人（发给我的，就算不是我负责的工单也要能看、能签） */
+/**
+ * 和这张发放单直接相关的人：发放人、接收人、收到过"确认变更影响"待办的人。
+ * 他们不受工单范围限制（发给我的 / 我发的 / 要我确认的，就算工单后来改派了也要能看、能处理、能读附件）。
+ */
+export async function isReleaseParty(id: string, userId: string) {
+  const [rel, receipt, todo] = await Promise.all([
+    prisma.release.findUnique({ where: { id }, select: { issuerId: true } }),
+    prisma.releaseReceipt.findFirst({ where: { releaseId: id, userId }, select: { id: true } }),
+    prisma.todo.findFirst({ where: { refType: 'release', refId: id, action: CONFIRM_CHANGE, ownerId: userId }, select: { id: true } }),
+  ])
+  return rel?.issuerId === userId || !!receipt || !!todo
+}
+
+/** 详情可见：能看该工单，或者是发放人 / 接收人 / 确认人（见 isReleaseParty） */
 export async function assertCanViewRelease(id: string, viewerId: string, canSeeWorkOrder: (wo: string) => boolean) {
-  const rel = await prisma.release.findUnique({ where: { id }, select: { workOrderNumber: true, receipts: { where: { userId: viewerId }, select: { id: true } } } })
+  const rel = await prisma.release.findUnique({ where: { id }, select: { workOrderNumber: true } })
   if (!rel) throw new FlowError('发放单不存在')
-  if (!canSeeWorkOrder(rel.workOrderNumber) && !rel.receipts.length) throw new FlowForbidden('无权查看该工单的数据')
+  if (!canSeeWorkOrder(rel.workOrderNumber) && !(await isReleaseParty(id, viewerId))) throw new FlowForbidden('无权查看该工单的数据')
 }
 
 /** 签收记录所属发放单的 ID（接口层做可见性检查用）；不存在时 null */

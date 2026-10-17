@@ -260,34 +260,40 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
  * 发放人 u-008（测试设计员）；连着 QMS 同步、没有写演示用户时用 u-003。
  */
 async function seedDemoReleases() {
-  if (await prisma.release.findFirst({ where: { workOrderNumber: { startsWith: P } }, select: { id: true } })) return 0
+  // 两张各自判断，缺哪张补哪张（一张因演示用户不全没建成时，下次还能补上）
+  const existing = new Set((await prisma.release.findMany({ where: { workOrderNumber: { startsWith: P } }, select: { type: true } })).map((r) => r.type))
+  if (existing.has('DRAWING') && existing.has('CHANGE')) return 0
   const issuer = (await prisma.qmsUser.findFirst({ where: { id: 'u-008', isDeleted: false }, select: { id: true } })) ? 'u-008' : 'u-003'
   const recipients = await prisma.qmsUser.findMany({ where: { id: { in: ['u-001', 'u-002', 'u-003'] }, isDeleted: false, status: 'ACTIVE' }, select: { id: true } })
   if (!recipients.length) return 0
   const ids = recipients.map((u) => u.id)
-  await createRelease(
-    {
-      type: 'DRAWING',
-      workOrderNumber: `${P}WO-001`,
-      partIds: [PART_ID],
-      version: 'A',
-      description: '主梁结构件总图及零件图（纸质 12 张），已随件发到车间',
-      userIds: ids.filter((id) => id === 'u-003'),
-      groups: ids.some((id) => id !== 'u-003') ? [{ department: '生产部', role: null }] : [],
-    },
-    issuer,
-  ).catch(() => null) // 演示用户不全（连着 QMS）时跳过，不影响其余演示数据
-  await createRelease(
-    {
-      type: 'CHANGE',
-      workOrderNumber: `${P}WO-001`,
-      partIds: [PART2_ID],
-      version: 'B',
-      description: '支腿连接板安装孔由 Φ22 改为 Φ26，孔距不变；已下料的按新图扩孔',
-      userIds: ids.filter((id) => id !== 'u-003'),
-    },
-    issuer,
-  ).catch(() => null)
+  if (!existing.has('DRAWING')) {
+    await createRelease(
+      {
+        type: 'DRAWING',
+        workOrderNumber: `${P}WO-001`,
+        partIds: [PART_ID],
+        version: 'A',
+        description: '主梁结构件总图及零件图（纸质 12 张），已随件发到车间',
+        userIds: ids.filter((id) => id === 'u-003'),
+        groups: ids.some((id) => id !== 'u-003') ? [{ department: '生产部', role: null }] : [],
+      },
+      issuer,
+    ).catch(() => null) // 演示用户不全（连着 QMS）时跳过，不影响其余演示数据
+  }
+  if (!existing.has('CHANGE')) {
+    await createRelease(
+      {
+        type: 'CHANGE',
+        workOrderNumber: `${P}WO-001`,
+        partIds: [PART2_ID],
+        version: 'B',
+        description: '支腿连接板安装孔由 Φ22 改为 Φ26，孔距不变；已下料的按新图扩孔',
+        userIds: ids.filter((id) => id !== 'u-003'),
+      },
+      issuer,
+    ).catch(() => null)
+  }
   return prisma.release.count({ where: { workOrderNumber: { startsWith: P } } })
 }
 
@@ -333,6 +339,7 @@ export async function resetDemo(uploadDir?: string) {
           { refType: 'unmatched', refId: { in: insIds } },
           { refType: 'issue', refId: { in: issueIds } },
           { refType: 'receipt', refId: { in: receiptIds } },
+          { refType: 'release', refId: { in: releaseIds } },
         ],
       },
       select: { id: true },
@@ -340,7 +347,7 @@ export async function resetDemo(uploadDir?: string) {
     const alertIds = alertRows.map((a) => a.id)
     const demoUsers = (await tx.qmsUser.findMany({ where: { username: { startsWith: P } }, select: { id: true } })).map((u) => u.id)
     const uploads = await tx.uploadFile.findMany({
-      where: { OR: [{ issueId: { in: issueIds } }, { releaseId: { in: releaseIds } }, { uploaderId: { in: demoUsers } }] },
+      where: { OR: [{ issueId: { in: issueIds } }, { releaseId: { in: releaseIds } }, { uploaderId: { in: demoUsers }, issueId: null, releaseId: null }] },
       select: { id: true, storedName: true },
     })
     await tx.uploadFile.deleteMany({ where: { id: { in: uploads.map((u) => u.id) } } })

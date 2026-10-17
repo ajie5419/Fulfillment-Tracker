@@ -1,6 +1,6 @@
 /**
  * 发放签收 + 设计变更通知（R9）：真实 MySQL 上直接调用服务层，用 now 注入"快进时钟"。
- * 覆盖：新建（按人 + 按部门/角色）、签收/拒收与权限、W5 升级、确认变更影响待办、"等变更"让 W2/W3 不计时、自动解除、作废。
+ * 覆盖：新建（按人 + 按部门/角色）、签收/拒收与权限、W5 升级（签收 + 变更影响确认）、确认变更影响待办、"等变更"让 W2/W3 不计时、自动解除、作废。
  * 运行：TEST_DATABASE_URL=mysql://…/fulfillment_test pnpm test:integration
  */
 import { execFileSync } from 'node:child_process'
@@ -260,6 +260,53 @@ describe.skipIf(!DB)('发放签收与设计变更（R9）', () => {
     expect(w2?.startAt).toEqual(p2paint.holdClearedAt)
   })
 
+  it('W5 变更影响未确认：确认待办按 W5 升级（黄色起通知发放人），确认后预警和等变更一起解除；有人拒收时由发放人负责', async () => {
+    const p = await makePart()
+    await send(p.weld.id, new Date(+today() + 10 * DAY)) // 在外 → 确认待办；涂装等变更
+    const r = await s.rel.createRelease({ type: 'CHANGE', workOrderNumber: WO, partIds: [p.part.id], version: 'C', description: '确认超时', userIds: ['u-worker'] }, 'u-tech')
+    await s.rel.signReceipt((await receiptOf(r.id, 'u-worker')).id, 'u-worker') // 签收了，只剩确认
+    const key = s.rules.alertKey('W5', 'release', r.id)
+    const t0 = (await db.todo.findFirstOrThrow({ where: { action: 'CONFIRM_CHANGE', refId: r.id }, orderBy: { createdAt: 'asc' } })).createdAt
+    const recipients = async () => {
+      const a = await db.alert.findFirstOrThrow({ where: { refType: 'release', refId: r.id } })
+      return { a, users: (await db.reminder.findMany({ where: { alertId: a.id } })).map((x) => `${x.level}:${x.userId}`).sort() }
+    }
+    await s.scan.scanRules(new Date(+t0 + 3 * HOUR))
+    expect(await db.alert.findFirst({ where: { activeKey: key } })).toBeNull()
+    await s.scan.scanRules(new Date(+t0 + 5 * HOUR))
+    expect((await recipients()).users).toEqual(['REMIND:u-head', 'REMIND:u-out'])
+    await s.scan.scanRules(new Date(+t0 + DAY + HOUR))
+    const yellow = await recipients()
+    expect(yellow.a).toMatchObject({ rule: 'W5', level: 'YELLOW', status: 'ACTIVE' })
+    const title = (await db.reminder.findFirstOrThrow({ where: { alertId: yellow.a.id, userId: 'u-tech' } })).title
+    expect(title).toContain(`设计变更 ${r.releaseNo}（C）`)
+    expect(title).toContain('变更影响仍未确认（待 ')
+    expect(yellow.users.filter((u) => u.startsWith('YELLOW:'))).toEqual(['YELLOW:u-head', 'YELLOW:u-out', 'YELLOW:u-pm', 'YELLOW:u-tech'])
+    await s.scan.scanRules(new Date(+t0 + 2 * DAY + HOUR))
+    const red = await recipients()
+    expect(red.a).toMatchObject({ level: 'RED', status: 'ACTIVE' })
+    expect(red.users.filter((u) => u.startsWith('RED:'))).toEqual(['RED:u-head', 'RED:u-lead', 'RED:u-out', 'RED:u-pdh', 'RED:u-pm', 'RED:u-tech'])
+    expect(await db.issue.count({ where: { sourceKey: `ALERT:${red.a.id}` } })).toBe(0) // W5 不转异常（前面用例的 W3 可能已转）
+    const { listReminders } = await import('../../server/services/alerts/reminders')
+    expect((await listReminders('u-tech')).items.find((i) => i.alertId === red.a.id)).toMatchObject({ link: `/releases?id=${r.id}`, mobileLink: `/m/release?id=${r.id}` })
+
+    // 确认：预警立即解除（不用等下一轮扫描），等变更解除
+    await s.rel.confirmChange(r.id, { userId: 'u-head', isAdmin: false }, null)
+    expect(await db.alert.findUniqueOrThrow({ where: { id: red.a.id } })).toMatchObject({ status: 'CLEARED', activeKey: null })
+    expect(await db.routeStep.count({ where: { holdReleaseId: r.id } })).toBe(0)
+    expect((await targets('W5', new Date(+t0 + 5 * DAY))).some((t) => t.refType === 'release' && t.refId === r.id)).toBe(false)
+
+    // 没有在加工的工序（无确认待办）、接收人拒收：自动解除走不通 → 由发放人负责，确认后消失
+    const q = await makePart()
+    const r2 = await s.rel.createRelease({ type: 'CHANGE', workOrderNumber: WO, partIds: [q.part.id], description: '拒收后挂着', userIds: ['u-worker'] }, 'u-tech')
+    const pendingTarget = (await targets('W5')).find((t) => t.refType === 'release' && t.refId === r2.id)
+    expect(pendingTarget).toBeUndefined() // 还有人待签收：由签收预警负责
+    await s.rel.rejectReceipt((await receiptOf(r2.id, 'u-worker')).id, 'u-worker', '不是我的')
+    expect((await targets('W5')).find((t) => t.refType === 'release' && t.refId === r2.id)).toMatchObject({ ownerIds: ['u-tech'], watcherIds: ['u-tech'] })
+    await s.rel.confirmChange(r2.id, issuer, '已改发给正确的人')
+    expect((await targets('W5')).some((t) => t.refType === 'release' && t.refId === r2.id)).toBe(false)
+  })
+
   it('设计变更没有在加工的工序：不发确认待办，接收人全部签收后自动解除等变更', async () => {
     const p = await makePart()
     const r = await s.rel.createRelease({ type: 'CHANGE', workOrderNumber: WO, partIds: [p.part.id], description: '未开工的变更', userIds: ['u-worker', 'u-head'] }, 'u-tech')
@@ -284,6 +331,19 @@ describe.skipIf(!DB)('发放签收与设计变更（R9）', () => {
     await expect(s.rel.signReceipt((await receiptOf(r.id, 'u-worker')).id, 'u-worker')).rejects.toThrow('已作废')
     await expect(s.rel.voidRelease(r.id, { userId: 'u-admin', isAdmin: true })).rejects.toThrow('已经作废')
     expect((await targets('W5')).some((t) => t.meta?.releaseId === r.id)).toBe(false)
+
+    // 新变更覆盖了旧变更的"等变更"；作废新的 → 还给仍有效、未确认的旧变更（W2/W3 不恢复计时）
+    const q = await makePart()
+    const older = await s.rel.createRelease({ type: 'CHANGE', workOrderNumber: WO, partIds: [q.part.id], description: '旧变更', userIds: ['u-worker', 'u-pm'] }, 'u-tech')
+    const newer = await s.rel.createRelease({ type: 'CHANGE', workOrderNumber: WO, partIds: [q.part.id], description: '新变更', userIds: ['u-worker'] }, 'u-tech')
+    expect(await db.routeStep.count({ where: { partId: q.part.id, holdReleaseId: newer.id } })).toBe(2)
+    expect(await s.rel.voidRelease(newer.id, issuer)).toMatchObject({ holdsCleared: 2 })
+    expect(await db.routeStep.count({ where: { partId: q.part.id, holdReleaseId: older.id } })).toBe(2)
+    // 旧的已确认 / 已作废时不还
+    const newer2 = await s.rel.createRelease({ type: 'CHANGE', workOrderNumber: WO, partIds: [q.part.id], description: '新变更 2', userIds: ['u-worker'] }, 'u-tech')
+    await s.rel.voidRelease(older.id, issuer)
+    await s.rel.voidRelease(newer2.id, issuer)
+    expect(await db.routeStep.count({ where: { partId: q.part.id, holdReleaseId: { not: null } } })).toBe(0)
   })
 
   it('列表：我发出的 / 发给我的 / 有人未签收；项目经理只看自己工单，但发给他的照样能看', async () => {
@@ -297,6 +357,9 @@ describe.skipIf(!DB)('发放签收与设计变更（R9）', () => {
     expect((await s.rel.listReleases({ progress: 'PENDING' }, 'u-tech')).every((x) => x.counts.PENDING > 0)).toBe(true)
     await expect(s.rel.assertCanViewRelease(r.id, 'u-worker', (wo) => visible.includes(wo))).rejects.toBeInstanceOf(s.errors.FlowForbidden)
     await expect(s.rel.assertCanViewRelease(r.id, 'u-pm', (wo) => visible.includes(wo))).resolves.toBeUndefined()
+    // 发放人：工单后来改派、自己看不到该工单了，照样能看自己发的（列表、详情）
+    await expect(s.rel.assertCanViewRelease(r.id, 'u-tech', (wo) => visible.includes(wo))).resolves.toBeUndefined()
+    expect((await s.rel.listReleases({ visibleWorkOrders: visible }, 'u-tech')).some((x) => x.id === r.id)).toBe(true)
     expect((await s.rel.listMyReceipts('u-pm', 'pending')).some((x) => x.releaseId === r.id)).toBe(true)
   })
 })

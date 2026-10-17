@@ -12,6 +12,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { basename, join, resolve, sep } from 'node:path'
 import { prisma } from '../../utils/prisma'
 import { FlowError } from '../flow/errors'
+import { isReleaseParty } from '../releases/releases'
 
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 /** 发放单附件（图纸 PDF 可能较大）每个的上限 */
@@ -87,11 +88,8 @@ export async function readUpload(dir: string, id: string, userId: string, canSee
     const issue = await prisma.issue.findUnique({ where: { id: file.issueId }, select: { workOrderNumber: true } })
     if (!issue || !canSeeWorkOrder(issue.workOrderNumber)) return null
   } else if (file.releaseId) {
-    const release = await prisma.release.findUnique({
-      where: { id: file.releaseId },
-      select: { workOrderNumber: true, receipts: { where: { userId }, select: { id: true } } },
-    })
-    if (!release || !(canSeeWorkOrder(release.workOrderNumber) || release.receipts.length)) return null
+    const release = await prisma.release.findUnique({ where: { id: file.releaseId }, select: { workOrderNumber: true } })
+    if (!release || !(canSeeWorkOrder(release.workOrderNumber) || (await isReleaseParty(file.releaseId, userId)))) return null
   } else if (file.uploaderId !== userId) {
     return null
   }

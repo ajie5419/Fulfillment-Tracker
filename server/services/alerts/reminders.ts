@@ -44,7 +44,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     let link: Link = { pc: null, mobile: null }
     if (a.refType === 'unmatched') link = { pc: '/unmatched', mobile: null }
     if (a.refType === 'issue') link = issueLink(a.refId)
-    const releaseId = a.refType === 'receipt' ? releaseOf.get(a.refId) : undefined
+    const releaseId = a.refType === 'receipt' ? releaseOf.get(a.refId) : a.refType === 'release' ? a.refId : undefined
     if (releaseId) link = { pc: releaseLink(releaseId), mobile: releaseMobileLink(releaseId) }
     const step = a.refType === 'step' ? stepById.get(a.refId) : undefined
     if (step) {
@@ -225,7 +225,7 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
         issue: issue ? { id: issue.id, issueNo: issue.issueNo } : null,
         canConvert: a.status === 'ACTIVE' && canConvert(a.level, t, t.workOrderNumber ? pmOf.get(t.workOrderNumber) : null, filter.viewer),
         link:
-          t.refType === 'receipt' && t.meta?.releaseId
+          (t.refType === 'receipt' || t.refType === 'release') && t.meta?.releaseId
             ? releaseLink(t.meta.releaseId)
             : t.refType === 'unmatched'
               ? '/unmatched'

@@ -22,19 +22,21 @@ export type BoardColor = 'RED' | 'YELLOW' | 'GREEN'
 /** 活动预警 → 所属工单 */
 async function alertWorkOrders(alerts: { id: string; refType: string; refId: string }[]) {
   const ids = (t: string) => alerts.filter((a) => a.refType === t).map((a) => a.refId)
-  const [steps, inspections, issues, receipts] = await Promise.all([
+  const [steps, inspections, issues, receipts, releases] = await Promise.all([
     ids('step').length ? prisma.routeStep.findMany({ where: { id: { in: ids('step') } }, select: { id: true, part: { select: { workOrderNumber: true } } } }) : [],
     ids('unmatched').length ? prisma.qmsInspection.findMany({ where: { id: { in: ids('unmatched') } }, select: { id: true, workOrderNumber: true } }) : [],
     ids('issue').length ? prisma.issue.findMany({ where: { id: { in: ids('issue') } }, select: { id: true, workOrderNumber: true } }) : [],
     ids('receipt').length
       ? prisma.releaseReceipt.findMany({ where: { id: { in: ids('receipt') } }, select: { id: true, release: { select: { workOrderNumber: true } } } })
       : [],
+    ids('release').length ? prisma.release.findMany({ where: { id: { in: ids('release') } }, select: { id: true, workOrderNumber: true } }) : [],
   ])
   const wo = new Map<string, string>()
   for (const s of steps) wo.set(`step:${s.id}`, s.part.workOrderNumber)
   for (const i of inspections) wo.set(`unmatched:${i.id}`, i.workOrderNumber)
   for (const i of issues) wo.set(`issue:${i.id}`, i.workOrderNumber)
   for (const r of receipts) wo.set(`receipt:${r.id}`, r.release.workOrderNumber)
+  for (const r of releases) wo.set(`release:${r.id}`, r.workOrderNumber)
   return new Map(alerts.map((a) => [a.id, wo.get(`${a.refType}:${a.refId}`) ?? null]))
 }
 

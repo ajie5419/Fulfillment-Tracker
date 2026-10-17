@@ -19,6 +19,14 @@ const { data: rows, pending, refresh } = await useFetch('/api/releases', {
 })
 
 const selected = ref<string | null>((route.query.id as string) || null)
+// 页面没换、只换了 ?id=（从提醒或别的链接跳过来）时也要跟着打开
+watch(
+  () => route.query.id,
+  (id) => {
+    const v = (id as string) || null
+    if (v !== selected.value) selected.value = v
+  },
+)
 watch(selected, (id) => {
   if (import.meta.client) router.replace({ query: { ...route.query, id: id || undefined } })
 })

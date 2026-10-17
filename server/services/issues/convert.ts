@@ -28,7 +28,7 @@ export interface ConvertTarget {
   meta?: { stepMode?: StepMode; supplierId?: string | null }
 }
 
-const RULE_NAME = { W1: 'W1 待确认匹配超时', W2: 'W2 转序停滞', W3: 'W3 外协逾期未返', W4: 'W4 异常超期', W5: 'W5 发放未签收' } as const
+const RULE_NAME = { W1: 'W1 待确认匹配超时', W2: 'W2 转序停滞', W3: 'W3 外协逾期未返', W4: 'W4 异常超期', W5: 'W5 发放未签收 / 变更未确认' } as const
 const LEVEL_NAME = { REMIND: '提醒', YELLOW: '黄色', RED: '红色' } as const
 
 export function categoryFor(target: ConvertTarget): { category: IssueCategory; supplierId: string | null } {
@@ -48,7 +48,7 @@ const REF_TYPE: Record<string, IssueRefType> = { step: 'STEP', unmatched: 'UNMAT
  */
 export async function convertAlertInTx(tx: Tx, alert: Alert, target: ConvertTarget, actorId: string | null) {
   if (target.rule === 'W4') throw new FlowError('异常超期预警不能再转异常')
-  if (target.rule === 'W5') throw new FlowError('发放未签收预警不转异常')
+  if (target.rule === 'W5') throw new FlowError('W5 发放预警不转异常')
   if (!target.workOrderNumber) throw new FlowError('预警没有关联工单，不能转异常')
   const sourceKey = alertSourceKey(alert.id)
   let issue = await tx.issue.findUnique({ where: { sourceKey } })
