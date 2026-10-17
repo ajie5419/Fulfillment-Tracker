@@ -11,6 +11,7 @@ import { FlowError } from '../flow/errors'
 import { matchInspection, matchPendingInspections } from '../flow/match'
 import { syncNonconforming } from '../issues/nonconforming'
 import { removeUploadFiles } from '../issues/uploads'
+import { todayDate } from '../purchases/constants'
 import { createRelease } from '../releases/releases'
 import { matchIncomingInspections } from '../purchases/incoming'
 import type { QmsBomItem } from '../bom/client'
@@ -75,6 +76,8 @@ const USERS = [
   // R10：采购部负责人兼采购员；财务
   { id: 'u-009', username: `${P}u-009`, realName: '测试采购员', departmentId: `${P}DEPT-PUR`, roleId: `${P}ROLE-BUYER`, roleName: '采购员' },
   { id: 'u-010', username: `${P}u-010`, realName: '测试财务', departmentId: `${P}DEPT-FIN`, roleId: `${P}ROLE-FIN`, roleName: '财务' },
+  // R11：技术部负责人（出图任务没指定设计负责人时的责任人；W7 黄色起收到）
+  { id: 'u-011', username: `${P}u-011`, realName: '测试技术负责人', departmentId: `${P}DEPT-TECH`, roleId: `${P}ROLE-TECH-HEAD`, roleName: '部门负责人' },
 ]
 
 // 预警升级阶梯的通知对象（方案 6.2）
@@ -86,6 +89,7 @@ const NOTIFY_ROLES = [
   { id: `${P}ROLE-5`, role: 'DEPT_HEAD', userId: 'u-006', department: '质量部' },
   { id: `${P}ROLE-6`, role: 'DEPT_HEAD', userId: 'u-009', department: '采购部' },
   { id: `${P}ROLE-7`, role: 'FINANCE', userId: 'u-010', department: null },
+  { id: `${P}ROLE-8`, role: 'DEPT_HEAD', userId: 'u-011', department: '技术部' },
 ] as const
 
 const PART_ID = `${P}PART-001`
@@ -128,6 +132,26 @@ const PAYMENTS = [
   { id: `${P}PAY-002`, workOrderNumber: `${P}WO-001`, amount: 52000, requestDate: day(-3), blocksDelivery: false, status: 'ON_HOLD', note: '回转支承到货款', financeNote: '月底统一付', lines: [`${P}PL-003`] },
   { id: `${P}PAY-003`, workOrderNumber: `${P}WO-002`, amount: 8000, requestDate: day(-12), blocksDelivery: false, status: 'PAID', note: '加热管全款', financeNote: null, lines: [`${P}PL-005`] },
 ] as const
+
+/**
+ * R11 演示出图任务（设计负责人 u-008 测试设计员；技术部负责人 u-011）：
+ *   主梁结构件总图：计划完成日已过 2 天还没出图 → W7 红；它挡着主梁结构件的"可以开工"（物料齐了也不发），
+ *     标记出图 → 一键发放后才发；
+ *   支腿零件图：明天到计划完成日 → W7 黄；
+ *   液压系统原理图（不关联工件）：6 天前已出图、需要客户确认，客户确认计划日已过 3 天 → W7 黄（再过 1 天红），还没发放；
+ *   模具加热系统布置图（DEMO-WO-002，负责人 u-011）：8 天后到期，不预警。
+ */
+/** 日期在 seedDemo 执行时按上海日历现算（模块加载时用 UTC 日期算，0–8 点会差一天，DT-003 会从黄变红） */
+const drawingTasks = (now = new Date()) => {
+  const today = todayDate(now)
+  const day = (offset: number) => new Date(today.getTime() + offset * DAY)
+  return [
+    { id: `${P}DT-001`, workOrderNumber: `${P}WO-001`, componentName: '主梁结构件总图', ownerId: 'u-008', planDate: day(-2), needsCustomerConfirm: false, customerPlanDate: null, drawnDate: null, status: 'PENDING', partIds: [PART_ID] },
+    { id: `${P}DT-002`, workOrderNumber: `${P}WO-001`, componentName: '支腿零件图', ownerId: 'u-008', planDate: day(1), needsCustomerConfirm: false, customerPlanDate: null, drawnDate: null, status: 'PENDING', partIds: [PART2_ID] },
+    { id: `${P}DT-003`, workOrderNumber: `${P}WO-001`, componentName: '液压系统原理图', ownerId: 'u-008', planDate: day(-8), needsCustomerConfirm: true, customerPlanDate: day(-3), drawnDate: day(-6), status: 'DRAWN', partIds: [] },
+    { id: `${P}DT-004`, workOrderNumber: `${P}WO-002`, componentName: '模具加热系统布置图', ownerId: 'u-011', planDate: day(8), needsCustomerConfirm: true, customerPlanDate: day(15), drawnDate: null, status: 'PENDING', partIds: [] },
+  ] as const
+}
 
 /**
  * 演示 BOM（R8）：模拟 QMS 项目 BOM，演示工具开着时 DEMO- 工单的"从 QMS BOM 导入"读这里，不连 QMS。
@@ -284,6 +308,13 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
         data: { ...pay, requesterId: 'u-009', ...(pay.status === 'PAID' ? { statusBy: 'u-010', statusAt: now } : {}), lines: { create: lines.map((purchaseLineId) => ({ purchaseLineId })) } },
       })
     }
+    // R11 出图任务（登记人 u-003）
+    for (const { partIds, drawnDate, ...d } of drawingTasks()) {
+      if (await tx.drawingTask.findUnique({ where: { id: d.id }, select: { id: true } })) continue
+      await tx.drawingTask.create({
+        data: { ...d, drawnDate, drawnBy: drawnDate ? d.ownerId : null, createdBy: 'u-003', parts: { create: partIds.map((partId) => ({ partId })) } },
+      })
+    }
     // 第一道没有上一道触发待办，演示时直接给外协专员一条"安排发出"
     await tx.todo.upsert({
       where: { id: `${P}TODO-001` },
@@ -304,6 +335,7 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
     templates: 1,
     purchaseLines: PURCHASE_LINES.length,
     payments: PAYMENTS.length,
+    drawingTasks: drawingTasks().length,
   }
 }
 
@@ -391,9 +423,12 @@ export async function resetDemo(uploadDir?: string) {
     const payments = await tx.paymentRequest.deleteMany({ where: { OR: [{ workOrderNumber: { startsWith: P } }, { lines: { some: { purchaseLineId: { in: purchaseIds } } } }] } })
     await tx.todo.deleteMany({ where: { refType: 'part', refId: { in: partIds } } })
     await tx.incomingCheck.deleteMany({ where: { OR: [{ qmsInspectionId: { in: insIds } }, { purchaseLineId: { in: purchaseIds } }] } })
+    // R11：演示工单上的出图任务（关联工件随任务级联删除）
+    const drawingIds = (await tx.drawingTask.findMany({ where: { OR: [{ workOrderNumber: { startsWith: P } }, { parts: { some: { partId: { in: partIds } } } }] }, select: { id: true } })).map((d) => d.id)
     const alertRows = await tx.alert.findMany({
       where: {
         OR: [
+          { refType: 'drawing', refId: { in: drawingIds } },
           { refType: 'purchase', refId: { in: purchaseIds } },
           { refType: 'step', refId: { in: stepIds } },
           { refType: 'unmatched', refId: { in: insIds } },
@@ -417,6 +452,7 @@ export async function resetDemo(uploadDir?: string) {
     })
     const releases = await tx.release.deleteMany({ where: { id: { in: releaseIds } } })
     const purchases = await tx.purchaseLine.deleteMany({ where: { id: { in: purchaseIds } } })
+    const drawings = await tx.drawingTask.deleteMany({ where: { id: { in: drawingIds } } })
     const alerts = await tx.alert.deleteMany({ where: { id: { in: alertIds } } })
     await tx.notifyRole.deleteMany({ where: { OR: [{ id: { startsWith: P } }, { userId: { in: demoUsers } }] } })
     await tx.workOrderExt.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
@@ -450,6 +486,7 @@ export async function resetDemo(uploadDir?: string) {
       releases: releases.count,
       purchaseLines: purchases.count,
       payments: payments.count,
+      drawingTasks: drawings.count,
     }
   })
   const { storedNames, ...counts } = result

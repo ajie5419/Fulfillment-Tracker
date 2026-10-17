@@ -1,5 +1,5 @@
 /**
- * scan-rules：一次跑完 W1–W6，新建、升级、消除预警，并给升级阶梯上的人写"我的提醒"（方案 6.2）。
+ * scan-rules：一次跑完 W1–W7，新建、升级、消除预警，并给升级阶梯上的人写"我的提醒"（方案 6.2）。
  *
  * 幂等：同一对象同一规则只有一条活动预警（alert.activeKey 唯一）；同一人同一预警同一级别只有一条提醒
  * （reminder 上 alertId+level+userId 唯一）。每轮都会把当前级别该收到的人补齐，所以中途失败下一轮自动补上。
@@ -18,6 +18,7 @@ import { CATEGORY_TEXT } from '../issues/constants'
 import { issueTransaction } from '../issues/issues'
 import { withLease } from '../jobs/lease'
 import { DELAY_REASON_TEXT, PAYMENT_STATUS_TEXT, PURCHASE_DEPT, judgeW6, w6Summary } from '../purchases/constants'
+import { DRAWING_STATUS_TEXT, OPEN_DRAWING_STATUSES, TECH_DEPT, judgeW7, w7Summary } from '../drawings/constants'
 import { CONFIRM_CHANGE, TYPE_TEXT } from '../releases/constants'
 import { SCAN_RULES, loadOffDays, loadThresholds } from './config'
 import {
@@ -41,7 +42,7 @@ export { SCAN_RULES, loadOffDays, loadThresholds }
 /** 一个处在规则关注状态的对象（不一定已到阈值） */
 export interface Target {
   rule: ScanRule
-  refType: 'step' | 'unmatched' | 'issue' | 'receipt' | 'release' | 'purchase'
+  refType: 'step' | 'unmatched' | 'issue' | 'receipt' | 'release' | 'purchase' | 'drawing'
   refId: string
   key: string
   workOrderNumber: string | null
@@ -63,7 +64,7 @@ export interface Target {
   meta?: { stepMode?: StepMode; supplierId?: string | null; releaseId?: string }
 }
 
-/** 收集 W1–W6 关注的全部对象，并按 now 判定级别；only 只收集某一条规则 */
+/** 收集 W1–W7 关注的全部对象，并按 now 判定级别；only 只收集某一条规则 */
 export async function collectTargets(now: Date, t: Thresholds, offDays: string[], only?: ScanRule): Promise<Target[]> {
   const run = (rule: ScanRule, fn: () => Promise<Target[]>) => (!only || only === rule ? fn() : Promise.resolve([]))
   const parts = await Promise.all([
@@ -73,6 +74,7 @@ export async function collectTargets(now: Date, t: Thresholds, offDays: string[]
     run('W4', () => collectW4(now, t, offDays)),
     run('W5', () => collectW5(now, t, offDays)),
     run('W6', () => collectW6(now, t, offDays)),
+    run('W7', () => collectW7(now, t, offDays)),
   ])
   return parts.flat()
 }
@@ -363,6 +365,45 @@ async function collectW6(now: Date, t: Thresholds, offDays: string[]): Promise<T
       level: r.level,
       subject: `关键物料 ${l.materialName}${l.spec ? `（${l.spec}）` : ''}`,
       summary: `${w6Summary(r, l)}${extra.length ? `；${extra.join('，')}` : ''}`,
+    })
+  }
+  return out
+}
+
+/**
+ * W7 出图逾期（R11）：未完成、未取消的出图任务，判定见 drawings/constants.ts judgeW7
+ * （计划完成日前 N 天仍未出图黄、已过计划完成日红；已出图、需要客户确认的，超客户确认计划日黄 → 红）。
+ * 责任人：设计负责人，没指定时是技术部负责人；责任部门是技术部（黄色起通知技术部负责人、工单项目经理，红色再加项目部负责人、分管领导）。
+ * 只看 QMS 里还在（未删除）的工单。红色不转异常。
+ */
+async function collectW7(now: Date, t: Thresholds, offDays: string[]): Promise<Target[]> {
+  const tasks = await prisma.drawingTask.findMany({ where: { status: { in: OPEN_DRAWING_STATUSES } } })
+  if (!tasks.length) return []
+  const [wos, heads] = await Promise.all([
+    prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: [...new Set(tasks.map((x) => x.workOrderNumber))] }, isDeleted: false }, select: { workOrderNumber: true } }),
+    prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: TECH_DEPT }, select: { userId: true } }),
+  ])
+  const live = new Set(wos.map((w) => w.workOrderNumber))
+  const headIds = [...new Set(heads.map((h) => h.userId))]
+  const names = await loadNames({ user: tasks.map((x) => x.ownerId) })
+  const out: Target[] = []
+  for (const d of tasks) {
+    if (!live.has(d.workOrderNumber)) continue
+    const r = judgeW7({ ...d, now, offDays }, t.W7)
+    if (!r.level) continue
+    const owner = d.ownerId ? (names.user.get(d.ownerId) ?? d.ownerId) : `${TECH_DEPT}负责人`
+    out.push({
+      rule: 'W7',
+      refType: 'drawing',
+      refId: d.id,
+      key: alertKey('W7', 'drawing', d.id),
+      workOrderNumber: d.workOrderNumber,
+      ownerIds: d.ownerId ? [d.ownerId] : headIds,
+      deptNames: [TECH_DEPT],
+      startAt: r.trigger === 'CONFIRM_OVERDUE' ? d.customerPlanDate! : d.planDate,
+      level: r.level,
+      subject: `出图 ${d.componentName}（${DRAWING_STATUS_TEXT[d.status]}）`,
+      summary: w7Summary(r, d, owner),
     })
   }
   return out

@@ -380,7 +380,8 @@ describe.skipIf(!DB)('关键物料到货与付款（R10）', () => {
     const r = await users()
     expect(r.a).toMatchObject({ level: 'RED', status: 'ACTIVE' }) // 不转异常
     expect(r.users.filter((u) => u.startsWith('RED:'))).toEqual(['RED:u-buyer', 'RED:u-fin', 'RED:u-lead', 'RED:u-pdh', 'RED:u-pm', 'RED:u-purhead'])
-    expect(await db.issue.count()).toBe(0)
+    // 只看这条 W6 预警有没有转异常：前面用例留下的工序待办在快进的时钟下可能触发 W1–W3 转异常（与 W6 无关，结果随运行时刻变化）
+    expect(await db.issue.count({ where: { sourceKey: `ALERT:${r.a.id}` } })).toBe(0)
     // 提醒跳到采购到货页 / 手机到货确认页
     const list = await s.scan.collectTargets(at(3), await s.scan.loadThresholds(), [], 'W6')
     expect(list.map((t) => t.refId)).toEqual([steel.id])

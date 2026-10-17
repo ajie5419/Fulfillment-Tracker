@@ -28,7 +28,7 @@ export interface ConvertTarget {
   meta?: { stepMode?: StepMode; supplierId?: string | null }
 }
 
-const RULE_NAME = { W1: 'W1 待确认匹配超时', W2: 'W2 转序停滞', W3: 'W3 外协逾期未返', W4: 'W4 异常超期', W5: 'W5 发放未签收 / 变更未确认', W6: 'W6 关键物料未到货' } as const
+const RULE_NAME = { W1: 'W1 待确认匹配超时', W2: 'W2 转序停滞', W3: 'W3 外协逾期未返', W4: 'W4 异常超期', W5: 'W5 发放未签收 / 变更未确认', W6: 'W6 关键物料未到货', W7: 'W7 出图逾期' } as const
 const LEVEL_NAME = { REMIND: '提醒', YELLOW: '黄色', RED: '红色' } as const
 
 export function categoryFor(target: ConvertTarget): { category: IssueCategory; supplierId: string | null } {
