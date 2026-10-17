@@ -198,6 +198,9 @@ const columns = [
           </template>
           <template v-else-if="column.key === 'status'">
             <a-tag :color="STATUS_COLOR[record.status as StepStatusKey]">{{ STATUS_TEXT[record.status as StepStatusKey] }}</a-tag>
+            <div v-if="record.issues?.length">
+              <NuxtLink v-for="i in record.issues" :key="i.id" :to="`/issues?id=${encodeURIComponent(i.id)}`" class="issue-link">{{ i.issueNo }}</NuxtLink>
+            </div>
             <span v-if="record.returnedQty" class="muted">{{ record.returnedQty }}/{{ p.quantity }}</span>
             <div v-if="record.status === 'OUT' && record.promisedReturnDate" class="muted">承诺 {{ dayText(record.promisedReturnDate) }}</div>
           </template>
@@ -281,4 +284,5 @@ const columns = [
 .part { margin-top: 16px; }
 .muted { color: #999; font-size: 12px; font-weight: normal; }
 .add { margin-top: 12px; }
+.issue-link { color: #cf1322; font-size: 12px; margin-right: 6px; }
 </style>

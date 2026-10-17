@@ -129,7 +129,7 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
     expect(await page.text()).toContain('我的提醒')
 
     const reminders = await get('/api/reminders', session)
-    expect(await reminders.json()).toEqual({ items: [], unread: 0 })
+    expect(await reminders.json()).toEqual({ items: [], unread: 0, digest: null })
   })
 
   it('同一个回调重放会被拒绝（授权码和登录状态一次性）', async () => {
@@ -202,6 +202,6 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
     expect(await (await get('/api/me', admin)).json()).toMatchObject({ id: 'u-001', isAdmin: true })
     const settings = await get('/api/settings', admin)
     expect(settings.status).toBe(200)
-    expect((await settings.json()).thresholds.map((t: { rule: string }) => t.rule)).toEqual(['W1', 'W2', 'W3'])
+    expect((await settings.json()).thresholds.map((t: { rule: string }) => t.rule)).toEqual(['W1', 'W2', 'W3', 'W4'])
   })
 })

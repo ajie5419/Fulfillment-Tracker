@@ -1,7 +1,7 @@
 import { getStep } from '../../services/flow/steps'
 
-export default defineFlowHandler(async (event, user) => {
+export default defineFlowHandler(async (event) => {
   const step = await getStep(routeId(event))
-  assertCanSee(user, step.part.workOrderNumber)
+  await assertCanSee(event, step.part.workOrderNumber)
   return step
 })

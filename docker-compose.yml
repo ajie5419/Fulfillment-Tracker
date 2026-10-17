@@ -9,10 +9,15 @@ services:
     env_file: .env
     environment:
       NUXT_QMS_API_BASE: http://qms-backend:3000
+    volumes:
+      - uploads:/app/data/uploads # 异常照片（命名卷：首次创建时沿用镜像里 node 用户的目录权限）
     ports:
       - "127.0.0.1:3100:3100"
     networks:
       - qms-network
+
+volumes:
+  uploads:
 
 networks:
   qms-network:

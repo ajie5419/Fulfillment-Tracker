@@ -1,15 +1,16 @@
 import type { H3Event } from 'h3'
 import type { z } from 'zod'
-import { FlowError } from '../services/flow/errors'
+import { FlowError, FlowForbidden } from '../services/flow/errors'
 
 /**
- * 业务接口统一入口：要求登录 + canSee，并把服务层的业务错误（FlowError）转成 400，message 为中文。
+ * 业务接口统一入口：要求登录 + canSee（先算好本请求的可见范围），并把服务层的业务错误转成中文提示：
+ * FlowForbidden → 403，其余 FlowError → 400。
  * 路由只做三件事：zod 校验 → 调服务 → 返回。
  */
 export function defineFlowHandler<T>(handler: (event: H3Event, user: AuthUser) => Promise<T>) {
   return defineEventHandler(async (event) => {
     const user = requireUser(event)
-    assertCanSee(user)
+    await assertCanSee(event)
     return runFlow(event, user, handler)
   })
 }
@@ -23,6 +24,7 @@ async function runFlow<T>(event: H3Event, user: AuthUser, handler: (event: H3Eve
   try {
     return await handler(event, user)
   } catch (err) {
+    if (err instanceof FlowForbidden) throw createError({ statusCode: 403, statusMessage: 'Forbidden', message: err.message })
     if (err instanceof FlowError) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: err.message })
     throw err
   }
@@ -52,4 +54,9 @@ export function routeId(event: H3Event, name = 'id'): string {
 /** 演示工具开关：NUXT_DEV_TOOLS=1 时开启，关闭时 /api/dev/* 一律 404 */
 export function requireDevTools(event: H3Event) {
   if (!useRuntimeConfig(event).devTools) throw createError({ statusCode: 404, statusMessage: 'Not Found' })
+}
+
+/** 服务层用的操作人：QMS 用户 ID + 是否管理员 */
+export function actorOf(event: H3Event, user: AuthUser) {
+  return { userId: user.qmsUserId, isAdmin: isAdmin(event, user) }
 }

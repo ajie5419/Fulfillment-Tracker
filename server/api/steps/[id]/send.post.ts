@@ -14,5 +14,7 @@ const body = z
 /** 发出登记（厂外外协） */
 export default defineFlowHandler(async (event, user) => {
   const input = await parseBody(event, body)
-  return sendStep({ ...input, stepId: routeId(event), actorId: user.qmsUserId })
+  const stepId = routeId(event)
+  await assertCanSeeStep(event, stepId)
+  return sendStep({ ...input, stepId, actorId: user.qmsUserId })
 })

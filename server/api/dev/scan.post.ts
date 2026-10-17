@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { scanRules } from '../../services/alerts/scan'
+import { syncNonconforming } from '../../services/issues/nonconforming'
 
 const body = z.object({ plusDays: z.number().min(0).max(60).optional() }).strict()
 
@@ -8,5 +9,6 @@ export default defineFlowHandler(async (event) => {
   requireDevTools(event)
   const { plusDays = 0 } = await parseBody(event, body)
   const now = new Date(Date.now() + plusDays * 86_400_000)
-  return { now, ...(await scanRules(now)) }
+  const nonconforming = await syncNonconforming()
+  return { now, nonconforming: nonconforming.created.length, ...(await scanRules(now)) }
 })

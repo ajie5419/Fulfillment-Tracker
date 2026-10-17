@@ -13,7 +13,7 @@ const { data: rows, pending, refresh } = await useFetch('/api/alerts', {
 })
 
 const ownerText = (owners: { name: string }[]) => owners.map((o) => o.name).join('、')
-const ruleOptions = (['W1', 'W2', 'W3'] as const).map((r) => ({ value: r, label: RULE_TEXT[r] }))
+const ruleOptions = (['W1', 'W2', 'W3', 'W4'] as const).map((r) => ({ value: r, label: RULE_TEXT[r] }))
 const levelOptions = LEVEL_ORDER.map((l) => ({ value: l, label: LEVEL_TEXT[l] }))
 const columns = [
   { title: '级别', key: 'level', width: 80 },
@@ -23,7 +23,31 @@ const columns = [
   { title: '情况 / 已持续', key: 'summary' },
   { title: '责任人', key: 'owners', width: 140 },
   { title: '首次预警 / 升级', key: 'time', width: 180 },
+  { title: '', key: 'convert', width: 150 },
 ]
+
+/** 黄色预警手动转异常（责任人、项目经理、管理员）；红色由扫描任务自动转 */
+const converting = ref<string | null>(null)
+const convertRow = (r: Record<string, unknown>) => convert({ id: String(r.id), subject: String(r.subject) })
+function convert(row: { id: string; subject: string }) {
+  Modal.confirm({
+    title: `把这条预警转为异常？`,
+    content: row.subject,
+    okText: '转异常',
+    async onOk() {
+      converting.value = row.id
+      try {
+        const r = await ($fetch as unknown as (u: string, o: { method: 'POST' }) => Promise<{ issueId: string; issueNo: string }>)(`/api/alerts/${row.id}/convert`, { method: 'POST' })
+        message.success(`已转为异常 ${r.issueNo}`)
+        await refresh()
+      } catch (e) {
+        message.error(apiError(e))
+      } finally {
+        converting.value = null
+      }
+    },
+  })
+}
 </script>
 
 <template>
@@ -65,6 +89,10 @@ const columns = [
         <template v-else-if="column.key === 'time'">
           <div>{{ timeText(record.firstAt) }}</div>
           <div class="muted">{{ timeText(record.levelAt) }}</div>
+        </template>
+        <template v-else-if="column.key === 'convert'">
+          <NuxtLink v-if="record.issue" :to="`/issues?id=${encodeURIComponent(record.issue.id)}`"><a-tag color="purple">已转异常 {{ record.issue.issueNo }}</a-tag></NuxtLink>
+          <a-button v-else-if="record.canConvert" size="small" danger :loading="converting === record.id" @click="convertRow(record)">转异常</a-button>
         </template>
       </template>
     </a-table>

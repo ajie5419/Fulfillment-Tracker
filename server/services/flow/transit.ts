@@ -3,12 +3,17 @@ import { prisma } from '../../utils/prisma'
 import { overdueDays } from './dates'
 import { loadNames } from './names'
 
-export async function listTransit(filter: { workOrderNumber?: string; supplierId?: string }) {
+/** visibleWorkOrders：可见工单（undefined = 全部，见 server/utils/auth.ts 的 getScope） */
+export async function listTransit(filter: { workOrderNumber?: string; supplierId?: string; visibleWorkOrders?: string[] }) {
+  const wo = {
+    ...(filter.workOrderNumber ? { equals: filter.workOrderNumber } : {}),
+    ...(filter.visibleWorkOrders ? { in: filter.visibleWorkOrders } : {}),
+  }
   const steps = await prisma.routeStep.findMany({
     where: {
       status: 'OUT',
       ...(filter.supplierId ? { supplierId: filter.supplierId } : {}),
-      ...(filter.workOrderNumber ? { part: { workOrderNumber: filter.workOrderNumber } } : {}),
+      ...(Object.keys(wo).length ? { part: { workOrderNumber: wo } } : {}),
     },
     include: { part: true },
     orderBy: [{ promisedReturnDate: 'asc' }, { startedAt: 'asc' }],

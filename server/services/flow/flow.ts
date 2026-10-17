@@ -9,6 +9,7 @@
  */
 import type { FlowEventType, FlowSource, Part, Prisma, RouteStep } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
+import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
 import { FlowError } from './errors'
 
@@ -22,18 +23,17 @@ export const ARRANGE_START = 'ARRANGE_START'
 
 /** 锁住步骤行再读，保证同一步骤的返厂、发出串行执行（判断"第一次返厂"、累计数量不会算重） */
 export async function lockStep(tx: Tx, stepId: string): Promise<RouteStep & { part: Part }> {
-  await tx.$queryRaw`SELECT id FROM route_step WHERE id = ${stepId} FOR UPDATE`
+  // 状态取自加锁读：事务里之前若有过普通读，普通读用的是旧快照，可能是过期状态
+  const [locked] = await tx.$queryRaw<{ status: RouteStep['status'] }[]>`SELECT status FROM route_step WHERE id = ${stepId} FOR UPDATE`
+  if (!locked) throw new FlowError('步骤不存在或已删除')
   const step = await tx.routeStep.findUnique({ where: { id: stepId }, include: { part: true } })
   if (!step) throw new FlowError('步骤不存在或已删除')
-  return step
+  return { ...step, status: locked.status }
 }
 
 /** 立即消除该步骤上指定规则的活动预警（扫描任务也会兜底消除，这里让页面马上看到） */
 async function clearStepAlerts(tx: Tx, stepId: string, rules: ('W2' | 'W3')[]) {
-  await tx.alert.updateMany({
-    where: { activeKey: { in: rules.map((r) => alertKey(r, 'step', stepId)) } },
-    data: { status: 'CLEARED', activeKey: null },
-  })
+  await clearAlertKeys(tx, rules.map((r) => alertKey(r, 'step', stepId)))
 }
 
 /** 关闭该步骤上指定类型的未完成待办 */
@@ -257,4 +257,43 @@ async function applyReturn(
   await clearStepAlerts(tx, step.id, ['W2', 'W3'])
 
   return { duplicate: false, stepDone: done, todoCreated }
+}
+
+// ───────────── 有异常（方案 4.3：已完成 ⇄ 有异常）─────────────
+
+/**
+ * QMS 检验判不合格 → 步骤置为"有异常"。调用方（异常模块）负责开事务、并与生成异常放在同一事务。
+ * 已是有异常的不重复处理。步骤还在外（部分返回）时也置为有异常，之后的返厂只记事件。
+ */
+export async function blockStep(tx: Tx, stepId: string) {
+  const step = await lockStep(tx, stepId)
+  if (step.status === 'BLOCKED') return false
+  await tx.routeStep.update({ where: { id: step.id }, data: { status: 'BLOCKED' } })
+  // 步骤不再"在外"，W3（承诺返回日逾期）没有意义了；W2 只看待开工的步骤，不受影响
+  await clearStepAlerts(tx, step.id, ['W3'])
+  return true
+}
+
+/**
+ * 关联的异常全部关闭后恢复步骤：数量已全部返回（或已完工）→ 已完成，否则回到 在外加工 / 加工中。
+ * 由异常关闭的事务调用；该步骤还有其他未关闭异常时不恢复（由调用方判断）。
+ * 恢复为已完成且工件当前步骤还停在这一步时（被拦下时还没全部返回），工件指针推进到下一道。
+ */
+export async function restoreBlockedStep(tx: Tx, stepId: string) {
+  const step = await lockStep(tx, stepId)
+  if (step.status !== 'BLOCKED') return null
+  const returned = await returnedQty(tx, step.id)
+  const finished = (await tx.flowEvent.count({ where: { stepId: step.id, type: 'FINISH' } })) > 0
+  const done = finished || returned >= step.part.quantity
+  const now = new Date()
+  const status = done ? 'DONE' : step.mode === 'EXTERNAL_OUTSOURCE' ? 'OUT' : 'IN_PROGRESS'
+  await tx.routeStep.update({ where: { id: step.id }, data: { status, ...(done && !step.finishedAt ? { finishedAt: now } : {}) } })
+  if (done && step.part.currentStepId === step.id) {
+    const next = await tx.routeStep.findFirst({ where: { partId: step.partId, seq: { gt: step.seq } }, orderBy: { seq: 'asc' } })
+    await tx.part.update({
+      where: { id: step.partId },
+      data: next ? { currentStepId: next.id, statusSince: now } : { status: 'DONE', statusSince: now },
+    })
+  }
+  return status
 }

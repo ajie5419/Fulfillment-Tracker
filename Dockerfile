@@ -18,6 +18,8 @@ ENV NODE_ENV=production HOST=0.0.0.0 PORT=3100
 RUN npm install -g prisma@6.19.3 && npm cache clean --force
 COPY --from=build /app/.output ./.output
 COPY --from=build /app/prisma ./prisma
+# 异常照片目录（NUXT_UPLOAD_DIR 默认 ./data/uploads），部署时挂载数据卷
+RUN mkdir -p /app/data/uploads && chown -R node:node /app/data
 USER node
 EXPOSE 3100
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://127.0.0.1:3100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

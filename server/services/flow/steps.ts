@@ -4,6 +4,7 @@
  */
 import type { Prisma, StepMode } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
+import { openIssuesOfSteps } from '../issues/issues'
 import { FlowError } from './errors'
 import { loadNames } from './names'
 
@@ -40,7 +41,7 @@ export async function listParts(workOrderNumber: string) {
   })
   const steps = parts.flatMap((p) => p.steps)
   const stepIds = steps.map((s) => s.id)
-  const [names, sums, counts] = await Promise.all([
+  const [names, sums, counts, issues] = await Promise.all([
     loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId), user: steps.map((s) => s.ownerId) }),
     prisma.flowEvent.groupBy({
       by: ['stepId'],
@@ -48,6 +49,8 @@ export async function listParts(workOrderNumber: string) {
       _sum: { qty: true },
     }),
     prisma.flowEvent.groupBy({ by: ['stepId'], where: { stepId: { in: stepIds } }, _count: { _all: true } }),
+    // 有异常的步骤要能跳到对应异常
+    openIssuesOfSteps(steps.filter((s) => s.status === 'BLOCKED').map((s) => s.id)),
   ])
   const returned = new Map(sums.map((s) => [s.stepId, s._sum.qty ?? 0]))
   const eventCount = new Map(counts.map((c) => [c.stepId, c._count._all]))
@@ -60,6 +63,8 @@ export async function listParts(workOrderNumber: string) {
       ownerName: s.ownerId ? (names.user.get(s.ownerId) ?? s.ownerId) : null,
       returnedQty: returned.get(s.id) ?? 0,
       eventCount: eventCount.get(s.id) ?? 0,
+      /** 该步骤上未关闭的异常（步骤"有异常"时） */
+      issues: issues.get(s.id) ?? [],
     })),
   }))
 }

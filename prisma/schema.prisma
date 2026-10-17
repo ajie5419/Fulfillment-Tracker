@@ -310,11 +310,15 @@ model Issue {
   dueDate            DateTime?
   status             IssueStatus   @default(OPEN)
   escalationLevel    Int           @default(0)
+  /// 系统来源的幂等键："QMS:<报检 ID>"、"ALERT:<预警 ID>"；手工上报为空（MySQL 唯一索引允许多个 NULL）
+  sourceKey          String?       @unique @db.VarChar(120)
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
   logs               IssueLog[]
 
   @@index([workOrderNumber, status])
+  @@index([refType, refId])
+  @@index([status])
   @@map("issue")
 }
 
@@ -378,6 +382,12 @@ model Reminder {
   todoId    String?
   title     String
   level     AlertLevel @default(REMIND)
+  /// 提醒种类：空 = 预警/待办类；DIGEST = 每日汇总
+  kind      String?    @db.VarChar(20)
+  /// 每日汇总的正文（前 5 项，一行一项）
+  body      String?    @db.Text
+  /// 每日汇总防重复："DIGEST:<YYYY-MM-DD>:<userId>"，同人同日只有一条
+  dedupeKey String?    @unique @db.VarChar(120)
   readAt    DateTime?
   createdAt DateTime   @default(now())
 
@@ -429,6 +439,21 @@ model JobLock {
   holder      String?  @db.VarChar(64)
 
   @@map("job_lock")
+}
+
+/// 上传的文件（异常照片）。文件存在 runtimeConfig.uploadDir 下，文件名是随机 id，不用用户给的文件名。
+/// issueId：上报异常时绑定；未绑定的只有上传人自己能读取，绑定后按异常所属工单的可见范围判断。
+model UploadFile {
+  id         String   @id @db.VarChar(64)
+  storedName String   @db.VarChar(80)
+  mime       String   @db.VarChar(40)
+  size       Int
+  uploaderId String   @db.VarChar(64)
+  issueId    String?  @db.VarChar(64)
+  createdAt  DateTime @default(now())
+
+  @@index([issueId])
+  @@map("upload_file")
 }
 
 // ───────────── 登录会话 ─────────────
