@@ -125,6 +125,18 @@ async function onExpand(expanded: boolean, s: Pick<StepRow, 'partId'>) {
   if (expanded && !eventsCache.has(s.partId)) eventsCache.set(s.partId, await loadEvents(s.partId))
 }
 
+// ───── R8：从 QMS BOM 导入、路线模板 ─────
+const { data: me } = await useMe()
+const bomImportOpen = ref(false)
+const templateTarget = ref<{ partId: string; partName: string; mode: 'apply' | 'save' } | null>(null)
+const fillCount = (p: PartRow) => p.steps.filter((s) => s.needsFill).length
+function afterR8() {
+  bomImportOpen.value = false
+  templateTarget.value = null
+  refresh()
+  eventsCache.clear()
+}
+
 const columns = [
   { title: '序', dataIndex: 'seq', width: 48 },
   { title: '工序', key: 'process', width: 140 },
@@ -150,6 +162,7 @@ const columns = [
         :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName}　交期 ${dayText(w.deliveryDate)}` }))"
       />
       <a-button type="primary" :disabled="!workOrderNumber" @click="editPart()">新建工件</a-button>
+      <a-button :disabled="!workOrderNumber" @click="bomImportOpen = true">从 QMS BOM 导入</a-button>
     </a-space>
   </a-card>
 
@@ -160,6 +173,10 @@ const columns = [
         {{ p.name }}
         <span class="muted">　图号 {{ p.drawingNo || '—' }}　数量 {{ p.quantity }}　BOM 物料 ID {{ p.qmsPartId || '—' }}</span>
         <a-tag v-if="p.status === 'DONE'" color="success" style="margin-left: 8px">已完成</a-tag>
+        <a-tag v-if="p.qmsBomId" style="margin-left: 8px">来自 QMS BOM</a-tag>
+        <a-tooltip v-if="fillCount(p)" title="还没开工、但缺负责人，或外协没选外协厂的工序；从 BOM 导入的工序默认自制，请确认方式">
+          <a-tag color="warning">{{ fillCount(p) }} 道待补充</a-tag>
+        </a-tooltip>
       </template>
       <template #extra>
         <a-space>
@@ -191,13 +208,14 @@ const columns = [
             />
           </template>
           <template v-else-if="column.key === 'owner'">
-            <a-select :value="record.ownerId ?? undefined" style="width: 100%" show-search option-filter-prop="label" :options="userOptions" @change="(v: unknown) => patchStep(record as StepRow, { ownerId: v })" />
+            <a-select :value="record.ownerId ?? undefined" style="width: 100%" show-search option-filter-prop="label" placeholder="待补充" :options="userOptions" @change="(v: unknown) => patchStep(record as StepRow, { ownerId: v })" />
           </template>
           <template v-else-if="column.key === 'dueDate'">
             <a-date-picker :value="dayText(record.dueDate) || undefined" value-format="YYYY-MM-DD" style="width: 100%" @change="(v: unknown) => patchStep(record as StepRow, { dueDate: v || null })" />
           </template>
           <template v-else-if="column.key === 'status'">
             <a-tag :color="STATUS_COLOR[record.status as StepStatusKey]">{{ STATUS_TEXT[record.status as StepStatusKey] }}</a-tag>
+            <a-tag v-if="record.needsFill" color="warning">待补充</a-tag>
             <div v-if="record.issues?.length">
               <NuxtLink v-for="i in record.issues" :key="i.id" :to="`/issues?id=${encodeURIComponent(i.id)}`" class="issue-link">{{ i.issueNo }}</NuxtLink>
             </div>
@@ -242,6 +260,8 @@ const columns = [
         <a-select v-model:value="draftOf(p.id).ownerId" placeholder="负责人（默认我）" style="width: 150px" allow-clear show-search option-filter-prop="label" :options="userOptions" />
         <a-date-picker v-model:value="draftOf(p.id).dueDate" placeholder="要求完成日" value-format="YYYY-MM-DD" />
         <a-button @click="addStep(p)">添加工序</a-button>
+        <a-button v-if="!p.steps.length" @click="templateTarget = { partId: p.id, partName: p.name, mode: 'apply' }">套用模板</a-button>
+        <a-button v-if="p.steps.length && me?.isAdmin" @click="templateTarget = { partId: p.id, partName: p.name, mode: 'save' }">另存为模板</a-button>
       </a-space>
     </a-card>
   </a-spin>
@@ -271,6 +291,9 @@ const columns = [
       </a-form-item>
     </a-form>
   </a-modal>
+
+  <BomImportModal :open="bomImportOpen" :work-order-number="workOrderNumber" @close="bomImportOpen = false" @done="afterR8" />
+  <PartTemplateModal :target="templateTarget" @close="templateTarget = null" @done="afterR8" />
 
   <a-modal :open="returning.open" :title="`补登返厂：${returning.partName} · ${returning.step?.processName ?? ''}`" ok-text="补登" @ok="doReturn" @cancel="returning.open = false">
     <p class="muted">QMS 漏报检时使用。数量全部返回后步骤自动完成。</p>

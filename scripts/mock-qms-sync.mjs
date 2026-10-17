@@ -8,6 +8,8 @@
  *   - ORDER BY updatedAt, key（工单是 workOrderNumber，其余是 id）；条件 updatedAt > since OR (updatedAt = since AND key > afterId)
  *   - 含软删除的行；本页满 limit 时 nextCursor = 最后一行的 (updatedAt, key)，否则 null
  *
+ *   GET /api/integration/fulfillment/work-orders/<工单号>/bom（R8 按需读取，不是增量流）：返回 data.boms[工单号]，未知工单为空列表
+ *
  * 测试和端到端脚本可以在运行时改数据（upsert 自动把 updatedAt 置为当前时间）、注入失败（failNext）。
  */
 import { readFileSync } from 'node:fs'
@@ -22,7 +24,9 @@ const keyOf = (resource) => (resource === 'work-orders' ? 'workOrderNumber' : 'i
 
 export function loadFixture(path = DEFAULT_FIXTURE) {
   const raw = JSON.parse(readFileSync(path, 'utf8'))
-  return Object.fromEntries(RESOURCES.map((r) => [r, structuredClone(raw[r] ?? [])]))
+  const data = Object.fromEntries(RESOURCES.map((r) => [r, structuredClone(raw[r] ?? [])]))
+  data.boms = structuredClone(raw.boms ?? {}) // 工单号 → BOM 行（R8）
+  return data
 }
 
 /**
@@ -31,6 +35,7 @@ export function loadFixture(path = DEFAULT_FIXTURE) {
 export function createMockQmsSync({ clientId, clientSecret, fixture }) {
   const data = typeof fixture === 'object' && fixture ? fixture : loadFixture(fixture)
   for (const r of RESOURCES) data[r] ??= []
+  data.boms ??= {}
   /** resource -> [{ status, remaining }]，按顺序消耗 */
   const failures = new Map()
   const stats = { requests: 0 }
@@ -44,6 +49,23 @@ export function createMockQmsSync({ clientId, clientSecret, fixture }) {
   function handle(req, res, url) {
     if (!url.pathname.startsWith(SYNC_PREFIX)) return false
     const resource = url.pathname.slice(SYNC_PREFIX.length)
+    const bom = /^work-orders\/([^/]+)\/bom$/.exec(resource)
+    if (bom && req.method === 'GET') {
+      stats.requests++
+      if (req.headers['x-identity-client-id'] !== clientId || req.headers['x-identity-client-secret'] !== clientSecret) {
+        send(res, 401, { code: -1, data: null, message: 'Identity client authentication failed' })
+        return true
+      }
+      const injected = failures.get('bom')?.[0]
+      if (injected) {
+        if (--injected.remaining <= 0) failures.get('bom').shift()
+        send(res, injected.status, { code: -1, data: null, message: 'injected failure' })
+        return true
+      }
+      const workOrderNumber = decodeURIComponent(bom[1])
+      send(res, 200, { code: 0, data: { workOrderNumber, items: data.boms[workOrderNumber] ?? [] }, error: null, message: 'ok' })
+      return true
+    }
     if (req.method !== 'GET' || !RESOURCES.includes(resource)) {
       send(res, 404, { code: -1, data: null, message: 'not found' })
       return true
@@ -94,7 +116,11 @@ export function createMockQmsSync({ clientId, clientSecret, fixture }) {
       else list.push(merged)
       return merged
     },
-    /** 接下来 count 次请求（resource 为 '*' 时任意资源）返回 status */
+    /** 替换某工单的 BOM（R8） */
+    setBom(workOrderNumber, items) {
+      data.boms[workOrderNumber] = items
+    },
+    /** 接下来 count 次请求（resource 为 '*' 时任意同步资源，'bom' 为 BOM 接口）返回 status */
     failNext(resource, count = 1, status = 503) {
       failures.set(resource, [...(failures.get(resource) ?? []), { status, remaining: count }])
     },

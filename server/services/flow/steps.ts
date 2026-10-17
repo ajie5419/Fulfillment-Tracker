@@ -32,6 +32,11 @@ const supplierFor = (mode: StepMode, supplierId: string | null | undefined) => (
 
 // ───────────── 查询 ─────────────
 
+/** 步骤还缺信息：待开工且没有负责人，或外协步骤没选外协厂。没有负责人时上一道完成后发不出待办 */
+export function needsFill(s: { status: string; ownerId: string | null; mode: StepMode; supplierId: string | null }) {
+  return s.status === 'PENDING' && (!s.ownerId || (s.mode !== 'SELF' && !s.supplierId))
+}
+
 /** 工单下的工件及其工序链（带名称、已返回数量），供页面直接展示 */
 export async function listParts(workOrderNumber: string) {
   const parts = await prisma.part.findMany({
@@ -65,6 +70,8 @@ export async function listParts(workOrderNumber: string) {
       eventCount: eventCount.get(s.id) ?? 0,
       /** 该步骤上未关闭的异常（步骤"有异常"时） */
       issues: issues.get(s.id) ?? [],
+      /** 待补充：还没开工、但缺负责人，或外协却没选外协厂（BOM 导入的步骤默认就是这样） */
+      needsFill: needsFill(s),
     })),
   }))
 }
