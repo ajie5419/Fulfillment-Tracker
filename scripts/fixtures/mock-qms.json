@@ -1,5 +1,5 @@
 {
-  "_说明": "模拟 QMS 同步接口的数据（scripts/mock-qms-sync.mjs）。字段按 R2 同步接口契约 v1；用户 ID 与模拟身份桥的演示用户一致（u-001 ~ u-006），部门存部门 ID。",
+  "_说明": "模拟 QMS 同步接口的数据（scripts/mock-qms-sync.mjs）。字段按 R2 同步接口契约 v1；boms 是按工单读取的项目 BOM（R8，GET /api/integration/fulfillment/work-orders/<工单号>/bom）；用户 ID 与模拟身份桥的演示用户一致（u-001 ~ u-006），部门存部门 ID。",
   "departments": [
     { "id": "dept-tech", "name": "技术部", "parentId": "0", "status": 1, "isDeleted": false, "updatedAt": "2026-09-01T00:00:00.000Z" },
     { "id": "dept-pur", "name": "采购部", "parentId": "0", "status": 1, "isDeleted": false, "updatedAt": "2026-09-01T00:00:00.000Z" },
@@ -41,5 +41,13 @@
   "inspections": [
     { "id": "qi-hist-001", "requestNo": "BJ-20260912-001", "workOrderNumber": "QMS-WO-2026-003", "workOrderNumbers": ["QMS-WO-2026-003"], "partId": null, "partName": "历史结构件", "processId": "prc-weld", "processName": "组焊", "supplierId": "sup-weld", "supplierName": "华东组焊厂", "teamId": null, "teamName": null, "category": "PROCESS", "quantity": 1, "status": "CLOSED", "inspectionResult": "PASS", "unqualifiedQuantity": null, "linkedIssueId": null, "linkedIssueNo": null, "reporterId": "u-001", "submittedAt": "2026-09-12T02:00:00.000Z", "closedAt": "2026-09-12T06:00:00.000Z", "isDeleted": false, "updatedAt": "2026-09-12T06:00:00.000Z" },
     { "id": "qi-hist-002", "requestNo": "BJ-20260912-002", "workOrderNumber": "QMS-WO-2026-003", "workOrderNumbers": ["QMS-WO-2026-003"], "partId": null, "partName": "历史结构件", "processId": "prc-paint", "processName": "涂装", "supplierId": "sup-paint", "supplierName": "宏达涂装厂", "teamId": null, "teamName": null, "category": "PROCESS", "quantity": 1, "status": "INSPECTING", "inspectionResult": "FAIL", "unqualifiedQuantity": 1, "linkedIssueId": "qms-issue-1", "linkedIssueNo": "ZL-20260912-001", "reporterId": "u-001", "submittedAt": "2026-09-12T03:00:00.000Z", "closedAt": null, "isDeleted": false, "updatedAt": "2026-09-12T06:00:00.000Z" }
-  ]
+  ],
+  "boms": {
+    "QMS-WO-2026-001": [
+      { "id": "bom-001", "partId": "qms-part-001", "partName": "主梁结构件", "partNumber": "ZL-001", "material": "Q355B", "quantity": 2, "unit": "件", "remarks": null, "updatedAt": "2026-09-05T00:00:00.000Z",
+        "processes": [{ "position": 0, "processId": "prc-weld", "processName": "组焊" }, { "position": 1, "processId": "prc-paint", "processName": "涂装" }] },
+      { "id": "bom-002", "partId": "qms-part-002", "partName": "支腿", "partNumber": "ZT-002", "material": "Q235B", "quantity": 4, "unit": "件", "remarks": null, "updatedAt": "2026-09-05T00:00:00.000Z",
+        "processes": [{ "position": 0, "processId": "prc-mach", "processName": "机加" }, { "position": 1, "processId": null, "processName": "探伤" }, { "position": 2, "processId": "prc-paint", "processName": "涂装" }] }
+    ]
+  }
 }

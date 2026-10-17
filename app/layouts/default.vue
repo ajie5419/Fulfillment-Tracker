@@ -7,6 +7,7 @@ const menu = computed(() => [
   { key: '/issues', label: '异常列表' },
   { key: '/board', label: '看板' },
   { key: '/parts', label: '工件与工序链' },
+  { key: '/templates', label: '路线模板' },
   { key: '/unmatched', label: '待确认匹配' },
   ...(me.value?.isAdmin ? [{ key: '/settings', label: '设置' }] : []),
   ...(me.value?.devTools ? [{ key: '/dev', label: '演示工具' }] : []),

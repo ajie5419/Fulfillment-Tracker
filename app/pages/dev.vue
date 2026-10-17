@@ -180,7 +180,8 @@ async function submit() {
     </a-card>
 
     <a-card title="演示数据">
-      <p class="muted">不连 QMS 时用演示数据走通外协主链路。所有演示数据的 ID 带 DEMO- 前缀，可与同步来的真实数据共存；配置了 QMS 同步时不写演示用户（u-001 等，用户以 QMS 为准）。清除只删 DEMO- 数据及引用它们的工件、步骤、流转记录、待办、待确认记录、预警和提醒，并清掉演示的通知对象、工单项目经理，阈值恢复默认；同步来的真实数据不动。</p>
+      <p class="muted">不连 QMS 时用演示数据走通外协主链路。所有演示数据的 ID 带 DEMO- 前缀，可与同步来的真实数据共存；配置了 QMS 同步时不写演示用户（u-001 等，用户以 QMS 为准）。清除只删 DEMO- 数据及引用它们的工件、步骤、流转记录、待办、待确认记录、预警和提醒，并清掉演示的通知对象、工单项目经理、演示路线模板，阈值恢复默认；同步来的真实数据不动。</p>
+      <p class="muted">试 BOM 导入：写入演示数据后到"工件与工序链"选 DEMO-WO-002，点"从 QMS BOM 导入"（演示 BOM 不连 QMS）；试模板：到"工序路线模板"看演示模板，或给没有工序的工件"套用模板"。</p>
       <a-space>
         <a-button type="primary" :loading="busy" @click="run('/api/dev/seed', '写入演示数据')">写入演示数据</a-button>
         <a-button :loading="busy" @click="run('/api/dev/match', '执行一轮匹配')">执行一轮报检匹配</a-button>

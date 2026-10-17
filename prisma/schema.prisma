@@ -171,6 +171,8 @@ model Part {
   drawingNo       String?
   quantity        Int        @default(1)
   qmsPartId       String?    @db.VarChar(64) // 引用 QMS BOM 物料 ID，用于报检匹配
+  /// 从 QMS 项目 BOM 导入时的 BOM 行 ID（project_boms.id）；同一工单下唯一，重复导入据此跳过。手工建的工件为空
+  qmsBomId        String?    @db.VarChar(191)
   currentStepId   String?
   status          PartStatus @default(ACTIVE)
   statusSince     DateTime   @default(now())
@@ -178,6 +180,7 @@ model Part {
   updatedAt       DateTime   @updatedAt
   steps           RouteStep[]
 
+  @@unique([workOrderNumber, qmsBomId])
   @@index([workOrderNumber])
   @@index([qmsPartId])
   @@map("part")
@@ -220,6 +223,34 @@ model RouteStep {
   @@index([status])
   @@index([supplierId])
   @@map("route_step")
+}
+
+/// 工序路线模板（R8）：常用工序链。套用时把步骤复制到工件上，之后改模板不影响已套用的工件（复制即版本）
+model RouteTemplate {
+  id          String              @id @default(cuid())
+  name        String              @unique @db.VarChar(191)
+  description String?             @db.Text
+  createdBy   String?             @db.VarChar(64)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  steps       RouteTemplateStep[]
+
+  @@map("route_template")
+}
+
+model RouteTemplateStep {
+  id          String        @id @default(cuid())
+  templateId  String
+  seq         Int
+  processId   String        @db.VarChar(64) // QMS processes.id
+  mode        StepMode
+  supplierId  String?       @db.VarChar(64) // 外协时的默认外协厂，可空
+  /// 默认工期（天）。套用时给了开工日才据此推算各道的要求完成日
+  defaultDays Int?
+  template    RouteTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, seq])
+  @@map("route_template_step")
 }
 
 enum FlowEventType {

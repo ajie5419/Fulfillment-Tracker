@@ -2,10 +2,16 @@
 import { z } from 'zod'
 import { parseDay } from '../services/flow/dates'
 
-export const day = z
+/** 'YYYY-MM-DD' 且是真实存在的日期（2026-13-45、2026-02-30 这类直接 400，不让 Invalid Date 进数据库） */
+export const dayString = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式应为 YYYY-MM-DD')
-  .transform(parseDay)
+  .refine((d) => {
+    const t = parseDay(d)
+    return Number.isFinite(t.getTime()) && t.toISOString().slice(0, 10) === d
+  }, '日期无效')
+
+export const day = dayString.transform(parseDay)
 
 export const stepFields = {
   processId: z.string().min(1, '请选择工序').max(64),
