@@ -10,11 +10,14 @@
  *   未签收发放（R9）= 该工单上还有人没签收的有效发放单份数（只显示，不参与红黄绿；超时没签收由 W5 预警计入红黄）
  *   缺料（R10）= 该工单上未到货、且已到需求日的关键物料项数（只显示；未到货的预警由 W6 计入红黄）
  *   出图逾期（R11）= 该工单上逾期的出图任务数（待出图已过计划完成日、或客户确认已过计划日；只显示，预警由 W7 计入红黄）
+ *   未齐套节点（R12）= 该工单上已进入 W8 预警窗口（需求日前 N 天内，含已过）仍未齐套的装配节点数（只显示，预警由 W8 计入红黄）。
+ *     远期节点还没齐是正常的，不计入，免得这一列永远是一大串数字没人看
  */
 import { prisma } from '../../utils/prisma'
 import { loadOffDays, loadThresholds } from '../alerts/config'
 import { judgeW4 } from '../alerts/rules'
 import { overdueWhere } from '../drawings/drawings'
+import { dueWindowWhere, incompleteWhere } from '../kitting/kitting'
 import { todayDate } from '../purchases/constants'
 import { overdueDays } from '../flow/dates'
 import { loadNames } from '../flow/names'
@@ -26,7 +29,7 @@ export type BoardColor = 'RED' | 'YELLOW' | 'GREEN'
 /** 活动预警 → 所属工单 */
 async function alertWorkOrders(alerts: { id: string; refType: string; refId: string }[]) {
   const ids = (t: string) => alerts.filter((a) => a.refType === t).map((a) => a.refId)
-  const [steps, inspections, issues, receipts, releases, purchases, drawings] = await Promise.all([
+  const [steps, inspections, issues, receipts, releases, purchases, drawings, nodes] = await Promise.all([
     ids('step').length ? prisma.routeStep.findMany({ where: { id: { in: ids('step') } }, select: { id: true, part: { select: { workOrderNumber: true } } } }) : [],
     ids('unmatched').length ? prisma.qmsInspection.findMany({ where: { id: { in: ids('unmatched') } }, select: { id: true, workOrderNumber: true } }) : [],
     ids('issue').length ? prisma.issue.findMany({ where: { id: { in: ids('issue') } }, select: { id: true, workOrderNumber: true } }) : [],
@@ -36,6 +39,7 @@ async function alertWorkOrders(alerts: { id: string; refType: string; refId: str
     ids('release').length ? prisma.release.findMany({ where: { id: { in: ids('release') } }, select: { id: true, workOrderNumber: true } }) : [],
     ids('purchase').length ? prisma.purchaseLine.findMany({ where: { id: { in: ids('purchase') } }, select: { id: true, workOrderNumber: true } }) : [],
     ids('drawing').length ? prisma.drawingTask.findMany({ where: { id: { in: ids('drawing') } }, select: { id: true, workOrderNumber: true } }) : [],
+    ids('node').length ? prisma.assemblyNode.findMany({ where: { id: { in: ids('node') } }, select: { id: true, workOrderNumber: true } }) : [],
   ])
   const wo = new Map<string, string>()
   for (const s of steps) wo.set(`step:${s.id}`, s.part.workOrderNumber)
@@ -45,6 +49,7 @@ async function alertWorkOrders(alerts: { id: string; refType: string; refId: str
   for (const r of releases) wo.set(`release:${r.id}`, r.workOrderNumber)
   for (const p of purchases) wo.set(`purchase:${p.id}`, p.workOrderNumber)
   for (const d of drawings) wo.set(`drawing:${d.id}`, d.workOrderNumber)
+  for (const n of nodes) wo.set(`node:${n.id}`, n.workOrderNumber)
   return new Map(alerts.map((a) => [a.id, wo.get(`${a.refType}:${a.refId}`) ?? null]))
 }
 
@@ -85,6 +90,12 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
       _count: { _all: true },
     }),
   ])
+  const incompleteNodes = await prisma.assemblyNode.groupBy({
+    by: ['workOrderNumber'],
+    where: { AND: [incompleteWhere(), dueWindowWhere(now, thresholds.W8), ...(woWhere ? [{ workOrderNumber: woWhere }] : [])] },
+    _count: { _all: true },
+  })
+  const incompleteNodesOf = new Map(incompleteNodes.map((n) => [n.workOrderNumber, n._count._all]))
   const drawingOverdueOf = new Map(drawingOverdue.map((d) => [d.workOrderNumber, d._count._all]))
   const shortageOf = new Map(shortage.map((s) => [s.workOrderNumber, s._count._all]))
   const unsignedOf = new Map(unsigned.map((u) => [u.workOrderNumber, u._count._all]))
@@ -125,6 +136,7 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
       unsignedReleases: unsignedOf.get(wo) ?? 0,
       shortage: shortageOf.get(wo) ?? 0,
       drawingOverdue: drawingOverdueOf.get(wo) ?? 0,
+      incompleteNodes: incompleteNodesOf.get(wo) ?? 0,
     }
   })
   const rank = { RED: 0, YELLOW: 1, GREEN: 2 } as const

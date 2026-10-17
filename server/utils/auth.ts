@@ -132,6 +132,17 @@ export async function assertCanSeeDrawing(event: H3Event, id: string, user?: Aut
   await assertCanSee(event, task.workOrderNumber)
 }
 
+/**
+ * 装配节点（R12）：按所属工单判断；给了 user 时，节点负责人本人不受工单范围限制（手机"我负责的节点"、W8 提醒跳转）。
+ * 修改类接口不传 user（另外还要是生产经理 / 该工单项目经理 / 管理员，服务层判断）。
+ */
+export async function assertCanSeeNode(event: H3Event, id: string, user?: AuthUser) {
+  const node = await prisma.assemblyNode.findUnique({ where: { id }, select: { workOrderNumber: true, ownerId: true } })
+  if (!node) return
+  if (user && node.ownerId === user.qmsUserId) return
+  await assertCanSee(event, node.workOrderNumber)
+}
+
 /** 报检：主工单或任一关联工单可见即可见 */
 export async function assertCanSeeInspection(event: H3Event, inspectionId: string) {
   const ins = await prisma.qmsInspection.findUnique({ where: { id: inspectionId }, select: { workOrderNumber: true, workOrderNumbers: true } })

@@ -80,6 +80,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     // 发放单的接收人要在 QMS 用户副本里（R9）
     await db.release.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db.drawingTask.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
+    await db.assemblyNode.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db.qmsUser.deleteMany({ where: { id: { in: HTTP_USERS } } })
     await db.qmsUser.createMany({ data: HTTP_USERS.map((id) => ({ id, username: id, realName: id, status: 'ACTIVE', updatedAt: now })) })
     otherPartId = (await db.part.create({ data: { workOrderNumber: OTHER, name: '别人的工件' } })).id
@@ -130,6 +131,8 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     await bridge?.close()
     await db?.release.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.drawingTask.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
+    await db?.assemblyNode.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
+    await db?.notifyRole.deleteMany({ where: { userId: 'h-worker' } })
     await db?.paymentRequest.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.purchaseLine.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.notifyRole.deleteMany({ where: { userId: 'h-fin' } })
@@ -426,5 +429,56 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(pm, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-worker'], drawingTaskId: otherId })).status).toBe(400)
     const load = await get('/api/drawings/load', pm)
     expect(load.status).toBe(200)
+  })
+
+  it('齐套（R12）：能看到工单就能看；新建 / 编辑限生产经理、该工单项目经理、管理员；节点负责人本人不受工单范围限制（只读）', async () => {
+    const pm = await login('h-pm')
+    const lead = await login('h-lead')
+    const worker = await login('h-worker')
+    const send = (sess: Record<string, string>, method: string, path: string, body?: object) =>
+      fetch(`${base}${path}`, { method, headers: { cookie: cookieHeader(sess), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+    const later = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10)
+
+    // 项目经理甲：自己的工单能建，别人的工单 403（看不到）；日期格式不对 400
+    expect((await send(pm, 'POST', '/api/kitting', { workOrderNumber: OTHER, name: 'x', needDate: later })).status).toBe(403)
+    expect((await send(pm, 'POST', '/api/kitting', { workOrderNumber: MINE, name: 'x', needDate: '2026/1/1' })).status).toBe(400)
+    const mine = await send(pm, 'POST', '/api/kitting', { workOrderNumber: MINE, name: '主梁总装', needDate: later })
+    expect(mine.status).toBe(200)
+    const mineId = ((await mine.json()) as { id: string }).id
+    // 看得到工单、但不是生产经理 / 项目经理 / 管理员：不能建
+    expect((await send(worker, 'POST', '/api/kitting', { workOrderNumber: MINE, name: 'x', needDate: later })).status).toBe(403)
+    expect((await send(lead, 'POST', '/api/kitting', { workOrderNumber: MINE, name: 'x', needDate: later })).status).toBe(403)
+    expect((await send(lead, 'PATCH', `/api/kitting/${mineId}`, { name: 'x' })).status).toBe(403)
+
+    // 生产经理（生产部负责人）：所有工单都能建；在别人的工单上建一个，负责人是甲（甲看不到这个工单）
+    await db.notifyRole.create({ data: { role: 'DEPT_HEAD', userId: 'h-worker', department: '生产部' } })
+    const other = await send(worker, 'POST', '/api/kitting', { workOrderNumber: OTHER, name: '别人的节点', needDate: later, ownerId: 'h-pm' })
+    expect(other.status).toBe(200)
+    const otherId = ((await other.json()) as { id: string }).id
+
+    // 列表只含可见工单；能看到就能看（领导看全部，但不能改）
+    const list = (await (await get('/api/kitting', pm)).json()) as { rows: { id: string; canEdit: boolean }[] }
+    expect(list.rows.map((r) => r.id)).toEqual([mineId])
+    expect(list.rows[0]!.canEdit).toBe(true)
+    expect((await get(`/api/kitting?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
+    expect((await get(`/api/kitting/options?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
+    const leadList = (await (await get('/api/kitting?incomplete=0', lead)).json()) as { rows: { id: string; canEdit: boolean }[]; canCreate: boolean }
+    expect(leadList.rows.map((r) => r.id)).toEqual(expect.arrayContaining([mineId, otherId]))
+    expect(leadList.rows.every((r) => !r.canEdit)).toBe(true)
+    expect(leadList.canCreate).toBe(false)
+    // 负责人本人：手机"我负责的"和提醒跳转能看，但改不了
+    const myList = (await (await get('/api/kitting?mine=1', pm)).json()) as { rows: { id: string }[] }
+    expect(myList.rows.map((r) => r.id)).toEqual([otherId])
+    expect((await get(`/api/kitting/${otherId}`, pm)).status).toBe(200)
+    expect((await send(pm, 'PATCH', `/api/kitting/${otherId}`, { name: 'x' })).status).toBe(403)
+    expect((await send(pm, 'DELETE', `/api/kitting/${otherId}`)).status).toBe(403)
+    expect((await get(`/api/kitting/${otherId}`, lead)).status).toBe(200)
+
+    // 编辑：选别的工单的工件 400；项目经理改自己的；生产经理能删
+    expect((await send(pm, 'PATCH', `/api/kitting/${mineId}`, { partIds: [otherPartId] })).status).toBe(400)
+    const patched = await send(pm, 'PATCH', `/api/kitting/${mineId}`, { name: '主梁总装（改）', partIds: [] })
+    expect(patched.status).toBe(200)
+    expect((await send(worker, 'DELETE', `/api/kitting/${mineId}`)).status).toBe(200)
+    expect((await get(`/api/kitting/${mineId}`, pm)).status).toBe(400)
   })
 })

@@ -210,6 +210,6 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
     expect(await (await get('/api/me', admin)).json()).toMatchObject({ id: 'u-001', isAdmin: true })
     const settings = await get('/api/settings', admin)
     expect(settings.status).toBe(200)
-    expect((await settings.json()).thresholds.map((t: { rule: string }) => t.rule)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7'])
+    expect((await settings.json()).thresholds.map((t: { rule: string }) => t.rule)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8'])
   })
 })

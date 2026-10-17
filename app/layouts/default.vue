@@ -5,6 +5,7 @@ const menu = computed(() => [
   { key: '/', label: '我的提醒' },
   { key: '/alerts', label: '预警列表' },
   { key: '/issues', label: '异常列表' },
+  { key: '/kitting', label: '齐套' },
   { key: '/drawings', label: '出图任务' },
   { key: '/releases', label: '发放签收' },
   { key: '/purchases', label: '采购到货' },
@@ -99,9 +100,11 @@ onBeforeUnmount(() => clearInterval(timer))
 </template>
 
 <style scoped>
-.header { display: flex; align-items: center; gap: 24px; padding: 0 24px; }
-.brand { color: #fff; font-weight: 600; font-size: 16px; }
-.menu { flex: 1; }
-.user { color: rgba(255, 255, 255, 0.85); }
+.header { display: flex; align-items: center; gap: 16px; padding: 0 24px; }
+.brand { color: #fff; font-weight: 600; font-size: 16px; white-space: nowrap; }
+/* 菜单项收紧一点，1440 宽能全部放下；更窄时放不下的收进"…"，不挤掉品牌名和右侧账号 */
+.menu { flex: 1; min-width: 0; }
+.menu :deep(.ant-menu-item) { padding-inline: 10px; }
+.user { color: rgba(255, 255, 255, 0.85); white-space: nowrap; }
 .content { padding: 24px; }
 </style>
