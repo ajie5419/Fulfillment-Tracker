@@ -181,6 +181,7 @@ async function submit() {
 
     <a-card title="演示数据">
       <p class="muted">不连 QMS 时用演示数据走通外协主链路。所有演示数据的 ID 带 DEMO- 前缀，可与同步来的真实数据共存；配置了 QMS 同步时不写演示用户（u-001 等，用户以 QMS 为准）。清除只删 DEMO- 数据及引用它们的工件、步骤、流转记录、待办、待确认记录、预警和提醒，并清掉演示的通知对象、工单项目经理、演示路线模板，阈值恢复默认；同步来的真实数据不动。</p>
+      <p class="muted">试发放签收（R9）：写入演示数据后有两张发放单——主梁结构件图纸（u-001、u-002、u-003 待签收）和支腿设计变更（下料在加工 → u-001、u-002 收到"确认变更影响"，机加标"等变更"）。发放人是 u-008 测试设计员。"快进 1 天 / 2 天扫描"可看 W5 未签收黄 / 红。</p>
       <p class="muted">试 BOM 导入：写入演示数据后到"工件与工序链"选 DEMO-WO-002，点"从 QMS BOM 导入"（演示 BOM 不连 QMS）；试模板：到"工序路线模板"看演示模板，或给没有工序的工件"套用模板"。</p>
       <a-space>
         <a-button type="primary" :loading="busy" @click="run('/api/dev/seed', '写入演示数据')">写入演示数据</a-button>
@@ -198,6 +199,8 @@ async function submit() {
         <a-button type="primary" :loading="busy" @click="scan(0)">立即扫描</a-button>
         <a-button :loading="busy" @click="scan(3)">快进 3 天扫描</a-button>
         <a-button :loading="busy" @click="scan(5)">快进 5 天扫描</a-button>
+        <a-button :loading="busy" @click="scan(1)">快进 1 天扫描</a-button>
+        <a-button :loading="busy" @click="scan(2)">快进 2 天扫描</a-button>
         <a-button :loading="busy" @click="digest">立即生成今日汇总</a-button>
       </a-space>
       <p class="muted" style="margin-top: 8px">红色预警自动转为异常；每日汇总平时由定时任务在 07:30（北京时间）后生成。</p>

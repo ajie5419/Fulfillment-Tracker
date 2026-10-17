@@ -471,8 +471,13 @@ describe.skipIf(!DB)('QMS 数据同步', () => {
     await s.demo.seedDemo()
     expect(await db.qmsUser.findUniqueOrThrow({ where: { id: 'u-001' } })).toMatchObject({ username: 'waixie01' })
     expect(await db.qmsWorkOrder.count({ where: { workOrderNumber: { startsWith: 'DEMO-' } } })).toBe(3)
+    // R9：演示发放单走真实用户（发放人退回 u-003），清除时一并删掉，连同待办
+    expect(seeded.releases).toBe(2)
     const reset = await s.demo.resetDemo()
-    expect(reset.parts).toBe(1)
+    expect(reset.parts).toBe(2) // 主梁结构件 + 支腿（R9）
+    expect(reset.releases).toBe(2)
+    expect(await db.release.count()).toBe(0)
+    expect(await db.todo.count({ where: { refType: { in: ['receipt', 'release'] } } })).toBe(0)
     expect(await snapshot()).toEqual(before)
     expect(await db.qmsSupplier.count({ where: { id: { startsWith: 'DEMO-' } } })).toBe(0)
     expect(await db.qmsDepartment.count({ where: { id: { startsWith: 'DEMO-' } } })).toBe(0)

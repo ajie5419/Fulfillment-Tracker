@@ -216,6 +216,7 @@ const columns = [
           <template v-else-if="column.key === 'status'">
             <a-tag :color="STATUS_COLOR[record.status as StepStatusKey]">{{ STATUS_TEXT[record.status as StepStatusKey] }}</a-tag>
             <a-tag v-if="record.needsFill" color="warning">待补充</a-tag>
+            <NuxtLink v-if="record.holdReleaseId" :to="`/releases?id=${encodeURIComponent(record.holdReleaseId)}`" title="设计变更还没确认影响，转序/逾期预警暂停计时"><a-tag color="purple">等变更</a-tag></NuxtLink>
             <div v-if="record.issues?.length">
               <NuxtLink v-for="i in record.issues" :key="i.id" :to="`/issues?id=${encodeURIComponent(i.id)}`" class="issue-link">{{ i.issueNo }}</NuxtLink>
             </div>
