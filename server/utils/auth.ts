@@ -110,6 +110,17 @@ export async function assertCanSeeIssue(event: H3Event, issueId: string) {
   if (issue) await assertCanSee(event, issue.workOrderNumber)
 }
 
+/** 采购行、付款申请（R10）：按所属工单判断 */
+export async function assertCanSeePurchase(event: H3Event, id: string) {
+  const line = await prisma.purchaseLine.findUnique({ where: { id }, select: { workOrderNumber: true } })
+  if (line) await assertCanSee(event, line.workOrderNumber)
+}
+
+export async function assertCanSeePayment(event: H3Event, id: string) {
+  const p = await prisma.paymentRequest.findUnique({ where: { id }, select: { workOrderNumber: true } })
+  if (p) await assertCanSee(event, p.workOrderNumber)
+}
+
 /** 报检：主工单或任一关联工单可见即可见 */
 export async function assertCanSeeInspection(event: H3Event, inspectionId: string) {
   const ins = await prisma.qmsInspection.findUnique({ where: { id: inspectionId }, select: { workOrderNumber: true, workOrderNumbers: true } })

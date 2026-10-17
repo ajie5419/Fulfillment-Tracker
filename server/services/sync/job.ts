@@ -1,10 +1,11 @@
 /**
- * 同步任务的一整轮：同步 → 返厂匹配 → QMS 不合格转异常（server/tasks/sync-qms.ts 每 5 分钟、演示工具"立即同步一次"调用）。
+ * 同步任务的一整轮：同步 → 返厂匹配 → 进货检验确认到货（R10）→ QMS 不合格转异常（server/tasks/sync-qms.ts 每 5 分钟、演示工具"立即同步一次"调用）。
  * job_lock 租约（sync-qms）防重叠，拿不到直接返回 skipped。QMS 未配置时什么都不做。
  * 匹配、不合格转异常只在报检同步成功时做；scan-rules 里的不合格扫描保留作兜底。
  */
 import { matchPendingInspections } from '../flow/match'
 import { syncNonconforming } from '../issues/nonconforming'
+import { matchIncomingInspections } from '../purchases/incoming'
 import { withLease } from '../jobs/lease'
 import { syncConfigured } from './client'
 import { type SyncOptions, type SyncResult, syncQms } from './sync'
@@ -17,6 +18,7 @@ export interface SyncJobResult {
   skipped?: 'not-configured' | 'running'
   sync?: SyncResult
   match?: { matched: number; unmatched: number; other: number } | { error: string }
+  incoming?: { arrived: number; other: number } | { error: string }
   nonconforming?: { created: number; existed: number } | { error: string }
 }
 
@@ -41,11 +43,16 @@ export async function runSyncJob(opts: SyncOptions): Promise<SyncJobResult> {
       const unmatched = results.filter((x) => x.status === 'unmatched').length
       return { matched, unmatched, other: results.length - matched - unmatched }
     })
+    const incoming = await step('进货检验确认到货', async () => {
+      const results = await matchIncomingInspections()
+      const arrived = results.filter((x) => x.result === 'MATCHED').length
+      return { arrived, other: results.length - arrived }
+    })
     const nonconforming = await step('QMS 不合格转异常', async () => {
       const n = await syncNonconforming()
       return { created: n.created.length, existed: n.existed }
     })
-    return { sync, match, nonconforming }
+    return { sync, match, incoming, nonconforming }
   })
   return r.skipped ? { skipped: 'running' } : r.value
 }

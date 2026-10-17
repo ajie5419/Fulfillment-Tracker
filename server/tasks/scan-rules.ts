@@ -15,11 +15,11 @@ async function step<T>(name: string, fn: () => Promise<T>): Promise<T | { error:
 /**
  * 预警扫描（技术选型第 5 节），由 nuxt.config 的 scheduledTasks 每 15 分钟触发：
  * 1. QMS 不合格转异常（兜底：sync-qms 每轮同步后已做；先做，步骤先变"有异常"，W2 就不会对它的下一道计时）；
- * 2. W1–W4 扫描（红色自动转异常）；
+ * 2. W1–W6 扫描（W1–W3 红色自动转异常）；
  * 3. 每日汇总：工厂时区 07:30 以后、今天还没生成的补上（与服务器时区无关）。
  */
 export default defineTask({
-  meta: { name: 'scan-rules', description: 'QMS 不合格转异常；执行 W1–W4；生成每日汇总' },
+  meta: { name: 'scan-rules', description: 'QMS 不合格转异常；执行 W1–W6；生成每日汇总' },
   async run() {
     const nonconforming = await step('QMS 不合格转异常', syncNonconforming)
     const result = await step('预警扫描', () => scanRules())

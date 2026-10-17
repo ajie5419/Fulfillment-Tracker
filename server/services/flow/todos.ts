@@ -1,4 +1,6 @@
 /** 我的待办：附上工单、工件、工序（或发放单）和下一步建议，页面拿到就能展示。 */
+import { READY_TO_START } from '../purchases/constants'
+import { describeReadyTodos } from '../purchases/purchases'
 import { prisma } from '../../utils/prisma'
 import { CONFIRM_CHANGE, SIGN_RELEASE } from '../releases/constants'
 import { describeReleaseTodos } from '../releases/releases'
@@ -11,22 +13,26 @@ const ACTION_TEXT: Record<string, string> = {
   [ARRANGE_START]: '安排开工',
   [SIGN_RELEASE]: '签收',
   [CONFIRM_CHANGE]: '确认变更影响',
+  [READY_TO_START]: '可以开工',
 }
 
 /**
  * visibleWorkOrders：可见工单（undefined = 全部）；不可见工单上的步骤待办不列出。
  * 发放相关的待办（签收、确认变更影响）是发给本人的，不受可见范围限制（接收人看得到发给自己的发放单）。
+ * "可以开工"（R10，refType = part）按工件所属工单判断可见；附上工件的第一道工序，页面按工序方式给"登记发出"或"开工"。
  */
 export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) {
   let todos = await prisma.todo.findMany({ where: { ownerId: userId, status: 'OPEN' }, orderBy: { createdAt: 'asc' } })
   if (!todos.length) return []
   const stepIds = todos.filter((t) => t.refType === 'step').map((t) => t.refId)
   let steps = await prisma.routeStep.findMany({ where: { id: { in: stepIds } }, include: { part: true } })
+  const ready = await describeReadyTodos(todos.filter((t) => t.refType === 'part').map((t) => t.refId))
   if (visibleWorkOrders) {
     const visible = new Set(visibleWorkOrders)
     const hidden = new Set(steps.filter((s) => !visible.has(s.part.workOrderNumber)).map((s) => s.id))
     steps = steps.filter((s) => !hidden.has(s.id))
     todos = todos.filter((t) => !(t.refType === 'step' && hidden.has(t.refId)))
+    todos = todos.filter((t) => t.refType !== 'part' || visible.has(ready.get(t.refId)?.workOrderNumber ?? ''))
   }
   // 上一道（触发待办的那道）
   const prevSteps = !steps.length ? [] : await prisma.routeStep.findMany({
@@ -56,6 +62,20 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) 
             : '关联工件已在加工或在外协：请确认变更影响（是否返工、是否通知外协厂），确认后解除未开工工序的"等变更"',
         step: null,
         release: { ...release, receiptId: t.refType === 'receipt' ? t.refId : null },
+      }
+    }
+    if (t.refType === 'part') {
+      const p = ready.get(t.refId)
+      if (!p) return { ...t, actionText, title: actionText, suggestion: '关联的工件已删除', step: null, release: null }
+      const s = p.step
+      const verb = s?.mode === 'EXTERNAL_OUTSOURCE' ? '登记发出' : '开工'
+      return {
+        ...t,
+        actionText,
+        title: `${actionText}：${p.partName}${s ? ` · ${s.processName}` : ''}`,
+        suggestion: `关键物料已全部到货（${p.arrived} 项），请安排${s ? `第一道工序${verb}` : '开工'}`,
+        step: s,
+        release: null,
       }
     }
     const step = byId.get(t.refId)

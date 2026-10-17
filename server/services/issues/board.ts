@@ -8,10 +8,12 @@
  *   黄 = 有活动黄色预警，或有超期的异常（含待受理超时）
  *   否则绿
  *   未签收发放（R9）= 该工单上还有人没签收的有效发放单份数（只显示，不参与红黄绿；超时没签收由 W5 预警计入红黄）
+ *   缺料（R10）= 该工单上未到货、且已到需求日的关键物料项数（只显示；未到货的预警由 W6 计入红黄）
  */
 import { prisma } from '../../utils/prisma'
 import { loadOffDays, loadThresholds } from '../alerts/config'
 import { judgeW4 } from '../alerts/rules'
+import { todayDate } from '../purchases/constants'
 import { overdueDays } from '../flow/dates'
 import { loadNames } from '../flow/names'
 import { syncOverview } from '../sync/status'
@@ -22,7 +24,7 @@ export type BoardColor = 'RED' | 'YELLOW' | 'GREEN'
 /** 活动预警 → 所属工单 */
 async function alertWorkOrders(alerts: { id: string; refType: string; refId: string }[]) {
   const ids = (t: string) => alerts.filter((a) => a.refType === t).map((a) => a.refId)
-  const [steps, inspections, issues, receipts, releases] = await Promise.all([
+  const [steps, inspections, issues, receipts, releases, purchases] = await Promise.all([
     ids('step').length ? prisma.routeStep.findMany({ where: { id: { in: ids('step') } }, select: { id: true, part: { select: { workOrderNumber: true } } } }) : [],
     ids('unmatched').length ? prisma.qmsInspection.findMany({ where: { id: { in: ids('unmatched') } }, select: { id: true, workOrderNumber: true } }) : [],
     ids('issue').length ? prisma.issue.findMany({ where: { id: { in: ids('issue') } }, select: { id: true, workOrderNumber: true } }) : [],
@@ -30,6 +32,7 @@ async function alertWorkOrders(alerts: { id: string; refType: string; refId: str
       ? prisma.releaseReceipt.findMany({ where: { id: { in: ids('receipt') } }, select: { id: true, release: { select: { workOrderNumber: true } } } })
       : [],
     ids('release').length ? prisma.release.findMany({ where: { id: { in: ids('release') } }, select: { id: true, workOrderNumber: true } }) : [],
+    ids('purchase').length ? prisma.purchaseLine.findMany({ where: { id: { in: ids('purchase') } }, select: { id: true, workOrderNumber: true } }) : [],
   ])
   const wo = new Map<string, string>()
   for (const s of steps) wo.set(`step:${s.id}`, s.part.workOrderNumber)
@@ -37,12 +40,13 @@ async function alertWorkOrders(alerts: { id: string; refType: string; refId: str
   for (const i of issues) wo.set(`issue:${i.id}`, i.workOrderNumber)
   for (const r of receipts) wo.set(`receipt:${r.id}`, r.release.workOrderNumber)
   for (const r of releases) wo.set(`release:${r.id}`, r.workOrderNumber)
+  for (const p of purchases) wo.set(`purchase:${p.id}`, p.workOrderNumber)
   return new Map(alerts.map((a) => [a.id, wo.get(`${a.refType}:${a.refId}`) ?? null]))
 }
 
 export async function getBoard(visibleWorkOrders: string[] | undefined, now = new Date()) {
   const woWhere = visibleWorkOrders ? { in: visibleWorkOrders } : undefined
-  const [workOrders, exts, outSteps, issues, alerts, sync, thresholds, offDays, unsigned] = await Promise.all([
+  const [workOrders, exts, outSteps, issues, alerts, sync, thresholds, offDays, unsigned, shortage] = await Promise.all([
     prisma.qmsWorkOrder.findMany({
       where: { isDeleted: false, ...(woWhere ? { workOrderNumber: woWhere } : {}) },
       orderBy: [{ deliveryDate: 'asc' }, { workOrderNumber: 'asc' }],
@@ -66,7 +70,13 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
       where: { status: 'ACTIVE', receipts: { some: { status: 'PENDING' } }, ...(woWhere ? { workOrderNumber: woWhere } : {}) },
       _count: { _all: true },
     }),
+    prisma.purchaseLine.groupBy({
+      by: ['workOrderNumber'],
+      where: { status: 'OPEN', needDate: { lte: todayDate(now) }, ...(woWhere ? { workOrderNumber: woWhere } : {}) },
+      _count: { _all: true },
+    }),
   ])
+  const shortageOf = new Map(shortage.map((s) => [s.workOrderNumber, s._count._all]))
   const unsignedOf = new Map(unsigned.map((u) => [u.workOrderNumber, u._count._all]))
   const alertWo = await alertWorkOrders(alerts)
   const pmOf = new Map(exts.map((e) => [e.workOrderNumber, e.projectManagerId]))
@@ -103,6 +113,7 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
       overdueIssues,
       openIssues: open.length,
       unsignedReleases: unsignedOf.get(wo) ?? 0,
+      shortage: shortageOf.get(wo) ?? 0,
     }
   })
   const rank = { RED: 0, YELLOW: 1, GREEN: 2 } as const

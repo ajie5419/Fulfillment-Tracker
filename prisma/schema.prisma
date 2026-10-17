@@ -179,6 +179,8 @@ model Part {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
   steps           RouteStep[]
+  /// 挂在这个工件上的关键物料（R10）；全部到货时给第一道工序负责人发"可以开工"待办
+  purchaseLines   PurchaseLine[]
 
   @@unique([workOrderNumber, qmsBomId])
   @@index([workOrderNumber])
@@ -405,6 +407,7 @@ enum AlertRule {
   W3
   W4
   W5 // 发放未签收（R9）
+  W6 // 关键物料未到货（R10）
 }
 
 enum AlertLevel {
@@ -487,6 +490,7 @@ enum NotifyRoleKind {
   DEPT_HEAD // 部门负责人，department 填部门名称（qms_user.departmentId 经 qms_department 换成名称后对应）
   PROJECT_DEPT_HEAD // 项目部负责人
   LEADER // 分管领导
+  FINANCE // 财务（R10）：付款申请标记已付 / 暂缓
 }
 
 /// 预警升级阶梯的通知对象（方案 6.2）。QMS 里没有这些角色，先在设置页手工维护。
@@ -592,6 +596,117 @@ model ReleaseReceipt {
   @@index([userId, status])
   @@index([status])
   @@map("release_receipt")
+}
+
+// ───────────── 关键物料与付款（R10）─────────────
+
+enum PurchaseStatus {
+  OPEN // 未到货
+  ARRIVED // 已到货
+  CANCELLED // 已取消（不再跟踪）
+}
+
+/// 到货延误原因：付款 = 付款原因；其余三类统计时合并为"管理原因"（与异常分类 物料-付款原因 / 物料-管理原因 对应）
+enum DelayReason {
+  PAYMENT // 付款
+  SUPPLIER // 供应商
+  DEMAND_CHANGE // 我方需求变化
+  OTHER // 其他
+}
+
+/// 采购跟踪行：只跟踪关键物料（长周期、进口、大件），采购员手工录入或 Excel 导入。不导入全 BOM。
+/// 责任人：buyerId（指定到人）；为空时是采购部负责人（notify_role 里 DEPT_HEAD + 部门"采购部"）。
+model PurchaseLine {
+  id              String         @id @default(cuid())
+  workOrderNumber String         @db.VarChar(64)
+  /// 用这批物料的工件（R8 工件，可空）。工件的关键物料全部到货时给第一道工序负责人发"可以开工"待办
+  partId          String?
+  materialName    String         @db.VarChar(191)
+  spec            String?        @db.VarChar(191)
+  quantity        Decimal        @db.Decimal(14, 3)
+  unit            String?        @db.VarChar(20)
+  /// 选了 QMS 供应商时填 ID（进货检验自动到货时要求一致）；supplierName 总是存名称（选的或手填的）
+  supplierId      String?        @db.VarChar(64)
+  supplierName    String?        @db.VarChar(191)
+  /// 需求日、承诺到货日、实际到货日：日期字段，存当天 UTC 零点
+  needDate        DateTime
+  promisedDate    DateTime?
+  arrivedDate     DateTime?
+  status          PurchaseStatus @default(OPEN)
+  buyerId         String?        @db.VarChar(64)
+  /// 到货延误（实际/当前晚于承诺到货日或需求日）时填的原因类别
+  delayReason     DelayReason?
+  delayNote       String?        @db.VarChar(500)
+  note            String?        @db.VarChar(500)
+  /// 到货确认：来源（手机 / 电脑 / QMS 进货检验）、确认人、确认时间
+  arrivalSource   FlowSource?
+  arrivedBy       String?        @db.VarChar(64)
+  arrivedAt       DateTime?
+  /// QMS 进货检验自动确认到货时的报检 ID。撤销到货后保留：这一行之后只能手工确认
+  qmsInspectionId String?        @unique @db.VarChar(64)
+  createdBy       String?        @db.VarChar(64)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  part            Part?          @relation(fields: [partId], references: [id], onDelete: SetNull)
+  payments        PaymentLine[]
+
+  @@index([workOrderNumber, status])
+  @@index([status, needDate])
+  @@index([partId])
+  @@map("purchase_line")
+}
+
+/// 每条 QMS 进货检验（INCOMING）只自动处理一次：MATCHED = 已确认到货；NO_CANDIDATE / MULTIPLE = 没对上 / 对上多条，留给手工确认
+model IncomingCheck {
+  qmsInspectionId String   @id @db.VarChar(64)
+  result          String   @db.VarChar(20)
+  purchaseLineId  String?  @db.VarChar(64)
+  createdAt       DateTime @default(now())
+
+  @@map("incoming_check")
+}
+
+enum PaymentStatus {
+  PENDING // 待付
+  PAID // 已付
+  ON_HOLD // 暂缓
+}
+
+/// 付款申请：不做审批。财务（notify_role FINANCE）或管理员改状态（待付 / 已付 / 暂缓）。
+/// 关联的采购行必须是同一工单（可见范围按工单判断）。
+model PaymentRequest {
+  id              String        @id @default(cuid())
+  workOrderNumber String        @db.VarChar(64)
+  amount          Decimal       @db.Decimal(14, 2)
+  requestDate     DateTime
+  /// 卡交期：如供应商不收预付款不发货
+  blocksDelivery  Boolean       @default(false)
+  status          PaymentStatus @default(PENDING)
+  /// 申请说明
+  note            String?       @db.VarChar(500)
+  /// 财务处理意见（改状态时填，可空）
+  financeNote     String?       @db.VarChar(500)
+  requesterId     String        @db.VarChar(64)
+  statusBy        String?       @db.VarChar(64)
+  statusAt        DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  lines           PaymentLine[]
+
+  @@index([status])
+  @@index([workOrderNumber])
+  @@map("payment_request")
+}
+
+model PaymentLine {
+  paymentId      String
+  purchaseLineId String
+  payment        PaymentRequest @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  purchaseLine   PurchaseLine   @relation(fields: [purchaseLineId], references: [id])
+
+  @@id([paymentId, purchaseLineId])
+  @@index([purchaseLineId])
+  @@map("payment_request_line")
 }
 
 // ───────────── 登录会话 ─────────────
