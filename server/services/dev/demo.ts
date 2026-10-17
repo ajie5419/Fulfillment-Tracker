@@ -11,6 +11,7 @@ import { FlowError } from '../flow/errors'
 import { matchInspection, matchPendingInspections } from '../flow/match'
 import { syncNonconforming } from '../issues/nonconforming'
 import { removeUploadFiles } from '../issues/uploads'
+import { todayDate } from '../purchases/constants'
 import { createRelease } from '../releases/releases'
 import { matchIncomingInspections } from '../purchases/incoming'
 import type { QmsBomItem } from '../bom/client'
@@ -140,12 +141,17 @@ const PAYMENTS = [
  *   液压系统原理图（不关联工件）：6 天前已出图、需要客户确认，客户确认计划日已过 3 天 → W7 黄（再过 1 天红），还没发放；
  *   模具加热系统布置图（DEMO-WO-002，负责人 u-011）：8 天后到期，不预警。
  */
-const DRAWING_TASKS = [
-  { id: `${P}DT-001`, workOrderNumber: `${P}WO-001`, componentName: '主梁结构件总图', ownerId: 'u-008', planDate: day(-2), needsCustomerConfirm: false, customerPlanDate: null, drawnDate: null, status: 'PENDING', partIds: [PART_ID] },
-  { id: `${P}DT-002`, workOrderNumber: `${P}WO-001`, componentName: '支腿零件图', ownerId: 'u-008', planDate: day(1), needsCustomerConfirm: false, customerPlanDate: null, drawnDate: null, status: 'PENDING', partIds: [PART2_ID] },
-  { id: `${P}DT-003`, workOrderNumber: `${P}WO-001`, componentName: '液压系统原理图', ownerId: 'u-008', planDate: day(-8), needsCustomerConfirm: true, customerPlanDate: day(-3), drawnDate: day(-6), status: 'DRAWN', partIds: [] },
-  { id: `${P}DT-004`, workOrderNumber: `${P}WO-002`, componentName: '模具加热系统布置图', ownerId: 'u-011', planDate: day(8), needsCustomerConfirm: true, customerPlanDate: day(15), drawnDate: null, status: 'PENDING', partIds: [] },
-] as const
+/** 日期在 seedDemo 执行时按上海日历现算（模块加载时用 UTC 日期算，0–8 点会差一天，DT-003 会从黄变红） */
+const drawingTasks = (now = new Date()) => {
+  const today = todayDate(now)
+  const day = (offset: number) => new Date(today.getTime() + offset * DAY)
+  return [
+    { id: `${P}DT-001`, workOrderNumber: `${P}WO-001`, componentName: '主梁结构件总图', ownerId: 'u-008', planDate: day(-2), needsCustomerConfirm: false, customerPlanDate: null, drawnDate: null, status: 'PENDING', partIds: [PART_ID] },
+    { id: `${P}DT-002`, workOrderNumber: `${P}WO-001`, componentName: '支腿零件图', ownerId: 'u-008', planDate: day(1), needsCustomerConfirm: false, customerPlanDate: null, drawnDate: null, status: 'PENDING', partIds: [PART2_ID] },
+    { id: `${P}DT-003`, workOrderNumber: `${P}WO-001`, componentName: '液压系统原理图', ownerId: 'u-008', planDate: day(-8), needsCustomerConfirm: true, customerPlanDate: day(-3), drawnDate: day(-6), status: 'DRAWN', partIds: [] },
+    { id: `${P}DT-004`, workOrderNumber: `${P}WO-002`, componentName: '模具加热系统布置图', ownerId: 'u-011', planDate: day(8), needsCustomerConfirm: true, customerPlanDate: day(15), drawnDate: null, status: 'PENDING', partIds: [] },
+  ] as const
+}
 
 /**
  * 演示 BOM（R8）：模拟 QMS 项目 BOM，演示工具开着时 DEMO- 工单的"从 QMS BOM 导入"读这里，不连 QMS。
@@ -303,7 +309,7 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
       })
     }
     // R11 出图任务（登记人 u-003）
-    for (const { partIds, drawnDate, ...d } of DRAWING_TASKS) {
+    for (const { partIds, drawnDate, ...d } of drawingTasks()) {
       if (await tx.drawingTask.findUnique({ where: { id: d.id }, select: { id: true } })) continue
       await tx.drawingTask.create({
         data: { ...d, drawnDate, drawnBy: drawnDate ? d.ownerId : null, createdBy: 'u-003', parts: { create: partIds.map((partId) => ({ partId })) } },
@@ -329,7 +335,7 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
     templates: 1,
     purchaseLines: PURCHASE_LINES.length,
     payments: PAYMENTS.length,
-    drawingTasks: DRAWING_TASKS.length,
+    drawingTasks: drawingTasks().length,
   }
 }
 

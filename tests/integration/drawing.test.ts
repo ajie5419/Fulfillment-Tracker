@@ -263,7 +263,16 @@ describe.skipIf(!DB)('设计出图任务（R11）', () => {
     const alerts = await (await import('../../server/services/alerts/reminders')).listReminders('u-des')
     const w7 = alerts.items.find((i) => i.rule === 'W7')
     expect(w7?.link).toMatch(/^\/drawings\?id=/)
-    expect(w7?.mobileLink).toBe('/m/drawings')
+    expect(w7?.mobileLink).toBe(`/m${w7!.link}`)
+
+    // 编辑弹窗原样带回计划日 / 客户确认字段：日期没变不清预警（不重复首发、重复通知）；真改了计划日才清
+    const otherAlert = async () => db.alert.findFirstOrThrow({ where: { refId: other.id, rule: 'W7' } })
+    const firstAt = (await otherAlert()).firstAt
+    const old = await db.drawingTask.findUniqueOrThrow({ where: { id: other.id } })
+    await s.dr.updateTask(other.id, { planDate: new Date(old.planDate), needsCustomerConfirm: false, customerPlanDate: null, note: '只改备注' })
+    expect(await otherAlert()).toMatchObject({ status: 'ACTIVE', firstAt })
+    await s.dr.updateTask(other.id, { planDate: dayOff(10) })
+    expect((await otherAlert()).status).toBe('CLEARED')
   })
 
   it('列表：先在数据库里筛选排序再截断；逾期视图、负责人筛选、可见范围；设计负荷、看板、每日汇总', async () => {

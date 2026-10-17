@@ -5,7 +5,7 @@ import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { alertSourceKey, convertAlertInTx } from '../issues/convert'
 import { issueTransaction } from '../issues/issues'
-import { DRAWING_MOBILE_LINK, drawingLink } from '../drawings/constants'
+import { drawingLink, drawingMobileLink } from '../drawings/constants'
 import { purchaseLink, purchaseMobileLink } from '../purchases/constants'
 import { releaseLink, releaseMobileLink } from '../releases/constants'
 import { CONVERTIBLE_RULES, durationText, elapsedExcludingOffDays } from './rules'
@@ -47,7 +47,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     if (a.refType === 'unmatched') link = { pc: '/unmatched', mobile: null }
     if (a.refType === 'issue') link = issueLink(a.refId)
     if (a.refType === 'purchase') link = { pc: purchaseLink(a.refId), mobile: purchaseMobileLink(a.refId) }
-    if (a.refType === 'drawing') link = { pc: drawingLink(a.refId), mobile: DRAWING_MOBILE_LINK }
+    if (a.refType === 'drawing') link = { pc: drawingLink(a.refId), mobile: drawingMobileLink(a.refId) }
     const releaseId = a.refType === 'receipt' ? releaseOf.get(a.refId) : a.refType === 'release' ? a.refId : undefined
     if (releaseId) link = { pc: releaseLink(releaseId), mobile: releaseMobileLink(releaseId) }
     const step = a.refType === 'step' ? stepById.get(a.refId) : undefined

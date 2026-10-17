@@ -19,7 +19,8 @@ export const DRAWING_STATUS_TEXT: Record<DrawingTaskStatus, string> = {
 export const OPEN_DRAWING_STATUSES: DrawingTaskStatus[] = ['PENDING', 'DRAWN', 'CUSTOMER_PENDING']
 
 export const drawingLink = (id: string) => `/drawings?id=${encodeURIComponent(id)}`
-export const DRAWING_MOBILE_LINK = '/m/drawings'
+/** 手机端：带 id 时页面单独定位并展示这条任务（被升级通知的部门负责人 / PM 也能看到，不受"我的"过滤） */
+export const drawingMobileLink = (id: string) => `/m/drawings?id=${encodeURIComponent(id)}`
 
 // ───────────── 状态 ─────────────
 

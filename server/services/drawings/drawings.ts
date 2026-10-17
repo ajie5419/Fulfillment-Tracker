@@ -185,8 +185,15 @@ export async function updateTask(id: string, input: PatchTaskInput) {
       await tx.drawingTaskPart.createMany({ data: newParts.map((partId) => ({ taskId: id, partId })), skipDuplicates: true })
     }
     if (Object.keys(data).length) await tx.drawingTask.update({ where: { id }, data })
-    // 计划日、客户确认改了：预警按新日期重算（下一轮扫描），先清掉旧的
-    if (input.planDate !== undefined || input.customerPlanDate !== undefined || input.needsCustomerConfirm !== undefined) await clearAlertKeys(tx, [w7Key(id)])
+    // 计划日、客户确认真的改了（按自然日和锁定后的旧值比）：预警按新日期重算（下一轮扫描），先清掉旧的。
+    // 编辑弹窗每次都会带上这几个字段，原样保存不能清预警，否则下一轮扫描会重新首发、重复通知
+    const dayOf = (d: Date | null | undefined) => (d ? dateFieldDay(d) : null)
+    const newCustomerPlan = needs ? (input.customerPlanDate !== undefined ? input.customerPlanDate : old.customerPlanDate) : null
+    const datesChanged =
+      (input.planDate !== undefined && dayOf(input.planDate) !== dayOf(old.planDate)) ||
+      needs !== old.needsCustomerConfirm ||
+      dayOf(newCustomerPlan) !== dayOf(old.customerPlanDate)
+    if (datesChanged) await clearAlertKeys(tx, [w7Key(id)])
     const r = await settleTask(tx, before, id)
     return { id, ...r }
   })
