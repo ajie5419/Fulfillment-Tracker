@@ -474,8 +474,11 @@ describe.skipIf(!DB)('QMS 数据同步', () => {
     // R9：演示发放单走真实用户（发放人退回 u-003），清除时一并删掉，连同待办
     expect(seeded.releases).toBe(2)
     const reset = await s.demo.resetDemo()
-    expect(reset.parts).toBe(2) // 主梁结构件 + 支腿（R9）
+    expect(reset.parts).toBe(3) // 主梁结构件 + 支腿（R9）+ 回转底座（R12）
     expect(reset.releases).toBe(2)
+    // R12：演示装配节点一并删掉（清单级联）
+    expect(reset.assemblyNodes).toBe(3)
+    expect(await db.assemblyNode.count()).toBe(0)
     expect(await db.release.count()).toBe(0)
     expect(await db.todo.count({ where: { refType: { in: ['receipt', 'release'] } } })).toBe(0)
     expect(await snapshot()).toEqual(before)

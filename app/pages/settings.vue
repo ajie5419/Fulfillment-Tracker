@@ -37,8 +37,9 @@ async function call(url: string, method: 'POST' | 'PUT' | 'DELETE', body?: objec
 }
 
 // ───── 阈值 ─────
-// W3、W6、W7 的"提醒"在表里存的是小时数（W3 承诺返回日前、W6 需求日前、W7 计划完成日前），页面上按天编辑
-type Row = { rule: 'W1' | 'W2' | 'W3' | 'W4' | 'W5' | 'W6' | 'W7'; remind: number | null; yellowDays: number; redDays: number }
+// W3、W6、W7 的"提醒"在表里存的是小时数（W3 承诺返回日前、W6 需求日前、W7 计划完成日前），页面上按天编辑；
+// W8 不提醒，黄 / 红是"需求日前几天"（黄 ≥ 红）
+type Row = { rule: 'W1' | 'W2' | 'W3' | 'W4' | 'W5' | 'W6' | 'W7' | 'W8'; remind: number | null; yellowDays: number; redDays: number }
 const BY_DAY = (rule: Row['rule']) => rule === 'W3' || rule === 'W6' || rule === 'W7'
 const rows = ref<Row[]>([])
 watch(
@@ -53,11 +54,12 @@ watch(
   },
   { immediate: true },
 )
-const REMIND_LABEL = { W1: '小时后提醒', W2: '（不提醒）', W3: '天前提醒（承诺返回日前）', W4: '（不提醒）', W5: '小时未签收 / 未确认提醒', W6: '天内要用仍无承诺到货日 → 黄（需求日前）', W7: '天内到计划完成日仍未出图 → 黄' } as const
-const YELLOW_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（待受理 / 超期）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）' } as const
-const RED_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（超要求解决日）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）' } as const
+const REMIND_LABEL = { W1: '小时后提醒', W2: '（不提醒）', W3: '天前提醒（承诺返回日前）', W4: '（不提醒）', W5: '小时未签收 / 未确认提醒', W6: '天内要用仍无承诺到货日 → 黄（需求日前）', W7: '天内到计划完成日仍未出图 → 黄', W8: '（不提醒）' } as const
+const YELLOW_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（待受理 / 超期）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 黄（需求日前）' } as const
+const RED_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（超要求解决日）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 红（需求日前，已过也红）' } as const
+const NO_REMIND = (rule: Row['rule']) => rule === 'W2' || rule === 'W4' || rule === 'W8'
 function saveThreshold(r: Row) {
-  const remindHours = r.rule === 'W2' || r.rule === 'W4' || r.remind == null ? null : BY_DAY(r.rule) ? Math.round(r.remind * 24) : r.remind
+  const remindHours = NO_REMIND(r.rule) || r.remind == null ? null : BY_DAY(r.rule) ? Math.round(r.remind * 24) : r.remind
   const url = `/api/settings/thresholds/${r.rule}`
   return call(url, 'PUT', { remindHours, yellowDays: r.yellowDays, redDays: r.redDays })
 }
@@ -83,7 +85,7 @@ const isOffDay = (d: Dayjs) => !!data.value?.offDays.includes(d.format('YYYY-MM-
 // ───── 通知对象 ─────
 const ROLES = [
   { role: 'OUTSOURCE_COORDINATOR', label: '外协专员', hint: 'W1 待确认匹配的责任人' },
-  { role: 'DEPT_HEAD', label: '部门负责人', hint: '黄色起：责任人所在部门的负责人（按部门名称对应）；采购部负责人是没指定采购负责人的关键物料的责任人；技术部负责人是没指定设计负责人的出图任务的责任人' },
+  { role: 'DEPT_HEAD', label: '部门负责人', hint: '黄色起：责任人所在部门的负责人（按部门名称对应）；采购部负责人是没指定采购负责人的关键物料的责任人；技术部负责人是没指定设计负责人的出图任务的责任人；生产部负责人（生产经理）是没指定负责人的装配节点的责任人，并可编辑所有工单的装配节点' },
   { role: 'PROJECT_DEPT_HEAD', label: '项目部负责人', hint: '红色：加上项目部负责人' },
   { role: 'LEADER', label: '分管领导', hint: '红色：加上分管领导' },
   { role: 'FINANCE', label: '财务', hint: '付款申请标记已付 / 暂缓；卡交期的付款没付、物料超期时收到 W6 预警' },
@@ -127,7 +129,7 @@ const woColumns = [
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'rule'">{{ RULE_TEXT[record.rule as Row['rule']] }}</template>
             <template v-else-if="column.key === 'remind'">
-              <span v-if="record.rule === 'W2' || record.rule === 'W4'" class="muted">不提醒，直接黄</span>
+              <span v-if="NO_REMIND(record.rule)" class="muted">不提醒，直接黄</span>
               <a-space v-else>
                 <a-input-number v-model:value="record.remind" :min="1" :max="BY_DAY(record.rule) ? 30 : 720" size="small" />
                 <span>{{ REMIND_LABEL[record.rule as Row['rule']] }}</span>
@@ -143,6 +145,7 @@ const woColumns = [
               <div v-if="record.rule === 'W5'" class="muted">W5 也管"确认变更影响"待办；黄色起通知发放人，红色不转异常</div>
               <div v-if="record.rule === 'W6'" class="muted">需求日已过仍未到货直接红；有没付的卡交期付款时黄色起通知财务；红色不转异常</div>
               <div v-if="record.rule === 'W7'" class="muted">已过计划完成日仍未出图直接红；黄色起通知技术部负责人、项目经理；红色不转异常</div>
+              <div v-if="record.rule === 'W8'" class="muted">按自然日；黄色天数要不小于红色。黄色起通知生产经理、项目经理，红色再加项目部负责人、分管领导；齐套后自动消除，不转异常</div>
             </template>
             <template v-else-if="column.key === 'save'">
               <a-button type="primary" size="small" @click="saveThreshold(record as Row)">保存</a-button>
