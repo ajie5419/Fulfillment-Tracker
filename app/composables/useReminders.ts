@@ -7,7 +7,7 @@ export interface ReminderItem {
   readAt: string | null
   createdAt: string
   alertId: string | null
-  rule: 'W1' | 'W2' | 'W3' | 'W4' | null
+  rule: 'W1' | 'W2' | 'W3' | 'W4' | 'W5' | null
   /** 预警已消除（对象状态已变化） */
   cleared: boolean
   /** 已转为异常时的异常编号 */
@@ -21,7 +21,7 @@ export interface ReminderItem {
 export const LEVEL_TEXT = { RED: '红色', YELLOW: '黄色', REMIND: '提醒' } as const
 export const LEVEL_COLOR = { RED: 'red', YELLOW: 'orange', REMIND: 'blue' } as const
 export const LEVEL_ORDER: AlertLevelKey[] = ['RED', 'YELLOW', 'REMIND']
-export const RULE_TEXT = { W1: 'W1 待确认匹配超时', W2: 'W2 转序停滞', W3: 'W3 外协逾期未返', W4: 'W4 异常超期' } as const
+export const RULE_TEXT = { W1: 'W1 待确认匹配超时', W2: 'W2 转序停滞', W3: 'W3 外协逾期未返', W4: 'W4 异常超期', W5: 'W5 发放未签收' } as const
 
 /** 每日汇总（置顶） */
 export interface DigestItem {

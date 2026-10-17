@@ -11,6 +11,7 @@ import { FlowError } from '../flow/errors'
 import { matchInspection, matchPendingInspections } from '../flow/match'
 import { syncNonconforming } from '../issues/nonconforming'
 import { removeUploadFiles } from '../issues/uploads'
+import { createRelease } from '../releases/releases'
 import type { QmsBomItem } from '../bom/client'
 
 const P = 'DEMO-'
@@ -65,6 +66,8 @@ const USERS = [
   { id: 'u-004', username: `${P}u-004`, realName: '测试项目部负责人', departmentId: `${P}DEPT-PROJ`, roleId: `${P}ROLE-PROJ-HEAD`, roleName: '部门负责人' },
   { id: 'u-005', username: `${P}u-005`, realName: '测试分管领导', departmentId: `${P}DEPT-LEAD`, roleId: `${P}ROLE-LEADER`, roleName: '领导' },
   { id: 'u-006', username: `${P}u-006`, realName: '测试质量负责人', departmentId: `${P}DEPT-QA`, roleId: `${P}ROLE-QA-HEAD`, roleName: '部门负责人' },
+  // R9 发放签收的发放人
+  { id: 'u-008', username: `${P}u-008`, realName: '测试设计员', departmentId: `${P}DEPT-TECH`, roleId: `${P}ROLE-DESIGN`, roleName: '设计人员' },
 ]
 
 // 预警升级阶梯的通知对象（方案 6.2）
@@ -81,6 +84,17 @@ const STEPS = [
   { id: `${P}STEP-001`, seq: 1, processId: `${P}PRC-WELD`, mode: 'EXTERNAL_OUTSOURCE', supplierId: `${P}SUP-02`, ownerId: 'u-001' },
   { id: `${P}STEP-002`, seq: 2, processId: `${P}PRC-PAINT`, mode: 'EXTERNAL_OUTSOURCE', supplierId: `${P}SUP-04`, ownerId: 'u-001' },
   { id: `${P}STEP-003`, seq: 3, processId: `${P}PRC-ASSY`, mode: 'SELF', supplierId: null, ownerId: 'u-002' },
+] as const
+
+/**
+ * R9 演示：第二个工件"支腿"，下料（自制）已在加工、机加（厂外）还没开工。
+ * 演示设计变更：已在加工 → 生产经理、外协专员收到"确认变更影响"；机加标"等变更"。
+ * 不用主梁结构件：它是 Q12 演示（返厂后 W2 计时）的主角，标了等变更 W2 就不计时了。
+ */
+const PART2_ID = `${P}PART-002`
+const STEPS2 = [
+  { id: `${P}STEP-201`, seq: 1, processId: `${P}PRC-CUT`, mode: 'SELF', supplierId: null, ownerId: 'u-002', status: 'IN_PROGRESS' },
+  { id: `${P}STEP-202`, seq: 2, processId: `${P}PRC-MACH`, mode: 'EXTERNAL_OUTSOURCE', supplierId: `${P}SUP-03`, ownerId: 'u-001', status: 'PENDING' },
 ] as const
 
 /**
@@ -201,6 +215,18 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
     for (const s of STEPS) {
       await tx.routeStep.upsert({ where: { id: s.id }, update: {}, create: { ...s, partId: PART_ID } })
     }
+    await tx.part.upsert({
+      where: { id: PART2_ID },
+      update: {},
+      create: { id: PART2_ID, workOrderNumber: `${P}WO-001`, name: '支腿', drawingNo: `${P}DWG-002`, quantity: 4, currentStepId: STEPS2[0].id },
+    })
+    for (const s of STEPS2) {
+      await tx.routeStep.upsert({
+        where: { id: s.id },
+        update: {},
+        create: { ...s, partId: PART2_ID, startedAt: s.status === 'IN_PROGRESS' ? now : null },
+      })
+    }
     // 模板按 ID 判断是否已有；同名的真实模板存在时不写（名称唯一）
     if (!(await tx.routeTemplate.findFirst({ where: { OR: [{ id: TEMPLATE.id }, { name: TEMPLATE.name }] }, select: { id: true } }))) {
       const { steps, ...t } = TEMPLATE
@@ -213,16 +239,56 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
       create: { id: `${P}TODO-001`, ownerId: 'u-001', action: 'ARRANGE_SEND', refType: 'step', refId: `${P}STEP-001` },
     })
   })
+  const releases = await seedDemoReleases()
   return {
+    releases,
     workOrders: WORK_ORDERS.length,
     suppliers: SUPPLIERS.length,
     processes: PROCESSES.length,
     departments: DEPARTMENTS.length,
     users: opts.skipUsers ? 0 : USERS.length,
     notifyRoles: NOTIFY_ROLES.length,
-    parts: 1,
+    parts: 2,
     templates: 1,
   }
+}
+
+/**
+ * R9 演示发放单（演示工单上还没有发放单时才写，走正式的 createRelease，编号、待办、等变更都和真实一样）：
+ *   图纸：主梁结构件 A 版，发给生产部全部人员 + 项目经理 u-003 → 各自"我的待办"里有签收；
+ *   设计变更：支腿孔位变更，发给外协专员、生产经理 → 下料在加工，生产经理和外协专员收到"确认变更影响"，机加标"等变更"。
+ * 发放人 u-008（测试设计员）；连着 QMS 同步、没有写演示用户时用 u-003。
+ */
+async function seedDemoReleases() {
+  if (await prisma.release.findFirst({ where: { workOrderNumber: { startsWith: P } }, select: { id: true } })) return 0
+  const issuer = (await prisma.qmsUser.findFirst({ where: { id: 'u-008', isDeleted: false }, select: { id: true } })) ? 'u-008' : 'u-003'
+  const recipients = await prisma.qmsUser.findMany({ where: { id: { in: ['u-001', 'u-002', 'u-003'] }, isDeleted: false, status: 'ACTIVE' }, select: { id: true } })
+  if (!recipients.length) return 0
+  const ids = recipients.map((u) => u.id)
+  await createRelease(
+    {
+      type: 'DRAWING',
+      workOrderNumber: `${P}WO-001`,
+      partIds: [PART_ID],
+      version: 'A',
+      description: '主梁结构件总图及零件图（纸质 12 张），已随件发到车间',
+      userIds: ids.filter((id) => id === 'u-003'),
+      groups: ids.some((id) => id !== 'u-003') ? [{ department: '生产部', role: null }] : [],
+    },
+    issuer,
+  ).catch(() => null) // 演示用户不全（连着 QMS）时跳过，不影响其余演示数据
+  await createRelease(
+    {
+      type: 'CHANGE',
+      workOrderNumber: `${P}WO-001`,
+      partIds: [PART2_ID],
+      version: 'B',
+      description: '支腿连接板安装孔由 Φ22 改为 Φ26，孔距不变；已下料的按新图扩孔',
+      userIds: ids.filter((id) => id !== 'u-003'),
+    },
+    issuer,
+  ).catch(() => null)
+  return prisma.release.count({ where: { workOrderNumber: { startsWith: P } } })
 }
 
 /**
@@ -244,7 +310,20 @@ export async function resetDemo(uploadDir?: string) {
 
     // 开发工具专用：flow_event 平时只新增，这里是清理演示数据
     const events = await tx.flowEvent.deleteMany({ where: { OR: [{ stepId: { in: stepIds } }, { qmsInspectionId: { in: insIds } }] } })
-    const todos = await tx.todo.deleteMany({ where: { OR: [{ id: { startsWith: P } }, { refType: 'step', refId: { in: stepIds } }] } })
+    // R9 演示发放单（签收记录随发放单级联删除）及其待办、W5 预警、拒收通知、附件
+    const releaseRows = await tx.release.findMany({ where: { workOrderNumber: { startsWith: P } }, select: { id: true, receipts: { select: { id: true } } } })
+    const releaseIds = releaseRows.map((r) => r.id)
+    const receiptIds = releaseRows.flatMap((r) => r.receipts.map((x) => x.id))
+    const todos = await tx.todo.deleteMany({
+      where: {
+        OR: [
+          { id: { startsWith: P } },
+          { refType: 'step', refId: { in: stepIds } },
+          { refType: 'receipt', refId: { in: receiptIds } },
+          { refType: 'release', refId: { in: releaseIds } },
+        ],
+      },
+    })
     const issueRows = await tx.issue.findMany({ where: { workOrderNumber: { startsWith: P } }, select: { id: true } })
     const issueIds = issueRows.map((i) => i.id)
     const alertRows = await tx.alert.findMany({
@@ -253,16 +332,23 @@ export async function resetDemo(uploadDir?: string) {
           { refType: 'step', refId: { in: stepIds } },
           { refType: 'unmatched', refId: { in: insIds } },
           { refType: 'issue', refId: { in: issueIds } },
+          { refType: 'receipt', refId: { in: receiptIds } },
         ],
       },
       select: { id: true },
     })
     const alertIds = alertRows.map((a) => a.id)
     const demoUsers = (await tx.qmsUser.findMany({ where: { username: { startsWith: P } }, select: { id: true } })).map((u) => u.id)
-    const uploads = await tx.uploadFile.findMany({ where: { OR: [{ issueId: { in: issueIds } }, { uploaderId: { in: demoUsers } }] }, select: { id: true, storedName: true } })
+    const uploads = await tx.uploadFile.findMany({
+      where: { OR: [{ issueId: { in: issueIds } }, { releaseId: { in: releaseIds } }, { uploaderId: { in: demoUsers } }] },
+      select: { id: true, storedName: true },
+    })
     await tx.uploadFile.deleteMany({ where: { id: { in: uploads.map((u) => u.id) } } })
     const issues = await tx.issue.deleteMany({ where: { id: { in: issueIds } } }) // 处理日志级联删除
-    const reminders = await tx.reminder.deleteMany({ where: { OR: [{ alertId: { in: alertIds } }, { userId: { in: demoUsers } }] } })
+    const reminders = await tx.reminder.deleteMany({
+      where: { OR: [{ alertId: { in: alertIds } }, { userId: { in: demoUsers } }, { dedupeKey: { in: receiptIds.map((id) => `RELEASE_REJECT:${id}`) } }] },
+    })
+    const releases = await tx.release.deleteMany({ where: { id: { in: releaseIds } } })
     const alerts = await tx.alert.deleteMany({ where: { id: { in: alertIds } } })
     await tx.notifyRole.deleteMany({ where: { OR: [{ id: { startsWith: P } }, { userId: { in: demoUsers } }] } })
     await tx.workOrderExt.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
@@ -293,6 +379,7 @@ export async function resetDemo(uploadDir?: string) {
       unmatched: unmatched.count,
       inspections: insIds.length,
       templates: templates.count,
+      releases: releases.count,
     }
   })
   const { storedNames, ...counts } = result

@@ -50,6 +50,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
   const OTHER = 'T-WO-PM-OTHER'
   let otherIssueId = ''
   let otherPartId = ''
+  const HTTP_USERS = ['h-pm', 'h-pm2', 'h-lead', 'h-worker']
 
   beforeAll(async () => {
     if (!existsSync(SERVER_ENTRY)) throw new Error('先运行 pnpm build')
@@ -73,6 +74,10 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       ],
     })
     await db.notifyRole.create({ data: { role: 'LEADER', userId: 'h-lead' } })
+    // 发放单的接收人要在 QMS 用户副本里（R9）
+    await db.release.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
+    await db.qmsUser.deleteMany({ where: { id: { in: HTTP_USERS } } })
+    await db.qmsUser.createMany({ data: HTTP_USERS.map((id) => ({ id, username: id, realName: id, status: 'ACTIVE', updatedAt: now })) })
     otherPartId = (await db.part.create({ data: { workOrderNumber: OTHER, name: '别人的工件' } })).id
     otherIssueId = (
       await db.issue.create({
@@ -118,6 +123,8 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
   afterAll(async () => {
     app?.kill()
     await bridge?.close()
+    await db?.release.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
+    await db?.qmsUser.deleteMany({ where: { id: { in: HTTP_USERS } } })
     await db?.issue.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.$disconnect()
     if (uploadDir) await rm(uploadDir, { recursive: true, force: true })
@@ -227,5 +234,64 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await get(saved!.url, pm)).status).toBe(404)
     const pm2 = await login('h-pm2')
     expect((await get(saved!.url, pm2)).status).toBe(200)
+  })
+
+  it('发放单（R9）：按工单可见范围新建/查看；接收人不受范围限制能看能签；只能签自己的；PDF 附件按发放单权限读取', async () => {
+    const pm = await login('h-pm')
+    const pm2 = await login('h-pm2')
+    const worker = await login('h-worker')
+    const post = (s: Record<string, string>, path: string, body: object) =>
+      fetch(`${base}${path}`, { method: 'POST', headers: { cookie: cookieHeader(s), 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+    // 项目经理甲不能在别人的工单上发放
+    expect((await post(pm, '/api/releases', { type: 'DRAWING', workOrderNumber: OTHER, description: 'x', userIds: ['h-worker'] })).status).toBe(403)
+
+    // 附件：PDF 只能按附件传，按照片传 400
+    const pdf = new TextEncoder().encode('%PDF-1.4\n%test\n')
+    const upload = (kind: string) => {
+      const form = new FormData()
+      form.append('file', new Blob([pdf], { type: 'application/pdf' }), 'drawing.pdf')
+      return fetch(`${base}/api/uploads${kind ? `?kind=${kind}` : ''}`, { method: 'POST', headers: { cookie: cookieHeader(pm) }, body: form })
+    }
+    expect((await upload('')).status).toBe(400)
+    const up = await upload('attachment')
+    expect(up.status).toBe(200)
+    const [att] = (await up.json()) as { id: string; mime: string; url: string }[]
+    expect(att!.mime).toBe('application/pdf')
+
+    // 甲在自己的工单上发给乙（乙看不到甲的工单）和一线
+    const created = await post(pm, '/api/releases', { type: 'CHANGE', workOrderNumber: MINE, description: '孔位变更', userIds: ['h-pm2', 'h-worker'], attachmentIds: [att!.id] })
+    expect(created.status).toBe(200)
+    const { id } = (await created.json()) as { id: string }
+    // 乙是接收人：能看详情和附件（虽然不是他的工单）
+    const detail = await get(`/api/releases/${id}`, pm2)
+    expect(detail.status).toBe(200)
+    const d = (await detail.json()) as { myReceipt: { id: string }; permissions: { sign: boolean; void: boolean } }
+    expect(d.permissions).toMatchObject({ sign: true, void: false })
+    const file = await get(att!.url, pm2)
+    expect(file.status).toBe(200)
+    expect(file.headers.get('content-type')).toBe('application/pdf')
+    // 一线不能替乙签收；乙不能作废
+    expect((await post(worker, `/api/receipts/${d.myReceipt.id}/sign`, {})).status).toBe(403)
+    expect((await post(pm2, `/api/releases/${id}/void`, {})).status).toBe(403)
+    expect((await post(pm2, `/api/receipts/${d.myReceipt.id}/reject`, { reason: '' })).status).toBe(400)
+    expect((await post(pm2, `/api/receipts/${d.myReceipt.id}/sign`, {})).status).toBe(200)
+    // 乙的"待签收"清空
+    expect(((await (await get('/api/receipts?tab=pending', pm2)).json()) as unknown[]).length).toBe(0)
+
+    // 别人工单上的发放单：甲（不是接收人）看不到，列表也没有，附件 404
+    const lead = await login('h-lead')
+    const other = await post(lead, '/api/releases', { type: 'DRAWING', workOrderNumber: OTHER, description: '别的工单', userIds: ['h-worker'] })
+    expect(other.status).toBe(200)
+    const otherId = ((await other.json()) as { id: string }).id
+    expect((await get(`/api/releases/${otherId}`, pm)).status).toBe(403)
+    const list = (await (await get('/api/releases', pm)).json()) as { id: string }[]
+    expect(list.some((r) => r.id === otherId)).toBe(false)
+    expect(list.some((r) => r.id === id)).toBe(true)
+    expect((await post(pm, `/api/releases/${otherId}/void`, {})).status).toBe(403)
+    // 签收待办不能转交
+    const todos = (await (await get('/api/todos', worker)).json()) as { id: string; action: string }[]
+    const signTodo = todos.find((t) => t.action === 'SIGN_RELEASE')!
+    expect((await post(worker, `/api/todos/${signTodo.id}/transfer`, { toUserId: 'h-lead' })).status).toBe(400)
   })
 })

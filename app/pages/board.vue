@@ -22,6 +22,7 @@ const columns = [
   { title: '超期', key: 'overdue', width: 120, align: 'center' as const },
   { title: '未关闭异常', key: 'issues', width: 100, align: 'center' as const },
   { title: '活动预警', key: 'alerts', width: 120 },
+  { title: '未签收发放', key: 'releases', width: 100, align: 'center' as const },
   { title: '项目经理', key: 'pm', width: 110 },
   { title: '交期', key: 'delivery', width: 110 },
 ]
@@ -66,6 +67,10 @@ const columns = [
             <a-tag v-if="record.yellowAlerts" color="orange">黄 {{ record.yellowAlerts }}</a-tag>
           </NuxtLink>
           <span v-else class="muted">—</span>
+        </template>
+        <template v-else-if="column.key === 'releases'">
+          <NuxtLink v-if="record.unsignedReleases" :to="`/releases?wo=${encodeURIComponent(record.workOrderNumber)}&progress=PENDING`">{{ record.unsignedReleases }}</NuxtLink>
+          <span v-else class="muted">0</span>
         </template>
         <template v-else-if="column.key === 'pm'">{{ record.projectManagerName ?? '—' }}</template>
         <template v-else-if="column.key === 'delivery'">{{ dayText(record.deliveryDate) }}</template>

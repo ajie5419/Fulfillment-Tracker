@@ -52,6 +52,9 @@ function start(t: Todo) {
   })
 }
 
+/** 发放签收、确认变更影响：打开发放单详情抽屉处理 */
+const releaseId = ref<string | null>(null)
+
 const transferring = ref<Todo | null>(null)
 const transferTo = ref<string | undefined>()
 async function transfer() {
@@ -78,11 +81,13 @@ async function transfer() {
       <a-list v-else :data-source="todos" item-layout="horizontal">
         <template #renderItem="{ item }">
           <a-list-item>
-            <a-list-item-meta :title="item.title" :description="`${item.step?.workOrderNumber ?? ''}　${item.suggestion}`" />
+            <a-list-item-meta :title="item.title" :description="`${item.step?.workOrderNumber ?? item.release?.workOrderNumber ?? ''}　${item.suggestion}`" />
             <template #actions>
               <a-button v-if="item.action === 'ARRANGE_SEND' && item.step" type="primary" size="small" @click="openSend(item)">登记发出</a-button>
               <a-button v-else-if="item.action === 'ARRANGE_START' && item.step" type="primary" size="small" @click="start(item)">开工</a-button>
-              <a-button size="small" @click="transferring = item">转交</a-button>
+              <a-button v-else-if="item.action === 'SIGN_RELEASE' && item.release" type="primary" size="small" @click="releaseId = item.release.id">查看并签收</a-button>
+              <a-button v-else-if="item.action === 'CONFIRM_CHANGE' && item.release" type="primary" size="small" @click="releaseId = item.release.id">确认变更影响</a-button>
+              <a-button v-if="item.action !== 'SIGN_RELEASE'" size="small" @click="transferring = item">转交</a-button>
             </template>
             <span class="muted">{{ timeText(item.createdAt) }}</span>
           </a-list-item>
@@ -143,6 +148,7 @@ async function transfer() {
   </a-space>
 
   <SendStepModal :step="sending" @close="sending = null" @done="sending = null; refreshTodos()" />
+  <ReleaseDrawer :id="releaseId" @close="releaseId = null" @changed="refreshTodos()" />
 
   <a-modal :open="!!transferring" title="转交待办" ok-text="转交" @ok="transfer" @cancel="transferring = null">
     <p>{{ transferring?.title }}</p>

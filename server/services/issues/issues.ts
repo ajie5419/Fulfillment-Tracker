@@ -243,7 +243,11 @@ export async function createIssue(input: NewIssueInput, reporterId: string) {
       },
     })
     if (photoIds.length) {
-      const bound = await tx.uploadFile.updateMany({ where: { id: { in: photoIds }, uploaderId: reporterId, issueId: null }, data: { issueId: issue.id } })
+      // 只认图片（PDF 是发放单附件），已绑定到发放单的也不能再用
+      const bound = await tx.uploadFile.updateMany({
+        where: { id: { in: photoIds }, uploaderId: reporterId, issueId: null, releaseId: null, mime: { startsWith: 'image/' } },
+        data: { issueId: issue.id },
+      })
       if (bound.count !== photoIds.length) throw new FlowError('照片无效或已被使用，请重新上传')
     }
     await tx.issueLog.create({ data: { issueId: issue.id, toStatus: 'OPEN', note: '上报', actorId: reporterId } })

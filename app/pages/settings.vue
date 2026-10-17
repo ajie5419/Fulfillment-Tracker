@@ -38,7 +38,7 @@ async function call(url: string, method: 'POST' | 'PUT' | 'DELETE', body?: objec
 
 // ───── 阈值 ─────
 // W3 的"提醒"在表里存的是承诺返回日前多少小时，页面上按天编辑
-type Row = { rule: 'W1' | 'W2' | 'W3' | 'W4'; remind: number | null; yellowDays: number; redDays: number }
+type Row = { rule: 'W1' | 'W2' | 'W3' | 'W4' | 'W5'; remind: number | null; yellowDays: number; redDays: number }
 const rows = ref<Row[]>([])
 watch(
   () => data.value?.thresholds,
@@ -52,9 +52,9 @@ watch(
   },
   { immediate: true },
 )
-const REMIND_LABEL = { W1: '小时后提醒', W2: '（不提醒）', W3: '天前提醒（承诺返回日前）', W4: '（不提醒）' } as const
-const YELLOW_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（待受理 / 超期）' } as const
-const RED_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（超要求解决日）' } as const
+const REMIND_LABEL = { W1: '小时后提醒', W2: '（不提醒）', W3: '天前提醒（承诺返回日前）', W4: '（不提醒）', W5: '小时未签收提醒' } as const
+const YELLOW_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（待受理 / 超期）', W5: '天未签收' } as const
+const RED_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（超要求解决日）', W5: '天未签收' } as const
 function saveThreshold(r: Row) {
   const remindHours = r.rule === 'W2' || r.rule === 'W4' || r.remind == null ? null : r.rule === 'W3' ? Math.round(r.remind * 24) : r.remind
   const url = `/api/settings/thresholds/${r.rule}`
@@ -137,6 +137,7 @@ const woColumns = [
               <a-space><a-input-number v-model:value="record.redDays" :min="1" :max="365" size="small" /><span>{{ RED_LABEL[record.rule as Row['rule']] }}</span></a-space>
               <div v-if="record.rule === 'W3'" class="muted">要求完成日已过也直接红</div>
               <div v-if="record.rule === 'W4'" class="muted">W4 红色不再转异常</div>
+              <div v-if="record.rule === 'W5'" class="muted">W5 黄色起通知发放人，红色不转异常</div>
             </template>
             <template v-else-if="column.key === 'save'">
               <a-button type="primary" size="small" @click="saveThreshold(record as Row)">保存</a-button>

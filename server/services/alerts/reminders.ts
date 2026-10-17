@@ -5,13 +5,14 @@ import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { alertSourceKey, convertAlertInTx } from '../issues/convert'
 import { issueTransaction } from '../issues/issues'
+import { releaseLink, releaseMobileLink } from '../releases/constants'
 import { CONVERTIBLE_RULES, durationText, elapsedExcludingOffDays } from './rules'
 import { SCAN_RULES, type Target, collectTargets, loadOffDays, loadThresholds } from './scan'
 
 interface Link {
-  /** 电脑端：步骤 → 工件页对应工单；待确认 → 待确认匹配页；异常 → 异常列表并打开该条 */
+  /** 电脑端：步骤 → 工件页对应工单；待确认 → 待确认匹配页；异常 → 异常列表并打开该条；签收记录（W5）→ 发放单详情 */
   pc: string | null
-  /** 手机端：W2 厂外步骤 → 发出登记；在外步骤 → 外协在途；异常 → 我的异常；待确认没有手机页面 */
+  /** 手机端：W2 厂外步骤 → 发出登记；在外步骤 → 外协在途；异常 → 我的异常；签收记录 → 手机签收页；待确认没有手机页面 */
   mobile: string | null
 }
 
@@ -28,18 +29,23 @@ const issueLink = (id: string): Link => ({ pc: `/issues?id=${encodeURIComponent(
 async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
   const alerts = alertIds.length ? await prisma.alert.findMany({ where: { id: { in: alertIds } } }) : []
   const stepIds = alerts.filter((a) => a.refType === 'step').map((a) => a.refId)
+  const receiptIds = alerts.filter((a) => a.refType === 'receipt').map((a) => a.refId)
   const converted = alerts.filter((a) => a.status === 'CONVERTED').map((a) => alertSourceKey(a.id))
-  const [steps, issues] = await Promise.all([
+  const [steps, issues, receipts] = await Promise.all([
     stepIds.length ? prisma.routeStep.findMany({ where: { id: { in: stepIds } }, include: { part: { select: { workOrderNumber: true } } } }) : [],
     converted.length ? prisma.issue.findMany({ where: { sourceKey: { in: converted } }, select: { id: true, issueNo: true, sourceKey: true } }) : [],
+    receiptIds.length ? prisma.releaseReceipt.findMany({ where: { id: { in: receiptIds } }, select: { id: true, releaseId: true } }) : [],
   ])
   const stepById = new Map(steps.map((s) => [s.id, s]))
+  const releaseOf = new Map(receipts.map((r) => [r.id, r.releaseId]))
   const issueBySource = new Map(issues.map((i) => [i.sourceKey!, i]))
   const out = new Map<string, LinkInfo>()
   for (const a of alerts) {
     let link: Link = { pc: null, mobile: null }
     if (a.refType === 'unmatched') link = { pc: '/unmatched', mobile: null }
     if (a.refType === 'issue') link = issueLink(a.refId)
+    const releaseId = a.refType === 'receipt' ? releaseOf.get(a.refId) : undefined
+    if (releaseId) link = { pc: releaseLink(releaseId), mobile: releaseMobileLink(releaseId) }
     const step = a.refType === 'step' ? stepById.get(a.refId) : undefined
     if (step) {
       const wo = encodeURIComponent(step.part.workOrderNumber)
@@ -61,12 +67,15 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
   return out
 }
 
-const SELECT = { id: true, title: true, level: true, readAt: true, createdAt: true, alertId: true, kind: true, body: true } as const
+const SELECT = { id: true, title: true, level: true, readAt: true, createdAt: true, alertId: true, kind: true, body: true, link: true } as const
+
+/** 发放单通知（kind = RELEASE，如拒收）：电脑端 link 存在提醒上，手机端换成对应的手机页 */
+const mobileOf = (link: string | null) => (link?.startsWith('/releases?id=') ? `/m/release?id=${link.slice('/releases?id='.length)}` : null)
 
 /** 同步失败提醒（管理员）：点开去设置页的"QMS 同步状态" */
 const SYNC_FAIL_LINK = '/settings?tab=sync'
-/** 预警/待办类提醒 + 已读的同步失败提醒（未读的置顶，不在分组里重复出现） */
-const LISTED = { OR: [{ kind: null }, { kind: 'SYNC_FAIL', readAt: { not: null } }] }
+/** 预警/待办类提醒、发放单通知 + 已读的同步失败提醒（未读的置顶，不在分组里重复出现） */
+const LISTED = { OR: [{ kind: null }, { kind: 'RELEASE' }, { kind: 'SYNC_FAIL', readAt: { not: null } }] }
 
 /**
  * 我的提醒。每日汇总（kind = DIGEST）单独返回最新一条作为置顶（digest），不混在分组列表里；
@@ -92,6 +101,7 @@ export async function listReminders(userId: string) {
     pinned: pinned.map((p) => ({ ...p, lines: (p.body ?? '').split('\n').filter(Boolean), link: SYNC_FAIL_LINK })),
     items: items.map((i) => {
       if (i.kind === 'SYNC_FAIL') return { ...i, rule: null, cleared: false, issueNo: null, link: SYNC_FAIL_LINK, mobileLink: null }
+      if (i.kind === 'RELEASE') return { ...i, rule: null, cleared: false, issueNo: null, link: i.link, mobileLink: mobileOf(i.link) }
       const l = i.alertId ? links.get(i.alertId) : undefined
       return {
         ...i,
@@ -129,12 +139,12 @@ export async function newReminders(userId: string, since: Date | null) {
   const now = new Date()
   since ??= now
   const items = await prisma.reminder.findMany({
-    where: { userId, OR: [{ kind: null }, { kind: 'SYNC_FAIL' }], readAt: null, level: { in: ['YELLOW', 'RED'] }, createdAt: { gte: new Date(+since - OVERLAP_MS) } },
+    where: { userId, OR: [{ kind: null }, { kind: 'SYNC_FAIL' }, { kind: 'RELEASE' }], readAt: null, level: { in: ['YELLOW', 'RED'] }, createdAt: { gte: new Date(+since - OVERLAP_MS) } },
     orderBy: { createdAt: 'asc' },
     select: SELECT,
   })
   const links = await linksFor([...new Set(items.map((i) => i.alertId).filter((x): x is string => !!x))])
-  return { now, items: items.map((i) => ({ ...i, link: i.kind === 'SYNC_FAIL' ? SYNC_FAIL_LINK : (i.alertId && links.get(i.alertId)?.pc) || null })) }
+  return { now, items: items.map((i) => ({ ...i, link: i.kind === 'SYNC_FAIL' ? SYNC_FAIL_LINK : i.kind === 'RELEASE' ? i.link : (i.alertId && links.get(i.alertId)?.pc) || null })) }
 }
 
 // ───────────── 预警列表 ─────────────
@@ -215,13 +225,15 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
         issue: issue ? { id: issue.id, issueNo: issue.issueNo } : null,
         canConvert: a.status === 'ACTIVE' && canConvert(a.level, t, t.workOrderNumber ? pmOf.get(t.workOrderNumber) : null, filter.viewer),
         link:
-          t.refType === 'unmatched'
-            ? '/unmatched'
-            : t.refType === 'issue'
-              ? `/issues?id=${encodeURIComponent(t.refId)}`
-              : t.workOrderNumber
-                ? `/parts?wo=${encodeURIComponent(t.workOrderNumber)}`
-                : null,
+          t.refType === 'receipt' && t.meta?.releaseId
+            ? releaseLink(t.meta.releaseId)
+            : t.refType === 'unmatched'
+              ? '/unmatched'
+              : t.refType === 'issue'
+                ? `/issues?id=${encodeURIComponent(t.refId)}`
+                : t.workOrderNumber
+                  ? `/parts?wo=${encodeURIComponent(t.workOrderNumber)}`
+                  : null,
       }
     })
     .filter((x) => x !== null)

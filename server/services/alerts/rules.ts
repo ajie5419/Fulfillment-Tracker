@@ -5,6 +5,7 @@
  *   W2 转序停滞：从生成"安排发出/开工"待办起计时，黄 2 天 / 红 4 天
  *   W3 外协逾期未返：承诺返回日前 2 天提醒，超期 1 天黄、3 天红；要求完成日已过直接红
  *   W4 异常超期：待受理满 1 天黄；处理中/待受理过要求解决日 1 天黄、3 天红（待确认、已关闭不算）
+ *   W5 发放未签收（R9）：从发放起计时，提醒 4 小时 / 黄 1 天 / 红 2 天
  *
  * 计时按自然日/小时，停工日（off_day）整天不计入；"哪一天"一律按工厂时区 Asia/Shanghai 判定。
  * 级别只升不降：阈值调大后，已经是黄的预警也不退回提醒。
@@ -16,10 +17,10 @@ export const DAY_MS = 86_400_000
 /** Asia/Shanghai 固定 UTC+8（1991 年起不用夏令时），按偏移直接算日界，比逐日调 Intl 简单 */
 const TZ_OFFSET_MS = 8 * HOUR_MS
 
-export type ScanRule = 'W1' | 'W2' | 'W3' | 'W4'
+export type ScanRule = 'W1' | 'W2' | 'W3' | 'W4' | 'W5'
 
 export interface RuleThreshold {
-  /** W1：提醒小时数；W3：承诺返回日前多少小时提醒（48 = 前 2 天）；W2、W4 为空（不提醒） */
+  /** W1、W5：提醒小时数；W3：承诺返回日前多少小时提醒（48 = 前 2 天）；W2、W4 为空（不提醒） */
   remindHours: number | null
   yellowDays: number
   redDays: number
@@ -31,9 +32,10 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
   W2: { remindHours: null, yellowDays: 2, redDays: 4 },
   W3: { remindHours: 48, yellowDays: 1, redDays: 3 },
   W4: { remindHours: null, yellowDays: 1, redDays: 3 },
+  W5: { remindHours: 4, yellowDays: 1, redDays: 2 },
 }
 
-/** 红色时自动转为异常的规则（W4 本身就是异常，不再转） */
+/** 红色时自动转为异常的规则（W4 本身就是异常，不再转；W5 未签收只升级通知，不转异常） */
 export const CONVERTIBLE_RULES: ScanRule[] = ['W1', 'W2', 'W3']
 
 /** 活动预警的唯一键（alert.activeKey），消除后置 null */
@@ -87,7 +89,7 @@ export function elapsedExcludingOffDays(from: Date | number, to: Date | number, 
 
 // ───────────── 判定 ─────────────
 
-/** W1、W2：按已持续时长定级别；没到任何阈值返回 null */
+/** W1、W2、W5：按已持续时长定级别；没到任何阈值返回 null */
 export function levelByElapsed(elapsedMs: number, t: RuleThreshold): AlertLevel | null {
   if (elapsedMs >= t.redDays * DAY_MS) return 'RED'
   if (elapsedMs >= t.yellowDays * DAY_MS) return 'YELLOW'
