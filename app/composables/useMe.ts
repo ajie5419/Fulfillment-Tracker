@@ -19,7 +19,8 @@ export function useMe() {
   return useFetch<Me>('/api/me', { key: 'me' })
 }
 
+/** 退出并回到 QMS 登录页重新输入账号密码（可换人登录）。不带 prompt=login 的话，QMS 已登录时会直接以原账号再登录进来 */
 export async function logout() {
   await $fetch('/auth/logout', { method: 'POST' })
-  window.location.href = '/auth/login'
+  window.location.href = '/auth/login?prompt=login'
 }

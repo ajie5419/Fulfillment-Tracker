@@ -55,7 +55,7 @@ const identityResponse = success(z.object({ id: z.coerce.string().min(1), name: 
 
 export function buildAuthorizeUrl(
   cfg: IdentityBridgeConfig,
-  params: { state: string; codeChallenge: string },
+  params: { state: string; codeChallenge: string; forceLogin?: boolean },
 ): string {
   const query = new URLSearchParams({
     clientId: cfg.clientId,
@@ -64,6 +64,8 @@ export function buildAuthorizeUrl(
     challenge: params.codeChallenge,
     method: 'S256',
   })
+  // prompt=login：即使浏览器里 QMS 已登录，也让 QMS 先退出并显示登录页（退出、换人用）
+  if (params.forceLogin) query.set('prompt', 'login')
   // hash 路由时参数必须拼在 # 之后，直接字符串拼接即可同时适配两种路由
   const sep = cfg.authorizeUrl.includes('?') ? '&' : '?'
   return `${cfg.authorizeUrl}${sep}${query.toString()}`

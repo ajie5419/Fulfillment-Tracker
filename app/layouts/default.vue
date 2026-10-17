@@ -84,7 +84,7 @@ onBeforeUnmount(() => clearInterval(timer))
       </a-menu>
       <span v-if="me" class="user">
         {{ me.name }}<template v-if="me.department"> · {{ me.department }}</template>
-        <a-button type="link" size="small" @click="logout">退出</a-button>
+        <a-button type="link" size="small" @click="logout">退出 / 切换账号</a-button>
       </span>
     </a-layout-header>
     <a-layout-content class="content">

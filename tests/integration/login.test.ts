@@ -140,6 +140,13 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
     expect(replay.status).toBe(400)
   })
 
+  it('?prompt=login 透传到 QMS 授权地址（退出 / 切换账号时要求重新输入账号密码），其他参数不透传', async () => {
+    // 授权地址可能是 hash 路由，参数在 # 之后，按 ? 后面解析
+    const params = async (path: string) => new URLSearchParams((await get(path)).headers.get('location')!.split('?')[1])
+    expect((await params('/auth/login?prompt=login')).get('prompt')).toBe('login')
+    expect((await params('/auth/login?prompt=evil')).has('prompt')).toBe(false)
+  })
+
   it('state 被篡改时拒绝登录', async () => {
     const start = await get('/auth/login')
     const oauth = cookiesFrom(start)
