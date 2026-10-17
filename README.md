@@ -64,6 +64,8 @@ node scripts/mock-identity-bridge.mjs         # 监听 4100，授权页上选择
 
 ## 部署（与 QMS 同机）
 
+首次上线的完整步骤（QMS 先发版、建库、IP 证书与 443 入口、环境变量、清演示数据、备份、真机验证，每步含确认与回滚）见 [docs/上线手册.md](docs/上线手册.md)。
+
 ```bash
 docker compose build
 docker compose run --rm fulfillment prisma migrate deploy   # 上线前人工执行
