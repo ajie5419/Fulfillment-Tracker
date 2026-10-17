@@ -70,7 +70,8 @@ const { data: parts, refresh: refreshParts } = await useFetch('/api/parts', {
 watch(
   () => form.workOrderNumber,
   (wo, old) => {
-    if (old !== undefined && wo !== old) form.partId = undefined
+    // 编辑时工单不能改；这里的变化来自打开弹窗时装入另一行，不能清掉它的工件（否则保存会解绑工件）
+    if (!editing.value && old !== undefined && wo !== old) form.partId = undefined
     if (wo) refreshParts()
   },
 )

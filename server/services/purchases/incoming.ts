@@ -41,7 +41,8 @@ export async function matchIncoming(inspectionId: string): Promise<IncomingResul
       }
       // 先锁工件再锁采购行，读最新数据复核（同时有人手工确认 / 取消时以先提交的为准）
       const line = await lockLine(tx, hits[0]!.id)
-      if (line.status !== 'OPEN' || line.qmsInspectionId) {
+      // 锁之前这一行可能刚被改过（名称、供应商、工单下的工件……）：用最新数据再走一遍同样的匹配规则
+      if (line.status !== 'OPEN' || line.qmsInspectionId || findPurchaseCandidates(ins, [line]).length !== 1) {
         await tx.incomingCheck.create({ data: { qmsInspectionId: inspectionId, result: 'NO_CANDIDATE' } })
         return { inspectionId, result: 'NO_CANDIDATE' }
       }

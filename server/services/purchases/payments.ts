@@ -90,6 +90,9 @@ export async function workOrderOfPayment(id: string) {
   return (await prisma.paymentRequest.findUnique({ where: { id }, select: { workOrderNumber: true } }))?.workOrderNumber ?? null
 }
 
+/** 列表最多返回的条数 */
+const MAX_PAYMENT_ROWS = 500
+
 export interface PaymentFilter {
   /** UNPAID = 待付 + 暂缓（默认）；ALL = 全部 */
   status?: 'UNPAID' | PaymentStatus | 'ALL'
@@ -99,16 +102,29 @@ export interface PaymentFilter {
 
 /** 付款申请列表（项目和财务看）：按影响排序，附关联物料、最近需求日、当前用户能做的操作 */
 export async function listPayments(filter: PaymentFilter, viewer: Actor, now = new Date()) {
-  const and: Prisma.PaymentRequestWhereInput[] = []
+  const scope: Prisma.PaymentRequestWhereInput[] = []
+  if (filter.workOrderNumber) scope.push({ workOrderNumber: filter.workOrderNumber })
+  if (filter.visibleWorkOrders) scope.push({ workOrderNumber: { in: filter.visibleWorkOrders } })
   const status = filter.status ?? 'UNPAID'
-  if (status === 'UNPAID') and.push({ status: { in: ['PENDING', 'ON_HOLD'] } })
-  else if (status !== 'ALL') and.push({ status })
-  if (filter.workOrderNumber) and.push({ workOrderNumber: filter.workOrderNumber })
-  if (filter.visibleWorkOrders) and.push({ workOrderNumber: { in: filter.visibleWorkOrders } })
-  const [rows, finance] = await Promise.all([
-    prisma.paymentRequest.findMany({ where: { AND: and }, include: { lines: { include: { purchaseLine: true } } }, take: 500 }),
+  const wanted: PaymentStatus[] = status === 'UNPAID' ? ['PENDING', 'ON_HOLD'] : status === 'ALL' ? ['PENDING', 'ON_HOLD', 'PAID'] : [status]
+  const unpaid = wanted.filter((x) => x !== 'PAID')
+  // 截断前先定好顺序：没付的单独查（卡交期、新的在前），已付的另查最新的；合并后按影响排序再截断。
+  // 枚举顺序（PENDING, PAID, ON_HOLD）不能直接用来排"没付的在前"。
+  const query = (statuses: PaymentStatus[]) =>
+    statuses.length
+      ? prisma.paymentRequest.findMany({
+          where: { AND: [...scope, { status: { in: statuses } }] },
+          include: { lines: { include: { purchaseLine: true } } },
+          orderBy: [{ blocksDelivery: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }],
+          take: MAX_PAYMENT_ROWS,
+        })
+      : Promise.resolve([])
+  const [open, paid, finance] = await Promise.all([
+    query(unpaid),
+    query(wanted.includes('PAID') ? ['PAID'] : []),
     viewer.isAdmin ? Promise.resolve(true) : isFinance(viewer.userId),
   ])
+  const rows = [...open, ...paid]
   const names = await loadNames({ user: rows.flatMap((r) => [r.requesterId, r.statusBy]) })
   const out = rows.map((r) => {
     const lines = r.lines.map((x) => x.purchaseLine)
@@ -146,5 +162,5 @@ export async function listPayments(filter: PaymentFilter, viewer: Actor, now = n
       },
     }
   })
-  return out.sort(comparePayments)
+  return out.sort(comparePayments).slice(0, MAX_PAYMENT_ROWS)
 }

@@ -76,8 +76,11 @@ export interface W6Input {
 
 export interface W6Result {
   level: AlertLevel | null
-  /** OVERDUE = 承诺到货日已过仍未到货；NO_PROMISE = 需求日前 N 天内仍无承诺日；null = 不在关注范围 */
-  trigger: 'OVERDUE' | 'NO_PROMISE' | null
+  /**
+   * OVERDUE = 承诺到货日已过仍未到货；NO_PROMISE = 需求日前 N 天内仍无承诺日；
+   * NEED_PASSED = 承诺日还没到、但需求日已过（承诺日晚于需求日，已经缺料）；null = 不在关注范围
+   */
+  trigger: 'OVERDUE' | 'NO_PROMISE' | 'NEED_PASSED' | null
   /** 超出承诺到货日的天数（不含停工日） */
   overdueDays: number
   /** 距需求日还有几天（自然日，已过为负） */
@@ -89,7 +92,7 @@ export interface W6Result {
  * W6 关键物料未到货（只看未到货的采购行）：
  *   有承诺到货日：过了承诺日（超期天数不含停工日）≥ 1 天提醒、≥ 黄阈值黄、≥ 红阈值红；需求日也已过直接红。
  *   没有承诺日：距需求日 ≤ N 天（remindHours / 24，按自然日）→ 黄；需求日已过仍无承诺日 → 红。
- *   承诺日还没到的不预警（哪怕承诺日晚于需求日：那是采购接受了的交期，到期没到再报）。
+ *   承诺日还没到：需求日也没到不预警；需求日已过（承诺日晚于需求日，已经缺料）→ 红。
  */
 export function judgeW6(input: W6Input, t: RuleThreshold): W6Result {
   const today = shanghaiDay(input.now)
@@ -101,7 +104,10 @@ export function judgeW6(input: W6Input, t: RuleThreshold): W6Result {
     if (overdueDays <= 0) {
       // 承诺日已过但中间全是停工日：仍算"已过承诺日"，只是还不计超期天数
       const passed = dateFieldDay(input.promisedDate) < today
-      return { level: passed && needPassed ? 'RED' : passed ? 'REMIND' : null, trigger: passed ? 'OVERDUE' : null, overdueDays: 0, daysLeft, needPassed }
+      if (passed) return { level: needPassed ? 'RED' : 'REMIND', trigger: 'OVERDUE', overdueDays: 0, daysLeft, needPassed }
+      return needPassed
+        ? { level: 'RED', trigger: 'NEED_PASSED', overdueDays: 0, daysLeft, needPassed }
+        : { level: null, trigger: null, overdueDays: 0, daysLeft, needPassed }
     }
     const level: AlertLevel = needPassed || overdueDays >= t.redDays ? 'RED' : overdueDays >= t.yellowDays ? 'YELLOW' : 'REMIND'
     return { level, trigger: 'OVERDUE', overdueDays, daysLeft, needPassed }
@@ -119,6 +125,7 @@ export function w6Summary(r: W6Result, l: { needDate: Date; promisedDate: Date |
     const late = r.overdueDays > 0 ? `已超 ${r.overdueDays} 天未到` : '已过承诺日未到'
     return `${who}承诺 ${dateFieldDay(l.promisedDate!)} 到货，${late}${r.needPassed ? `（需求日 ${need} 已过）` : ''}`
   }
+  if (r.trigger === 'NEED_PASSED') return `需求日 ${need} 已过 ${-r.daysLeft} 天，${who}承诺 ${dateFieldDay(l.promisedDate!)} 才到`
   if (r.daysLeft > 0) return `需求日 ${need}（还剩 ${r.daysLeft} 天）仍无承诺到货日`
   if (r.daysLeft === 0) return `需求日就是今天（${need}），仍无承诺到货日`
   return `需求日 ${need} 已过 ${-r.daysLeft} 天，仍无承诺到货日`

@@ -527,4 +527,40 @@ describe.skipIf(!DB)('关键物料到货与付款（R10）', () => {
       expect(await db.todo.count({ where: { refType: 'part', refId: p6.part.id, action: 'READY_TO_START', status: 'OPEN' } })).toBe(1)
     }
   })
+
+  it('列表截断：大量已到货的旧行不会把未到货的挤出去；统计、延误分类不受截断影响；关键字在数据库里筛', async () => {
+    await db.paymentRequest.deleteMany()
+    await db.purchaseLine.deleteMany()
+    await db.purchaseLine.createMany({
+      data: Array.from({ length: 520 }, (_, i) => ({
+        workOrderNumber: WO,
+        materialName: `旧物料${i}`,
+        quantity: 1,
+        needDate: dayOff(-400 + (i % 100)),
+        status: 'ARRIVED' as const,
+        arrivedDate: dayOff(-300),
+        delayReason: i < 10 ? ('SUPPLIER' as const) : null,
+        createdBy: 'u-buyer',
+      })),
+    })
+    const open = await line({ materialName: '新的未到货', needDate: dayOff(30) })
+    const late = await line({ materialName: 'Late-Item', needDate: dayOff(-1), promisedDate: dayOff(-2) })
+    await s.pur.updateLine(late.id, { delayReason: 'PAYMENT' })
+    const all = await s.pur.listLines({ view: 'all' })
+    expect(all.total).toBe(522)
+    expect(all.rows).toHaveLength(500)
+    expect(all.rows.slice(0, 2).map((r) => r.id).sort()).toEqual([open.id, late.id].sort()) // 未到货的在前
+    expect((await s.pur.listLines({ view: 'open' })).rows.map((r) => r.id).sort()).toEqual([open.id, late.id].sort())
+    const { stats } = all
+    // 旧行：到货日（-300）晚于需求日（-400..-301）→ 都算延误；10 条供应商原因
+    expect(stats).toMatchObject({ open: 2, shortage: 1, noPromise: 1, arrived: 520 })
+    expect(stats.delay).toEqual({ late: 521, payment: 1, management: 10, byReason: { PAYMENT: 1, SUPPLIER: 10, DEMAND_CHANGE: 0, OTHER: 0 }, unfilled: 510 })
+    const lateView = await s.pur.listLines({ view: 'late' })
+    expect(lateView.total).toBe(521)
+    expect(lateView.rows[0]!.id).toBe(late.id)
+    expect((await s.pur.listLines({ view: 'shortage' })).rows.map((r) => r.id)).toEqual([late.id])
+    // 关键字不区分大小写，在截断前筛
+    expect((await s.pur.listLines({ view: 'all', q: 'late-ITEM' })).rows.map((r) => r.id)).toEqual([late.id])
+    expect((await s.pur.listLines({ view: 'arrived', q: '旧物料519' })).rows.map((r) => r.materialName)).toEqual(['旧物料519'])
+  })
 })

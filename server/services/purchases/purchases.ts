@@ -368,43 +368,88 @@ async function describeLines(rows: LineWithPayments[], now: Date) {
 
 const PAYMENTS_INCLUDE = { payments: { select: { payment: { select: { id: true, status: true, blocksDelivery: true, amount: true } } } } } as const
 
+/** 每次最多返回的行数（按视图在数据库里先筛选、排序后再截断） */
+const MAX_LIST_ROWS = 500
+
+/** 延误（与 lineProgress 的 late 一致；日期都存为当天 UTC 零点，可以直接比较） */
+function lateWhere(today: Date): Prisma.PurchaseLineWhereInput {
+  const F = prisma.purchaseLine.fields
+  return {
+    OR: [
+      { status: 'OPEN', OR: [{ needDate: { lt: today } }, { promisedDate: { lt: today } }] },
+      { status: 'ARRIVED', OR: [{ arrivedDate: { gt: F.needDate } }, { arrivedDate: { gt: F.promisedDate } }] },
+    ],
+  }
+}
+
+function viewWhere(view: LineView, today: Date): Prisma.PurchaseLineWhereInput {
+  switch (view) {
+    case 'open':
+      return { status: 'OPEN' }
+    case 'shortage':
+      return { status: 'OPEN', needDate: { lte: today } }
+    case 'late':
+      return lateWhere(today)
+    case 'arrived':
+      return { status: 'ARRIVED' }
+    case 'cancelled':
+      return { status: 'CANCELLED' }
+    default:
+      return {}
+  }
+}
+
+/** 统计：按可见范围、所选工单，不受视图和搜索影响；用 count / groupBy，不受列表截断影响 */
+async function lineStats(scope: Prisma.PurchaseLineWhereInput[], today: Date) {
+  const count = (w: Prisma.PurchaseLineWhereInput) => prisma.purchaseLine.count({ where: { AND: [...scope, w] } })
+  const [open, shortage, noPromise, arrived, blockedByPayment, reasons] = await Promise.all([
+    count({ status: 'OPEN' }),
+    count({ status: 'OPEN', needDate: { lte: today } }),
+    count({ status: 'OPEN', promisedDate: null }),
+    count({ status: 'ARRIVED' }),
+    count({ status: 'OPEN', payments: { some: { payment: { blocksDelivery: true, status: { not: 'PAID' } } } } }),
+    prisma.purchaseLine.groupBy({ by: ['delayReason'], where: { AND: [...scope, lateWhere(today)] }, _count: { _all: true } }),
+  ])
+  const delay = delayStats([])
+  for (const r of reasons) {
+    delay.late += r._count._all
+    if (r.delayReason) delay.byReason[r.delayReason] += r._count._all
+    else delay.unfilled += r._count._all
+  }
+  delay.payment = delay.byReason.PAYMENT
+  delay.management = delay.byReason.SUPPLIER + delay.byReason.DEMAND_CHANGE + delay.byReason.OTHER
+  return { open, shortage, noPromise, arrived, blockedByPayment, delay }
+}
+
 /**
- * 采购行列表 + 统计（统计按可见范围、所选工单，不受视图筛选影响）。
+ * 采购行列表 + 统计。视图、关键字在数据库里筛选，再按顺序截断到 500 行（total 是筛选后的总数）。
  * 排序：未到货的按需求日从近到远在前；已到货的按到货日从近到远；已取消的最后。
  */
 export async function listLines(filter: LineFilter, now = new Date()) {
-  const and: Prisma.PurchaseLineWhereInput[] = []
-  if (filter.visibleWorkOrders) and.push({ workOrderNumber: { in: filter.visibleWorkOrders } })
-  if (filter.workOrderNumber) and.push({ workOrderNumber: filter.workOrderNumber })
-  if (filter.partId) and.push({ partId: filter.partId })
-  const all = await prisma.purchaseLine.findMany({ where: { AND: and }, include: PAYMENTS_INCLUDE, orderBy: [{ needDate: 'asc' }, { createdAt: 'asc' }], take: 2000 })
-  const rows = await describeLines(all, now)
-  const q = filter.q?.trim().toLowerCase()
+  const today = todayDate(now)
+  const scope: Prisma.PurchaseLineWhereInput[] = []
+  if (filter.visibleWorkOrders) scope.push({ workOrderNumber: { in: filter.visibleWorkOrders } })
+  if (filter.workOrderNumber) scope.push({ workOrderNumber: filter.workOrderNumber })
+  if (filter.partId) scope.push({ partId: filter.partId })
   const view = filter.view ?? 'open'
-  const shown = rows.filter((r) => {
-    if (q && ![r.materialName, r.spec, r.supplierName, r.workOrderNumber].some((x) => x?.toLowerCase().includes(q))) return false
-    if (view === 'open') return r.status === 'OPEN'
-    if (view === 'shortage') return r.shortage
-    if (view === 'late') return r.late
-    if (view === 'arrived') return r.status === 'ARRIVED'
-    if (view === 'cancelled') return r.status === 'CANCELLED'
-    return true
-  })
+  const q = filter.q?.trim()
+  // MySQL 默认排序规则不区分大小写
+  const search: Prisma.PurchaseLineWhereInput[] = q
+    ? [{ OR: [{ materialName: { contains: q } }, { spec: { contains: q } }, { supplierName: { contains: q } }, { workOrderNumber: { contains: q } }] }]
+    : []
+  const where: Prisma.PurchaseLineWhereInput = { AND: [...scope, viewWhere(view, today), ...search] }
+  // 状态枚举顺序就是 未到货 → 已到货 → 已取消
+  const orderBy: Prisma.PurchaseLineOrderByWithRelationInput[] =
+    view === 'arrived' ? [{ arrivedDate: 'desc' }, { id: 'asc' }] : [{ status: 'asc' }, { needDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }]
+  const [found, total, stats] = await Promise.all([
+    prisma.purchaseLine.findMany({ where, include: PAYMENTS_INCLUDE, orderBy, take: MAX_LIST_ROWS }),
+    prisma.purchaseLine.count({ where }),
+    lineStats(scope, today),
+  ])
+  const rows = await describeLines(found, now)
   const rank = { OPEN: 0, ARRIVED: 1, CANCELLED: 2 } as const
-  shown.sort((a, b) => rank[a.status] - rank[b.status] || (a.status === 'ARRIVED' ? +(b.arrivedDate ?? 0) - +(a.arrivedDate ?? 0) : +a.needDate - +b.needDate))
-  const live = rows.filter((r) => r.status !== 'CANCELLED')
-  return {
-    rows: shown.slice(0, 500),
-    total: shown.length,
-    stats: {
-      open: live.filter((r) => r.status === 'OPEN').length,
-      shortage: live.filter((r) => r.shortage).length,
-      noPromise: live.filter((r) => r.status === 'OPEN' && !r.promisedDate).length,
-      arrived: live.filter((r) => r.status === 'ARRIVED').length,
-      blockedByPayment: live.filter((r) => r.status === 'OPEN' && r.blockedByPayment).length,
-      delay: delayStats(live),
-    },
-  }
+  rows.sort((a, b) => rank[a.status] - rank[b.status] || (a.status === 'ARRIVED' ? +(b.arrivedDate ?? 0) - +(a.arrivedDate ?? 0) : +a.needDate - +b.needDate))
+  return { rows, total, stats }
 }
 
 /** 单行详情（手机到货确认页、电脑详情） */

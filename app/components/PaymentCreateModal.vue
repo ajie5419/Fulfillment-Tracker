@@ -33,13 +33,11 @@ watch(
     if (form.workOrderNumber) refresh()
   },
 )
-watch(
-  () => form.workOrderNumber,
-  (wo, old) => {
-    if (old !== undefined && wo !== old) form.purchaseLineIds = []
-    if (wo) refresh()
-  },
-)
+/** 只有用户手动换工单时才清空已选采购行（打开弹窗时预选的不受影响） */
+function onWorkOrderChange() {
+  form.purchaseLineIds = []
+  if (form.workOrderNumber) refresh()
+}
 const lineOptions = computed(() =>
   (list.value.rows as PurchaseRow[])
     .filter((l) => l.status !== 'CANCELLED')
@@ -75,6 +73,7 @@ async function submit() {
         <a-select
           v-model:value="form.workOrderNumber"
           show-search
+          @change="onWorkOrderChange"
           option-filter-prop="label"
           placeholder="选择工单"
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName}` }))"

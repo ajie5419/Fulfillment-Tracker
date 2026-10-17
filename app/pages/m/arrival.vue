@@ -80,6 +80,7 @@ async function undo() {
     await purchaseSend(`/api/purchases/${l.id}/undo-arrival`, 'POST')
     showSuccessToast('已撤销')
     await load()
+    await refreshNuxtData(['todos', 'reminders']) // 撤销会作废没处理的"可以开工"待办
   } catch (e) {
     showFailToast(apiError(e))
   } finally {

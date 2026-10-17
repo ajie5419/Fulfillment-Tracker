@@ -55,8 +55,11 @@ describe('judgeW6：关键物料未到货', () => {
     expect(judgeW6({ needDate: d('2026-10-16'), promisedDate: d('2026-10-16'), now: NOW, offDays: [] }, t)).toMatchObject({ level: 'RED', needPassed: true })
     expect(judgeW6({ needDate: d('2026-11-30'), promisedDate: d('2026-10-16'), now: NOW, offDays: [] }, { ...t, yellowDays: 2, redDays: 4 })).toMatchObject({ level: 'REMIND', trigger: 'OVERDUE' })
   })
-  it('承诺日还没到（哪怕晚于需求日）不预警', () => {
-    expect(judgeW6({ needDate: d('2026-10-16'), promisedDate: d('2026-10-20'), now: NOW, offDays: [] }, t)).toMatchObject({ level: null, trigger: null })
+  it('承诺日还没到：需求日也没到不预警；需求日已过（承诺日晚于需求日）→ 红', () => {
+    expect(judgeW6({ needDate: d('2026-10-18'), promisedDate: d('2026-10-20'), now: NOW, offDays: [] }, t)).toMatchObject({ level: null, trigger: null })
+    const r = judgeW6({ needDate: d('2026-10-15'), promisedDate: d('2026-10-20'), now: NOW, offDays: [] }, t)
+    expect(r).toMatchObject({ level: 'RED', trigger: 'NEED_PASSED', daysLeft: -2 })
+    expect(w6Summary(r, { needDate: d('2026-10-15'), promisedDate: d('2026-10-20'), supplierName: '轴承厂' })).toBe('需求日 2026-10-15 已过 2 天，轴承厂承诺 2026-10-20 才到')
   })
   it('触发 2：没有承诺日，距需求日 ≤ 7 天 → 黄；需求日已过 → 红；还早 → 不预警', () => {
     expect(judgeW6({ needDate: d('2026-10-25'), promisedDate: null, now: NOW, offDays: [] }, t)).toMatchObject({ level: null, trigger: null, daysLeft: 8 })
