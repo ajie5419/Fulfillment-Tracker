@@ -9,14 +9,14 @@
  * 已转异常的预警保留 activeKey（同一对象不会马上又生成一条新预警），不再升级、不再通知；
  * 对象离开规则关注的状态时只把 activeKey 置空，状态保持"已转异常"。
  */
-import { randomUUID } from 'node:crypto'
 import type { Alert, AlertLevel, NotifyRole, StepMode } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { ARRANGE_SEND, ARRANGE_START } from '../flow/flow'
-import { loadNames } from '../flow/names'
+import { loadNames, userDepartmentNames } from '../flow/names'
 import { convertAlertInTx } from '../issues/convert'
 import { CATEGORY_TEXT } from '../issues/constants'
 import { issueTransaction } from '../issues/issues'
+import { withLease } from '../jobs/lease'
 import { SCAN_RULES, loadOffDays, loadThresholds } from './config'
 import {
   CONVERTIBLE_RULES,
@@ -237,17 +237,18 @@ interface NotifyContext {
   pmOf: Map<string, string | null>
 }
 
-async function loadNotifyContext(targets: Target[]): Promise<NotifyContext> {
+export async function loadNotifyContext(targets: Pick<Target, 'ownerIds' | 'workOrderNumber'>[]): Promise<NotifyContext> {
   const ownerIds = [...new Set(targets.flatMap((x) => x.ownerIds))]
   const wos = [...new Set(targets.map((x) => x.workOrderNumber).filter((w): w is string => !!w))]
-  const [roles, users, exts] = await Promise.all([
+  const [roles, deptOf, exts] = await Promise.all([
     prisma.notifyRole.findMany(),
-    ownerIds.length ? prisma.qmsUser.findMany({ where: { id: { in: ownerIds } }, select: { id: true, department: true } }) : [],
+    // 用户的部门是部门 ID，换成名称后与 notify_role.department（部门名称）对应
+    userDepartmentNames(ownerIds),
     wos.length ? prisma.workOrderExt.findMany({ where: { workOrderNumber: { in: wos } } }) : [],
   ])
   return {
     roles,
-    deptOf: new Map(users.map((u) => [u.id, u.department])),
+    deptOf,
     pmOf: new Map(exts.map((e) => [e.workOrderNumber, e.projectManagerId])),
   }
 }
@@ -255,7 +256,8 @@ async function loadNotifyContext(targets: Target[]): Promise<NotifyContext> {
 /**
  * 升级阶梯（方案 6.2）：
  *   提醒 = 责任人；黄 = 提醒 + 责任部门负责人 + 工单项目经理；红 = 黄 + 项目部负责人 + 分管领导。
- * 责任部门：target.deptNames（W4 异常上写明的），没有时取责任人所在部门。找不到的角色跳过，收件人去重。
+ * 责任部门（名称）：target.deptNames（W4 异常上写明的），没有时取责任人所在部门（部门 ID 经 qms_department 换成名称）。
+ * 找不到的角色跳过，收件人去重。
  */
 export function recipientsFor(level: AlertLevel, target: Pick<Target, 'ownerIds' | 'workOrderNumber' | 'deptNames'>, ctx: NotifyContext): string[] {
   const out = new Set(target.ownerIds)
@@ -290,21 +292,6 @@ const LOCK_NAME = 'scan-rules'
 /** 租约时长：远大于一轮扫描的耗时；进程崩溃后最多这么久自动失效 */
 const LEASE_MS = 10 * 60_000
 
-/** 抢租约：lockedUntil 已过期才能抢到（条件更新，天然互斥）。用真实时间，不用注入的 now */
-async function acquireLease(holder: string): Promise<boolean> {
-  const real = new Date()
-  await prisma.jobLock.createMany({ data: [{ name: LOCK_NAME, lockedUntil: new Date(0) }], skipDuplicates: true })
-  const r = await prisma.jobLock.updateMany({
-    where: { name: LOCK_NAME, lockedUntil: { lt: real } },
-    data: { lockedUntil: new Date(real.getTime() + LEASE_MS), holder },
-  })
-  return r.count === 1
-}
-
-async function releaseLease(holder: string) {
-  await prisma.jobLock.updateMany({ where: { name: LOCK_NAME, holder }, data: { lockedUntil: new Date(), holder: null } })
-}
-
 const EMPTY: ScanResult = { skipped: true, created: 0, escalated: 0, cleared: 0, reminders: 0, active: 0, converted: 0 }
 
 /**
@@ -312,13 +299,8 @@ const EMPTY: ScanResult = { skipped: true, created: 0, escalated: 0, cleared: 0,
  * 防重叠：job_lock 表上的租约锁，抢不到直接返回 skipped。
  */
 export async function scanRules(now = new Date()): Promise<ScanResult> {
-  const holder = randomUUID()
-  if (!(await acquireLease(holder))) return { ...EMPTY }
-  try {
-    return await runScan(now)
-  } finally {
-    await releaseLease(holder)
-  }
+  const r = await withLease(LOCK_NAME, LEASE_MS, () => runScan(now))
+  return r.skipped ? { ...EMPTY } : r.value
 }
 
 async function runScan(now: Date): Promise<ScanResult> {

@@ -19,13 +19,16 @@ export default defineNuxtConfig({
       clientId: 'fulfillment', // NUXT_QMS_CLIENT_ID
       clientSecret: '', // NUXT_QMS_CLIENT_SECRET
       callbackUrl: '', // NUXT_QMS_CALLBACK_URL，必须 https
+      syncEnabled: '1', // NUXT_QMS_SYNC_ENABLED，0 = 关闭 QMS 数据同步（sync-qms）；同步复用上面的 apiBase 与客户端凭据
     },
   },
 
-  // 后台任务：scan-rules 每 15 分钟一次（server/tasks/scan-rules.ts）：QMS 不合格转异常、W1–W4 扫描、每日汇总
+  // 后台任务：
+  //   sync-qms 每 5 分钟（server/tasks/sync-qms.ts）：按游标增量同步 QMS 6 类资源 → 返厂匹配 → QMS 不合格转异常
+  //   scan-rules 每 15 分钟（server/tasks/scan-rules.ts）：QMS 不合格转异常（兜底）、W1–W4 扫描、每日汇总
   nitro: {
     experimental: { tasks: true },
-    scheduledTasks: { '*/15 * * * *': ['scan-rules'] },
+    scheduledTasks: { '*/5 * * * *': ['sync-qms'], '*/15 * * * *': ['scan-rules'] },
   },
 
   app: {

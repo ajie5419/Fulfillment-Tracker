@@ -57,6 +57,7 @@ describe.skipIf(!DB)('预警与提醒', () => {
     await db.qmsSupplier.deleteMany()
     await db.qmsProcess.deleteMany()
     await db.qmsUser.deleteMany()
+    await db.qmsDepartment.deleteMany()
 
     const now = new Date()
     await db.qmsWorkOrder.create({
@@ -74,7 +75,18 @@ describe.skipIf(!DB)('预警与提醒', () => {
         { id: 'P-PAINT', name: '涂装', supplierSource: 'Supplier', updatedAt: now },
       ],
     })
-    const user = (id: string, realName: string, department: string) => ({ id, username: id, realName, department, roleId: 'r', status: 'ACTIVE', updatedAt: now })
+    // QMS 用户的部门存部门 ID；部门负责人（notify_role）按部门名称配置，扫描时经 qms_department 换成名称再对应
+    const DEPTS = ['生产部', '项目部', '公司领导', '质量部']
+    await db.qmsDepartment.createMany({ data: DEPTS.map((name, i) => ({ id: `AD-${i}`, name, parentId: '0', status: 1, updatedAt: now })) })
+    const user = (id: string, realName: string, department: string) => ({
+      id,
+      username: id,
+      realName,
+      departmentId: `AD-${DEPTS.indexOf(department)}`,
+      roleId: 'r',
+      status: 'ACTIVE',
+      updatedAt: now,
+    })
     await db.qmsUser.createMany({
       data: [
         user('u-out', '外协专员', '生产部'),

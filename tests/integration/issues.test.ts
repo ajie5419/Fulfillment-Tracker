@@ -101,7 +101,12 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     await db.qmsDepartment.createMany({
       data: ['技术部', '采购部', '财务部', '质量部', '生产部', '项目部'].map((name, i) => ({ id: `D-${i}`, name, parentId: '0', status: 1, updatedAt: now })),
     })
-    const user = (id: string, realName: string, department: string) => ({ id, username: id, realName, department, roleId: 'r', status: 'ACTIVE', updatedAt: now })
+    // QMS 用户的部门存部门 ID（D-n）；公司领导、信息部没有部门记录
+    const deptId = (name: string) => {
+      const i = ['技术部', '采购部', '财务部', '质量部', '生产部', '项目部'].indexOf(name)
+      return i < 0 ? `D-NONE-${name}` : `D-${i}`
+    }
+    const user = (id: string, realName: string, department: string) => ({ id, username: id, realName, departmentId: deptId(department), roleId: 'r', status: 'ACTIVE', updatedAt: now })
     await db.qmsUser.createMany({
       data: [
         user('u-out', '外协专员', '生产部'),
@@ -154,7 +159,7 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
   const report = (over: Partial<Parameters<Services['issues']['createIssue']>[0]> = {}, reporter = 'u-worker') =>
     s.issues.createIssue({ workOrderNumber: WO, category: 'WORKSHOP', description: '装配缺螺栓', ...over }, reporter)
 
-  /** 模拟 QMS：一条能匹配上的返厂报检，可选直接判不合格 */
+  /** 模拟 QMS：一条能匹配上的返厂报检，可选直接判不合格（QMS 实际行为：FAIL + 问题单，状态仍是检验中） */
   async function inspect(p: Awaited<ReturnType<typeof makePart>>, opts: { qty?: number; fail?: number } = {}) {
     const id = `T-INS-${randomBytes(4).toString('hex')}`
     await db.qmsInspection.create({
@@ -169,11 +174,12 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
         supplierId: 'S-WELD',
         supplierName: '组焊厂',
         quantity: opts.qty ?? 2,
-        status: opts.fail !== undefined ? 'CLOSED' : 'SUBMITTED',
+        status: opts.fail !== undefined ? 'INSPECTING' : 'SUBMITTED',
         inspectionResult: opts.fail !== undefined ? 'FAIL' : 'PASS',
         unqualifiedQuantity: opts.fail ?? null,
+        linkedIssueNo: opts.fail !== undefined ? `QI-${id}` : null,
         submittedAt: new Date(),
-        closedAt: opts.fail !== undefined ? new Date() : null,
+        closedAt: null,
         updatedAt: new Date(),
       },
     })
@@ -281,9 +287,11 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     expect((await s.match.matchInspection(ins)).status).toBe('matched')
     expect((await db.routeStep.findUniqueOrThrow({ where: { id: p.weld.id } })).status).toBe('DONE')
 
-    // 判合格前（QMS 默认 PASS、未关闭）不生成
+    // 判定前（QMS 默认 PASS、检验中）不生成
+    await db.qmsInspection.update({ where: { id: ins }, data: { status: 'INSPECTING' } })
     expect((await s.nonconforming.syncNonconforming()).created.filter((c) => c.inspectionId === ins)).toHaveLength(0)
-    await db.qmsInspection.update({ where: { id: ins }, data: { status: 'CLOSED', inspectionResult: 'FAIL', unqualifiedQuantity: 1, closedAt: new Date() } })
+    // QMS 判不合格：FAIL + 不合格数量，状态仍是检验中、没有关闭时间
+    await db.qmsInspection.update({ where: { id: ins }, data: { inspectionResult: 'FAIL', unqualifiedQuantity: 1 } })
     // 并发两次 + 再一次：只一条
     const [r1, r2] = await Promise.all([s.nonconforming.syncNonconforming(), s.nonconforming.syncNonconforming()])
     await s.nonconforming.syncNonconforming()
@@ -341,7 +349,7 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     await db.qmsInspection.create({
       data: {
         id: ins2, requestNo: `RQ-${ins2}`, workOrderNumber: WO, partName: '写错的名字', processName: '组焊', quantity: 1,
-        status: 'CLOSED', inspectionResult: 'FAIL', unqualifiedQuantity: 1, submittedAt: new Date(), closedAt: new Date(), updatedAt: new Date(),
+        status: 'INSPECTING', inspectionResult: 'FAIL', unqualifiedQuantity: 1, submittedAt: new Date(), updatedAt: new Date(),
       },
     })
     expect((await s.match.matchInspection(ins2)).status).toBe('unmatched')
@@ -372,7 +380,7 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     await db.qmsInspection.create({
       data: {
         id: ins2, requestNo: `RQ-${ins2}`, workOrderNumber: WO, partName: '写错的名字', processName: '组焊', quantity: 1,
-        status: 'CLOSED', inspectionResult: 'FAIL', unqualifiedQuantity: 1, submittedAt: new Date(), closedAt: new Date(), updatedAt: new Date(),
+        status: 'INSPECTING', inspectionResult: 'FAIL', unqualifiedQuantity: 1, submittedAt: new Date(), updatedAt: new Date(),
       },
     })
     await s.match.matchInspection(ins2)
@@ -569,9 +577,17 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
 
   it('看板：红黄绿、在途、超期、未关闭异常；QMS 最后同步时间', async () => {
     expect((await s.board.getBoard(undefined)).lastSyncAt).toBeNull()
-    await db.syncCursor.create({ data: { resource: 'inspections', lastRunAt: new Date('2026-10-16T01:00:00Z') } })
+    // 最后同步时间 = 各类资源 lastSyncedAt 的最小值；有资源从没同步成功过时为空
+    await db.syncCursor.create({ data: { resource: 'inspections', lastRunAt: new Date('2026-10-16T01:00:00Z'), lastSyncedAt: new Date('2026-10-16T01:00:00Z') } })
+    expect((await s.board.getBoard(undefined)).lastSyncAt).toBeNull()
+    for (const [i, resource] of ['work-orders', 'suppliers', 'processes', 'departments', 'users'].entries()) {
+      await db.syncCursor.create({ data: { resource, lastSyncedAt: new Date(`2026-10-16T0${i + 2}:00:00Z`) } })
+    }
+    await db.syncCursor.update({ where: { resource: 'users' }, data: { lastError: 'QMS 同步接口返回 503', failCount: 2 } })
     const board = await s.board.getBoard(undefined)
     expect(board.lastSyncAt).toEqual(new Date('2026-10-16T01:00:00Z'))
+    expect(board.syncOldest).toBe('报检')
+    expect(board.syncErrors).toEqual([{ resource: 'users', label: '用户', lastError: 'QMS 同步接口返回 503', failCount: 2 }])
     const row = board.rows.find((r) => r.workOrderNumber === WO)!
     expect(row.color).toBe('RED') // 前面的用例留下了活动红色预警
     expect(row.projectManagerName).toBe('项目经理')

@@ -42,7 +42,7 @@ async function submit() {
   <a-modal :open="!!step" :title="`发出登记：${step?.title ?? ''}`" :confirm-loading="saving" ok-text="提交" @ok="submit" @cancel="emit('close')">
     <a-form layout="vertical">
       <a-form-item label="外协厂" required>
-        <a-select v-model:value="supplierId" show-search option-filter-prop="label" :options="master.suppliers.map((s) => ({ value: s.id, label: s.name }))" />
+        <a-select v-model:value="supplierId" show-search option-filter-prop="label" :options="master.suppliers.map((s) => ({ value: s.id, label: s.label }))" />
       </a-form-item>
       <a-form-item label="承诺返回日" required>
         <a-date-picker v-model:value="promisedReturnDate" value-format="YYYY-MM-DD" style="width: 100%" />

@@ -82,6 +82,14 @@ async function transfer(action: { id: string }) {
       <van-button type="primary" plain icon="todo-list-o" round block @click="navigateTo('/m/issues')">我的异常</van-button>
     </div>
 
+    <!-- QMS 同步连续失败（管理员）：未读时置顶，点一下标为已读（处理请到电脑端设置页） -->
+    <div v-for="p in data?.pinned ?? []" :key="p.id" class="digest lv-RED unread" @click="readDigest(p)">
+      <div class="digest-title"><van-tag type="danger">同步故障</van-tag> {{ p.title }}</div>
+      <ol class="digest-lines">
+        <li v-for="(l, i) in p.lines" :key="i">{{ l }}</li>
+      </ol>
+    </div>
+
     <!-- 每日汇总置顶（方案 6.3） -->
     <div v-if="data?.digest" class="digest" :class="[`lv-${data.digest.level}`, { unread: !data.digest.readAt }]" @click="openDigest">
       <div class="digest-title"><van-tag type="primary">每日汇总</van-tag> {{ data.digest.title }}</div>

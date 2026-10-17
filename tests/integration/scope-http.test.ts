@@ -100,6 +100,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
         NUXT_QMS_AUTHORIZE_URL: `${bridge.url}/identity/authorize`,
         NUXT_QMS_CLIENT_ID: 'fulfillment',
         NUXT_QMS_CLIENT_SECRET: 'local-dev-secret-local-dev-secret-0',
+        NUXT_QMS_SYNC_ENABLED: '0', // 模拟身份桥上没挂同步接口；同步另见 sync.test.ts
         NUXT_QMS_CALLBACK_URL: 'https://localhost:3100/auth/callback',
         NUXT_ADMIN_USER_IDS: 'h-admin',
         NUXT_UPLOAD_DIR: uploadDir,

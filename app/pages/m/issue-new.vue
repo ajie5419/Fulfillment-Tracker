@@ -26,7 +26,7 @@ const { data: parts, refresh: refreshParts } = await useFetch('/api/parts', {
 const workOrder = computed(() => workOrders.value.find((w) => w.workOrderNumber === workOrderNumber.value))
 const part = computed(() => parts.value.find((p) => p.id === partId.value))
 const cat = computed(() => options.value.categories.find((c) => c.value === category.value))
-const supplierName = computed(() => master.value.suppliers.find((s) => s.id === supplierId.value)?.name ?? '')
+const supplierName = computed(() => master.value.suppliers.find((s) => s.id === supplierId.value)?.label ?? '')
 
 function chooseWorkOrder(wo: string) {
   workOrderNumber.value = wo
@@ -38,7 +38,7 @@ const showParts = ref(false)
 const partActions = computed(() => [{ name: '不选工件', id: '' }, ...parts.value.map((p) => ({ name: p.name, subname: p.drawingNo ?? '', id: p.id }))])
 const onPart = (a: { id: string }) => (partId.value = a.id)
 const showSupplier = ref(false)
-const supplierColumns = computed(() => [{ text: '不指定', value: '' }, ...master.value.suppliers.map((s) => ({ text: s.name, value: s.id }))])
+const supplierColumns = computed(() => [{ text: '不指定', value: '' }, ...master.value.suppliers.map((s) => ({ text: s.label, value: s.id }))])
 function onSupplier({ selectedValues }: { selectedValues: (string | number)[] }) {
   supplierId.value = String(selectedValues[0] ?? '')
   showSupplier.value = false

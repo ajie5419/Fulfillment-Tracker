@@ -7,6 +7,11 @@ async function openReminder(item: ReminderItem) {
   await readReminder(item)
   if (item.link) await navigateTo(item.link)
 }
+/** 置顶的同步失败提醒：标为已读后去设置页看同步状态 */
+async function openPinned(p: PinnedItem) {
+  await readDigest(p)
+  await navigateTo(p.link)
+}
 const digestOpen = ref(false)
 async function openDigest() {
   digestOpen.value = !digestOpen.value
@@ -92,6 +97,18 @@ async function transfer() {
           <a-button size="small" :disabled="!data?.unread" @click="readAll">全部已读</a-button>
         </a-space>
       </template>
+      <!-- QMS 同步连续失败（管理员）：未读时置顶 -->
+      <div v-for="p in data?.pinned ?? []" :key="p.id" class="digest lv-RED unread sync-fail" @click="openPinned(p)">
+        <div class="digest-title">
+          <a-badge status="processing" />
+          <a-tag color="red">同步故障</a-tag>
+          <b>{{ p.title }}</b>
+          <span class="muted">　{{ timeText(p.createdAt) }}</span>
+        </div>
+        <ol class="digest-lines">
+          <li v-for="(l, i) in p.lines" :key="i">{{ l }}</li>
+        </ol>
+      </div>
       <!-- 每日汇总置顶（方案 6.3）：每天早上生成，红黄数量 + 前 5 项 -->
       <div v-if="data?.digest" class="digest" :class="[`lv-${data.digest.level}`, { unread: !data.digest.readAt }]" @click="openDigest">
         <div class="digest-title">
@@ -104,7 +121,7 @@ async function transfer() {
           <li v-for="(l, i) in data.digest.lines" :key="i">{{ l }}</li>
         </ol>
       </div>
-      <a-empty v-if="!data?.items.length && !data?.digest" description="暂时没有提醒" />
+      <a-empty v-if="!data?.items.length && !data?.digest && !data?.pinned?.length" description="暂时没有提醒" />
       <div v-for="g in groups" :key="g.level" class="group">
         <div class="group-title" :class="`lv-${g.level}`">{{ LEVEL_TEXT[g.level] }}（{{ g.items.length }}）</div>
         <a-list :data-source="g.items" item-layout="horizontal" size="small">

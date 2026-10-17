@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type CandidateStep, type InspectionKey, findCandidates } from '../../server/services/flow/match'
+import { type CandidateStep, type InspectionKey, findCandidates, inspectionWorkOrders } from '../../server/services/flow/match'
 
 const WO = 'WO-1'
 
@@ -68,5 +68,26 @@ describe('findCandidates', () => {
   it('多个候选（同一物料两道外协同时在外）', () => {
     const steps = [step('a'), step('b', { processId: 'P-PAINT', processName: '涂装', supplierId: 'S-3' })]
     expect(ids(findCandidates(inspection({ partId: 'BOM-1' }), steps))).toEqual(['a', 'b'])
+  })
+
+  it('多工单报检：主工单 + 关联工单里任一工单的步骤都是候选', () => {
+    const steps = [step('wo1'), step('wo2', { part: { workOrderNumber: 'WO-2' } }), step('wo3', { part: { workOrderNumber: 'WO-3' } })]
+    expect(ids(findCandidates(inspection({ partId: 'BOM-1', workOrderNumber: 'WO-2', workOrderNumbers: ['WO-2', 'WO-1'] }), steps))).toEqual(['wo1', 'wo2'])
+    // 没有 workOrderNumbers 时只看主工单
+    expect(ids(findCandidates(inspection({ partId: 'BOM-1', workOrderNumber: 'WO-2', workOrderNumbers: null }), steps))).toEqual(['wo2'])
+  })
+
+  it('厂内外协班组：没有 supplierId 时按 teamId 过滤；两者都有时以 supplierId 为准', () => {
+    const steps = [step('team', { mode: 'IN_PLANT_OUTSOURCE', status: 'IN_PROGRESS', supplierId: 'TEAM-1' }), step('sup', { supplierId: 'S-1' })]
+    expect(ids(findCandidates(inspection({ partId: 'BOM-1', teamId: 'TEAM-1' }), steps))).toEqual(['team'])
+    expect(ids(findCandidates(inspection({ partId: 'BOM-1', teamId: 'TEAM-2' }), steps))).toEqual([])
+    expect(ids(findCandidates(inspection({ partId: 'BOM-1', supplierId: 'S-1', teamId: 'TEAM-1' }), steps))).toEqual(['sup'])
+  })
+})
+
+describe('inspectionWorkOrders', () => {
+  it('主工单在前，去重，忽略非字符串', () => {
+    expect(inspectionWorkOrders({ workOrderNumber: 'A', workOrderNumbers: ['B', 'A', 3, '', 'B'] })).toEqual(['A', 'B'])
+    expect(inspectionWorkOrders({ workOrderNumber: 'A', workOrderNumbers: null })).toEqual(['A'])
   })
 })

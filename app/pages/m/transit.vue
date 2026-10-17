@@ -14,7 +14,7 @@ const { data: rows, pending, refresh } = await useFetch('/api/transit', {
 type Row = (typeof rows.value)[number]
 
 const woOptions = computed(() => [{ text: '全部工单', value: '' }, ...workOrders.value.map((w) => ({ text: w.workOrderNumber, value: w.workOrderNumber }))])
-const supplierOptions = computed(() => [{ text: '全部外协厂', value: '' }, ...master.value.suppliers.map((s) => ({ text: s.name, value: s.id }))])
+const supplierOptions = computed(() => [{ text: '全部外协厂', value: '' }, ...master.value.suppliers.map((s) => ({ text: s.label, value: s.id }))])
 
 const returning = ref<Row | null>(null)
 const qty = ref(1)

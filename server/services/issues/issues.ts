@@ -16,7 +16,7 @@ import { loadOffDays, loadThresholds } from '../alerts/config'
 import { alertKey, dateFieldDay, judgeW4 } from '../alerts/rules'
 import { FlowError, FlowForbidden } from '../flow/errors'
 import { restoreBlockedStep } from '../flow/flow'
-import { loadNames } from '../flow/names'
+import { departmentNames, loadNames } from '../flow/names'
 import {
   CATEGORY_TEXT,
   DEFAULT_DEPT_NAME,
@@ -82,15 +82,19 @@ export async function defaultResponsible(db: Db, category: IssueCategory) {
   return { deptId: dept?.id ?? null, userId: await deptHeadOf(db, name) }
 }
 
-/** "本部门"筛选：我担任负责人的部门 + 我自己所在的部门，对应到 qms_department.id */
+/**
+ * "本部门"筛选：我担任负责人的部门（notify_role 按名称配置，换成 qms_department.id）+ 我自己所在的部门。
+ * 我所在部门在 QMS 里存的就是部门 ID；同名部门（同名不同 ID）也算本部门，与按名称配置的负责人口径一致。
+ */
 export async function myDepartmentIds(userId: string): Promise<string[]> {
   const [roles, user] = await Promise.all([
     prisma.notifyRole.findMany({ where: { userId, role: 'DEPT_HEAD' }, select: { department: true } }),
-    prisma.qmsUser.findUnique({ where: { id: userId }, select: { department: true } }),
+    prisma.qmsUser.findUnique({ where: { id: userId }, select: { departmentId: true } }),
   ])
-  const names = [...new Set([...roles.map((r) => r.department), user?.department].filter((x): x is string => !!x))]
-  if (!names.length) return []
-  return (await prisma.qmsDepartment.findMany({ where: { name: { in: names }, isDeleted: false }, select: { id: true } })).map((d) => d.id)
+  const own = user?.departmentId ? (await departmentNames([user.departmentId])).get(user.departmentId) : undefined
+  const names = [...new Set([...roles.map((r) => r.department), own].filter((x): x is string => !!x))]
+  const ids = names.length ? (await prisma.qmsDepartment.findMany({ where: { name: { in: names }, isDeleted: false }, select: { id: true } })).map((d) => d.id) : []
+  return [...new Set([...ids, ...(user?.departmentId ? [user.departmentId] : [])])]
 }
 
 // ───────────── 权限（唯一入口）─────────────

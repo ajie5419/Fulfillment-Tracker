@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** 演示工具（仅 NUXT_DEV_TOOLS=1）：写入/清除演示数据，模拟 QMS 返厂报检和检验结论，预警扫描，每日汇总 */
+/** 演示工具（仅 NUXT_DEV_TOOLS=1）：立即同步 QMS，写入/清除演示数据，模拟 QMS 返厂报检和检验结论，预警扫描，每日汇总 */
 const { data: me } = await useMe()
 const { data: workOrders, refresh: refreshWo } = await useWorkOrders()
 const { data: master, refresh: refreshMaster } = await useMaster()
@@ -53,6 +53,38 @@ async function fail() {
     lastResult.value = nos.length ? `已判不合格，生成异常 ${nos.join('、')}（步骤置为"有异常"）` : '已判不合格；该报检还没关联到步骤（先在"待确认匹配"里关联），或异常已经生成过'
     message.info(lastResult.value)
     await refreshInspections()
+  } catch (e) {
+    message.error(apiError(e))
+  } finally {
+    busy.value = false
+  }
+}
+
+// ───── QMS 同步 ─────
+type SyncRes = { resource: string; status: 'ok' | 'partial' | 'failed' | 'skipped'; rows: number; error?: string }
+type SyncJob = {
+  skipped?: 'not-configured' | 'running'
+  sync?: { resources: SyncRes[]; alerted: number }
+  match?: { matched: number; unmatched: number; other: number } | { error: string }
+  nonconforming?: { created: number; existed: number } | { error: string }
+}
+const SYNC_STATUS_TEXT = { ok: '成功', partial: '未追平', failed: '失败', skipped: '跳过' } as const
+async function syncNow() {
+  busy.value = true
+  try {
+    const r = await ($fetch as unknown as (u: string, o: { method: 'POST' }) => Promise<SyncJob>)('/api/dev/sync', { method: 'POST' })
+    if (r.skipped === 'not-configured') lastResult.value = '未配置 QMS 同步（NUXT_QMS_SYNC_ENABLED=0，或 QMS 地址、客户端凭据为空）'
+    else if (r.skipped === 'running') lastResult.value = '另一轮同步正在进行，本次跳过'
+    else {
+      const res = (r.sync?.resources ?? []).map((x) => `${x.resource} ${SYNC_STATUS_TEXT[x.status]} ${x.rows} 行${x.error ? `（${x.error}）` : ''}`).join('；')
+      const m = r.match && 'matched' in r.match ? `；匹配 ${r.match.matched} 条、待确认 ${r.match.unmatched} 条` : ''
+      const n = r.nonconforming && 'created' in r.nonconforming ? `；不合格转异常 ${r.nonconforming.created} 条` : ''
+      lastResult.value = `同步完成：${res}${m}${n}`
+    }
+    const failed = r.sync?.resources.some((x) => x.status === 'failed')
+    if (failed) message.warning('同步有失败的资源，详见下方和设置页"QMS 同步状态"')
+    else message.success('同步完成')
+    await Promise.all([refreshWo(), refreshMaster(), refreshTransit(), refreshInspections(), refreshNuxtData(['todos', 'me', 'reminders'])])
   } catch (e) {
     message.error(apiError(e))
   } finally {
@@ -142,8 +174,13 @@ async function submit() {
 <template>
   <a-result v-if="me && !me.devTools" status="404" title="演示工具未开启" sub-title="设置环境变量 NUXT_DEV_TOOLS=1 后重启" />
   <a-space v-else direction="vertical" size="large" style="width: 100%">
+    <a-card title="QMS 同步">
+      <p class="muted">定时任务每 5 分钟按游标增量同步一次 QMS（工单、外协单位、工序、部门、用户、报检），然后做返厂匹配和不合格转异常。这里立即跑一轮；各类资源的同步状态见设置页"QMS 同步状态"。</p>
+      <a-button type="primary" :loading="busy" @click="syncNow">立即同步一次</a-button>
+    </a-card>
+
     <a-card title="演示数据">
-      <p class="muted">R2（QMS 同步）完成前，用演示数据走通外协主链路。所有演示数据的 ID 带 DEMO- 前缀；清除只删这些数据及引用它们的工件、步骤、流转记录、待办、待确认记录、预警和提醒，并清掉演示的通知对象、工单项目经理，阈值恢复默认。</p>
+      <p class="muted">不连 QMS 时用演示数据走通外协主链路。所有演示数据的 ID 带 DEMO- 前缀，可与同步来的真实数据共存；配置了 QMS 同步时不写演示用户（u-001 等，用户以 QMS 为准）。清除只删 DEMO- 数据及引用它们的工件、步骤、流转记录、待办、待确认记录、预警和提醒，并清掉演示的通知对象、工单项目经理，阈值恢复默认；同步来的真实数据不动。</p>
       <a-space>
         <a-button type="primary" :loading="busy" @click="run('/api/dev/seed', '写入演示数据')">写入演示数据</a-button>
         <a-button :loading="busy" @click="run('/api/dev/match', '执行一轮匹配')">执行一轮报检匹配</a-button>
@@ -166,13 +203,13 @@ async function submit() {
     </a-card>
 
     <a-card title="模拟 QMS 检验结论">
-      <p class="muted">把一条模拟报检改为"已关闭 + 不合格"，系统随即生成"外协-质量"异常（责任方是该外协单位），关联的步骤显示"有异常"。</p>
+      <p class="muted">按 QMS 的实际行为模拟判不合格：检验结论改为"不合格"并关联一张 QMS 问题单，报检状态仍是"检验中"（复检合格后 QMS 会改成已关闭 + 合格，已生成的异常不撤销）。系统随即生成"外协-质量"异常（责任方是该外协单位），关联的步骤显示"有异常"。</p>
       <a-space wrap>
         <a-select
           v-model:value="verdict.id"
           style="width: 520px"
           placeholder="选择一条模拟报检"
-          :options="inspections.map((i) => ({ value: i.id, label: `${i.workOrderNumber} · ${i.partName} · ${i.processName}（${i.supplierName ?? '—'}，${i.quantity} 件）${i.status === 'CLOSED' ? `　已判${i.inspectionResult === 'FAIL' ? '不合格' : '合格'}` : ''}${i.matched ? '' : '　未关联'}` }))"
+          :options="inspections.map((i) => ({ value: i.id, label: `${i.workOrderNumber} · ${i.partName} · ${i.processName}（${i.supplierName ?? '—'}，${i.quantity} 件）${i.inspectionResult === 'FAIL' || i.linkedIssueNo ? '　已判不合格' : i.status === 'CLOSED' ? '　已判合格' : ''}${i.matched ? '' : '　未关联'}` }))"
         />
         <span>不合格数量</span>
         <a-input-number v-model:value="verdict.unqualifiedQuantity" :min="0" />
@@ -204,7 +241,7 @@ async function submit() {
         </a-form-item>
         <a-form-item label="工序名称"><a-input v-model:value="form.processName" placeholder="工序为空时按名称匹配" /></a-form-item>
         <a-form-item label="外协厂">
-          <a-select v-model:value="form.supplierId" allow-clear :options="master.suppliers.map((s) => ({ value: s.id, label: s.name }))" />
+          <a-select v-model:value="form.supplierId" allow-clear :options="master.suppliers.map((s) => ({ value: s.id, label: s.label }))" />
         </a-form-item>
         <a-form-item label="数量"><a-input-number v-model:value="form.quantity" :min="0" /></a-form-item>
         <a-form-item :wrapper-col="{ offset: 4 }">

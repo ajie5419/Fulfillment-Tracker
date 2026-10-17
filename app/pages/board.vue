@@ -1,9 +1,19 @@
 <script setup lang="ts">
 /**
- * 看板（技术选型 6.2）：每个工单一行红黄绿、外协在途、超期、未关闭异常、项目经理、交期；顶部 QMS 最后同步时间。
+ * 看板（技术选型 6.2）：每个工单一行红黄绿、外协在途、超期、未关闭异常、项目经理、交期；
+ * 顶部 QMS 最后同步时间（各类资源里最旧的那类），有资源同步报错时显示错误提示。
  * 红 = 有活动红色预警或超期 ≥3 天的异常；黄 = 有活动黄色预警或超期异常；否则绿。
  */
-const { data, pending, refresh } = await useFetch('/api/board', { default: () => ({ lastSyncAt: null, summary: { red: 0, yellow: 0, green: 0 }, rows: [] }) })
+const { data, pending, refresh } = await useFetch('/api/board', {
+  default: () => ({ lastSyncAt: null, syncOldest: null, syncErrors: [], syncConfigured: false, summary: { red: 0, yellow: 0, green: 0 }, rows: [] }),
+})
+const syncText = computed(() => {
+  if (data.value.lastSyncAt) return timeText(data.value.lastSyncAt)
+  return data.value.syncConfigured ? '尚未完成首次同步' : '未同步（演示数据）'
+})
+const syncErrorText = computed(() =>
+  data.value.syncErrors.map((e: { label: string; failCount: number; lastError: string }) => `${e.label}（连续失败 ${e.failCount} 次）：${e.lastError}`).join('；'),
+)
 
 const columns = [
   { title: '', key: 'color', width: 56 },
@@ -21,10 +31,11 @@ const columns = [
   <a-card title="工单看板">
     <template #extra>
       <a-space>
-        <span class="muted">QMS 最后同步：{{ data.lastSyncAt ? timeText(data.lastSyncAt) : '未同步（演示数据）' }}</span>
+        <span class="muted sync-time" :title="data.syncOldest ? `最旧的是：${data.syncOldest}` : undefined">QMS 最后同步：{{ syncText }}</span>
         <a-button size="small" @click="refresh()">刷新</a-button>
       </a-space>
     </template>
+    <a-alert v-if="data.syncErrors.length" type="error" show-icon class="sync-error" message="QMS 同步出错，看板数据可能不是最新" :description="syncErrorText" />
     <a-space size="large" class="summary">
       <span><span class="dot" :style="{ background: BOARD_COLOR.RED }" />红 {{ data.summary.red }}</span>
       <span><span class="dot" :style="{ background: BOARD_COLOR.YELLOW }" />黄 {{ data.summary.yellow }}</span>
@@ -64,6 +75,7 @@ const columns = [
 </template>
 
 <style scoped>
+.sync-error { margin-bottom: 12px; }
 .muted { color: #999; font-size: 12px; }
 .summary { margin-bottom: 12px; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }

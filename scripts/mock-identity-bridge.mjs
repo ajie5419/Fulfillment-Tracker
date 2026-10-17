@@ -13,15 +13,22 @@
  *   - 命令行启动（chooser）：显示一个选择页，列出演示用户，点哪个就以谁登录（演示不同的人收到不同的提醒）；
  *   - 测试里 startMockIdentityBridge()：默认 u-001 直接同意。
  * 选择用户只是模拟"QMS 里登录了哪个账号"，换取凭证、身份核查等协议部分不变。
+ *
+ * 同一端口上还挂着模拟的 QMS 只读增量同步接口（scripts/mock-qms-sync.mjs，R2 契约 v1），数据来自
+ * scripts/fixtures/mock-qms.json（命令行启动时默认挂上，可用 MOCK_QMS_FIXTURE 换文件）。
+ * 本机不连真实 QMS 也能跑通"同步 → 匹配 → 待办"：.env 里 NUXT_QMS_API_BASE 指向这里即可（同步默认开启）。
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
 import { pathToFileURL } from 'node:url'
+import { createMockQmsSync } from './mock-qms-sync.mjs'
 
 /**
  * @param {{ port?: number, clientId?: string, clientSecret?: string, callback?: string,
- *   users?: Record<string, { name: string, active: boolean }>, defaultUserId?: string, chooser?: boolean }} [options]
- * @returns {Promise<{ url: string, close: () => Promise<void> }>}
+ *   users?: Record<string, { name: string, active: boolean }>, defaultUserId?: string, chooser?: boolean,
+ *   sync?: boolean | string | Record<string, object[]>, host?: string }} [options]
+ *   sync：挂上模拟同步接口；true 用默认 fixture，字符串为 fixture 路径，对象为数据本身
+ * @returns {Promise<{ url: string, close: () => Promise<void>, sync: ReturnType<typeof createMockQmsSync> | null }>}
  */
 export function startMockIdentityBridge({
   port = 0,
@@ -31,7 +38,10 @@ export function startMockIdentityBridge({
   users = { 'u-001': { name: '测试外协专员', active: true } },
   defaultUserId = 'u-001',
   chooser = false,
+  sync = false,
+  host = '127.0.0.1',
 } = {}) {
+  const qmsSync = sync ? createMockQmsSync({ clientId, clientSecret, fixture: sync === true ? undefined : sync }) : null
   const OPAQUE = /^[\w-]{43}$/
   const token = () => randomBytes(32).toString('base64url')
   const codes = new Map() // code -> { challenge, userId, expiresAt }
@@ -77,6 +87,7 @@ export function startMockIdentityBridge({
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://mock')
+    if (qmsSync?.handle(req, res, url)) return
     // 相当于 QMS 授权页 + POST /api/identity-bridge/authorize（已登录用户点"继续"）
     if (req.method === 'GET' && url.pathname === '/identity/authorize') {
       const q = Object.fromEntries(url.searchParams)
@@ -136,9 +147,14 @@ export function startMockIdentityBridge({
   })
 
   return new Promise((resolve) => {
-    server.listen(port, '127.0.0.1', () => {
+    server.listen(port, host, () => {
       const { port: actual } = server.address()
-      resolve({ url: `http://127.0.0.1:${actual}`, close: () => new Promise((r) => server.close(() => r())) })
+      const close = () =>
+        new Promise((r) => {
+          server.close(() => r())
+          server.closeAllConnections?.() // 停掉时立刻断开 keep-alive 连接，模拟 QMS 宕机
+        })
+      resolve({ url: `http://127.0.0.1:${actual}`, close, sync: qmsSync })
     })
   })
 }
@@ -147,6 +163,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const { url } = await startMockIdentityBridge({
     port: Number(process.env.MOCK_PORT ?? 4100),
     chooser: true,
+    sync: process.env.MOCK_QMS_FIXTURE || true,
     // 与演示数据（server/services/dev/demo.ts）的用户一致
     users: {
       'u-001': { name: '测试外协专员', active: true },
@@ -157,5 +174,5 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       'u-006': { name: '测试质量负责人', active: true },
     },
   })
-  console.log(`mock identity bridge listening on ${url}`)
+  console.log(`mock identity bridge + QMS sync listening on ${url}`)
 }

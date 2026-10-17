@@ -1,6 +1,7 @@
 import type { H3Event } from 'h3'
 import type { IdentityBridgeConfig } from '../services/auth/identity-bridge'
 import { SESSION_COOKIE } from '../services/auth/session'
+import { inspectionWorkOrders } from '../services/flow/inspection'
 import { prisma } from './prisma'
 
 export interface AuthUser {
@@ -109,9 +110,12 @@ export async function assertCanSeeIssue(event: H3Event, issueId: string) {
   if (issue) await assertCanSee(event, issue.workOrderNumber)
 }
 
+/** 报检：主工单或任一关联工单可见即可见 */
 export async function assertCanSeeInspection(event: H3Event, inspectionId: string) {
-  const ins = await prisma.qmsInspection.findUnique({ where: { id: inspectionId }, select: { workOrderNumber: true } })
-  if (ins) await assertCanSee(event, ins.workOrderNumber)
+  const ins = await prisma.qmsInspection.findUnique({ where: { id: inspectionId }, select: { workOrderNumber: true, workOrderNumbers: true } })
+  if (!ins) return
+  const scope = await getScope(event)
+  if (!inspectionWorkOrders(ins).some((wo) => canSee(scope, wo))) throw forbidden()
 }
 
 /** 管理员：NUXT_ADMIN_USER_IDS 里列出的 QMS 用户 ID（逗号分隔）。设置页的接口都用它校验 */

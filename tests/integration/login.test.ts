@@ -65,6 +65,7 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
         NUXT_QMS_AUTHORIZE_URL: `${bridge.url}/identity/authorize`,
         NUXT_QMS_CLIENT_ID: 'fulfillment',
         NUXT_QMS_CLIENT_SECRET: 'local-dev-secret-local-dev-secret-0',
+        NUXT_QMS_SYNC_ENABLED: '0', // 模拟身份桥上没挂同步接口；同步另见 sync.test.ts
         NUXT_QMS_CALLBACK_URL: 'https://localhost:3100/auth/callback',
         NUXT_ADMIN_USER_IDS: 'u-001',
       },
@@ -129,7 +130,7 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
     expect(await page.text()).toContain('我的提醒')
 
     const reminders = await get('/api/reminders', session)
-    expect(await reminders.json()).toEqual({ items: [], unread: 0, digest: null })
+    expect(await reminders.json()).toEqual({ items: [], unread: 0, digest: null, pinned: [] })
   })
 
   it('同一个回调重放会被拒绝（授权码和登录状态一次性）', async () => {

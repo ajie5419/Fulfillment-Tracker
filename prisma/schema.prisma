@@ -1,5 +1,7 @@
 // 履约系统数据表（第一期）。依据：技术选型与MVP范围.md 第 4 节、系统方案设计.md 第 4.2/4.3 节。
-// qms_ 开头的表是 QMS 只读副本，只允许同步任务（R2 sync-qms）写入。
+// qms_ 开头的表是 QMS 只读副本，只允许同步任务（R2 sync-qms，server/services/sync）写入；
+// 字段按 QMS 只读增量同步接口（GET /api/integration/fulfillment/<resource>）契约 v1。
+// 演示数据（DEMO- 前缀）也写在这些表里，可与真实同步来的行共存，清除演示数据只删 DEMO- 行。
 
 generator client {
   provider = "prisma-client-js"
@@ -28,11 +30,14 @@ model QmsWorkOrder {
   @@map("qms_work_order")
 }
 
+/// 外协单位：QMS 供应商（kind = SUPPLIER）和厂内外协班组（kind = TEAM，id 即报检上的 teamId）
 model QmsSupplier {
   id              String   @id @db.VarChar(64)
   name            String
   outsourcingMode String?
   category        String?
+  kind            String   @default("SUPPLIER") @db.VarChar(20) // SUPPLIER / TEAM
+  status          String?  @db.VarChar(40) // QMS suppliers.status，如 Qualified
   isDeleted       Boolean  @default(false)
   updatedAt       DateTime
   syncedAt        DateTime @default(now()) @updatedAt
@@ -43,7 +48,9 @@ model QmsSupplier {
 model QmsProcess {
   id                      String   @id @db.VarChar(64)
   name                    String
-  supplierSource          String   @db.VarChar(20) // QMS processes.supplierSource，默认 Supplier
+  code                    String?  @db.VarChar(64)
+  status                  Int      @default(1) // 1 = 启用
+  supplierSource          String   @default("Supplier") @db.VarChar(20) // QMS processes.supplierSource（同步接口不输出，保留默认值）
   responsibleDepartmentId String?  @db.VarChar(64)
   isDeleted               Boolean  @default(false)
   updatedAt               DateTime
@@ -64,38 +71,50 @@ model QmsDepartment {
   @@map("qms_department")
 }
 
+/// QMS 用户（不同步手机号、邮箱、企业微信 ID、密码相关字段）
 model QmsUser {
-  id         String   @id @db.VarChar(64)
-  username   String
-  realName   String?
-  phone      String?
-  department String // QMS 中是字符串，按名称与 qms_department.name 关联
-  roleId     String   @db.VarChar(64)
-  roleName   String?
-  status     String   @db.VarChar(20) // ACTIVE / INACTIVE / LOCKED
-  isDeleted  Boolean  @default(false)
-  updatedAt  DateTime
-  syncedAt   DateTime @default(now()) @updatedAt
+  id           String   @id @db.VarChar(64)
+  username     String
+  realName     String?
+  /// QMS users.department 存的是部门 ID（departments.id），不是名称；要名称经 qms_department 查
+  departmentId String?  @db.VarChar(64)
+  roleId       String?  @db.VarChar(64) // 同步接口不输出；演示数据填
+  roleName     String?
+  status       String   @db.VarChar(20) // ACTIVE / INACTIVE（同步时由 isActive 换算）
+  isDeleted    Boolean  @default(false)
+  updatedAt    DateTime
+  syncedAt     DateTime @default(now()) @updatedAt
 
+  @@index([departmentId])
   @@map("qms_user")
 }
 
 model QmsInspection {
   id                  String    @id @db.VarChar(64)
   requestNo           String    @db.VarChar(64)
-  workOrderNumber     String    @db.VarChar(64)
+  workOrderNumber     String    @db.VarChar(64) // 主工单
+  /// 主工单 + 关联工单（qms_inspection_request_work_orders）去重后的全部工单号，JSON 字符串数组；匹配时任一工单命中即为候选
+  workOrderNumbers    Json?
   partId              String?   @db.VarChar(64)
   partName            String
   processId           String?   @db.VarChar(64)
   processName         String
   supplierId          String?   @db.VarChar(64)
   supplierName        String?
+  /// 厂内外协班组（qms_supplier 里 kind = TEAM 的同一 id）；没有 supplierId 时按它匹配外协单位
+  teamId              String?   @db.VarChar(64)
+  teamName            String?
+  category            String?   @db.VarChar(40)
   responsibilityType  String?
   quantity            Int
-  // 注意：QMS 的 inspectionResult 默认 PASS，判不合格必须同时 status=CLOSED 且 inspectionResult=FAIL
+  // 注意 QMS 的实际行为：inspectionResult 默认 PASS（PASS 不代表已检合格）；
+  // 判不合格时写 inspectionResult=FAIL、unqualifiedQuantity，status 仍是 INSPECTING、closedAt 为空；
+  // 复检合格后会被覆盖成 CLOSED+PASS，"曾经不合格"靠 linkedIssueId/linkedIssueNo 非空识别。
+  // 不合格判定（转异常）：inspectionResult=FAIL 或 linkedIssueId/No 非空，且 status≠CANCELLED（见 services/issues/nonconforming.ts）
   status              String    @db.VarChar(20) // SUBMITTED / DISPATCHED / INSPECTING / CLOSED / CANCELLED
   inspectionResult    String    @db.VarChar(20) // PASS / FAIL / CONDITIONAL / NA
   unqualifiedQuantity Int?
+  linkedIssueId       String?   @db.VarChar(64) // QMS 质量问题单
   linkedIssueNo       String?
   reporterId          String?   @db.VarChar(64)
   submittedAt         DateTime
@@ -106,17 +125,25 @@ model QmsInspection {
 
   @@index([workOrderNumber])
   @@index([supplierId])
+  @@index([teamId])
   @@map("qms_inspection")
 }
 
-/// 每类资源一行；游标为 (since, afterId) 复合游标
+/// 每类资源一行；游标为 (since, afterId) 复合游标，即已写入的最后一行的 (updatedAt, key)。
+/// 每页写入成功后与该页数据在同一事务里推进；失败只记 lastError、failCount + 1，游标不动。
 model SyncCursor {
-  resource  String    @id @db.VarChar(40)
-  since     DateTime?
-  afterId   String?   @db.VarChar(64)
-  lastRunAt DateTime?
-  lastError String?   @db.Text
-  failCount Int       @default(0)
+  resource     String    @id @db.VarChar(40)
+  since        DateTime?
+  afterId      String?   @db.VarChar(64)
+  /// 最近一次尝试同步的时间（成功或失败）
+  lastRunAt    DateTime?
+  /// 最近一次成功追平（拉到 nextCursor = null）的时间；看板取各资源的最小值
+  lastSyncedAt DateTime?
+  lastError    String?   @db.Text
+  /// 连续失败次数，成功后归零
+  failCount    Int       @default(0)
+  /// 本轮故障已给管理员发过提醒的时间（连续失败 3 次时发一次），恢复成功后清空
+  alertedAt    DateTime?
 
   @@map("sync_cursor")
 }
@@ -382,11 +409,11 @@ model Reminder {
   todoId    String?
   title     String
   level     AlertLevel @default(REMIND)
-  /// 提醒种类：空 = 预警/待办类；DIGEST = 每日汇总
+  /// 提醒种类：空 = 预警/待办类；DIGEST = 每日汇总；SYNC_FAIL = QMS 同步连续失败（发给管理员，未读时置顶）
   kind      String?    @db.VarChar(20)
   /// 每日汇总的正文（前 5 项，一行一项）
   body      String?    @db.Text
-  /// 每日汇总防重复："DIGEST:<YYYY-MM-DD>:<userId>"，同人同日只有一条
+  /// 防重复：每日汇总 "DIGEST:<YYYY-MM-DD>:<userId>"，同人同日只有一条；同步失败 "SYNC_FAIL:<故障开始时间>:<userId>"，同一轮故障只有一条
   dedupeKey String?    @unique @db.VarChar(120)
   readAt    DateTime?
   createdAt DateTime   @default(now())
@@ -416,7 +443,7 @@ model OffDay {
 
 enum NotifyRoleKind {
   OUTSOURCE_COORDINATOR // 外协专员（W1 的责任人）
-  DEPT_HEAD // 部门负责人，department 填部门名（与 qms_user.department 对应）
+  DEPT_HEAD // 部门负责人，department 填部门名称（qms_user.departmentId 经 qms_department 换成名称后对应）
   PROJECT_DEPT_HEAD // 项目部负责人
   LEADER // 分管领导
 }
