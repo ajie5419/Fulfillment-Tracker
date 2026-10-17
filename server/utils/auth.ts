@@ -121,6 +121,17 @@ export async function assertCanSeePayment(event: H3Event, id: string) {
   if (p) await assertCanSee(event, p.workOrderNumber)
 }
 
+/**
+ * 出图任务（R11）：按所属工单判断；给了 user 时，设计负责人本人不受工单范围限制（"我的出图任务"）。
+ * 修改类接口不传 user：负责人本人也要能看到该工单才能改。
+ */
+export async function assertCanSeeDrawing(event: H3Event, id: string, user?: AuthUser) {
+  const task = await prisma.drawingTask.findUnique({ where: { id }, select: { workOrderNumber: true, ownerId: true } })
+  if (!task) return
+  if (user && task.ownerId === user.qmsUserId) return
+  await assertCanSee(event, task.workOrderNumber)
+}
+
 /** 报检：主工单或任一关联工单可见即可见 */
 export async function assertCanSeeInspection(event: H3Event, inspectionId: string) {
   const ins = await prisma.qmsInspection.findUnique({ where: { id: inspectionId }, select: { workOrderNumber: true, workOrderNumbers: true } })

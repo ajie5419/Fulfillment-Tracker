@@ -1,0 +1,308 @@
+<script setup lang="ts">
+/**
+ * 出图任务（R11）：按部件拆的出图任务列表（筛选：工单 / 设计负责人 / 视图含"逾期"）、新建 / 编辑、标记出图、录客户确认、
+ * 一键发放（打开 R9 新建发放单并预填）；"设计负荷"页签按设计负责人列在手、逾期、本周到期。
+ * 地址栏 ?wo= 预选工单，?view= 选视图，?owner= 选负责人，?tab=load 打开设计负荷，?id= 打开某个任务（W7 提醒跳过来）。
+ */
+const route = useRoute()
+const router = useRouter()
+const { data: workOrders } = await useWorkOrders()
+const { data: master } = await useMaster()
+
+const VIEWS = [
+  { value: 'open', label: '未完成' },
+  { value: 'overdue', label: '逾期' },
+  { value: 'drawn', label: '已出图待发放 / 待确认' },
+  { value: 'done', label: '已完成' },
+  { value: 'cancelled', label: '已取消' },
+  { value: 'all', label: '全部' },
+] as const
+const tab = ref(route.query.tab === 'load' ? 'load' : 'list')
+const filter = reactive({
+  workOrderNumber: (route.query.wo as string) || undefined,
+  ownerId: (route.query.owner as string) || undefined,
+  view: VIEWS.some((v) => v.value === route.query.view) ? (route.query.view as string) : route.query.id ? 'all' : 'open',
+  q: '',
+})
+const keyword = ref('')
+let timer: ReturnType<typeof setTimeout> | undefined
+watch(keyword, (v) => {
+  clearTimeout(timer)
+  timer = setTimeout(() => (filter.q = v.trim()), 300)
+})
+watch(
+  () => [filter.workOrderNumber, filter.view, filter.ownerId, tab.value],
+  () => router.replace({ query: { ...route.query, wo: filter.workOrderNumber || undefined, view: filter.view, owner: filter.ownerId || undefined, tab: tab.value === 'load' ? 'load' : undefined } }),
+)
+
+const { data, pending, refresh } = await useFetch('/api/drawings', {
+  query: computed(() => ({ workOrderNumber: filter.workOrderNumber, ownerId: filter.ownerId, view: filter.view, q: filter.q || undefined })),
+  default: () => ({ rows: [] as DrawingRow[], total: 0, stats: null as DrawingStats | null }),
+})
+const rows = computed(() => data.value.rows as DrawingRow[])
+const stats = computed(() => data.value.stats as DrawingStats | null)
+
+const { data: load, pending: loadPending, refresh: refreshLoad } = await useFetch('/api/drawings/load', {
+  query: computed(() => ({ workOrderNumber: filter.workOrderNumber })),
+  default: () => ({ week: { monday: '', sunday: '' }, rows: [] as { ownerId: string | null; ownerName: string; open: number; pendingDraw: number; overdue: number; dueThisWeek: number; customerPending: number }[] }),
+})
+async function reload() {
+  await Promise.all([refresh(), refreshLoad()])
+}
+function showOwner(ownerId: string | null, view = 'open') {
+  if (!ownerId) return message.info('没指定设计负责人的任务请在列表里按"全部负责人"查看')
+  Object.assign(filter, { ownerId, view })
+  tab.value = 'list'
+}
+
+const ownerOptions = computed(() =>
+  [...master.value.users]
+    .sort((a, b) => Number(b.department === '技术部') - Number(a.department === '技术部'))
+    .map((u) => ({ value: u.id, label: `${u.name}（${u.department || '无部门'}）` })),
+)
+
+// ───── 新建 / 编辑 ─────
+const editing = ref<DrawingRow | null>(null)
+const editOpen = ref(false)
+function openEdit(r: DrawingRow | null) {
+  editing.value = r
+  editOpen.value = true
+}
+async function saved() {
+  editOpen.value = false
+  await reload()
+}
+// ?id= 打开该任务（从 W7 提醒跳过来）
+async function openFromQuery() {
+  const id = route.query.id as string | undefined
+  if (!id) return
+  try {
+    openEdit(await fetchDrawing(id))
+  } catch (e) {
+    message.error(apiError(e))
+  }
+}
+onMounted(openFromQuery)
+watch(() => route.query.id, openFromQuery)
+function closeEdit() {
+  editOpen.value = false
+  if (route.query.id) router.replace({ query: { ...route.query, id: undefined } })
+}
+
+// ───── 标记出图 / 客户确认（选日期，默认今天）─────
+const acting = ref<{ row: DrawingRow; kind: 'drawn' | 'confirm' } | null>(null)
+const actDate = ref(dayAfter(0))
+const busy = ref(false)
+function openAct(row: DrawingRow, kind: 'drawn' | 'confirm') {
+  acting.value = { row, kind }
+  actDate.value = dayAfter(0)
+}
+async function submitAct() {
+  const a = acting.value
+  if (!a) return
+  busy.value = true
+  try {
+    const r = await drawingSend(`/api/drawings/${a.row.id}/${a.kind === 'drawn' ? 'drawn' : 'confirm'}`, 'POST', { date: actDate.value })
+    message.success(drawingResultText(r, a.kind === 'drawn' ? '已标记出图' : '已录客户确认'), 5)
+    acting.value = null
+    await reload()
+  } catch (e) {
+    message.error(apiError(e))
+  } finally {
+    busy.value = false
+  }
+}
+function undo(row: DrawingRow, kind: 'drawn' | 'confirm') {
+  Modal.confirm({
+    title: kind === 'drawn' ? `撤销出图：${row.componentName}？` : `撤销客户确认：${row.componentName}？`,
+    content: kind === 'drawn' ? '回到待出图（客户确认一并清掉），关联工件没处理的"可以开工"待办作废' : '回到未确认',
+    okText: '撤销',
+    async onOk() {
+      try {
+        const r = await drawingSend(`/api/drawings/${row.id}/${kind === 'drawn' ? 'undo-drawn' : 'undo-confirm'}`, 'POST')
+        message.success(drawingResultText(r, '已撤销'))
+        await reload()
+      } catch (e) {
+        message.error(apiError(e))
+      }
+    },
+  })
+}
+
+// ───── 一键发放 ─────
+const prefill = ref<ReleasePrefill | null>(null)
+const releaseOpen = ref(false)
+function openRelease(row: DrawingRow) {
+  prefill.value = releasePrefillOf(row)
+  releaseOpen.value = true
+}
+async function released() {
+  releaseOpen.value = false
+  await reload()
+}
+
+const columns = [
+  { title: '工单', dataIndex: 'workOrderNumber', width: 130 },
+  { title: '部件 / 关联工件', key: 'component', width: 230 },
+  { title: '设计负责人', key: 'owner', width: 120 },
+  { title: '计划完成', key: 'planDate', width: 100 },
+  { title: '出图', key: 'drawn', width: 110 },
+  { title: '客户确认', key: 'customer', width: 150 },
+  { title: '状态', key: 'status', width: 130 },
+  { title: '发放单', key: 'releases', width: 140 },
+  { title: '', key: 'actions', width: 190, fixed: 'right' as const },
+]
+const partNames = (r: DrawingRow) => r.parts.map((p) => p.name).join('、')
+const loadKey = (r: { ownerId: string | null }) => r.ownerId ?? '-'
+const loadColumns = [
+  { title: '设计负责人', key: 'owner' },
+  { title: '在手（未完成）', dataIndex: 'open', width: 120, align: 'center' as const },
+  { title: '待出图', dataIndex: 'pendingDraw', width: 90, align: 'center' as const },
+  { title: '逾期', key: 'overdue', width: 90, align: 'center' as const },
+  { title: '本周到期', key: 'week', width: 100, align: 'center' as const },
+  { title: '待客户确认', dataIndex: 'customerPending', width: 110, align: 'center' as const },
+]
+</script>
+
+<template>
+  <a-card title="设计出图任务">
+    <template #extra>
+      <a-space wrap>
+        <a-select
+          v-model:value="filter.workOrderNumber"
+          allow-clear
+          show-search
+          placeholder="全部工单"
+          style="width: 170px"
+          :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
+        />
+        <a-button @click="reload()">刷新</a-button>
+        <a-button type="primary" @click="openEdit(null)">新建出图任务</a-button>
+      </a-space>
+    </template>
+
+    <a-tabs v-model:active-key="tab">
+      <a-tab-pane key="list" tab="出图任务">
+        <a-space wrap class="filters">
+          <a-radio-group v-model:value="filter.view" button-style="solid" size="small">
+            <a-radio-button v-for="v in VIEWS" :key="v.value" :value="v.value">{{ v.label }}</a-radio-button>
+          </a-radio-group>
+          <a-select v-model:value="filter.ownerId" allow-clear show-search option-filter-prop="label" placeholder="全部负责人" style="width: 200px" :options="ownerOptions" />
+          <a-input-search v-model:value="keyword" allow-clear placeholder="部件 / 工单 / 备注" style="width: 180px" />
+        </a-space>
+        <div v-if="stats" class="stats">
+          <a-space size="large" wrap>
+            <span>待出图 <b>{{ stats.pending }}</b></span>
+            <a class="stat" :class="{ warn: stats.overdue }" @click="filter.view = 'overdue'">逾期 <b>{{ stats.overdue }}</b></a>
+            <span>本周到期 <b>{{ stats.dueThisWeek }}</b></span>
+            <a class="stat" @click="filter.view = 'drawn'">已出图待发放 <b>{{ stats.drawn }}</b> · 待客户确认 <b>{{ stats.customerPending }}</b></a>
+          </a-space>
+        </div>
+        <p class="muted">出图后点"一键发放"生成图纸发放单（R9）。关联工件的出图任务全部完成（已出图、已发放、需要时客户已确认）后，物料也齐了才给第一道工序发"可以开工"。没指定设计负责人的派给技术部负责人。</p>
+        <p v-if="data.total > rows.length" class="warn">共 {{ data.total }} 项，只显示前 {{ rows.length }} 项，请按工单或负责人筛选</p>
+
+        <a-table :columns="columns" :data-source="rows" :loading="pending" row-key="id" size="small" :scroll="{ x: 1300 }" :pagination="{ pageSize: 50, hideOnSinglePage: true }">
+          <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未完成的出图任务' : '没有记录'" /></template>
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'component'">
+              <a @click="openEdit(record as DrawingRow)">{{ record.componentName }}</a>
+              <div class="muted">{{ record.parts.length ? partNames(record as DrawingRow) : '未关联工件' }}</div>
+            </template>
+            <template v-else-if="column.key === 'owner'"><span :class="{ muted: !record.ownerId }">{{ record.ownerText }}</span></template>
+            <template v-else-if="column.key === 'planDate'">
+              <span :class="{ warn: record.overdue && record.status === 'PENDING' }">{{ dayText(record.planDate) }}</span>
+            </template>
+            <template v-else-if="column.key === 'drawn'">
+              <template v-if="record.drawnDate">{{ dayText(record.drawnDate) }}<div class="muted">{{ record.drawnByName }}</div></template>
+              <span v-else class="muted">—</span>
+            </template>
+            <template v-else-if="column.key === 'customer'">
+              <span v-if="!record.needsCustomerConfirm" class="muted">不需要</span>
+              <template v-else-if="record.customerConfirmedDate">已确认 {{ dayText(record.customerConfirmedDate) }}<div class="muted">{{ record.customerConfirmedByName }}</div></template>
+              <template v-else>
+                <span :class="{ warn: record.overdue && record.status !== 'PENDING' }">计划 {{ record.customerPlanDate ? dayText(record.customerPlanDate) : '未定' }}</span>
+              </template>
+            </template>
+            <template v-else-if="column.key === 'status'">
+              <a-tag :color="DRAWING_STATUS_COLOR[record.status as DrawingStatusKey]">{{ record.statusText }}</a-tag>
+              <a-tag v-if="record.alertLevel === 'RED'" color="red">红</a-tag>
+              <a-tag v-else-if="record.alertLevel === 'YELLOW'" color="orange">黄</a-tag>
+              <div v-if="record.overdue" class="warn small">逾期</div>
+            </template>
+            <template v-else-if="column.key === 'releases'">
+              <div v-for="rel in record.releases" :key="rel.id">
+                <NuxtLink :to="`/releases?id=${encodeURIComponent(rel.id)}`" :class="{ void: rel.status === 'VOID' }">{{ rel.releaseNo }}</NuxtLink>
+                <span v-if="rel.status === 'VOID'" class="muted"> 已作废</span>
+              </div>
+              <span v-if="!record.releases.length" class="muted">—</span>
+            </template>
+            <template v-else-if="column.key === 'actions'">
+              <a-space size="small">
+                <a-button v-if="record.permissions.markDrawn" type="primary" size="small" @click="openAct(record as DrawingRow, 'drawn')">标记出图</a-button>
+                <a-button v-if="record.status === 'DRAWN'" type="primary" size="small" @click="openRelease(record as DrawingRow)">一键发放</a-button>
+                <a-button v-if="record.permissions.confirm" size="small" @click="openAct(record as DrawingRow, 'confirm')">客户确认</a-button>
+                <a-dropdown>
+                  <a-button size="small">更多</a-button>
+                  <template #overlay>
+                    <a-menu>
+                      <a-menu-item key="edit" @click="openEdit(record as DrawingRow)">编辑 / 取消</a-menu-item>
+                      <a-menu-item v-if="record.permissions.release && record.status !== 'DRAWN'" key="rel" @click="openRelease(record as DrawingRow)">再发一版</a-menu-item>
+                      <a-menu-item v-if="record.permissions.undoDrawn" key="undo" @click="undo(record as DrawingRow, 'drawn')">撤销出图</a-menu-item>
+                      <a-menu-item v-if="record.customerConfirmedDate" key="undoc" @click="undo(record as DrawingRow, 'confirm')">撤销客户确认</a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
+              </a-space>
+            </template>
+          </template>
+        </a-table>
+      </a-tab-pane>
+
+      <a-tab-pane key="load" tab="设计负荷">
+        <p class="muted">按设计负责人统计{{ filter.workOrderNumber ? `（工单 ${filter.workOrderNumber}）` : '' }}。逾期 = 待出图已过计划完成日，或客户确认已过计划日；本周到期 = 待出图且计划完成日在本周（{{ load.week.monday }} ~ {{ load.week.sunday }}）。点数字看明细。</p>
+        <a-table :columns="loadColumns" :data-source="load.rows" :loading="loadPending" :row-key="loadKey" size="middle" :pagination="false">
+          <template #emptyText><a-empty description="没有未完成的出图任务" /></template>
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'owner'"><a @click="showOwner(record.ownerId)">{{ record.ownerName }}</a></template>
+            <template v-else-if="column.key === 'overdue'">
+              <a v-if="record.overdue" class="warn" @click="showOwner(record.ownerId, 'overdue')">{{ record.overdue }}</a>
+              <span v-else class="muted">0</span>
+            </template>
+            <template v-else-if="column.key === 'week'">
+              <b v-if="record.dueThisWeek">{{ record.dueThisWeek }}</b>
+              <span v-else class="muted">0</span>
+            </template>
+          </template>
+        </a-table>
+      </a-tab-pane>
+    </a-tabs>
+  </a-card>
+
+  <DrawingEditModal :open="editOpen" :task="editing" :work-order-number="filter.workOrderNumber" @close="closeEdit" @done="saved" />
+  <ReleaseCreateModal :open="releaseOpen" :prefill="prefill" @close="releaseOpen = false" @done="released" />
+
+  <a-modal
+    :open="!!acting"
+    :title="acting ? `${acting.kind === 'drawn' ? '标记出图' : '录客户确认'}：${acting.row.componentName}` : ''"
+    ok-text="确定"
+    :confirm-loading="busy"
+    @ok="submitAct"
+    @cancel="acting = null"
+  >
+    <a-form v-if="acting" layout="vertical">
+      <p class="muted">{{ acting.row.workOrderNumber }} · 计划完成 {{ dayText(acting.row.planDate) }}{{ acting.row.needsCustomerConfirm ? ` · 客户确认计划 ${acting.row.customerPlanDate ? dayText(acting.row.customerPlanDate) : '未定'}` : '' }}</p>
+      <a-form-item :label="acting.kind === 'drawn' ? '出图日期' : '客户确认日期'"><a-date-picker v-model:value="actDate" value-format="YYYY-MM-DD" :allow-clear="false" /></a-form-item>
+      <p v-if="acting.kind === 'drawn'" class="muted">出图后点"一键发放"生成图纸发放单；发放后{{ acting.row.needsCustomerConfirm ? '、客户确认后' : '' }}任务完成。</p>
+    </a-form>
+  </a-modal>
+</template>
+
+<style scoped>
+.filters { margin-bottom: 8px; }
+.stats { margin-bottom: 8px; }
+.stat { color: inherit; }
+.muted { color: #999; font-size: 12px; }
+.warn { color: #cf1322; }
+.small { font-size: 12px; }
+.void { text-decoration: line-through; color: #999; }
+</style>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 看板（技术选型 6.2）：每个工单一行红黄绿、外协在途、超期、未关闭异常、缺料（R10）、项目经理、交期；
+ * 看板（技术选型 6.2）：每个工单一行红黄绿、外协在途、超期、未关闭异常、缺料（R10）、出图逾期（R11）、项目经理、交期；
  * 顶部 QMS 最后同步时间（各类资源里最旧的那类），有资源同步报错时显示错误提示。
  * 红 = 有活动红色预警或超期 ≥3 天的异常；黄 = 有活动黄色预警或超期异常；否则绿。
  */
@@ -24,6 +24,7 @@ const columns = [
   { title: '活动预警', key: 'alerts', width: 120 },
   { title: '未签收发放', key: 'releases', width: 100, align: 'center' as const },
   { title: '缺料', key: 'shortage', width: 70, align: 'center' as const },
+  { title: '出图逾期', key: 'drawingOverdue', width: 90, align: 'center' as const },
   { title: '项目经理', key: 'pm', width: 110 },
   { title: '交期', key: 'delivery', width: 110 },
 ]
@@ -75,6 +76,10 @@ const columns = [
         </template>
         <template v-else-if="column.key === 'shortage'">
           <NuxtLink v-if="record.shortage" class="warn" :to="`/purchases?wo=${encodeURIComponent(record.workOrderNumber)}&view=shortage`">{{ record.shortage }}</NuxtLink>
+          <span v-else class="muted">0</span>
+        </template>
+        <template v-else-if="column.key === 'drawingOverdue'">
+          <NuxtLink v-if="record.drawingOverdue" class="warn" :to="`/drawings?wo=${encodeURIComponent(record.workOrderNumber)}&view=overdue`">{{ record.drawingOverdue }}</NuxtLink>
           <span v-else class="muted">0</span>
         </template>
         <template v-else-if="column.key === 'pm'">{{ record.projectManagerName ?? '—' }}</template>

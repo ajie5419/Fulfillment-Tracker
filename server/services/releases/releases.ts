@@ -9,6 +9,9 @@
  *
  * 不做审批、不做会签：发放人发出即生效；发错了由发放人或管理员作废（未签收的一并作废）。
  * 状态变化都在一个事务里，先锁发放单行（FOR UPDATE），同一发放单上的签收、作废、确认串行执行。
+ *
+ * 从出图任务一键发放（R11，drawingTaskId）：建单和作废都改用 READ COMMITTED，并按出图任务的顺序加锁
+ * （先工件 → 出图任务 → 发放单），然后重算任务状态、重新评估"可以开工"（drawings.ts settleTask）。
  */
 import { Prisma, type ReceiptStatus, type Release, type ReleaseType } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
@@ -16,6 +19,7 @@ import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
 import { FlowError, FlowForbidden } from '../flow/errors'
 import { departmentNames, loadNames, userDepartmentNames } from '../flow/names'
+import { assertReleasable, lockTask, settleTask } from '../drawings/drawings'
 import { formatIssueNo, nextSeq } from '../issues/constants'
 import {
   CONFIRM_CHANGE,
@@ -45,10 +49,10 @@ export interface Actor {
 const uniq = <T>(xs: T[]) => [...new Set(xs)]
 
 /** 编号冲突重试：两个请求同时取到同一个当天序号时，后提交的撞唯一键，整个事务重来 */
-async function releaseTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+async function releaseTransaction<T>(fn: (tx: Tx) => Promise<T>, readCommitted = false): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await prisma.$transaction(fn)
+      return await prisma.$transaction(fn, readCommitted ? { isolationLevel: 'ReadCommitted' } : undefined)
     } catch (err) {
       const e = err as { code?: string; meta?: { target?: unknown } }
       if (attempt < 5 && e?.code === 'P2002' && String(e.meta?.target ?? '').includes('releaseNo')) continue
@@ -120,6 +124,8 @@ export interface NewReleaseInput {
   attachmentIds?: string[]
   userIds?: string[]
   groups?: RecipientGroup[]
+  /** 从出图任务一键发放（R11） */
+  drawingTaskId?: string | null
 }
 
 export interface ChangeImpact {
@@ -166,9 +172,13 @@ export async function createRelease(input: NewReleaseInput, issuerId: string) {
   if (attachmentIds.length > MAX_ATTACHMENTS) throw new FlowError(`附件最多 ${MAX_ATTACHMENTS} 个`)
   const recipients = await resolveRecipients(input.userIds ?? [], input.groups ?? [], issuerId)
 
+  const taskId = input.drawingTaskId || null
   return releaseTransaction(async (tx) => {
+    // 出图任务：先锁它的工件和任务行（与出图任务、采购同一加锁顺序）
+    const task = taskId ? await lockTask(tx, taskId) : null
     const wo = await tx.qmsWorkOrder.findFirst({ where: { workOrderNumber: input.workOrderNumber, isDeleted: false }, select: { workOrderNumber: true } })
     if (!wo) throw new FlowError('工单不存在或已删除')
+    if (task) assertReleasable(task, wo.workOrderNumber, input.type)
     if (partIds.length) {
       const parts = await tx.part.findMany({ where: { id: { in: partIds } }, select: { workOrderNumber: true } })
       if (parts.length !== partIds.length || parts.some((p) => p.workOrderNumber !== wo.workOrderNumber)) throw new FlowError('关联工件不存在或不属于该工单')
@@ -182,6 +192,7 @@ export async function createRelease(input: NewReleaseInput, issuerId: string) {
         version: input.version?.trim() || null,
         description,
         issuerId,
+        drawingTaskId: task?.id ?? null,
       },
     })
     await tx.releaseReceipt.createMany({ data: recipients.map((userId) => ({ releaseId: release.id, userId })) })
@@ -195,8 +206,9 @@ export async function createRelease(input: NewReleaseInput, issuerId: string) {
       if (bound.count !== attachmentIds.length) throw new FlowError('附件无效或已被使用，请重新上传')
     }
     const impact: ChangeImpact = input.type === 'CHANGE' && partIds.length ? await applyChangeImpact(tx, release, partIds) : { started: 0, held: 0, confirmers: [] }
-    return { id: release.id, releaseNo: release.releaseNo, recipients: receipts.length, impact }
-  })
+    const drawing = task ? await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, task.id) : null
+    return { id: release.id, releaseNo: release.releaseNo, recipients: receipts.length, impact, drawing }
+  }, !!taskId)
 }
 
 // ───────────── 签收 / 拒收 ─────────────
@@ -290,7 +302,10 @@ async function olderHolds(tx: Tx, rel: Release) {
 
 /** 作废（发错了）：发放人或管理员。未签收的签收记录、签收待办、确认待办一并作废，"等变更"解除（更早的有效变更单覆盖的工序还给它） */
 export async function voidRelease(id: string, actor: Actor) {
+  // 关联了出图任务的：先锁任务（及其工件）再锁发放单，作废后任务回到"已出图"，重新评估"可以开工"
+  const taskId = (await prisma.release.findUnique({ where: { id }, select: { drawingTaskId: true } }))?.drawingTaskId ?? null
   return prisma.$transaction(async (tx) => {
+    const task = taskId ? await lockTask(tx, taskId).catch(() => null) : null
     const rel = await lockRelease(tx, id)
     if (!actor.isAdmin && rel.issuerId !== actor.userId) throw new FlowForbidden('只有发放人或管理员可以作废')
     if (rel.status === 'VOID') throw new FlowError('发放单已经作废了')
@@ -309,8 +324,9 @@ export async function voidRelease(id: string, actor: Actor) {
       await tx.routeStep.updateMany({ where: { id: { in: stepIds }, holdReleaseId: null, status: 'PENDING' }, data: { holdReleaseId: releaseId } })
     }
     await tx.release.update({ where: { id }, data: { status: 'VOID' } })
+    if (task) await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, task.id)
     return { cancelled: pendingIds.length, holdsCleared }
-  })
+  }, taskId ? { isolationLevel: 'ReadCommitted' } : undefined)
 }
 
 /**
@@ -468,6 +484,7 @@ export async function getRelease(id: string, viewer: Actor) {
     version: rel.version,
     description: rel.description,
     status: rel.status,
+    drawingTaskId: rel.drawingTaskId,
     issuerId: rel.issuerId,
     issuerName: userName(rel.issuerId),
     createdAt: rel.createdAt,
