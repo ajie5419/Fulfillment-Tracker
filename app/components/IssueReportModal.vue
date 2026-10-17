@@ -89,24 +89,23 @@ function removePhoto(file: UploadFile) {
 }
 
 async function submit() {
+  if (submitting.value) return
   if (!form.workOrderNumber || !form.category || !form.description.trim()) return message.warning('请选工单、分类，并写一句话描述')
+  // 先把这次要提交的内容定下来，上传照片期间表单再变也不影响这一条
+  const body = {
+    workOrderNumber: form.workOrderNumber,
+    partId: form.partId || null,
+    category: form.category,
+    description: form.description.trim(),
+    dueDate: form.dueDate || null,
+    responsibleSupplierId: cat.value?.supplier ? form.supplierId || null : null,
+  }
+  const files = photos.value.map((p) => p.originFileObj).filter((f): f is NonNullable<typeof f> => !!f) as File[]
   submitting.value = true
   try {
-    const files = photos.value.map((p) => p.originFileObj).filter((f): f is NonNullable<typeof f> => !!f) as File[]
     const photoIds = await uploadPhotos(files)
     const send = $fetch as unknown as (url: string, opts: { method: 'POST'; body: object }) => Promise<{ id: string; issueNo: string }>
-    const r = await send('/api/issues', {
-      method: 'POST',
-      body: {
-        workOrderNumber: form.workOrderNumber,
-        partId: form.partId || null,
-        category: form.category,
-        description: form.description.trim(),
-        photoIds,
-        dueDate: form.dueDate || null,
-        responsibleSupplierId: cat.value?.supplier ? form.supplierId || null : null,
-      },
-    })
+    const r = await send('/api/issues', { method: 'POST', body: { ...body, photoIds } })
     message.success(`已上报 ${r.issueNo}`)
     emit('done', r)
   } catch (e) {
@@ -115,10 +114,27 @@ async function submit() {
     submitting.value = false
   }
 }
+
+/** 提交中不能关闭，避免关掉后又开一张新的 */
+function close() {
+  if (!submitting.value) emit('close')
+}
 </script>
 
 <template>
-  <a-modal :open="open" title="上报异常" :confirm-loading="submitting" ok-text="提交异常" width="560px" @ok="submit" @cancel="emit('close')">
+  <a-modal
+    :open="open"
+    title="上报异常"
+    :confirm-loading="submitting"
+    ok-text="提交异常"
+    width="560px"
+    :closable="!submitting"
+    :mask-closable="!submitting"
+    :keyboard="!submitting"
+    :cancel-button-props="{ disabled: submitting }"
+    @ok="submit"
+    @cancel="close"
+  >
     <a-form layout="vertical">
       <a-form-item label="工单" required>
         <a-select

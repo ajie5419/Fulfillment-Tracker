@@ -108,6 +108,11 @@ function finishStep(s: StepRef) {
 const sending = ref<{ id: string; supplierId: string | null; title: string } | null>(null)
 /** 上报异常：带上当前工单和工件 */
 const reportingPartId = ref<string | null>(null)
+/** 上报后跳到异常列表并打开刚报的那条 */
+function onReported(issue: { id: string }) {
+  reportingPartId.value = null
+  navigateTo({ path: '/issues', query: { id: issue.id } })
+}
 const returning = reactive({ open: false, step: null as StepRef | null, qty: 1, partName: '' })
 function openReturn(p: PartRow, s: StepRef & Pick<StepRow, 'returnedQty'>) {
   Object.assign(returning, { open: true, step: s, qty: Math.max(p.quantity - s.returnedQty, 1), partName: p.name })
@@ -286,7 +291,7 @@ const columns = [
     :work-order-number="workOrderNumber"
     :part-id="reportingPartId ?? undefined"
     @close="reportingPartId = null"
-    @done="reportingPartId = null; refresh()"
+    @done="onReported"
   />
 </template>
 
