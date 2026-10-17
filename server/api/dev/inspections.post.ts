@@ -10,10 +10,11 @@ const body = z
     processName: z.string().max(191).nullish(),
     supplierId: z.string().max(64).nullish(),
     quantity: z.number().int().min(0).max(100000),
+    category: z.enum(['INCOMING']).nullish(),
   })
   .strict()
 
-/** 模拟 QMS 新增一条返厂报检并立即匹配。仅 NUXT_DEV_TOOLS=1 时可用 */
+/** 模拟 QMS 新增一条返厂报检（category = INCOMING 时是进货检验，确认采购行到货）并立即匹配。仅 NUXT_DEV_TOOLS=1 时可用 */
 export default defineFlowHandler(async (event) => {
   requireDevTools(event)
   return createDemoInspection(await parseBody(event, body))

@@ -9,7 +9,7 @@ export interface Me {
   isAdmin: boolean
   /** 担任负责人的部门（异常列表默认筛"本部门"） */
   deptHeadOf: string[]
-  /** 通知角色：OUTSOURCE_COORDINATOR / DEPT_HEAD / PROJECT_DEPT_HEAD / LEADER */
+  /** 通知角色：OUTSOURCE_COORDINATOR / DEPT_HEAD / PROJECT_DEPT_HEAD / LEADER / FINANCE */
   roles: string[]
   /** 只能看自己负责的工单（项目经理） */
   limited: boolean

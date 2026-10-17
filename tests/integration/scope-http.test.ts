@@ -50,7 +50,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
   const OTHER = 'T-WO-PM-OTHER'
   let otherIssueId = ''
   let otherPartId = ''
-  const HTTP_USERS = ['h-pm', 'h-pm2', 'h-lead', 'h-worker']
+  const HTTP_USERS = ['h-pm', 'h-pm2', 'h-lead', 'h-worker', 'h-fin']
 
   beforeAll(async () => {
     if (!existsSync(SERVER_ENTRY)) throw new Error('先运行 pnpm build')
@@ -63,7 +63,10 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     await db.part.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db.workOrderExt.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db.qmsWorkOrder.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
-    await db.notifyRole.deleteMany({ where: { userId: { in: ['h-pm', 'h-pm2', 'h-lead'] } } })
+    await db.notifyRole.deleteMany({ where: { userId: { in: ['h-pm', 'h-pm2', 'h-lead', 'h-fin'] } } })
+    // 采购行 / 付款申请（R10）
+    await db.paymentRequest.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
+    await db.purchaseLine.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db.qmsWorkOrder.createMany({
       data: [MINE, OTHER].map((wo) => ({ workOrderNumber: wo, customerName: '测试', quantity: 1, deliveryDate: new Date('2026-12-31'), status: 'IN_PROGRESS', updatedAt: now })),
     })
@@ -73,7 +76,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
         { workOrderNumber: OTHER, projectManagerId: 'h-pm2' },
       ],
     })
-    await db.notifyRole.create({ data: { role: 'LEADER', userId: 'h-lead' } })
+    await db.notifyRole.createMany({ data: [{ role: 'LEADER', userId: 'h-lead' }, { role: 'FINANCE', userId: 'h-fin' }] })
     // 发放单的接收人要在 QMS 用户副本里（R9）
     await db.release.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db.qmsUser.deleteMany({ where: { id: { in: HTTP_USERS } } })
@@ -91,6 +94,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
         'h-pm2': { name: '项目经理乙', active: true },
         'h-lead': { name: '领导', active: true },
         'h-worker': { name: '一线', active: true },
+        'h-fin': { name: '财务', active: true },
       },
     })
     const port = await freePort()
@@ -124,6 +128,9 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     app?.kill()
     await bridge?.close()
     await db?.release.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
+    await db?.paymentRequest.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
+    await db?.purchaseLine.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
+    await db?.notifyRole.deleteMany({ where: { userId: 'h-fin' } })
     await db?.qmsUser.deleteMany({ where: { id: { in: HTTP_USERS } } })
     await db?.issue.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.$disconnect()
@@ -293,5 +300,81 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     const todos = (await (await get('/api/todos', worker)).json()) as { id: string; action: string }[]
     const signTodo = todos.find((t) => t.action === 'SIGN_RELEASE')!
     expect((await post(worker, `/api/todos/${signTodo.id}/transfer`, { toUserId: 'h-lead' })).status).toBe(400)
+  })
+
+  it('采购到货与付款（R10）：按工单可见范围增查改、确认到货；模板下载 + 批量导入；只有财务能标记已付', async () => {
+    const pm = await login('h-pm')
+    const lead = await login('h-lead')
+    const fin = await login('h-fin')
+    const send = (sess: Record<string, string>, method: string, path: string, body?: object) =>
+      fetch(`${base}${path}`, { method, headers: { cookie: cookieHeader(sess), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+    const today = new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10)
+    const later = new Date(Date.now() + 8 * 3_600_000 + 30 * 86_400_000).toISOString().slice(0, 10)
+
+    // 甲不能在别人的工单上登记；自己的可以
+    expect((await send(pm, 'POST', '/api/purchases', { workOrderNumber: OTHER, materialName: 'x', quantity: 1, needDate: later })).status).toBe(403)
+    const mine = await send(pm, 'POST', '/api/purchases', { workOrderNumber: MINE, materialName: '回转支承', quantity: 1, needDate: later })
+    expect(mine.status).toBe(200)
+    const mineId = ((await mine.json()) as { id: string }).id
+    const otherRes = await send(lead, 'POST', '/api/purchases', { workOrderNumber: OTHER, materialName: '钢板', quantity: 2, needDate: later })
+    const otherId = ((await otherRes.json()) as { id: string }).id
+    // 日期格式校验
+    expect((await send(pm, 'POST', '/api/purchases', { workOrderNumber: MINE, materialName: 'x', quantity: 1, needDate: '2026/1/1' })).status).toBe(400)
+
+    // 列表只含自己的；别人的详情 / 修改 / 确认到货 403
+    const list = (await (await get('/api/purchases?view=all', pm)).json()) as { rows: { id: string }[] }
+    expect(list.rows.map((r) => r.id)).toContain(mineId)
+    expect(list.rows.map((r) => r.id)).not.toContain(otherId)
+    expect((await get(`/api/purchases?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
+    expect((await get(`/api/purchases/${otherId}`, pm)).status).toBe(403)
+    expect((await send(pm, 'PATCH', `/api/purchases/${otherId}`, { note: 'x' })).status).toBe(403)
+    expect((await send(pm, 'POST', `/api/purchases/${otherId}/arrive`, { source: 'MOBILE' })).status).toBe(403)
+    expect((await send(pm, 'DELETE', `/api/purchases/${otherId}`)).status).toBe(403)
+    const arrived = await send(pm, 'POST', `/api/purchases/${mineId}/arrive`, { source: 'MOBILE', arrivedDate: today })
+    expect(arrived.status).toBe(200)
+    expect(((await (await get(`/api/purchases/${mineId}`, pm)).json()) as { status: string }).status).toBe('ARRIVED')
+
+    // 模板下载是 xlsx；导入：别人的工单行报错、整批不导；自己的工单成功
+    const tpl = await get('/api/purchases/template', pm)
+    expect(tpl.status).toBe(200)
+    expect(tpl.headers.get('content-type')).toContain('spreadsheetml')
+    const ExcelJS = (await import('exceljs')).default
+    const book = async (wo: string) => {
+      const wb = new ExcelJS.Workbook()
+      await wb.xlsx.load(await tpl.clone().arrayBuffer())
+      const ws = wb.worksheets[0]!
+      ws.addRow([wo, '导入的物料', null, 3, '件', null, later])
+      return Buffer.from(await wb.xlsx.writeBuffer())
+    }
+    const upload = (sess: Record<string, string>, data: Uint8Array, name = 'p.xlsx') => {
+      const form = new FormData()
+      form.append('file', new Blob([new Uint8Array(data)]), name)
+      return fetch(`${base}/api/purchases/import`, { method: 'POST', headers: { cookie: cookieHeader(sess) }, body: form })
+    }
+    const denied = await upload(pm, await book(OTHER))
+    expect(denied.status).toBe(200)
+    expect(await denied.json()).toMatchObject({ imported: 0, errors: [{ row: 2, messages: [`无权查看工单 ${OTHER}`] }] })
+    const ok = await upload(pm, await book(MINE))
+    expect(await ok.json()).toMatchObject({ imported: 1, errors: [] })
+    expect((await upload(pm, new TextEncoder().encode('a,b,c'), 'p.csv')).status).toBe(400)
+
+    // 付款申请：甲申请；甲不能标记已付，财务可以；甲看不到别人工单的付款申请
+    expect((await send(pm, 'POST', '/api/payments', { purchaseLineIds: [otherId], amount: 1, requestDate: today, blocksDelivery: false })).status).toBe(403)
+    const pay = await send(pm, 'POST', '/api/payments', { purchaseLineIds: [mineId], amount: 1200.5, requestDate: today, blocksDelivery: true })
+    expect(pay.status).toBe(200)
+    const payId = ((await pay.json()) as { id: string }).id
+    const otherPay = await send(lead, 'POST', '/api/payments', { purchaseLineIds: [otherId], amount: 9, requestDate: today, blocksDelivery: false })
+    const otherPayId = ((await otherPay.json()) as { id: string }).id
+    const pmPays = (await (await get('/api/payments?status=ALL', pm)).json()) as { id: string; permissions: { setStatus: boolean } }[]
+    expect(pmPays.map((p) => p.id)).toEqual([payId])
+    expect(pmPays[0]!.permissions.setStatus).toBe(false)
+    expect((await send(pm, 'POST', `/api/payments/${payId}/status`, { status: 'PAID' })).status).toBe(403)
+    expect((await send(pm, 'POST', `/api/payments/${otherPayId}/status`, { status: 'PAID' })).status).toBe(403)
+    const finPays = (await (await get('/api/payments', fin)).json()) as { id: string; permissions: { setStatus: boolean } }[]
+    expect(finPays.map((p) => p.id)).toEqual(expect.arrayContaining([payId, otherPayId]))
+    expect((await send(fin, 'POST', `/api/payments/${payId}/status`, { status: 'PAID', note: '已电汇' })).status).toBe(200)
+    expect((await send(fin, 'POST', `/api/payments/${payId}/status`, { status: 'DONE' })).status).toBe(400)
+    // 已付的不能删
+    expect((await send(pm, 'DELETE', `/api/payments/${payId}`)).status).toBe(400)
   })
 })

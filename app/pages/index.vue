@@ -85,6 +85,10 @@ async function transfer() {
             <template #actions>
               <a-button v-if="item.action === 'ARRANGE_SEND' && item.step" type="primary" size="small" @click="openSend(item)">登记发出</a-button>
               <a-button v-else-if="item.action === 'ARRANGE_START' && item.step" type="primary" size="small" @click="start(item)">开工</a-button>
+              <template v-else-if="item.action === 'READY_TO_START' && item.step && item.step.status === 'PENDING'">
+                <a-button v-if="item.step.mode === 'EXTERNAL_OUTSOURCE'" type="primary" size="small" @click="openSend(item)">登记发出</a-button>
+                <a-button v-else type="primary" size="small" @click="start(item)">开工</a-button>
+              </template>
               <a-button v-else-if="item.action === 'SIGN_RELEASE' && item.release" type="primary" size="small" @click="releaseId = item.release.id">查看并签收</a-button>
               <a-button v-else-if="item.action === 'CONFIRM_CHANGE' && item.release" type="primary" size="small" @click="releaseId = item.release.id">确认变更影响</a-button>
               <a-button v-if="item.action !== 'SIGN_RELEASE'" size="small" @click="transferring = item">转交</a-button>

@@ -1,5 +1,5 @@
 /**
- * scan-rules：一次跑完 W1–W5，新建、升级、消除预警，并给升级阶梯上的人写"我的提醒"（方案 6.2）。
+ * scan-rules：一次跑完 W1–W6，新建、升级、消除预警，并给升级阶梯上的人写"我的提醒"（方案 6.2）。
  *
  * 幂等：同一对象同一规则只有一条活动预警（alert.activeKey 唯一）；同一人同一预警同一级别只有一条提醒
  * （reminder 上 alertId+level+userId 唯一）。每轮都会把当前级别该收到的人补齐，所以中途失败下一轮自动补上。
@@ -17,6 +17,7 @@ import { convertAlertInTx } from '../issues/convert'
 import { CATEGORY_TEXT } from '../issues/constants'
 import { issueTransaction } from '../issues/issues'
 import { withLease } from '../jobs/lease'
+import { DELAY_REASON_TEXT, PAYMENT_STATUS_TEXT, PURCHASE_DEPT, judgeW6, w6Summary } from '../purchases/constants'
 import { CONFIRM_CHANGE, TYPE_TEXT } from '../releases/constants'
 import { SCAN_RULES, loadOffDays, loadThresholds } from './config'
 import {
@@ -40,13 +41,13 @@ export { SCAN_RULES, loadOffDays, loadThresholds }
 /** 一个处在规则关注状态的对象（不一定已到阈值） */
 export interface Target {
   rule: ScanRule
-  refType: 'step' | 'unmatched' | 'issue' | 'receipt' | 'release'
+  refType: 'step' | 'unmatched' | 'issue' | 'receipt' | 'release' | 'purchase'
   refId: string
   key: string
   workOrderNumber: string | null
   /** 责任人 */
   ownerIds: string[]
-  /** 黄色起额外通知的人（W5：发放人，要知道谁一直没签收 / 变更影响一直没人确认） */
+  /** 黄色起额外通知的人（W5：发放人，要知道谁一直没签收 / 变更影响一直没人确认；W6：有没付的卡交期付款申请时加财务） */
   watcherIds?: string[]
   /** 黄色起要通知的"责任部门"名称；不给时取责任人所在部门（W4 的责任部门是异常上明确写的） */
   deptNames?: string[]
@@ -62,7 +63,7 @@ export interface Target {
   meta?: { stepMode?: StepMode; supplierId?: string | null; releaseId?: string }
 }
 
-/** 收集 W1–W5 关注的全部对象，并按 now 判定级别；only 只收集某一条规则 */
+/** 收集 W1–W6 关注的全部对象，并按 now 判定级别；only 只收集某一条规则 */
 export async function collectTargets(now: Date, t: Thresholds, offDays: string[], only?: ScanRule): Promise<Target[]> {
   const run = (rule: ScanRule, fn: () => Promise<Target[]>) => (!only || only === rule ? fn() : Promise.resolve([]))
   const parts = await Promise.all([
@@ -71,6 +72,7 @@ export async function collectTargets(now: Date, t: Thresholds, offDays: string[]
     run('W3', () => collectW3(now, t, offDays)),
     run('W4', () => collectW4(now, t, offDays)),
     run('W5', () => collectW5(now, t, offDays)),
+    run('W6', () => collectW6(now, t, offDays)),
   ])
   return parts.flat()
 }
@@ -316,6 +318,51 @@ async function collectW5Changes(now: Date, t: Thresholds, offDays: string[]): Pr
       subject: `${TYPE_TEXT[rel.type]} ${rel.releaseNo}${rel.version ? `（${rel.version}）` : ''}`,
       summary: `已发放 ${durationText(elapsed)}，变更影响仍未确认（待 ${who} 确认）`,
       meta: { releaseId: rel.id },
+    })
+  }
+  return out
+}
+
+/**
+ * W6 关键物料未到货（R10）：未到货的采购行，判定见 purchases/constants.ts judgeW6
+ * （承诺到货日已过；需求日前 N 天仍无承诺日；需求日已过仍未到货直接红）。
+ * 责任人：采购负责人，没指定时是采购部负责人；责任部门是采购部（黄色起通知采购部负责人、工单项目经理，红色再加项目部负责人、分管领导）。
+ * 有没付的"卡交期"付款申请时，黄色起加通知财务，标题里写明，便于区分付款原因和管理原因。
+ * 只看 QMS 里还在（未删除）的工单。红色不转异常。
+ */
+async function collectW6(now: Date, t: Thresholds, offDays: string[]): Promise<Target[]> {
+  const lines = await prisma.purchaseLine.findMany({
+    where: { status: 'OPEN' },
+    include: { payments: { select: { payment: { select: { status: true, blocksDelivery: true } } } } },
+  })
+  if (!lines.length) return []
+  const [wos, roles] = await Promise.all([
+    prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: [...new Set(lines.map((l) => l.workOrderNumber))] }, isDeleted: false }, select: { workOrderNumber: true } }),
+    prisma.notifyRole.findMany({ where: { OR: [{ role: 'FINANCE' }, { role: 'DEPT_HEAD', department: PURCHASE_DEPT }] }, select: { role: true, userId: true } }),
+  ])
+  const live = new Set(wos.map((w) => w.workOrderNumber))
+  const heads = [...new Set(roles.filter((r) => r.role === 'DEPT_HEAD').map((r) => r.userId))]
+  const finance = [...new Set(roles.filter((r) => r.role === 'FINANCE').map((r) => r.userId))]
+  const out: Target[] = []
+  for (const l of lines) {
+    if (!live.has(l.workOrderNumber)) continue
+    const r = judgeW6({ needDate: l.needDate, promisedDate: l.promisedDate, now, offDays }, t.W6)
+    if (!r.trigger) continue
+    const blocking = l.payments.map((p) => p.payment).find((p) => p.blocksDelivery && p.status !== 'PAID')
+    const extra = [blocking ? `卡交期付款${PAYMENT_STATUS_TEXT[blocking.status]}` : '', l.delayReason ? `原因：${DELAY_REASON_TEXT[l.delayReason]}` : ''].filter(Boolean)
+    out.push({
+      rule: 'W6',
+      refType: 'purchase',
+      refId: l.id,
+      key: alertKey('W6', 'purchase', l.id),
+      workOrderNumber: l.workOrderNumber,
+      ownerIds: l.buyerId ? [l.buyerId] : heads,
+      watcherIds: blocking ? finance : [],
+      deptNames: [PURCHASE_DEPT],
+      startAt: r.trigger === 'OVERDUE' ? l.promisedDate! : l.needDate,
+      level: r.level,
+      subject: `关键物料 ${l.materialName}${l.spec ? `（${l.spec}）` : ''}`,
+      summary: `${w6Summary(r, l)}${extra.length ? `；${extra.join('，')}` : ''}`,
     })
   }
   return out
