@@ -4,6 +4,7 @@
  *   选了工单 → 该工单的装配节点卡片（齐套率进度条 + 缺件表，节点顺序）；生产经理、该工单项目经理、管理员可新建 / 编辑 / 删除；
  *   不选工单 → 跨工单视图：按需求日从近到远，可只看未齐套的，展开看缺件。
  * 地址栏 ?wo= 选工单，?incomplete=1 只看未齐套，?id= 定位某个节点（W8 提醒跳过来）。
+ * 节点负责人本人看不到该工单时（不在可见范围），工单列表接口不给它，?id= 拿到的节点在顶部单独显示。
  */
 const route = useRoute()
 const router = useRouter()
@@ -28,13 +29,20 @@ const stats = computed(() => data.value.stats as KitStats | null)
 
 // ───── ?id= 定位节点（W8 提醒）─────
 const focusId = ref<string | null>(null)
+/** 从提醒打开、但该工单不在我的可见范围（我是节点负责人）：单独显示 */
+const standalone = ref<KitNode | null>(null)
 async function openFromQuery() {
   const id = route.query.id as string | undefined
   if (!id) return
   try {
     const n = await fetchKitNode(id)
-    Object.assign(filter, { workOrderNumber: n.workOrderNumber, incomplete: false })
     focusId.value = n.id
+    if (workOrders.value.some((w) => w.workOrderNumber === n.workOrderNumber)) {
+      standalone.value = null
+      Object.assign(filter, { workOrderNumber: n.workOrderNumber, incomplete: false })
+    } else {
+      standalone.value = n
+    }
     await nextTick()
     document.getElementById(`node-${n.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   } catch (e) {
@@ -59,6 +67,7 @@ function openEdit(n: KitNode | null) {
 async function saved() {
   editOpen.value = false
   await refresh()
+  if (standalone.value) standalone.value = await fetchKitNode(standalone.value.id).catch(() => null)
 }
 function remove(n: KitNode) {
   Modal.confirm({
@@ -70,6 +79,7 @@ function remove(n: KitNode) {
       try {
         await kittingSend(`/api/kitting/${n.id}`, 'DELETE')
         message.success('已删除')
+        if (standalone.value?.id === n.id) standalone.value = null
         await refresh()
       } catch (e) {
         message.error(apiError(e))
@@ -120,44 +130,27 @@ const crossColumns = [
     </div>
     <p class="muted">
       齐套率 = 已就绪项 ÷ 应有项：工件完成（最后一道工序完成）算就绪，关键物料到货算就绪，已取消的物料不计入。同一工件 / 物料可以挂在多个节点上。
-      需求日前 5 天仍未齐套黄色预警，前 1 天或已过红色（阈值在设置里改）；新建、编辑节点限生产经理、该工单项目经理、管理员。
+      <template v-if="stats">需求日前 {{ stats.yellowDays }} 天内仍未齐套黄色预警，{{ stats.redDays ? `前 ${stats.redDays} 天内（含当天）` : '当天' }}或已过红色（阈值在设置里改）；</template>新建、编辑节点限生产经理、该工单项目经理、管理员。
     </p>
+    <template v-if="standalone">
+      <div class="section muted">提醒的节点（你是负责人；该工单不在你的可见范围，只能看这个节点）<a @click="standalone = null">收起</a></div>
+      <KittingNodeCard :node="standalone" focus :window-days="stats?.windowDays ?? 5" @edit="openEdit" @remove="remove" />
+    </template>
     <p v-if="data.total > rows.length" class="warn">共 {{ data.total }} 个节点，只显示前 {{ rows.length }} 个，请按工单筛选</p>
 
     <!-- 单个工单：节点卡片 -->
     <template v-if="filter.workOrderNumber">
       <a-spin :spinning="pending">
         <a-empty v-if="!rows.length" :description="filter.incomplete ? '该工单没有未齐套的装配节点' : '该工单还没有装配节点'" />
-        <a-card
+        <KittingNodeCard
           v-for="n in rows"
-          :id="`node-${n.id}`"
           :key="n.id"
-          size="small"
-          class="node"
-          :class="{ focus: focusId === n.id }"
-        >
-          <template #title>
-            <span class="node-name">{{ n.name }}</span>
-            <a-tag v-if="n.alertLevel === 'RED'" color="red">红</a-tag>
-            <a-tag v-else-if="n.alertLevel === 'YELLOW'" color="orange">黄</a-tag>
-            <span class="muted">　需求日 {{ dayText(n.needDate) }}（<span :class="{ warn: n.incomplete && n.daysLeft <= (stats?.windowDays ?? 5) }">{{ daysLeftText(n.daysLeft) }}</span>）　负责人 {{ n.ownerText }}</span>
-          </template>
-          <template #extra>
-            <a-space v-if="n.canEdit" size="small">
-              <a-button size="small" @click="openEdit(n)">编辑</a-button>
-              <a-button size="small" danger @click="remove(n)">删除</a-button>
-            </a-space>
-          </template>
-          <div class="progress">
-            <a-progress v-if="n.percent != null" :percent="n.percent" :status="kitProgressStatus(n)" />
-            <span v-else class="muted">清单为空：编辑节点选择需要的工件和关键物料</span>
-            <span v-if="n.total" class="muted count">已就绪 {{ n.ready }} / 应有 {{ n.total }}</span>
-          </div>
-          <KittingShortageTable v-if="n.shortages.length" :shortages="n.shortages" />
-          <div v-if="n.readyItems.length" class="muted ready">已就绪：{{ n.readyItems.join('、') }}</div>
-          <div v-if="n.excluded.length" class="muted">已取消、不计入：{{ n.excluded.join('、') }}</div>
-          <div v-if="n.note" class="muted">备注：{{ n.note }}</div>
-        </a-card>
+          :node="n"
+          :focus="focusId === n.id"
+          :window-days="stats?.windowDays ?? 5"
+          @edit="openEdit"
+          @remove="remove"
+        />
       </a-spin>
     </template>
 
@@ -211,11 +204,6 @@ const crossColumns = [
 .muted { color: #999; font-size: 12px; }
 .warn { color: #cf1322; }
 .small { font-size: 12px; }
-.node { margin-bottom: 12px; }
-.node.focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.2); }
-.node-name { font-weight: 600; margin-right: 6px; }
-.progress { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-.progress :deep(.ant-progress) { flex: 1; max-width: 480px; margin: 0; }
-.count { white-space: nowrap; }
 .ready { margin-top: 6px; }
+.section { display: flex; justify-content: space-between; margin-bottom: 6px; }
 </style>

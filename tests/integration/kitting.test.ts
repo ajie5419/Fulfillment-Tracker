@@ -352,7 +352,7 @@ describe.skipIf(!DB)('齐套（R12）', () => {
     // 跨工单：按需求日从近到远
     const all = await s.kit.listNodes({}, ADMIN, W8)
     expect(all.rows.map((r) => r.name)).toEqual(['已过未齐', '已齐', '别的工单未齐', '快到未齐', '远期未齐'])
-    expect(all.stats).toEqual({ all: 5, incomplete: 4, dueSoon: 3, windowDays: 5 })
+    expect(all.stats).toEqual({ all: 5, incomplete: 4, dueSoon: 3, windowDays: 5, yellowDays: 5, redDays: 1 })
     expect(all.rows.find((r) => r.id === late.id)).toMatchObject({ daysLeft: -2 })
     const incomplete = await s.kit.listNodes({ incompleteOnly: true }, ADMIN, W8)
     expect(incomplete.rows.map((r) => r.id)).toEqual([late.id, otherWo.id, soon.id, far.id])
@@ -367,6 +367,12 @@ describe.skipIf(!DB)('齐套（R12）', () => {
     expect(owner.rows[0]!.canEdit).toBe(false)
     const head = await s.kit.listNodes({ mine: { userId: 'u-prodhead', isProductionHead: true } }, PROD, W8)
     expect(head.rows.map((r) => r.id)).toEqual([late.id, done.id, otherWo.id, far.id])
+    // 管理员同时是生产经理：仍按生产经理身份带上没指定负责人的节点
+    const role = await db.notifyRole.create({ data: { role: 'DEPT_HEAD', userId: 'u-admin', department: '生产部' } })
+    const adminCtx = await s.kit.editorContext(ADMIN)
+    expect(adminCtx).toMatchObject({ isAdmin: true, isProductionHead: true })
+    await db.notifyRole.delete({ where: { id: role.id } })
+    expect((await s.kit.editorContext(ADMIN)).isProductionHead).toBe(false)
 
     // 看板：已进入预警窗口（需求日前 5 天内，含已过）的未齐套节点；远期、已齐的不算
     const board = await s.board.getBoard(undefined)

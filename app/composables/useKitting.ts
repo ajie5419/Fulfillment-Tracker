@@ -50,6 +50,9 @@ export interface KitStats {
   /** 未齐套且已进入 W8 预警窗口（需求日前 windowDays 天内，含已过） */
   dueSoon: number
   windowDays: number
+  /** W8 阈值：需求日前几天黄 / 红（设置页可改） */
+  yellowDays: number
+  redDays: number
 }
 
 export interface KitList {

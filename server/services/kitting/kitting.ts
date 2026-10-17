@@ -92,12 +92,13 @@ export interface EditorContext {
 }
 
 export async function editorContext(actor: Actor, db: Db = prisma): Promise<EditorContext> {
-  if (actor.isAdmin) return { isAdmin: true, isProductionHead: false, pmOf: new Set() }
+  // 生产经理身份单独查：管理员同时是生产经理时，"我负责的"还要带上没指定负责人的节点
   const [head, managed] = await Promise.all([
     db.notifyRole.findFirst({ where: { role: 'DEPT_HEAD', department: KITTING_DEPT, userId: actor.userId }, select: { id: true } }),
-    db.workOrderExt.findMany({ where: { projectManagerId: actor.userId }, select: { workOrderNumber: true } }),
+    // 管理员什么都能改，不用再查自己管哪些工单
+    actor.isAdmin ? [] : db.workOrderExt.findMany({ where: { projectManagerId: actor.userId }, select: { workOrderNumber: true } }),
   ])
-  return { isAdmin: false, isProductionHead: !!head, pmOf: new Set(managed.map((m) => m.workOrderNumber)) }
+  return { isAdmin: actor.isAdmin, isProductionHead: !!head, pmOf: new Set(managed.map((m) => m.workOrderNumber)) }
 }
 
 /** 新建、修改、删除装配节点：生产经理、该工单项目经理、管理员 */
@@ -451,7 +452,7 @@ export async function listNodes(filter: NodeFilter, actor: Actor, t: RuleThresho
   return {
     rows: await describeNodes(found, now, ctx),
     total,
-    stats: { all, incomplete, dueSoon, windowDays: Math.max(t.yellowDays, t.redDays) },
+    stats: { all, incomplete, dueSoon, windowDays: Math.max(t.yellowDays, t.redDays), yellowDays: t.yellowDays, redDays: t.redDays },
     /** 能在所选工单上新建节点（没选工单时：至少能在某个工单上建） */
     canCreate: filter.workOrderNumber ? canEditWith(ctx, filter.workOrderNumber) : ctx.isAdmin || ctx.isProductionHead || ctx.pmOf.size > 0,
   }
