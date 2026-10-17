@@ -146,6 +146,27 @@ describe.skipIf(!DB)('QMS 数据同步', () => {
     expect(again.resources.every((x) => x.status === 'ok' && x.rows === 0 && x.pages === 1)).toBe(true)
   })
 
+  it('前几页成功、后面某页失败：失败次数按整轮累加，不被成功的页清零', async () => {
+    const t = '2026-09-30T08:00:00.000Z' // 早于下一个用例的数据，避免游标越过它们
+    for (let i = 1; i <= 8; i++) qms.upsert('departments', { id: `dept-z${i}`, name: `z${i}`, parentId: '0', status: 1, isDeleted: false, updatedAt: t })
+    for (let run = 1; run <= 3; run++) {
+      let calls = 0
+      const flaky: typeof fetch = async (url, init) => {
+        if (String(url).includes('/departments') && ++calls === 2) throw new TypeError('fetch failed: ECONNRESET')
+        return fetch(url, init)
+      }
+      const r = await syncOnly({ only: ['departments'], fetchImpl: flaky })
+      expect(r.resources[0]).toMatchObject({ status: 'failed', pages: 1 })
+      expect(await cursorOf('departments')).toMatchObject({ failCount: run })
+      expect(r.alerted).toBe(run === 3 ? 1 : 0) // 第 3 次连续失败能触发管理员提醒
+    }
+    // 整轮成功后才清零
+    expect((await syncOnly({ only: ['departments'] })).resources[0]).toMatchObject({ status: 'ok' })
+    expect(await cursorOf('departments')).toMatchObject({ failCount: 0, lastError: null })
+    expect(await db.qmsDepartment.count({ where: { id: { startsWith: 'dept-z' } } })).toBe(8)
+    await db.reminder.deleteMany({ where: { kind: 'SYNC_FAIL' } }) // 不影响后面的提醒用例
+  })
+
   it('中途失败后续跑：已提交的页保留，游标停在最后成功的一页；重跑不重复、不丢（同 updatedAt 多行跨页）', async () => {
     const t = '2026-10-01T08:00:00.123Z'
     for (const id of ['dept-x1', 'dept-x2', 'dept-x3', 'dept-x4', 'dept-x5']) qms.upsert('departments', { id, name: `车间${id.slice(-1)}`, parentId: 'dept-prod', status: 1, isDeleted: false, updatedAt: t })

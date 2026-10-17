@@ -2,7 +2,7 @@
  * sync-qms：按游标依次增量拉取 7 类资源，写入 QMS 只读副本（技术选型第 4 节，验收 A8 幂等与中断）。
  *
  * 每类资源循环翻页直到 nextCursor 为 null（已追平），单次运行最多 maxPages 页防死循环（没追平的下一轮接着拉）。
- * 每页写入与推进该资源的 sync_cursor（since、afterId、lastError 清空、failCount 归零）在同一事务里：
+ * 每页写入与推进该资源的 sync_cursor（since、afterId）在同一事务里；整轮成功后才清空 lastError、failCount 归零：
  * 中途失败时已提交的页不回滚、游标停在最后成功的一页，下一轮从这里续跑，不重复、不丢。
  * 同一 updatedAt 的多行靠 (updatedAt, key) 复合游标区分。
  *
@@ -98,9 +98,6 @@ export async function syncResource(resource: SyncResource, opts: SyncOptions): P
           where: { resource },
           data: {
             ...(next ? { since: next.since, afterId: next.afterId } : {}),
-            lastError: null,
-            failCount: 0,
-            alertedAt: null,
             ...(caughtUp ? { lastSyncedAt: new Date() } : {}),
           },
         })
@@ -113,6 +110,8 @@ export async function syncResource(resource: SyncResource, opts: SyncOptions): P
       result.rows += rows.length
       if (caughtUp) break
     }
+    // 整轮跑完（追平或到页数上限）才清零失败计数：前几页成功、后面某页失败时，失败次数要能连续累加到提醒阈值
+    await prisma.syncCursor.update({ where: { resource }, data: { lastError: null, failCount: 0, alertedAt: null } })
   } catch (err) {
     const error = errorText(err)
     await prisma.syncCursor.update({ where: { resource }, data: { lastError: error, failCount: { increment: 1 } } })
