@@ -139,3 +139,14 @@ describe('needsFill（待补充）', () => {
     expect(s({ ownerId: null, status: 'IN_PROGRESS' })).toBe(false)
   })
 })
+
+describe('dayString', () => {
+  it('rejects calendar-invalid dates', async () => {
+    const { dayString } = await import('../../server/schemas/flow')
+    expect(dayString.safeParse('2026-10-18').success).toBe(true)
+    expect(dayString.safeParse('2028-02-29').success).toBe(true)
+    expect(dayString.safeParse('2026-13-45').success).toBe(false)
+    expect(dayString.safeParse('2026-02-30').success).toBe(false)
+    expect(dayString.safeParse('2026-1-5').success).toBe(false)
+  })
+})

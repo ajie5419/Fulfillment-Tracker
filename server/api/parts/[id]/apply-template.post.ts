@@ -1,10 +1,11 @@
 import { z } from 'zod'
 import { applyTemplate } from '../../../services/templates/templates'
+import { dayString } from '../../../schemas/flow'
 
 const body = z
   .object({
     templateId: z.string().min(1).max(191),
-    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式应为 YYYY-MM-DD').nullish(),
+    startDate: dayString.nullish(),
   })
   .strict()
 

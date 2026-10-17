@@ -1,7 +1,7 @@
 -- R8 工艺：工件记录来源 QMS BOM 行（同工单唯一，重复导入跳过）；工序路线模板及其步骤
 
 -- AlterTable
-ALTER TABLE `part` ADD COLUMN `qmsBomId` VARCHAR(64) NULL;
+ALTER TABLE `part` ADD COLUMN `qmsBomId` VARCHAR(191) NULL;
 
 -- CreateTable
 CREATE TABLE `route_template` (
