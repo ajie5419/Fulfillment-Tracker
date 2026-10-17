@@ -22,8 +22,10 @@
     { "id": "sup-weld", "name": "华东组焊厂", "category": "结构件", "outsourcingMode": "EXTERNAL", "status": "Qualified", "kind": "SUPPLIER", "isDeleted": false, "updatedAt": "2026-09-03T00:00:00.000Z" },
     { "id": "sup-paint", "name": "宏达涂装厂", "category": "涂装", "outsourcingMode": "EXTERNAL", "status": "Qualified", "kind": "SUPPLIER", "isDeleted": false, "updatedAt": "2026-09-03T00:00:00.000Z" },
     { "id": "sup-mach", "name": "精工机加厂", "category": "机加", "outsourcingMode": "EXTERNAL", "status": "Qualified", "kind": "SUPPLIER", "isDeleted": false, "updatedAt": "2026-09-03T00:00:00.000Z" },
-    { "id": "sup-old", "name": "已停用的外协厂", "category": "结构件", "outsourcingMode": "EXTERNAL", "status": "Disqualified", "kind": "SUPPLIER", "isDeleted": true, "updatedAt": "2026-09-04T00:00:00.000Z" },
-    { "id": "team-weld1", "name": "组焊一班", "category": null, "outsourcingMode": "IN_PLANT", "status": null, "kind": "TEAM", "isDeleted": false, "updatedAt": "2026-09-04T00:00:00.000Z" }
+    { "id": "sup-old", "name": "已停用的外协厂", "category": "结构件", "outsourcingMode": "EXTERNAL", "status": "Disqualified", "kind": "SUPPLIER", "isDeleted": true, "updatedAt": "2026-09-04T00:00:00.000Z" }
+  ],
+  "teams": [
+    { "id": "team-weld1", "name": "组焊一班", "status": "ACTIVE", "isDeleted": false, "updatedAt": "2026-09-04T00:00:00.000Z" }
   ],
   "processes": [
     { "id": "prc-weld", "name": "组焊", "code": "WELD", "status": 1, "isDeleted": false, "updatedAt": "2026-09-02T00:00:00.000Z" },

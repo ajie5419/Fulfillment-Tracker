@@ -2,7 +2,7 @@
  * 本地模拟 QMS 只读增量同步接口（R2 契约 v1），由 mock-identity-bridge.mjs 挂在同一个端口上
  * （履约的 NUXT_QMS_API_BASE 同时用于身份桥和同步）。数据来自 JSON fixture（默认 scripts/fixtures/mock-qms.json）。
  *
- *   GET /api/integration/fulfillment/<work-orders|suppliers|processes|departments|users|inspections>?since&afterId&limit
+ *   GET /api/integration/fulfillment/<work-orders|suppliers|teams|processes|departments|users|inspections>?since&afterId&limit
  *   - 请求头 X-Identity-Client-Id / X-Identity-Client-Secret 不对 → 401
  *   - since 必须是 ISO 8601，limit 1–100（默认 100），否则 400
  *   - ORDER BY updatedAt, key（工单是 workOrderNumber，其余是 id）；条件 updatedAt > since OR (updatedAt = since AND key > afterId)
@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const SYNC_PREFIX = '/api/integration/fulfillment/'
-export const RESOURCES = ['work-orders', 'suppliers', 'processes', 'departments', 'users', 'inspections']
+export const RESOURCES = ['work-orders', 'suppliers', 'teams', 'processes', 'departments', 'users', 'inspections']
 export const DEFAULT_FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'mock-qms.json')
 
 const keyOf = (resource) => (resource === 'work-orders' ? 'workOrderNumber' : 'id')

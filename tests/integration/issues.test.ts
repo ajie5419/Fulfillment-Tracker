@@ -580,7 +580,7 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     // 最后同步时间 = 各类资源 lastSyncedAt 的最小值；有资源从没同步成功过时为空
     await db.syncCursor.create({ data: { resource: 'inspections', lastRunAt: new Date('2026-10-16T01:00:00Z'), lastSyncedAt: new Date('2026-10-16T01:00:00Z') } })
     expect((await s.board.getBoard(undefined)).lastSyncAt).toBeNull()
-    for (const [i, resource] of ['work-orders', 'suppliers', 'processes', 'departments', 'users'].entries()) {
+    for (const [i, resource] of ['work-orders', 'suppliers', 'teams', 'processes', 'departments', 'users'].entries()) {
       await db.syncCursor.create({ data: { resource, lastSyncedAt: new Date(`2026-10-16T0${i + 2}:00:00Z`) } })
     }
     await db.syncCursor.update({ where: { resource: 'users' }, data: { lastError: 'QMS 同步接口返回 503', failCount: 2 } })

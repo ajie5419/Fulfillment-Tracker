@@ -1,12 +1,12 @@
 /**
- * sync-qms：按游标依次增量拉取 6 类资源，写入 QMS 只读副本（技术选型第 4 节，验收 A8 幂等与中断）。
+ * sync-qms：按游标依次增量拉取 7 类资源，写入 QMS 只读副本（技术选型第 4 节，验收 A8 幂等与中断）。
  *
  * 每类资源循环翻页直到 nextCursor 为 null（已追平），单次运行最多 maxPages 页防死循环（没追平的下一轮接着拉）。
  * 每页写入与推进该资源的 sync_cursor（since、afterId、lastError 清空、failCount 归零）在同一事务里：
  * 中途失败时已提交的页不回滚、游标停在最后成功的一页，下一轮从这里续跑，不重复、不丢。
  * 同一 updatedAt 的多行靠 (updatedAt, key) 复合游标区分。
  *
- * 某类资源失败：记 lastError、failCount + 1，依赖它的步骤本轮跳过（报检依赖 工单/外协单位/工序：
+ * 某类资源失败：记 lastError、failCount + 1，依赖它的步骤本轮跳过（报检依赖 工单/外协单位/厂内班组/工序：
  * 报检上的班组还没同步时匹配会落空进"待确认"）；已推进的游标不受影响，其他资源照常同步。
  * 连续失败 3 次：给管理员（NUXT_ADMIN_USER_IDS）发一条"我的提醒"（置顶），同一轮故障只发一次；
  * 恢复（该资源同步成功）后清除标记，之后再连续失败 3 次会再发。
@@ -18,7 +18,7 @@ import { RESOURCES } from './resources'
 
 /** 报检依赖的资源：这些本轮失败时，报检和之后的匹配、不合格转异常都跳过 */
 export const DEPENDS_ON: Partial<Record<SyncResource, SyncResource[]>> = {
-  inspections: ['work-orders', 'suppliers', 'processes'],
+  inspections: ['work-orders', 'suppliers', 'teams', 'processes'],
 }
 
 /** 连续失败多少次提醒管理员 */
@@ -121,7 +121,7 @@ export async function syncResource(resource: SyncResource, opts: SyncOptions): P
   return result
 }
 
-/** 依次同步 6 类资源；失败的资源不影响其他资源，依赖它的跳过 */
+/** 依次同步 7 类资源；失败的资源不影响其他资源，依赖它的跳过 */
 export async function syncQms(opts: SyncOptions): Promise<SyncResult> {
   const results: ResourceResult[] = []
   const failed = new Set<SyncResource>()

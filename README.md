@@ -34,7 +34,7 @@ node scripts/mock-identity-bridge.mjs         # 监听 4100，授权页上选择
 
 ## QMS 数据同步（R2）
 
-`sync-qms` 每 5 分钟按游标（`sync_cursor`）增量拉取 QMS 的工单、外协单位（含厂内外协班组，kind = TEAM）、工序、部门、用户、报检，写入 `qms_*` 只读副本，然后对新报检做返厂匹配（多工单报检任一工单命中即候选）、QMS 不合格转异常（`inspectionResult = FAIL` 或关联了 QMS 问题单）。接口契约：`GET /api/integration/fulfillment/<resource>`，认证用身份桥同一组客户端凭据（`server/services/sync/client.ts` 顶部注释）。
+`sync-qms` 每 5 分钟按游标（`sync_cursor`）增量拉取 QMS 的工单、外协单位、厂内外协班组（`teams`，与外协单位同存 `qms_supplier`，kind = TEAM）、工序、部门、用户、报检，写入 `qms_*` 只读副本，然后对新报检做返厂匹配（多工单报检任一工单命中即候选）、QMS 不合格转异常（`inspectionResult = FAIL` 或关联了 QMS 问题单）。接口契约：`GET /api/integration/fulfillment/<resource>`，认证用身份桥同一组客户端凭据（`server/services/sync/client.ts` 顶部注释）。
 
 - 每页写入与推进游标在同一事务里，中断后下一轮续跑，不重复、不丢；单次运行每类最多 200 页
 - 某类失败记在 `sync_cursor.lastError`、连续失败次数 +1；连续 3 次给管理员发一条置顶的"我的提醒"（同一轮故障只发一次）

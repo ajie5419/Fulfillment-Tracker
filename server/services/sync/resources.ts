@@ -1,5 +1,5 @@
 /**
- * 6 类资源的字段校验（契约 v1）与写入只读副本（upsert，isDeleted 照抄）。
+ * 7 类资源的字段校验（契约 v1）与写入只读副本（upsert，isDeleted 照抄）。
  * 契约里没有、副本表里有的列（如工单的 division、演示数据的 roleName）更新时不动。
  */
 import type { Prisma } from '@prisma/client'
@@ -49,11 +49,20 @@ const supplier = z.object({
     .union([z.string(), z.number()])
     .nullish()
     .transform((v) => (v === null || v === undefined ? null : String(v).slice(0, 40))),
-  // 厂内外协班组 kind = TEAM，其余都按供应商
+  // 新契约里 suppliers 只有真实供应商（kind 恒为 SUPPLIER 或不带）；班组改走 teams。
+  // 旧版 QMS 仍可能在这里返回 kind = TEAM 的行：照旧按班组写入，不把已有班组改成供应商。
   kind: z
     .string()
     .nullish()
     .transform((v) => (v === 'TEAM' ? 'TEAM' : 'SUPPLIER')),
+  ...base,
+})
+
+/** 厂内外协班组（QMS teams）：和供应商同存 qms_supplier（kind = TEAM，id 与报检的 teamId 相同） */
+const team = z.object({
+  id,
+  name: z.string(),
+  status: z.enum(['ACTIVE', 'INACTIVE']),
   ...base,
 })
 
@@ -136,6 +145,16 @@ export const RESOURCES: Record<SyncResource, ResourceDef<{ updatedAt: Date }>> =
     key: (r) => r.id,
     async write(tx, rows) {
       for (const r of rows) await tx.qmsSupplier.upsert({ where: { id: r.id }, create: r, update: r })
+    },
+  }),
+  teams: def({
+    schema: team,
+    key: (r) => r.id,
+    async write(tx, rows) {
+      for (const r of rows) {
+        const data = { ...r, kind: 'TEAM', category: null, outsourcingMode: null }
+        await tx.qmsSupplier.upsert({ where: { id: r.id }, create: data, update: data })
+      }
     },
   }),
   processes: def({

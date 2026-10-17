@@ -1,7 +1,7 @@
 /**
  * QMS 数据同步（R2）：真实 MySQL + 模拟 QMS 同步接口（scripts/mock-qms-sync.mjs，走真实 HTTP），直接调用服务层。
  * 覆盖：分页游标推进与中断续跑（不重复、不丢）、同 updatedAt 多行、软删除、连续 3 次失败只提醒一次且恢复后清零、
- * 依赖跳过、多工单报检匹配、厂内外协班组（TEAM）匹配、不合格新判定、部门 ID → 名称匹配部门负责人、
+ * 依赖跳过（外协单位/厂内班组）、多工单报检匹配、厂内外协班组（teams 接口 → kind = TEAM）匹配、旧版 QMS suppliers 里的 TEAM 行兼容、不合格新判定、部门 ID → 名称匹配部门负责人、
  * 演示数据清除不删真实行；A8 幂等：同一批数据同步两次，流转记录和待办不重复。
  * 运行：TEST_DATABASE_URL=mysql://…/fulfillment_test pnpm test:integration
  */
@@ -105,11 +105,12 @@ describe.skipIf(!DB)('QMS 数据同步', () => {
     expect(c).toMatchObject({ failCount: 1, since: null, lastSyncedAt: null })
   })
 
-  it('首次全量同步：翻页拉完 6 类资源，游标推进到最后一行；字段按契约写入副本', async () => {
+  it('首次全量同步：翻页拉完 7 类资源，游标推进到最后一行；字段按契约写入副本', async () => {
     const r = await runJob()
     expect(r.sync!.resources.map((x) => [x.resource, x.status])).toEqual([
       ['work-orders', 'ok'],
       ['suppliers', 'ok'],
+      ['teams', 'ok'],
       ['processes', 'ok'],
       ['departments', 'ok'],
       ['users', 'ok'],
@@ -123,8 +124,10 @@ describe.skipIf(!DB)('QMS 数据同步', () => {
     // 用户：部门存部门 ID；isActive=false → INACTIVE
     expect(await db.qmsUser.findUniqueOrThrow({ where: { id: 'u-002' } })).toMatchObject({ username: 'shengchan01', departmentId: 'dept-prod', status: 'ACTIVE' })
     expect((await db.qmsUser.findUniqueOrThrow({ where: { id: 'u-007' } })).status).toBe('INACTIVE')
-    // 外协单位：班组 kind = TEAM；软删除照抄
-    expect(await db.qmsSupplier.findUniqueOrThrow({ where: { id: 'team-weld1' } })).toMatchObject({ kind: 'TEAM', name: '组焊一班' })
+    // 班组来自 teams 接口，写进 qms_supplier（kind = TEAM）；外协单位软删除照抄
+    expect(qms.data.suppliers.some((x: { kind?: string }) => x.kind === 'TEAM')).toBe(false)
+    expect(await db.qmsSupplier.findUniqueOrThrow({ where: { id: 'team-weld1' } })).toMatchObject({ kind: 'TEAM', name: '组焊一班', status: 'ACTIVE', category: null, outsourcingMode: null })
+    expect(await cursorOf('teams')).toMatchObject({ afterId: 'team-weld1', since: new Date('2026-09-04T00:00:00.000Z'), failCount: 0 })
     expect(await db.qmsSupplier.findUniqueOrThrow({ where: { id: 'sup-old' } })).toMatchObject({ isDeleted: true, status: 'Disqualified', kind: 'SUPPLIER' })
     expect(await db.qmsProcess.findUniqueOrThrow({ where: { id: 'prc-weld' } })).toMatchObject({ code: 'WELD', status: 1 })
     const hist = await db.qmsInspection.findUniqueOrThrow({ where: { id: 'qi-hist-002' } })
@@ -233,6 +236,34 @@ describe.skipIf(!DB)('QMS 数据同步', () => {
     await runJob() // 恢复
   })
 
+  it('依赖跳过：厂内班组同步失败时本轮也不同步报检', async () => {
+    const before = await cursorOf('inspections')
+    qms.failNext('teams', 1, 502)
+    const r = await runJob()
+    expect(r.sync!.resources.find((x) => x.resource === 'teams')).toMatchObject({ status: 'failed' })
+    expect(r.sync!.resources.find((x) => x.resource === 'inspections')).toMatchObject({ status: 'skipped' })
+    expect(r.sync!.resources.find((x) => x.resource === 'inspections')!.error).toContain('厂内班组')
+    expect(r.match).toBeUndefined()
+    expect(await cursorOf('inspections')).toMatchObject({ since: before.since, afterId: before.afterId, failCount: 0 })
+    await runJob() // 恢复
+  })
+
+  it('旧版 QMS 兼容：suppliers 里仍带 kind = TEAM 的行照旧按班组写入；新 suppliers 行一律是供应商', async () => {
+    qms.upsert('suppliers', { id: 'team-legacy', name: '旧接口班组', category: null, outsourcingMode: 'IN_PLANT', status: null, kind: 'TEAM', isDeleted: false })
+    qms.upsert('suppliers', { id: 'sup-nokind', name: '不带 kind 的供应商', category: '机加', outsourcingMode: 'EXTERNAL', status: 'Qualified', isDeleted: false })
+    await syncOnly({ only: ['suppliers'] })
+    expect(await db.qmsSupplier.findUniqueOrThrow({ where: { id: 'team-legacy' } })).toMatchObject({ kind: 'TEAM' })
+    expect(await db.qmsSupplier.findUniqueOrThrow({ where: { id: 'sup-nokind' } })).toMatchObject({ kind: 'SUPPLIER' })
+    // 之后新版 QMS 从 teams 下发同一 id：按班组覆盖
+    qms.data.suppliers = qms.data.suppliers.filter((x: { id: string }) => x.id !== 'team-legacy')
+    qms.upsert('teams', { id: 'team-legacy', name: '旧接口班组（新）', status: 'INACTIVE', isDeleted: false })
+    await syncOnly({ only: ['teams'] })
+    expect(await db.qmsSupplier.findUniqueOrThrow({ where: { id: 'team-legacy' } })).toMatchObject({ kind: 'TEAM', name: '旧接口班组（新）', status: 'INACTIVE', outsourcingMode: null })
+    await db.qmsSupplier.deleteMany({ where: { id: { in: ['team-legacy', 'sup-nokind'] } } })
+    qms.data.suppliers = qms.data.suppliers.filter((x: { id: string }) => x.id !== 'sup-nokind')
+    qms.data.teams = qms.data.teams.filter((x: { id: string }) => x.id !== 'team-legacy')
+  })
+
   // ───── 匹配 ─────
 
   let seq = 0
@@ -316,7 +347,10 @@ describe.skipIf(!DB)('QMS 数据同步', () => {
     expect((await db.routeStep.findUniqueOrThrow({ where: { id: b.steps[0]!.id } })).status).toBe('DONE')
   })
 
-  it('厂内外协：报检只有 teamId（没有 supplierId）时按班组匹配到 kind = TEAM 的外协单位', async () => {
+  it('厂内外协：班组来自 teams 接口；报检只有 teamId（没有 supplierId）时按班组匹配到 kind = TEAM 的外协单位', async () => {
+    // team-weld1 只在 teams 接口里下发，不在 suppliers 里
+    expect(qms.data.teams.map((x: { id: string }) => x.id)).toContain('team-weld1')
+    expect(qms.data.suppliers.some((x: { id: string }) => x.id === 'team-weld1')).toBe(false)
     const team = await makePart(WO1, [
       { processId: 'prc-weld', mode: 'IN_PLANT_OUTSOURCE', supplierId: 'team-weld1' },
       { processId: 'prc-assy', mode: 'SELF' },

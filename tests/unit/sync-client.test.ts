@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { QmsSyncError, fetchSyncPage, syncConfigured } from '../../server/services/sync/client'
+import { QmsSyncError, RESOURCE_TEXT, SYNC_RESOURCES, fetchSyncPage, syncConfigured, syncPath } from '../../server/services/sync/client'
 import { RESOURCES } from '../../server/services/sync/resources'
+import { DEPENDS_ON } from '../../server/services/sync/sync'
 
 const cfg = { apiBase: 'http://qms.test:3000', clientId: 'fulfillment', clientSecret: 'super-secret-value-super-secret-00', enabled: true }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -58,6 +59,15 @@ describe('fetchSyncPage', () => {
   })
 })
 
+describe('资源清单', () => {
+  it('厂内班组 teams 紧跟 suppliers，报检依赖它', () => {
+    expect(SYNC_RESOURCES).toEqual(['work-orders', 'suppliers', 'teams', 'processes', 'departments', 'users', 'inspections'])
+    expect(RESOURCE_TEXT.teams).toBe('厂内班组')
+    expect(syncPath('teams')).toBe('/api/integration/fulfillment/teams')
+    expect(DEPENDS_ON.inspections).toContain('teams')
+  })
+})
+
 describe('资源字段校验', () => {
   it('用户：部门 ID、isActive；报检：多工单、班组、可空字段', () => {
     const u = RESOURCES.users.schema.parse({ id: 'u1', username: 'a', realName: null, departmentId: 'd1', isActive: false, isDeleted: false, updatedAt: '2026-10-01T00:00:00.000Z' })
@@ -69,6 +79,13 @@ describe('资源字段校验', () => {
     expect(i).toMatchObject({ workOrderNumbers: ['W1', 'W2'], teamId: 't1', supplierId: null, linkedIssueNo: null, closedAt: null, unqualifiedQuantity: null })
     expect(RESOURCES.suppliers.schema.parse({ id: 's', name: 'n', kind: 'TEAM', isDeleted: false, updatedAt: '2026-10-01T00:00:00Z' })).toMatchObject({ kind: 'TEAM' })
     expect(RESOURCES.suppliers.schema.parse({ id: 's', name: 'n', isDeleted: false, updatedAt: '2026-10-01T00:00:00Z' })).toMatchObject({ kind: 'SUPPLIER' })
+    expect(RESOURCES.suppliers.schema.parse({ id: 's', name: 'n', kind: 'SUPPLIER', isDeleted: false, updatedAt: '2026-10-01T00:00:00Z' })).toMatchObject({ kind: 'SUPPLIER' })
+    // 厂内班组（teams 接口）
+    expect(RESOURCES.teams.schema.parse({ id: 't1', name: '组焊一班', status: 'INACTIVE', isDeleted: true, updatedAt: '2026-10-01T00:00:00Z' })).toEqual({
+      id: 't1', name: '组焊一班', status: 'INACTIVE', isDeleted: true, updatedAt: new Date('2026-10-01T00:00:00Z'),
+    })
+    expect(RESOURCES.teams.schema.safeParse({ id: 't1', name: '组焊一班', status: 'Qualified', updatedAt: '2026-10-01T00:00:00Z' }).success).toBe(false)
+    expect(RESOURCES.teams.key(RESOURCES.teams.schema.parse({ id: 7, name: 'x', status: 'ACTIVE', updatedAt: '2026-10-01T00:00:00Z' }) as never)).toBe('7')
     expect(RESOURCES.users.schema.safeParse({ id: 'u1', username: 'a', isActive: true, updatedAt: 'not a date' }).success).toBe(false)
   })
 })

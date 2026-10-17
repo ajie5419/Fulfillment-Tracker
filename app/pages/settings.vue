@@ -199,7 +199,7 @@ const woColumns = [
 
       <a-tab-pane key="sync" tab="QMS 同步状态">
         <p class="muted">
-          每 5 分钟按游标增量同步一次 QMS 的工单、外协单位（含厂内班组）、工序、部门、用户、报检，同步后自动做返厂匹配和不合格转异常。
+          每 5 分钟按游标增量同步一次 QMS 的工单、外协单位、厂内班组、工序、部门、用户、报检，同步后自动做返厂匹配和不合格转异常。
           某类资源连续失败 3 次会给管理员发一条置顶提醒（同一轮故障只发一次）。
         </p>
         <a-alert v-if="sync && !sync.configured" type="warning" show-icon message="未配置 QMS 同步（NUXT_QMS_SYNC_ENABLED=0，或 QMS 地址、客户端凭据为空），定时任务会跳过" style="margin-bottom: 12px" />

@@ -11,12 +11,13 @@
  */
 import { z } from 'zod'
 
-export const SYNC_RESOURCES = ['work-orders', 'suppliers', 'processes', 'departments', 'users', 'inspections'] as const
+export const SYNC_RESOURCES = ['work-orders', 'suppliers', 'teams', 'processes', 'departments', 'users', 'inspections'] as const
 export type SyncResource = (typeof SYNC_RESOURCES)[number]
 
 export const RESOURCE_TEXT: Record<SyncResource, string> = {
   'work-orders': '工单',
   suppliers: '外协单位',
+  teams: '厂内班组',
   processes: '工序',
   departments: '部门',
   users: '用户',
