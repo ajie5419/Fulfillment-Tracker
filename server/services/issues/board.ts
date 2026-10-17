@@ -1,6 +1,7 @@
 /**
  * 看板（技术选型 6.2）：每个工单一行——红黄绿、外协在途数、超期数、未关闭异常数、项目经理、交期；
- * 顶部显示 QMS 最后同步时间（sync_cursor 最新的 lastRunAt，没有则"未同步（演示数据）"）。
+ * 顶部显示 QMS 最后同步时间：各类资源最后成功追平时间（sync_cursor.lastSyncedAt）的最小值，即最旧的那类；
+ * 有资源从没同步成功过时为空（页面显示"未同步"）；有资源正在报错时附带错误（syncErrors）。
  *
  *   超期数 = 在外加工且已过承诺返回日的步骤 + 已过要求解决日的未关闭异常（待受理、处理中；待确认不算超期，与 W4 一致）
  *   红 = 有活动红色预警（含已转异常、但对象仍停在原状态的），或有超期 ≥ W4 红色阈值（默认 3 天）的异常
@@ -12,6 +13,7 @@ import { loadOffDays, loadThresholds } from '../alerts/config'
 import { judgeW4 } from '../alerts/rules'
 import { overdueDays } from '../flow/dates'
 import { loadNames } from '../flow/names'
+import { syncOverview } from '../sync/status'
 import { OPEN_STATUSES } from './constants'
 
 export type BoardColor = 'RED' | 'YELLOW' | 'GREEN'
@@ -33,7 +35,7 @@ async function alertWorkOrders(alerts: { id: string; refType: string; refId: str
 
 export async function getBoard(visibleWorkOrders: string[] | undefined, now = new Date()) {
   const woWhere = visibleWorkOrders ? { in: visibleWorkOrders } : undefined
-  const [workOrders, exts, outSteps, issues, alerts, cursors, thresholds, offDays] = await Promise.all([
+  const [workOrders, exts, outSteps, issues, alerts, sync, thresholds, offDays] = await Promise.all([
     prisma.qmsWorkOrder.findMany({
       where: { isDeleted: false, ...(woWhere ? { workOrderNumber: woWhere } : {}) },
       orderBy: [{ deliveryDate: 'asc' }, { workOrderNumber: 'asc' }],
@@ -49,7 +51,7 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
       where: { activeKey: { not: null }, status: { in: ['ACTIVE', 'CONVERTED'] }, level: { in: ['RED', 'YELLOW'] } },
       select: { id: true, refType: true, refId: true, level: true },
     }),
-    prisma.syncCursor.findMany({ where: { lastRunAt: { not: null } }, orderBy: { lastRunAt: 'desc' }, take: 1 }),
+    syncOverview(),
     loadThresholds(),
     loadOffDays(),
   ])
@@ -92,7 +94,9 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
   const rank = { RED: 0, YELLOW: 1, GREEN: 2 } as const
   rows.sort((a, b) => rank[a.color] - rank[b.color] || +a.deliveryDate - +b.deliveryDate)
   return {
-    lastSyncAt: cursors[0]?.lastRunAt ?? null,
+    lastSyncAt: sync.lastSyncAt,
+    syncOldest: sync.oldest,
+    syncErrors: sync.errors,
     summary: { red: rows.filter((r) => r.color === 'RED').length, yellow: rows.filter((r) => r.color === 'YELLOW').length, green: rows.filter((r) => r.color === 'GREEN').length },
     rows,
   }

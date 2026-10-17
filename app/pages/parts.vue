@@ -24,7 +24,7 @@ type PartRow = (typeof parts.value)[number]
 type StepRow = PartRow['steps'][number]
 
 const processOptions = computed(() => master.value.processes.map((p) => ({ value: p.id, label: p.name })))
-const supplierOptions = computed(() => master.value.suppliers.map((s) => ({ value: s.id, label: s.name })))
+const supplierOptions = computed(() => master.value.suppliers.map((s) => ({ value: s.id, label: s.label })))
 const userOptions = computed(() => master.value.users.map((u) => ({ value: u.id, label: u.name })))
 const modeOptions = Object.entries(MODE_TEXT).map(([value, label]) => ({ value, label }))
 

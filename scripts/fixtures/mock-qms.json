@@ -1,0 +1,45 @@
+{
+  "_说明": "模拟 QMS 同步接口的数据（scripts/mock-qms-sync.mjs）。字段按 R2 同步接口契约 v1；用户 ID 与模拟身份桥的演示用户一致（u-001 ~ u-006），部门存部门 ID。",
+  "departments": [
+    { "id": "dept-tech", "name": "技术部", "parentId": "0", "status": 1, "isDeleted": false, "updatedAt": "2026-09-01T00:00:00.000Z" },
+    { "id": "dept-pur", "name": "采购部", "parentId": "0", "status": 1, "isDeleted": false, "updatedAt": "2026-09-01T00:00:00.000Z" },
+    { "id": "dept-fin", "name": "财务部", "parentId": "0", "status": 1, "isDeleted": false, "updatedAt": "2026-09-01T00:00:00.000Z" },
+    { "id": "dept-qa", "name": "质量部", "parentId": "0", "status": 1, "isDeleted": false, "updatedAt": "2026-09-01T00:00:00.000Z" },
+    { "id": "dept-prod", "name": "生产部", "parentId": "0", "status": 1, "isDeleted": false, "updatedAt": "2026-09-01T00:00:00.000Z" },
+    { "id": "dept-proj", "name": "项目部", "parentId": "0", "status": 1, "isDeleted": false, "updatedAt": "2026-09-01T00:00:00.000Z" },
+    { "id": "dept-lead", "name": "公司领导", "parentId": "0", "status": 1, "isDeleted": false, "updatedAt": "2026-09-02T00:00:00.000Z" }
+  ],
+  "users": [
+    { "id": "u-001", "username": "waixie01", "realName": "测试外协专员", "departmentId": "dept-prod", "isActive": true, "isDeleted": false, "updatedAt": "2026-09-05T08:00:00.000Z" },
+    { "id": "u-002", "username": "shengchan01", "realName": "测试生产经理", "departmentId": "dept-prod", "isActive": true, "isDeleted": false, "updatedAt": "2026-09-05T08:00:00.000Z" },
+    { "id": "u-003", "username": "xiangmu01", "realName": "测试项目经理", "departmentId": "dept-proj", "isActive": true, "isDeleted": false, "updatedAt": "2026-09-05T08:00:00.000Z" },
+    { "id": "u-004", "username": "xiangmu00", "realName": "测试项目部负责人", "departmentId": "dept-proj", "isActive": true, "isDeleted": false, "updatedAt": "2026-09-05T08:00:00.000Z" },
+    { "id": "u-005", "username": "lingdao01", "realName": "测试分管领导", "departmentId": "dept-lead", "isActive": true, "isDeleted": false, "updatedAt": "2026-09-05T08:00:00.000Z" },
+    { "id": "u-006", "username": "zhiliang00", "realName": "测试质量负责人", "departmentId": "dept-qa", "isActive": true, "isDeleted": false, "updatedAt": "2026-09-05T08:00:00.000Z" },
+    { "id": "u-007", "username": "lizhi01", "realName": "已离职员工", "departmentId": "dept-prod", "isActive": false, "isDeleted": false, "updatedAt": "2026-09-06T08:00:00.000Z" }
+  ],
+  "suppliers": [
+    { "id": "sup-weld", "name": "华东组焊厂", "category": "结构件", "outsourcingMode": "EXTERNAL", "status": "Qualified", "kind": "SUPPLIER", "isDeleted": false, "updatedAt": "2026-09-03T00:00:00.000Z" },
+    { "id": "sup-paint", "name": "宏达涂装厂", "category": "涂装", "outsourcingMode": "EXTERNAL", "status": "Qualified", "kind": "SUPPLIER", "isDeleted": false, "updatedAt": "2026-09-03T00:00:00.000Z" },
+    { "id": "sup-mach", "name": "精工机加厂", "category": "机加", "outsourcingMode": "EXTERNAL", "status": "Qualified", "kind": "SUPPLIER", "isDeleted": false, "updatedAt": "2026-09-03T00:00:00.000Z" },
+    { "id": "sup-old", "name": "已停用的外协厂", "category": "结构件", "outsourcingMode": "EXTERNAL", "status": "Disqualified", "kind": "SUPPLIER", "isDeleted": true, "updatedAt": "2026-09-04T00:00:00.000Z" }
+  ],
+  "teams": [
+    { "id": "team-weld1", "name": "组焊一班", "status": "ACTIVE", "isDeleted": false, "updatedAt": "2026-09-04T00:00:00.000Z" }
+  ],
+  "processes": [
+    { "id": "prc-weld", "name": "组焊", "code": "WELD", "status": 1, "isDeleted": false, "updatedAt": "2026-09-02T00:00:00.000Z" },
+    { "id": "prc-paint", "name": "涂装", "code": "PAINT", "status": 1, "isDeleted": false, "updatedAt": "2026-09-02T00:00:00.000Z" },
+    { "id": "prc-mach", "name": "机加", "code": "MACH", "status": 1, "isDeleted": false, "updatedAt": "2026-09-02T00:00:00.000Z" },
+    { "id": "prc-assy", "name": "装配", "code": "ASSY", "status": 1, "isDeleted": false, "updatedAt": "2026-09-02T00:00:00.000Z" }
+  ],
+  "work-orders": [
+    { "workOrderNumber": "QMS-WO-2026-001", "projectName": "架桥机主梁（QMS 模拟）", "customerName": "模拟客户（铁路局）", "quantity": 1, "deliveryDate": "2026-12-20T00:00:00.000Z", "status": "IN_PROGRESS", "isDeleted": false, "updatedAt": "2026-09-10T00:00:00.000Z" },
+    { "workOrderNumber": "QMS-WO-2026-002", "projectName": "门机行走机构（QMS 模拟）", "customerName": "模拟客户（港口）", "quantity": 2, "deliveryDate": "2027-01-15T00:00:00.000Z", "status": "IN_PROGRESS", "isDeleted": false, "updatedAt": "2026-09-10T00:00:00.000Z" },
+    { "workOrderNumber": "QMS-WO-2026-003", "projectName": "历史工单（不在履约跟踪）", "customerName": "模拟客户（风电）", "quantity": 1, "deliveryDate": "2026-10-01T00:00:00.000Z", "status": "COMPLETED", "isDeleted": false, "updatedAt": "2026-09-10T00:00:00.000Z" }
+  ],
+  "inspections": [
+    { "id": "qi-hist-001", "requestNo": "BJ-20260912-001", "workOrderNumber": "QMS-WO-2026-003", "workOrderNumbers": ["QMS-WO-2026-003"], "partId": null, "partName": "历史结构件", "processId": "prc-weld", "processName": "组焊", "supplierId": "sup-weld", "supplierName": "华东组焊厂", "teamId": null, "teamName": null, "category": "PROCESS", "quantity": 1, "status": "CLOSED", "inspectionResult": "PASS", "unqualifiedQuantity": null, "linkedIssueId": null, "linkedIssueNo": null, "reporterId": "u-001", "submittedAt": "2026-09-12T02:00:00.000Z", "closedAt": "2026-09-12T06:00:00.000Z", "isDeleted": false, "updatedAt": "2026-09-12T06:00:00.000Z" },
+    { "id": "qi-hist-002", "requestNo": "BJ-20260912-002", "workOrderNumber": "QMS-WO-2026-003", "workOrderNumbers": ["QMS-WO-2026-003"], "partId": null, "partName": "历史结构件", "processId": "prc-paint", "processName": "涂装", "supplierId": "sup-paint", "supplierName": "宏达涂装厂", "teamId": null, "teamName": null, "category": "PROCESS", "quantity": 1, "status": "INSPECTING", "inspectionResult": "FAIL", "unqualifiedQuantity": 1, "linkedIssueId": "qms-issue-1", "linkedIssueNo": "ZL-20260912-001", "reporterId": "u-001", "submittedAt": "2026-09-12T03:00:00.000Z", "closedAt": null, "isDeleted": false, "updatedAt": "2026-09-12T06:00:00.000Z" }
+  ]
+}

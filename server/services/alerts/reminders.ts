@@ -63,14 +63,20 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
 
 const SELECT = { id: true, title: true, level: true, readAt: true, createdAt: true, alertId: true, kind: true, body: true } as const
 
+/** 同步失败提醒（管理员）：点开去设置页的"QMS 同步状态" */
+const SYNC_FAIL_LINK = '/settings?tab=sync'
+/** 预警/待办类提醒 + 已读的同步失败提醒（未读的置顶，不在分组里重复出现） */
+const LISTED = { OR: [{ kind: null }, { kind: 'SYNC_FAIL', readAt: { not: null } }] }
+
 /**
  * 我的提醒。每日汇总（kind = DIGEST）单独返回最新一条作为置顶（digest），不混在分组列表里；
  * 生成新汇总时旧汇总已自动标为已读，所以未读数里最多只有当天这一条。
+ * QMS 同步连续失败（kind = SYNC_FAIL，只发给管理员）未读时置顶（pinned），读过后回到红色分组里。
  */
 export async function listReminders(userId: string) {
-  const [items, unread, digest] = await Promise.all([
+  const [items, unread, digest, pinned] = await Promise.all([
     prisma.reminder.findMany({
-      where: { userId, kind: null },
+      where: { userId, ...LISTED },
       orderBy: [{ readAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'desc' }],
       take: 100,
       select: SELECT,
@@ -78,11 +84,14 @@ export async function listReminders(userId: string) {
     prisma.reminder.count({ where: { userId, readAt: null } }),
     // dedupeKey 里带日期（DIGEST:<YYYY-MM-DD>:<用户>），同一人按它倒序就是最新一天
     prisma.reminder.findFirst({ where: { userId, kind: 'DIGEST' }, orderBy: { dedupeKey: 'desc' }, select: SELECT }),
+    prisma.reminder.findMany({ where: { userId, kind: 'SYNC_FAIL', readAt: null }, orderBy: { createdAt: 'desc' }, take: 5, select: SELECT }),
   ])
   const links = await linksFor([...new Set(items.map((i) => i.alertId).filter((x): x is string => !!x))])
   return {
     digest: digest ? { ...digest, lines: (digest.body ?? '').split('\n').filter(Boolean) } : null,
+    pinned: pinned.map((p) => ({ ...p, lines: (p.body ?? '').split('\n').filter(Boolean), link: SYNC_FAIL_LINK })),
     items: items.map((i) => {
+      if (i.kind === 'SYNC_FAIL') return { ...i, rule: null, cleared: false, issueNo: null, link: SYNC_FAIL_LINK, mobileLink: null }
       const l = i.alertId ? links.get(i.alertId) : undefined
       return {
         ...i,
@@ -112,7 +121,7 @@ export async function markAllRead(userId: string) {
 const OVERLAP_MS = 60_000
 
 /**
- * 电脑端右上角弹出用：since 之后新建的、未读的黄色和红色提醒（每日汇总不弹）。
+ * 电脑端右上角弹出用：since 之后新建的、未读的黄色和红色提醒，含 QMS 同步失败（每日汇总不弹）。
  * 不截断条数：截断后游标照样推进，超出的就永远弹不出来了；条数多时由页面合并显示。
  * 不带 since 时以当前时间为起点：页面第一次调用拿到的只用来记住"已经见过"，不弹出（第一次进页面不弹旧提醒）。
  */
@@ -120,12 +129,12 @@ export async function newReminders(userId: string, since: Date | null) {
   const now = new Date()
   since ??= now
   const items = await prisma.reminder.findMany({
-    where: { userId, kind: null, readAt: null, level: { in: ['YELLOW', 'RED'] }, createdAt: { gte: new Date(+since - OVERLAP_MS) } },
+    where: { userId, OR: [{ kind: null }, { kind: 'SYNC_FAIL' }], readAt: null, level: { in: ['YELLOW', 'RED'] }, createdAt: { gte: new Date(+since - OVERLAP_MS) } },
     orderBy: { createdAt: 'asc' },
     select: SELECT,
   })
   const links = await linksFor([...new Set(items.map((i) => i.alertId).filter((x): x is string => !!x))])
-  return { now, items: items.map((i) => ({ ...i, link: (i.alertId && links.get(i.alertId)?.pc) || null })) }
+  return { now, items: items.map((i) => ({ ...i, link: i.kind === 'SYNC_FAIL' ? SYNC_FAIL_LINK : (i.alertId && links.get(i.alertId)?.pc) || null })) }
 }
 
 // ───────────── 预警列表 ─────────────

@@ -34,8 +34,13 @@ export interface DigestItem {
   lines: string[]
 }
 
+/** QMS 同步连续失败（只发给管理员，未读时置顶）；link 指向设置页"QMS 同步状态" */
+export interface PinnedItem extends DigestItem {
+  link: string
+}
+
 export function useReminders() {
-  return useFetch<{ items: ReminderItem[]; unread: number; digest: DigestItem | null }>('/api/reminders', { key: 'reminders' })
+  return useFetch<{ items: ReminderItem[]; unread: number; digest: DigestItem | null; pinned: PinnedItem[] }>('/api/reminders', { key: 'reminders' })
 }
 
 /** 汇总标为已读 */

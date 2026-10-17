@@ -7,7 +7,7 @@ import { type RuleThreshold, type ScanRule, dateFieldDay } from './rules'
 import { SCAN_RULES, loadThresholds } from './scan'
 
 export async function getSettings() {
-  const [thresholds, offDays, roles, workOrders, exts, depts, userDepts] = await Promise.all([
+  const [thresholds, offDays, roles, workOrders, exts, depts] = await Promise.all([
     loadThresholds(),
     prisma.offDay.findMany({ orderBy: { date: 'asc' } }),
     prisma.notifyRole.findMany({ orderBy: [{ role: 'asc' }, { department: 'asc' }] }),
@@ -18,15 +18,15 @@ export async function getSettings() {
     }),
     prisma.workOrderExt.findMany(),
     prisma.qmsDepartment.findMany({ where: { isDeleted: false }, select: { name: true } }),
-    prisma.qmsUser.findMany({ where: { isDeleted: false }, distinct: ['department'], select: { department: true } }),
   ])
   const names = await loadNames({ user: [...roles.map((r) => r.userId), ...exts.map((e) => e.projectManagerId)] })
   const pm = new Map(exts.map((e) => [e.workOrderNumber, e.projectManagerId]))
   return {
     thresholds: SCAN_RULES.map((rule) => ({ rule, ...thresholds[rule] })),
     offDays: offDays.map((d) => dateFieldDay(d.date)),
-    // 部门负责人按部门名称与 qms_user.department 对应，下拉给出已知的部门名
-    departments: [...new Set([...depts.map((d) => d.name), ...userDepts.map((u) => u.department)].filter(Boolean))].sort(),
+    // 部门负责人按部门名称配置（用户的部门 ID 经 qms_department 换成名称后对应），下拉给出 QMS 部门名称；
+    // 已配置但部门已不在的名称也列出，免得编辑时丢失
+    departments: [...new Set([...depts.map((d) => d.name), ...roles.map((r) => r.department)].filter((x): x is string => !!x))].sort(),
     roles: roles.map((r) => ({ ...r, userName: names.user.get(r.userId) ?? r.userId })),
     workOrders: workOrders.map((w) => {
       const id = pm.get(w.workOrderNumber) ?? null

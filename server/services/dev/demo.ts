@@ -1,13 +1,14 @@
 /**
  * 演示数据与模拟报检，仅开发时可用（runtimeConfig.devTools）。
- * R2（QMS 同步）还没做，先用这些数据走通外协主链路。所有 ID 带 DEMO- 前缀，
- * 演示用户的 username 也带 DEMO- 前缀，便于和以后同步来的真实数据区分、一键清除。
+ * 不连 QMS 时用这些数据走通外协主链路。所有 ID 带 DEMO- 前缀，演示用户的 username 也带 DEMO- 前缀，
+ * 与同步来的真实数据共存、一键清除（只删 DEMO- 行，绝不删同步来的真实行）。
+ * 配置了 QMS 同步时不写演示用户：演示用户的 ID（u-001 等）不带前缀，会和 QMS 真实用户占同一批 ID，用户以 QMS 为准。
  */
 import { randomBytes } from 'node:crypto'
 import { prisma } from '../../utils/prisma'
 import { DEFAULT_THRESHOLDS } from '../alerts/rules'
 import { FlowError } from '../flow/errors'
-import { matchPendingInspections } from '../flow/match'
+import { matchInspection, matchPendingInspections } from '../flow/match'
 import { syncNonconforming } from '../issues/nonconforming'
 import { removeUploadFiles } from '../issues/uploads'
 
@@ -36,10 +37,11 @@ const DEPARTMENTS = [
   { id: `${P}DEPT-QA`, name: '质量部' },
   { id: `${P}DEPT-PROD`, name: '生产部' },
   { id: `${P}DEPT-PROJ`, name: '项目部' },
+  { id: `${P}DEPT-LEAD`, name: '公司领导' },
 ]
 
 const SUPPLIERS = [
-  { id: `${P}SUP-01`, name: '厂内组焊队', outsourcingMode: 'IN_PLANT' },
+  { id: `${P}SUP-01`, name: '厂内组焊队', outsourcingMode: 'IN_PLANT', kind: 'TEAM' }, // 厂内外协班组
   { id: `${P}SUP-02`, name: '厂外组焊厂', outsourcingMode: 'EXTERNAL' },
   { id: `${P}SUP-03`, name: '机加厂', outsourcingMode: 'EXTERNAL' },
   { id: `${P}SUP-04`, name: '涂装厂', outsourcingMode: 'EXTERNAL' },
@@ -54,14 +56,14 @@ const PROCESSES = [
   { id: `${P}PRC-ASSY`, name: '装配' },
 ]
 
-// 模拟身份桥按这些 ID 登录（授权页可选 u-001 ~ u-006），所以 ID 不带前缀
+// 模拟身份桥按这些 ID 登录（授权页可选 u-001 ~ u-006），所以 ID 不带前缀。QMS 用户的部门存部门 ID
 const USERS = [
-  { id: 'u-001', username: `${P}u-001`, realName: '测试外协专员', department: '生产部', roleId: `${P}ROLE-OUTSOURCE`, roleName: '外协专员' },
-  { id: 'u-002', username: `${P}u-002`, realName: '测试生产经理', department: '生产部', roleId: `${P}ROLE-PM`, roleName: '生产经理' },
-  { id: 'u-003', username: `${P}u-003`, realName: '测试项目经理', department: '项目部', roleId: `${P}ROLE-PROJ`, roleName: '项目经理' },
-  { id: 'u-004', username: `${P}u-004`, realName: '测试项目部负责人', department: '项目部', roleId: `${P}ROLE-PROJ-HEAD`, roleName: '部门负责人' },
-  { id: 'u-005', username: `${P}u-005`, realName: '测试分管领导', department: '公司领导', roleId: `${P}ROLE-LEADER`, roleName: '领导' },
-  { id: 'u-006', username: `${P}u-006`, realName: '测试质量负责人', department: '质量部', roleId: `${P}ROLE-QA-HEAD`, roleName: '部门负责人' },
+  { id: 'u-001', username: `${P}u-001`, realName: '测试外协专员', departmentId: `${P}DEPT-PROD`, roleId: `${P}ROLE-OUTSOURCE`, roleName: '外协专员' },
+  { id: 'u-002', username: `${P}u-002`, realName: '测试生产经理', departmentId: `${P}DEPT-PROD`, roleId: `${P}ROLE-PM`, roleName: '生产经理' },
+  { id: 'u-003', username: `${P}u-003`, realName: '测试项目经理', departmentId: `${P}DEPT-PROJ`, roleId: `${P}ROLE-PROJ`, roleName: '项目经理' },
+  { id: 'u-004', username: `${P}u-004`, realName: '测试项目部负责人', departmentId: `${P}DEPT-PROJ`, roleId: `${P}ROLE-PROJ-HEAD`, roleName: '部门负责人' },
+  { id: 'u-005', username: `${P}u-005`, realName: '测试分管领导', departmentId: `${P}DEPT-LEAD`, roleId: `${P}ROLE-LEADER`, roleName: '领导' },
+  { id: 'u-006', username: `${P}u-006`, realName: '测试质量负责人', departmentId: `${P}DEPT-QA`, roleId: `${P}ROLE-QA-HEAD`, roleName: '部门负责人' },
 ]
 
 // 预警升级阶梯的通知对象（方案 6.2）
@@ -80,8 +82,11 @@ const STEPS = [
   { id: `${P}STEP-003`, seq: 3, processId: `${P}PRC-ASSY`, mode: 'SELF', supplierId: null, ownerId: 'u-002' },
 ] as const
 
-/** 幂等：已存在的记录不改（不会把走到一半的演示流程打回原形） */
-export async function seedDemo() {
+/**
+ * 幂等：已存在的记录不改（不会把走到一半的演示流程打回原形）。
+ * skipUsers：配置了 QMS 同步时为 true，不写演示用户（避免和同步来的真实用户冲突）
+ */
+export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
   const now = new Date()
   await prisma.$transaction(async (tx) => {
     for (const wo of WORK_ORDERS) {
@@ -96,7 +101,7 @@ export async function seedDemo() {
     for (const d of DEPARTMENTS) {
       await tx.qmsDepartment.upsert({ where: { id: d.id }, update: {}, create: { ...d, parentId: '0', status: 1, updatedAt: now } })
     }
-    for (const u of USERS) {
+    for (const u of opts.skipUsers ? [] : USERS) {
       // 已有同 ID 的真实用户（同步来的）时不覆盖
       await tx.qmsUser.upsert({ where: { id: u.id }, update: {}, create: { ...u, status: 'ACTIVE', updatedAt: now } })
     }
@@ -136,7 +141,7 @@ export async function seedDemo() {
     suppliers: SUPPLIERS.length,
     processes: PROCESSES.length,
     departments: DEPARTMENTS.length,
-    users: USERS.length,
+    users: opts.skipUsers ? 0 : USERS.length,
     notifyRoles: NOTIFY_ROLES.length,
     parts: 1,
   }
@@ -238,6 +243,7 @@ export async function createDemoInspection(input: DemoInspectionInput) {
       id,
       requestNo: `${P}RQ-${now.getTime()}`,
       workOrderNumber: input.workOrderNumber,
+      workOrderNumbers: [input.workOrderNumber],
       partId: input.partId || null,
       partName,
       processId: input.processId || null,
@@ -252,9 +258,11 @@ export async function createDemoInspection(input: DemoInspectionInput) {
       updatedAt: now,
     },
   })
+  // 先匹配这一条（工单下还没建工件时也给出结果），再顺带处理其他待处理的
+  const result = await matchInspection(id)
   const results = await matchPendingInspections()
   const nonconforming = await syncNonconforming()
-  return { inspectionId: id, result: results.find((r) => r.inspectionId === id) ?? null, processed: results.length, nonconforming }
+  return { inspectionId: id, result, processed: results.length + 1, nonconforming }
 }
 
 /** 演示用的报检列表（模拟检验结论时选择） */
@@ -277,12 +285,14 @@ export async function listDemoInspections() {
     status: r.status,
     inspectionResult: r.inspectionResult,
     unqualifiedQuantity: r.unqualifiedQuantity,
+    linkedIssueNo: r.linkedIssueNo,
     matched: matched.has(r.id),
   }))
 }
 
 /**
- * 模拟 QMS 检验结论：把一条演示报检改为 已关闭 + 不合格（填不合格数量），然后立即跑一轮 QMS 不合格转异常。
+ * 模拟 QMS 检验结论（按 QMS 实际行为）：判不合格时写 inspectionResult=FAIL、不合格数量，并关联一张 QMS 问题单
+ * （linkedIssueNo），status 保持 INSPECTING、closedAt 为空；然后立即跑一轮 QMS 不合格转异常。
  * 只能改 DEMO- 开头的报检（真实数据只允许同步任务写）。
  */
 export async function failDemoInspection(id: string, unqualifiedQuantity: number) {
@@ -293,7 +303,15 @@ export async function failDemoInspection(id: string, unqualifiedQuantity: number
   const now = new Date()
   await prisma.qmsInspection.update({
     where: { id },
-    data: { status: 'CLOSED', inspectionResult: 'FAIL', unqualifiedQuantity, closedAt: now, updatedAt: now },
+    data: {
+      status: 'INSPECTING',
+      inspectionResult: 'FAIL',
+      unqualifiedQuantity,
+      linkedIssueId: ins.linkedIssueId ?? `${P}QI-${now.getTime()}`,
+      linkedIssueNo: ins.linkedIssueNo ?? `${P}QI-${now.getTime()}`,
+      closedAt: null,
+      updatedAt: now,
+    },
   })
   return { inspectionId: id, nonconforming: await syncNonconforming() }
 }

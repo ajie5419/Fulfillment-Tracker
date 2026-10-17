@@ -27,7 +27,7 @@ const pendingSteps = (p: PartRow) => p.steps.filter((s) => s.mode === 'EXTERNAL_
 const sendableParts = computed(() => parts.value.filter((p) => pendingSteps(p).length))
 const part = computed(() => parts.value.find((p) => p.id === partId.value))
 const step = computed(() => part.value?.steps.find((s) => s.id === stepId.value))
-const supplierName = computed(() => master.value.suppliers.find((s) => s.id === supplierId.value)?.name ?? '')
+const supplierName = computed(() => master.value.suppliers.find((s) => s.id === supplierId.value)?.label ?? '')
 const workOrder = computed(() => workOrders.value.find((w) => w.workOrderNumber === workOrderNumber.value))
 
 onMounted(async () => {
@@ -69,7 +69,7 @@ function chooseStep(id: string) {
 const quickDays = [3, 7, 10, 15]
 const showCalendar = ref(false)
 const showSupplier = ref(false)
-const supplierColumns = computed(() => master.value.suppliers.map((s) => ({ text: s.name, value: s.id })))
+const supplierColumns = computed(() => master.value.suppliers.map((s) => ({ text: s.label, value: s.id })))
 function onCalendar(d: Date) {
   promisedReturnDate.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   showCalendar.value = false

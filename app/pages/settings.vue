@@ -1,10 +1,25 @@
 <script setup lang="ts">
-/** 设置（仅管理员）：阈值、停工日、通知对象、工单项目经理。接口也校验管理员，这里只是不给非管理员看 */
+/** 设置（仅管理员）：阈值、停工日、通知对象、工单项目经理、QMS 同步状态。接口也校验管理员，这里只是不给非管理员看 */
 import dayjs, { type Dayjs } from 'dayjs'
 
 const { data: me } = await useMe()
 const { data: master } = await useMaster()
 const { data, refresh, error } = await useFetch('/api/settings', { immediate: !!me.value?.isAdmin })
+// ?tab=sync 直接打开"QMS 同步状态"（同步失败提醒的跳转）
+const route = useRoute()
+const tab = ref(typeof route.query.tab === 'string' ? route.query.tab : 'thresholds')
+
+// ───── QMS 同步状态 ─────
+const { data: sync, refresh: refreshSync, pending: syncPending } = await useFetch('/api/settings/sync', { immediate: !!me.value?.isAdmin })
+const syncColumns = [
+  { title: '资源', key: 'label', width: 100 },
+  { title: '最后同步成功', key: 'lastSyncedAt', width: 170 },
+  { title: '游标（updatedAt / key）', key: 'cursor' },
+  { title: '最近尝试', key: 'lastRunAt', width: 170 },
+  { title: '连续失败', key: 'failCount', width: 90, align: 'center' as const },
+  { title: '最近错误', key: 'lastError' },
+]
+
 const userOptions = computed(() => master.value.users.map((u) => ({ value: u.id, label: `${u.name}（${u.department}）` })))
 
 /** 设置页的写接口都只看成功与否；绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"） */
@@ -102,7 +117,7 @@ const woColumns = [
   <a-result v-if="me && !me.isAdmin" status="403" title="仅管理员可用" sub-title="管理员由环境变量 NUXT_ADMIN_USER_IDS 指定" />
   <a-result v-else-if="error" status="error" :title="apiError(error)" />
   <a-card v-else-if="data" title="设置">
-    <a-tabs>
+    <a-tabs v-model:active-key="tab">
       <a-tab-pane key="thresholds" tab="阈值">
         <p class="muted">全公司一套。计时按自然日，停工日整天不计入。级别只升不降：调大阈值后已经升级的预警不会退回。</p>
         <a-table :columns="thresholdColumns" :data-source="rows" row-key="rule" size="small" :pagination="false">
@@ -182,6 +197,34 @@ const woColumns = [
         </a-descriptions>
       </a-tab-pane>
 
+      <a-tab-pane key="sync" tab="QMS 同步状态">
+        <p class="muted">
+          每 5 分钟按游标增量同步一次 QMS 的工单、外协单位、厂内班组、工序、部门、用户、报检，同步后自动做返厂匹配和不合格转异常。
+          某类资源连续失败 3 次会给管理员发一条置顶提醒（同一轮故障只发一次）。
+        </p>
+        <a-alert v-if="sync && !sync.configured" type="warning" show-icon message="未配置 QMS 同步（NUXT_QMS_SYNC_ENABLED=0，或 QMS 地址、客户端凭据为空），定时任务会跳过" style="margin-bottom: 12px" />
+        <a-table :columns="syncColumns" :data-source="sync?.resources ?? []" :loading="syncPending" row-key="resource" size="small" :pagination="false" class="sync-table">
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'label'">{{ record.label }}<div class="muted">{{ record.resource }}</div></template>
+            <template v-else-if="column.key === 'lastSyncedAt'">{{ record.lastSyncedAt ? timeText(record.lastSyncedAt) : '未同步' }}</template>
+            <template v-else-if="column.key === 'cursor'">
+              <span v-if="record.since" class="mono">{{ record.since }} / {{ record.afterId }}</span>
+              <span v-else class="muted">从头开始</span>
+            </template>
+            <template v-else-if="column.key === 'lastRunAt'">{{ record.lastRunAt ? timeText(record.lastRunAt) : '—' }}</template>
+            <template v-else-if="column.key === 'failCount'">
+              <a-tag v-if="record.failCount" color="red">{{ record.failCount }}</a-tag>
+              <span v-else class="muted">0</span>
+            </template>
+            <template v-else-if="column.key === 'lastError'">
+              <span v-if="record.lastError" class="sync-err">{{ record.lastError }}</span>
+              <span v-else class="muted">—</span>
+            </template>
+          </template>
+        </a-table>
+        <a-button size="small" style="margin-top: 12px" @click="refreshSync()">刷新</a-button>
+      </a-tab-pane>
+
       <a-tab-pane key="work-orders" tab="工单项目经理">
         <p class="muted">黄色预警起通知该工单的项目经理。</p>
         <a-table :columns="woColumns" :data-source="data.workOrders" row-key="workOrderNumber" size="small" :pagination="{ pageSize: 20, hideOnSinglePage: true }">
@@ -212,4 +255,6 @@ const woColumns = [
 .off-days { margin-top: 16px; }
 .off-day { margin-bottom: 8px; font-size: 14px; padding: 2px 8px; }
 .role-users { margin-bottom: 8px; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.sync-err { color: #cf1322; }
 </style>

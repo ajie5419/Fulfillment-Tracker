@@ -67,8 +67,8 @@ describe.skipIf(!DB)('外协主链路', () => {
     })
     await db.qmsUser.createMany({
       data: [
-        { id: 'u-out', username: 'out', realName: '外协专员', department: '生产部', roleId: 'r', status: 'ACTIVE', updatedAt: now },
-        { id: 'u-pm', username: 'pm', realName: '生产经理', department: '生产部', roleId: 'r', status: 'ACTIVE', updatedAt: now },
+        { id: 'u-out', username: 'out', realName: '外协专员', departmentId: 'D-PROD', roleId: 'r', status: 'ACTIVE', updatedAt: now },
+        { id: 'u-pm', username: 'pm', realName: '生产经理', departmentId: 'D-PROD', roleId: 'r', status: 'ACTIVE', updatedAt: now },
       ],
     })
   })
@@ -93,7 +93,10 @@ describe.skipIf(!DB)('外协主链路', () => {
     return { part, steps }
   }
 
-  async function inspect(over: { partId?: string | null; partName?: string; processName?: string; processId?: string | null; supplierId?: string | null; quantity?: number }) {
+  // 报检提交时间要晚于工件登记时间（批量匹配只看工件登记之后的报检），用相对时间避免日期写死后过期
+  const SUBMITTED_AT = new Date(Math.floor(Date.now() / 1000) * 1000 + 3_600_000)
+
+  async function inspect(over: { partId?: string | null; partName?: string; processName?: string; processId?: string | null; supplierId?: string | null; quantity?: number; submittedAt?: Date }) {
     const id = `T-INS-${randomBytes(4).toString('hex')}`
     await db.qmsInspection.create({
       data: {
@@ -108,7 +111,7 @@ describe.skipIf(!DB)('外协主链路', () => {
         quantity: over.quantity ?? 1,
         status: 'SUBMITTED',
         inspectionResult: 'PASS',
-        submittedAt: new Date('2026-10-20T02:00:00Z'),
+        submittedAt: over.submittedAt ?? SUBMITTED_AT,
         updatedAt: new Date(),
       },
     })
@@ -145,7 +148,7 @@ describe.skipIf(!DB)('外协主链路', () => {
 
     const done = await stepOf(weld!.id)
     expect(done.status).toBe('DONE')
-    expect(done.finishedAt?.toISOString()).toBe('2026-10-20T02:00:00.000Z') // 取报检提交时间
+    expect(done.finishedAt?.toISOString()).toBe(SUBMITTED_AT.toISOString()) // 取报检提交时间
     const p = await partOf(part.id)
     expect(p.currentStepId).toBe(paint!.id)
     expect(p.status).toBe('ACTIVE')
@@ -160,6 +163,16 @@ describe.skipIf(!DB)('外协主链路', () => {
     // 待办列表带上展示信息
     const mine = await s.todos.listMyTodos('u-pm')
     expect(mine.find((t) => t.refId === paint!.id)).toMatchObject({ title: '安排发出：主梁-1 · 涂装', step: { workOrderNumber: WO } })
+  })
+
+  it('批量匹配只看工件登记之后的报检：登记前的历史报检不匹配、也不进待确认', async () => {
+    const { part, steps } = await makePart()
+    await send(steps[0]!.id, 'S-WELD')
+    const old = await inspect({ partId: part.qmsPartId, supplierId: 'S-WELD', submittedAt: new Date(Date.now() - 86_400_000) })
+    expect((await s.match.matchPendingInspections()).find((r) => r.inspectionId === old)).toBeUndefined()
+    expect(await db.flowEvent.findUnique({ where: { qmsInspectionId: old } })).toBeNull()
+    expect(await db.unmatchedInspection.findUnique({ where: { qmsInspectionId: old } })).toBeNull()
+    expect((await stepOf(steps[0]!.id)).status).toBe('OUT')
   })
 
   it('同一报检再匹配一次：不产生重复事件和待办', async () => {
