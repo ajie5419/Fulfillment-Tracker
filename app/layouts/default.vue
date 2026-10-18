@@ -1,22 +1,44 @@
 <script setup lang="ts">
 const { data: me } = await useMe()
 const route = useRoute()
-const menu = computed(() => [
-  { key: '/', label: '我的提醒' },
-  { key: '/alerts', label: '预警列表' },
-  { key: '/issues', label: '异常列表' },
-  { key: '/kitting', label: '齐套' },
-  { key: '/drawings', label: '出图任务' },
-  { key: '/releases', label: '发放签收' },
-  { key: '/purchases', label: '采购到货' },
-  { key: '/payments', label: '付款申请' },
-  { key: '/board', label: '看板' },
-  { key: '/parts', label: '工件与工序链' },
-  { key: '/templates', label: '路线模板' },
-  { key: '/unmatched', label: '待确认匹配' },
-  ...(me.value?.isAdmin ? [{ key: '/settings', label: '设置' }] : []),
-  ...(me.value?.devTools ? [{ key: '/dev', label: '演示工具' }] : []),
-])
+// 左侧竖向菜单，按岗位分组；条目多了也能纵向排下，窄屏（< lg）收起，点左侧把手展开
+const groups = computed(() => [
+  { title: '每日', items: [
+    { key: '/', label: '我的提醒' },
+    { key: '/alerts', label: '预警列表' },
+    { key: '/issues', label: '异常列表' },
+    { key: '/board', label: '看板' },
+  ] },
+  { title: '技术', items: [
+    { key: '/drawings', label: '出图任务' },
+    { key: '/releases', label: '发放签收' },
+  ] },
+  { title: '采购', items: [
+    { key: '/purchases', label: '采购到货' },
+    { key: '/payments', label: '付款申请' },
+  ] },
+  { title: '生产', items: [
+    { key: '/kitting', label: '齐套' },
+    { key: '/parts', label: '工件与工序链' },
+    { key: '/templates', label: '路线模板' },
+    { key: '/unmatched', label: '待确认匹配' },
+  ] },
+  { title: '系统', items: [
+    ...(me.value?.isAdmin ? [{ key: '/settings', label: '设置' }] : []),
+    ...(me.value?.devTools ? [{ key: '/dev', label: '演示工具' }] : []),
+  ] },
+].filter((g) => g.items.length))
+const menu = computed(() => groups.value.flatMap((g) => g.items))
+const collapsed = ref(false)
+/** 窄屏（< lg）时菜单收起，由页头的"菜单"按钮展开（键盘可达）；宽屏始终展开 */
+const broken = ref(false)
+function onBreakpoint(b: boolean) {
+  broken.value = b
+  collapsed.value = b
+}
+watch(() => route.path, () => {
+  if (broken.value) collapsed.value = true
+})
 const selected = computed(() => [menu.value.find((m) => m.key !== '/' && route.path.startsWith(m.key))?.key ?? '/'])
 
 // ───── 新的黄、红预警在右上角弹出（方案 6.3）：每 60 秒轮询一次 ─────
@@ -84,27 +106,49 @@ onBeforeUnmount(() => clearInterval(timer))
 <template>
   <a-layout style="min-height: 100vh">
     <a-layout-header class="header">
-      <span class="brand">项目履约</span>
-      <a-menu theme="dark" mode="horizontal" :selected-keys="selected" class="menu">
-        <a-menu-item v-for="m in menu" :key="m.key"><NuxtLink :to="m.key">{{ m.label }}</NuxtLink></a-menu-item>
-      </a-menu>
+      <span class="left">
+        <a-button
+          v-if="broken"
+          size="small"
+          ghost
+          :aria-label="collapsed ? '展开菜单' : '收起菜单'"
+          :aria-expanded="!collapsed"
+          class="nav-toggle"
+          @click="collapsed = !collapsed"
+        >菜单</a-button>
+        <span class="brand">项目履约</span>
+      </span>
       <span v-if="me" class="user">
         {{ me.name }}<template v-if="me.department"> · {{ me.department }}</template>
         <a-button type="link" size="small" @click="logout">退出 / 切换账号</a-button>
       </span>
     </a-layout-header>
-    <a-layout-content class="content">
-      <slot />
-    </a-layout-content>
+    <a-layout>
+      <a-layout-sider v-model:collapsed="collapsed" :trigger="null" theme="dark" :width="148" breakpoint="lg" :collapsed-width="0" class="sider" @breakpoint="onBreakpoint">
+        <div class="sider-scroll">
+          <a-menu theme="dark" mode="inline" :selected-keys="selected">
+            <a-menu-item-group v-for="g in groups" :key="g.title" :title="g.title">
+              <a-menu-item v-for="m in g.items" :key="m.key"><NuxtLink :to="m.key">{{ m.label }}</NuxtLink></a-menu-item>
+            </a-menu-item-group>
+          </a-menu>
+        </div>
+      </a-layout-sider>
+      <a-layout-content class="content">
+        <slot />
+      </a-layout-content>
+    </a-layout>
   </a-layout>
 </template>
 
 <style scoped>
-.header { display: flex; align-items: center; gap: 16px; padding: 0 24px; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 24px; position: sticky; top: 0; z-index: 10; }
+.left { display: flex; align-items: center; gap: 12px; }
 .brand { color: #fff; font-weight: 600; font-size: 16px; white-space: nowrap; }
-/* 菜单项收紧一点，1440 宽能全部放下；更窄时放不下的收进"…"，不挤掉品牌名和右侧账号 */
-.menu { flex: 1; min-width: 0; }
-.menu :deep(.ant-menu-item) { padding-inline: 10px; }
 .user { color: rgba(255, 255, 255, 0.85); white-space: nowrap; }
-.content { padding: 24px; }
+.sider { position: sticky; top: 64px; height: calc(100vh - 64px); z-index: 9; }
+.sider-scroll { height: 100%; overflow-y: auto; }
+/* 收紧行高和缩进，14 项在 800 高的屏幕上也能一屏放下 */
+.sider-scroll :deep(.ant-menu-item-group-title) { padding: 8px 16px 2px; font-size: 12px; }
+.sider-scroll :deep(.ant-menu-item) { height: 34px; line-height: 34px; margin-block: 2px; padding-left: 24px !important; }
+.content { padding: 24px; min-width: 0; }
 </style>

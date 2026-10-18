@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** 缺件清单（R12）：一个节点缺的工件和关键物料，以及各自卡在哪一步 */
-defineProps<{ shortages: KitShortage[] }>()
+withDefaults(defineProps<{ shortages: KitShortage[]; emptyText?: string }>(), { emptyText: '不缺件' })
 const columns = [
   { title: '类型', key: 'kind', width: 60 },
   { title: '缺件', key: 'name' },
@@ -12,7 +12,7 @@ const columns = [
 
 <template>
   <a-table :columns="columns" :data-source="shortages" :row-key="(r: KitShortage) => `${r.kind}:${r.id}`" size="small" :pagination="false">
-    <template #emptyText><span class="muted">不缺件</span></template>
+    <template #emptyText><span class="muted">{{ emptyText }}</span></template>
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'kind'">{{ record.kind === 'part' ? '工件' : '物料' }}</template>
       <template v-else-if="column.key === 'name'">{{ record.name }}</template>
