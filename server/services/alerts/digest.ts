@@ -1,6 +1,6 @@
 /**
  * 每日汇总（方案 6.3）：每天早上给部门负责人、项目部负责人、分管领导、各工单项目经理在"我的提醒"顶部生成一条，
- * 内容是其可见范围内红/黄活动预警数量 + 未关闭异常数量（+ 有人未签收的发放单份数，R9；+ 缺料项数，R10；+ 出图逾期数，R11；有才显示）+ 前 5 项（红优先）。
+ * 内容是其可见范围内红/黄活动预警数量 + 未关闭异常数量（+ 有人未签收的发放单份数，R9；+ 缺料项数，R10；+ 出图逾期数，R11；+ 临近需求日仍未齐套的装配节点数，R12；有才显示）+ 前 5 项（红优先）。
  *
  * 不依赖服务器时区：15 分钟一轮的定时任务里判断"工厂时区 ≥ 07:30 且今天还没生成"才生成；
  * 错过了（服务停了）下一轮自动补发。幂等靠 reminder.dedupeKey（"DIGEST:<日期>:<用户>"）唯一，同人同日只有一条。
@@ -11,6 +11,7 @@ import { prisma } from '../../utils/prisma'
 import { CATEGORY_TEXT, OPEN_STATUSES, STATUS_TEXT } from '../issues/constants'
 import { loadOffDays, loadThresholds } from './config'
 import { overdueWhere } from '../drawings/drawings'
+import { dueWindowWhere, incompleteWhere } from '../kitting/kitting'
 import { todayDate } from '../purchases/constants'
 import { DAY_MS, HOUR_MS, judgeW4, reminderTitle, shanghaiDay } from './rules'
 import { collectTargets } from './scan'
@@ -57,7 +58,7 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
 
   // 全部活动的红黄预警（带对象文字和工单）与未关闭异常，按人过滤
   const [thresholds, offDays] = await Promise.all([loadThresholds(), loadOffDays()])
-  const [alerts, targets, issues, unsigned, shortage, drawingOverdue] = await Promise.all([
+  const [alerts, targets, issues, unsigned, shortage, drawingOverdue, incompleteNodes] = await Promise.all([
     // 含已转异常、但对象仍停在原状态的（activeKey 还在）
     prisma.alert.findMany({ where: { activeKey: { not: null }, status: { in: ['ACTIVE', 'CONVERTED'] }, level: { in: ['RED', 'YELLOW'] } }, orderBy: { levelAt: 'desc' } }),
     collectTargets(now, thresholds, offDays),
@@ -67,8 +68,10 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
     prisma.purchaseLine.groupBy({ by: ['workOrderNumber'], where: { status: 'OPEN', needDate: { lte: todayDate(now) } }, _count: { _all: true } }),
     // 出图逾期（R11）：待出图已过计划完成日，或客户确认已过计划日
     prisma.drawingTask.groupBy({ by: ['workOrderNumber'], where: overdueWhere(todayDate(now)), _count: { _all: true } }),
+    // 未齐套节点（R12）：已进入 W8 预警窗口（需求日前 N 天内，含已过）仍未齐套，与看板同一口径
+    prisma.assemblyNode.groupBy({ by: ['workOrderNumber'], where: { AND: [incompleteWhere(), dueWindowWhere(now, thresholds.W8)] }, _count: { _all: true } }),
   ])
-  const countedWos = [...new Set([...shortage, ...drawingOverdue].map((s) => s.workOrderNumber))]
+  const countedWos = [...new Set([...shortage, ...drawingOverdue, ...incompleteNodes].map((s) => s.workOrderNumber))]
   const liveWos = new Set(
     countedWos.length
       ? (await prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: countedWos } }, select: { workOrderNumber: true, isDeleted: true } })).filter((w) => !w.isDeleted).map((w) => w.workOrderNumber)
@@ -96,6 +99,7 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
     const countIn = (gs: { workOrderNumber: string; _count: { _all: number } }[]) => gs.filter((s) => liveWos.has(s.workOrderNumber) && visible(s.workOrderNumber)).reduce((n, s) => n + s._count._all, 0)
     const shortageCount = countIn(shortage)
     const drawingCount = countIn(drawingOverdue)
+    const nodeCount = countIn(incompleteNodes)
     const lines = [
       ...mine.map((x) => reminderTitle(x.a.level, x.t.subject, x.t.summary, x.t.workOrderNumber)),
       ...myIssues.map((x) => `${x.overdue ? '【超期】' : ''}异常 ${x.i.issueNo}（${CATEGORY_TEXT[x.i.category]}，${STATUS_TEXT[x.i.status]}）：${x.i.description.slice(0, 40)}（${x.i.workOrderNumber}）`),
@@ -106,7 +110,7 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
       kind: 'DIGEST',
       level,
       dedupeKey: digestKey(day, userId),
-      title: `【每日汇总】${mmdd}：红色预警 ${red} 条、黄色预警 ${yellow} 条，未关闭异常 ${myIssues.length} 条${unsignedCount ? `，未签收发放 ${unsignedCount} 份` : ''}${shortageCount ? `，缺料 ${shortageCount} 项` : ''}${drawingCount ? `，出图逾期 ${drawingCount} 项` : ''}`,
+      title: `【每日汇总】${mmdd}：红色预警 ${red} 条、黄色预警 ${yellow} 条，未关闭异常 ${myIssues.length} 条${unsignedCount ? `，未签收发放 ${unsignedCount} 份` : ''}${shortageCount ? `，缺料 ${shortageCount} 项` : ''}${drawingCount ? `，出图逾期 ${drawingCount} 项` : ''}${nodeCount ? `，未齐套节点 ${nodeCount} 个` : ''}`,
       body: lines.length ? lines.join('\n') : '今天没有红黄预警和未关闭异常',
     })
   }

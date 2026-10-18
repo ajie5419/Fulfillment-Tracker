@@ -87,6 +87,9 @@ async function transfer(action: { id: string }) {
       <van-button type="success" plain icon="logistics" round block @click="navigateTo('/m/arrivals')">到货确认</van-button>
       <van-button type="primary" plain icon="description" round block @click="navigateTo('/m/drawings')">我的出图任务</van-button>
     </div>
+    <div class="entries second">
+      <van-button type="warning" plain icon="cluster-o" round block @click="navigateTo('/m/kitting')">齐套 / 缺件</van-button>
+    </div>
 
     <!-- QMS 同步连续失败（管理员）：未读时置顶，点一下标为已读（处理请到电脑端设置页） -->
     <div v-for="p in data?.pinned ?? []" :key="p.id" class="digest lv-RED unread" @click="readDigest(p)">

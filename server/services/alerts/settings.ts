@@ -36,10 +36,13 @@ export async function getSettings() {
 }
 
 export async function saveThreshold(rule: ScanRule, t: RuleThreshold) {
-  if (t.redDays < t.yellowDays) throw new FlowError('红色阈值不能小于黄色阈值')
-  const noRemind = rule === 'W2' || rule === 'W4'
+  // W8 的黄 / 红是"需求日前几天"：越早越轻，所以黄色天数不能小于红色
+  if (rule === 'W8') {
+    if (t.yellowDays < t.redDays) throw new FlowError('W8 黄色的提前天数不能小于红色')
+  } else if (t.redDays < t.yellowDays) throw new FlowError('红色阈值不能小于黄色阈值')
+  const noRemind = rule === 'W2' || rule === 'W4' || rule === 'W8'
   if (!noRemind && t.remindHours == null) throw new FlowError('W1、W3、W5、W6、W7 必须设置提醒阈值')
-  // W2、W4 没有"提醒"一级
+  // W2、W4、W8 没有"提醒"一级
   const data = { remindHours: noRemind ? null : t.remindHours, yellowDays: t.yellowDays, redDays: t.redDays }
   return prisma.threshold.upsert({ where: { rule }, update: data, create: { rule, ...data } })
 }
