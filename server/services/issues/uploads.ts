@@ -1,20 +1,28 @@
 /**
- * 异常照片上传与读取。
+ * 异常照片、发放单附件的上传与读取。
  *
- * - 只收 JPEG / PNG / WebP，按文件头魔数判断，不信扩展名和浏览器给的 Content-Type；每张 ≤ 8MB。
+ * - 照片只收 JPEG / PNG / WebP；发放单附件（kind = attachment）另收 PDF。按文件头魔数判断，不信扩展名和浏览器给的 Content-Type；
+ *   照片每张 ≤ 8MB，附件每个 ≤ 20MB。
  * - 存到 runtimeConfig.uploadDir（NUXT_UPLOAD_DIR，默认 ./data/uploads），文件名是随机 id + 按类型定的扩展名，
  *   不用用户给的文件名；读取时只用库里的 storedName 拼路径，并校验仍在上传目录内（防路径穿越）。
- * - 上报异常时把照片绑定到该异常（upload_file.issueId）；未绑定的只有上传人自己能读。
+ * - 上报异常时把照片绑定到该异常（upload_file.issueId），建发放单时把附件绑定到发放单（releaseId）；未绑定的只有上传人自己能读。
  */
 import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { basename, join, resolve, sep } from 'node:path'
 import { prisma } from '../../utils/prisma'
 import { FlowError } from '../flow/errors'
+import { isReleaseParty } from '../releases/releases'
 
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024
-/** 一次请求最多几张（上报异常最多 3 张） */
+/** 发放单附件（图纸 PDF 可能较大）每个的上限 */
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+/** 一次请求最多几个文件（上报异常最多 3 张照片；附件分批传） */
 export const MAX_FILES_PER_REQUEST = 3
+
+/** photo = 异常照片（只收图片）；attachment = 发放单附件（图片或 PDF） */
+export type UploadKind = 'photo' | 'attachment'
+export const MAX_BYTES: Record<UploadKind, number> = { photo: MAX_UPLOAD_BYTES, attachment: MAX_ATTACHMENT_BYTES }
 
 const TYPES = [
   { mime: 'image/jpeg', ext: 'jpg', test: (b: Buffer) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
@@ -32,14 +40,20 @@ export function sniffImage(buf: Buffer): { mime: string; ext: string } | null {
   return t ? { mime: t.mime, ext: t.ext } : null
 }
 
+/** PDF：文件头 "%PDF-" */
+export function sniffPdf(buf: Buffer): { mime: string; ext: string } | null {
+  return buf.length >= 5 && buf.subarray(0, 5).toString('latin1') === '%PDF-' ? { mime: 'application/pdf', ext: 'pdf' } : null
+}
+
 const ID_RE = /^[a-f0-9]{32}$/
 
-/** 校验并保存一张图片，返回 upload_file 记录 */
-export async function saveUpload(dir: string, data: Buffer, uploaderId: string) {
+/** 校验并保存一个文件（照片，或发放单附件），返回 upload_file 记录 */
+export async function saveUpload(dir: string, data: Buffer, uploaderId: string, kind: UploadKind = 'photo') {
   if (!data.length) throw new FlowError('文件是空的')
-  if (data.length > MAX_UPLOAD_BYTES) throw new FlowError('照片不能超过 8MB')
-  const type = sniffImage(data)
-  if (!type) throw new FlowError('只能上传 JPG、PNG 或 WebP 格式的图片')
+  if (kind === 'photo' && data.length > MAX_UPLOAD_BYTES) throw new FlowError('照片不能超过 8MB')
+  if (kind === 'attachment' && data.length > MAX_ATTACHMENT_BYTES) throw new FlowError('附件不能超过 20MB')
+  const type = sniffImage(data) ?? (kind === 'attachment' ? sniffPdf(data) : null)
+  if (!type) throw new FlowError(kind === 'attachment' ? '附件只能是 PDF，或 JPG、PNG、WebP 格式的图片' : '只能上传 JPG、PNG 或 WebP 格式的图片')
   const id = randomBytes(16).toString('hex')
   const storedName = `${id}.${type.ext}`
   const root = resolve(dir)
@@ -63,7 +77,8 @@ function safePath(dir: string, storedName: string) {
 
 /**
  * 读取前查记录。canSeeWorkOrder 由接口层传入（canSee 的唯一入口在 server/utils/auth.ts）：
- * 已绑定异常的按异常所属工单判断；未绑定的只有上传人自己能读。不满足一律当"不存在"，不暴露文件是否存在。
+ * 已绑定异常的按异常所属工单判断；已绑定发放单的按发放单所属工单判断，发放单的接收人也能读；
+ * 未绑定的只有上传人自己能读。不满足一律当"不存在"，不暴露文件是否存在。
  */
 export async function readUpload(dir: string, id: string, userId: string, canSeeWorkOrder: (wo: string) => boolean) {
   if (!ID_RE.test(id)) return null
@@ -72,6 +87,9 @@ export async function readUpload(dir: string, id: string, userId: string, canSee
   if (file.issueId) {
     const issue = await prisma.issue.findUnique({ where: { id: file.issueId }, select: { workOrderNumber: true } })
     if (!issue || !canSeeWorkOrder(issue.workOrderNumber)) return null
+  } else if (file.releaseId) {
+    const release = await prisma.release.findUnique({ where: { id: file.releaseId }, select: { workOrderNumber: true } })
+    if (!release || !(canSeeWorkOrder(release.workOrderNumber) || (await isReleaseParty(file.releaseId, userId)))) return null
   } else if (file.uploaderId !== userId) {
     return null
   }

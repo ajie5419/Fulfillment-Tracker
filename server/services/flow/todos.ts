@@ -1,5 +1,7 @@
-/** 我的待办：附上工单、工件、工序和下一步建议，页面拿到就能展示。 */
+/** 我的待办：附上工单、工件、工序（或发放单）和下一步建议，页面拿到就能展示。 */
 import { prisma } from '../../utils/prisma'
+import { CONFIRM_CHANGE, SIGN_RELEASE } from '../releases/constants'
+import { describeReleaseTodos } from '../releases/releases'
 import { FlowError } from './errors'
 import { ARRANGE_SEND, ARRANGE_START } from './flow'
 import { MODE_TEXT, loadNames } from './names'
@@ -7,9 +9,14 @@ import { MODE_TEXT, loadNames } from './names'
 const ACTION_TEXT: Record<string, string> = {
   [ARRANGE_SEND]: '安排发出',
   [ARRANGE_START]: '安排开工',
+  [SIGN_RELEASE]: '签收',
+  [CONFIRM_CHANGE]: '确认变更影响',
 }
 
-/** visibleWorkOrders：可见工单（undefined = 全部）；不可见工单上的待办不列出 */
+/**
+ * visibleWorkOrders：可见工单（undefined = 全部）；不可见工单上的步骤待办不列出。
+ * 发放相关的待办（签收、确认变更影响）是发给本人的，不受可见范围限制（接收人看得到发给自己的发放单）。
+ */
 export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) {
   let todos = await prisma.todo.findMany({ where: { ownerId: userId, status: 'OPEN' }, orderBy: { createdAt: 'asc' } })
   if (!todos.length) return []
@@ -31,11 +38,28 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) 
     supplier: [...steps, ...prevSteps].map((s) => s.supplierId),
   })
   const byId = new Map(steps.map((s) => [s.id, s]))
+  const releases = await describeReleaseTodos(todos)
 
   return todos.map((t) => {
-    const step = byId.get(t.refId)
     const actionText = ACTION_TEXT[t.action] ?? t.action
-    if (!step) return { ...t, actionText, title: actionText, suggestion: '关联对象已删除', step: null }
+    if (t.refType === 'receipt' || t.refType === 'release') {
+      const release = (t.refType === 'receipt' ? releases.byReceipt.get(t.refId) : releases.byRelease.get(t.refId)) ?? null
+      if (!release) return { ...t, actionText, title: actionText, suggestion: '关联的发放单已删除', step: null, release: null }
+      const what = `${release.typeText} ${release.releaseNo}${release.version ? `（${release.version}）` : ''}${release.parts.length ? ` · ${release.parts.join('、')}` : ''}`
+      return {
+        ...t,
+        actionText,
+        title: `${actionText}：${what}`,
+        suggestion:
+          t.action === SIGN_RELEASE
+            ? '请核对收到的图纸/文件后签收；版本不对等问题请拒收并写原因'
+            : '关联工件已在加工或在外协：请确认变更影响（是否返工、是否通知外协厂），确认后解除未开工工序的"等变更"',
+        step: null,
+        release: { ...release, receiptId: t.refType === 'receipt' ? t.refId : null },
+      }
+    }
+    const step = byId.get(t.refId)
+    if (!step) return { ...t, actionText, title: actionText, suggestion: '关联对象已删除', step: null, release: null }
     const processName = names.process.get(step.processId) ?? step.processId
     const prev = prevSteps.find((p) => p.partId === step.partId && p.seq < step.seq)
     const prevName = prev ? (names.process.get(prev.processId) ?? prev.processId) : null
@@ -60,7 +84,10 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) 
         partId: step.partId,
         partName: step.part.name,
         workOrderNumber: step.part.workOrderNumber,
+        /** 等变更（设计变更发放后还没确认影响） */
+        held: !!step.holdReleaseId,
       },
+      release: null,
     }
   })
 }
@@ -73,6 +100,8 @@ export async function transferTodo(todoId: string, toUserId: string) {
     if (!todo) throw new FlowError('待办不存在')
     if (todo.status !== 'OPEN') throw new FlowError('这条待办已处理或已转交')
     if (todo.ownerId === toUserId) throw new FlowError('不能转交给当前负责人')
+    // 签收是本人确认收到，转给别人就失去意义了；发错人请发放人作废后重发
+    if (todo.action === SIGN_RELEASE) throw new FlowError('签收待办不能转交：不是发给你的请拒收并写原因')
     const user = await tx.qmsUser.findFirst({ where: { id: toUserId, isDeleted: false }, select: { id: true } })
     if (!user) throw new FlowError('转交对象不存在')
     await tx.todo.update({ where: { id: todoId }, data: { status: 'TRANSFERRED', doneAt: new Date() } })

@@ -214,6 +214,10 @@ model RouteStep {
   startedAt          DateTime?
   finishedAt         DateTime?
   status             StepStatus @default(PENDING)
+  /// 等变更（R9）：设计变更发放单 ID。发放时还没开工的工序打上，变更影响确认后清空；有值时 W2、W3 不计时
+  holdReleaseId      String?    @db.VarChar(64)
+  /// 最近一次解除"等变更"的时间：W2 从它和待办生成时间里较晚的那个重新计时
+  holdClearedAt      DateTime?
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
   part               Part       @relation(fields: [partId], references: [id], onDelete: Cascade)
@@ -222,6 +226,7 @@ model RouteStep {
   @@unique([partId, seq])
   @@index([status])
   @@index([supplierId])
+  @@index([holdReleaseId])
   @@map("route_step")
 }
 
@@ -399,6 +404,7 @@ enum AlertRule {
   W2
   W3
   W4
+  W5 // 发放未签收（R9）
 }
 
 enum AlertLevel {
@@ -440,11 +446,15 @@ model Reminder {
   todoId    String?
   title     String
   level     AlertLevel @default(REMIND)
-  /// 提醒种类：空 = 预警/待办类；DIGEST = 每日汇总；SYNC_FAIL = QMS 同步连续失败（发给管理员，未读时置顶）
+  /// 提醒种类：空 = 预警/待办类；DIGEST = 每日汇总；SYNC_FAIL = QMS 同步连续失败（发给管理员，未读时置顶）；
+  /// RELEASE = 发放单的通知（接收人拒收时发给发放人），跳转地址在 link
   kind      String?    @db.VarChar(20)
+  /// 电脑端跳转地址（kind = RELEASE 时用；预警类按 alertId 现算）
+  link      String?    @db.VarChar(191)
   /// 每日汇总的正文（前 5 项，一行一项）
   body      String?    @db.Text
-  /// 防重复：每日汇总 "DIGEST:<YYYY-MM-DD>:<userId>"，同人同日只有一条；同步失败 "SYNC_FAIL:<故障开始时间>:<userId>"，同一轮故障只有一条
+  /// 防重复：每日汇总 "DIGEST:<YYYY-MM-DD>:<userId>"，同人同日只有一条；同步失败 "SYNC_FAIL:<故障开始时间>:<userId>"，同一轮故障只有一条；
+  /// 拒收通知 RELEASE_REJECT:<签收记录 ID>，同一次拒收只有一条
   dedupeKey String?    @unique @db.VarChar(120)
   readAt    DateTime?
   createdAt DateTime   @default(now())
@@ -499,8 +509,9 @@ model JobLock {
   @@map("job_lock")
 }
 
-/// 上传的文件（异常照片）。文件存在 runtimeConfig.uploadDir 下，文件名是随机 id，不用用户给的文件名。
-/// issueId：上报异常时绑定；未绑定的只有上传人自己能读取，绑定后按异常所属工单的可见范围判断。
+/// 上传的文件（异常照片、发放单附件）。文件存在 runtimeConfig.uploadDir 下，文件名是随机 id，不用用户给的文件名。
+/// issueId：上报异常时绑定；releaseId：建发放单时绑定（R9）。未绑定的只有上传人自己能读取，
+/// 绑定后按异常/发放单所属工单的可见范围判断（发放单的接收人也能读）。
 model UploadFile {
   id         String   @id @db.VarChar(64)
   storedName String   @db.VarChar(80)
@@ -508,10 +519,79 @@ model UploadFile {
   size       Int
   uploaderId String   @db.VarChar(64)
   issueId    String?  @db.VarChar(64)
+  releaseId  String?  @db.VarChar(64)
   createdAt  DateTime @default(now())
 
   @@index([issueId])
+  @@index([releaseId])
   @@map("upload_file")
+}
+
+// ───────────── 发放签收（R9）─────────────
+
+enum ReleaseType {
+  DRAWING // 图纸
+  CHANGE // 设计变更
+  PROCESS // 工艺文件
+}
+
+enum ReleaseStatus {
+  ACTIVE // 有效
+  VOID // 已作废（发错了；未签收的签收记录一并作废）
+}
+
+enum ReceiptStatus {
+  PENDING // 待签收
+  SIGNED // 已签收
+  REJECTED // 已拒收（写原因）
+  CANCELLED // 发放单作废
+}
+
+/// 发放单：图纸、设计变更、工艺文件。纸质图纸照旧下发，这里登记"发给谁、谁签收"；附件可选。不做审批。
+/// 表名用 doc_release（RELEASE 是 MySQL 保留字）。
+model Release {
+  id                String           @id @default(cuid())
+  /// FF-YYMMDD-001（工厂时区当天序号）
+  releaseNo         String           @unique @db.VarChar(32)
+  type              ReleaseType
+  workOrderNumber   String           @db.VarChar(64)
+  /// 关联工件 ID（字符串数组，可空）。设计变更按它找受影响的工序
+  partIds           Json?
+  version           String?          @db.VarChar(64)
+  description       String           @db.Text
+  issuerId          String           @db.VarChar(64)
+  status            ReleaseStatus    @default(ACTIVE)
+  /// 设计变更：变更影响已确认（或没有在加工的工序、全部签收后自动解除）的时间；此后关联工序的"等变更"已解除
+  changeConfirmedAt DateTime?
+  /// 确认人；自动解除时为空
+  changeConfirmedBy String?          @db.VarChar(64)
+  changeConfirmNote String?          @db.VarChar(500)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  receipts          ReleaseReceipt[]
+
+  @@index([workOrderNumber, createdAt])
+  @@index([issuerId])
+  @@map("doc_release")
+}
+
+/// 签收记录：每个接收人一条（流转记录），同时给他生成一条"签收"待办（todo.refType = receipt）
+model ReleaseReceipt {
+  id        String        @id @default(cuid())
+  releaseId String
+  userId    String        @db.VarChar(64)
+  status    ReceiptStatus @default(PENDING)
+  /// 拒收原因
+  reason    String?       @db.VarChar(500)
+  /// 签收 / 拒收 / 作废的时间
+  actedAt   DateTime?
+  createdAt DateTime      @default(now())
+  release   Release       @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  @@unique([releaseId, userId])
+  @@index([userId, status])
+  @@index([status])
+  @@map("release_receipt")
 }
 
 // ───────────── 登录会话 ─────────────

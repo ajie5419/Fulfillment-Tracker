@@ -1,6 +1,6 @@
 /**
  * 每日汇总（方案 6.3）：每天早上给部门负责人、项目部负责人、分管领导、各工单项目经理在"我的提醒"顶部生成一条，
- * 内容是其可见范围内红/黄活动预警数量 + 未关闭异常数量 + 前 5 项（红优先）。
+ * 内容是其可见范围内红/黄活动预警数量 + 未关闭异常数量（+ 有人未签收的发放单份数，R9，有才显示）+ 前 5 项（红优先）。
  *
  * 不依赖服务器时区：15 分钟一轮的定时任务里判断"工厂时区 ≥ 07:30 且今天还没生成"才生成；
  * 错过了（服务停了）下一轮自动补发。幂等靠 reminder.dedupeKey（"DIGEST:<日期>:<用户>"）唯一，同人同日只有一条。
@@ -55,11 +55,12 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
 
   // 全部活动的红黄预警（带对象文字和工单）与未关闭异常，按人过滤
   const [thresholds, offDays] = await Promise.all([loadThresholds(), loadOffDays()])
-  const [alerts, targets, issues] = await Promise.all([
+  const [alerts, targets, issues, unsigned] = await Promise.all([
     // 含已转异常、但对象仍停在原状态的（activeKey 还在）
     prisma.alert.findMany({ where: { activeKey: { not: null }, status: { in: ['ACTIVE', 'CONVERTED'] }, level: { in: ['RED', 'YELLOW'] } }, orderBy: { levelAt: 'desc' } }),
     collectTargets(now, thresholds, offDays),
     prisma.issue.findMany({ where: { status: { in: OPEN_STATUSES } }, orderBy: { createdAt: 'asc' } }),
+    prisma.release.findMany({ where: { status: 'ACTIVE', receipts: { some: { status: 'PENDING' } } }, select: { workOrderNumber: true } }),
   ])
   const targetByKey = new Map(targets.map((t) => [t.key, t]))
   const alertRows = alerts
@@ -79,6 +80,7 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
     const myIssues = issueRows.filter((x) => visible(x.i.workOrderNumber))
     const red = mine.filter((x) => x.a.level === 'RED').length
     const yellow = mine.length - red
+    const unsignedCount = unsigned.filter((r) => visible(r.workOrderNumber)).length
     const lines = [
       ...mine.map((x) => reminderTitle(x.a.level, x.t.subject, x.t.summary, x.t.workOrderNumber)),
       ...myIssues.map((x) => `${x.overdue ? '【超期】' : ''}异常 ${x.i.issueNo}（${CATEGORY_TEXT[x.i.category]}，${STATUS_TEXT[x.i.status]}）：${x.i.description.slice(0, 40)}（${x.i.workOrderNumber}）`),
@@ -89,7 +91,7 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
       kind: 'DIGEST',
       level,
       dedupeKey: digestKey(day, userId),
-      title: `【每日汇总】${mmdd}：红色预警 ${red} 条、黄色预警 ${yellow} 条，未关闭异常 ${myIssues.length} 条`,
+      title: `【每日汇总】${mmdd}：红色预警 ${red} 条、黄色预警 ${yellow} 条，未关闭异常 ${myIssues.length} 条${unsignedCount ? `，未签收发放 ${unsignedCount} 份` : ''}`,
       body: lines.length ? lines.join('\n') : '今天没有红黄预警和未关闭异常',
     })
   }

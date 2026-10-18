@@ -1,5 +1,5 @@
 /**
- * scan-rules：一次跑完 W1–W4，新建、升级、消除预警，并给升级阶梯上的人写"我的提醒"（方案 6.2）。
+ * scan-rules：一次跑完 W1–W5，新建、升级、消除预警，并给升级阶梯上的人写"我的提醒"（方案 6.2）。
  *
  * 幂等：同一对象同一规则只有一条活动预警（alert.activeKey 唯一）；同一人同一预警同一级别只有一条提醒
  * （reminder 上 alertId+level+userId 唯一）。每轮都会把当前级别该收到的人补齐，所以中途失败下一轮自动补上。
@@ -17,6 +17,7 @@ import { convertAlertInTx } from '../issues/convert'
 import { CATEGORY_TEXT } from '../issues/constants'
 import { issueTransaction } from '../issues/issues'
 import { withLease } from '../jobs/lease'
+import { CONFIRM_CHANGE, TYPE_TEXT } from '../releases/constants'
 import { SCAN_RULES, loadOffDays, loadThresholds } from './config'
 import {
   CONVERTIBLE_RULES,
@@ -39,12 +40,14 @@ export { SCAN_RULES, loadOffDays, loadThresholds }
 /** 一个处在规则关注状态的对象（不一定已到阈值） */
 export interface Target {
   rule: ScanRule
-  refType: 'step' | 'unmatched' | 'issue'
+  refType: 'step' | 'unmatched' | 'issue' | 'receipt' | 'release'
   refId: string
   key: string
   workOrderNumber: string | null
   /** 责任人 */
   ownerIds: string[]
+  /** 黄色起额外通知的人（W5：发放人，要知道谁一直没签收 / 变更影响一直没人确认） */
+  watcherIds?: string[]
   /** 黄色起要通知的"责任部门"名称；不给时取责任人所在部门（W4 的责任部门是异常上明确写的） */
   deptNames?: string[]
   /** 计时起点（W3 为承诺返回日） */
@@ -55,11 +58,11 @@ export interface Target {
   subject: string
   /** 标题里冒号后的部分，如"组焊返厂 2 天仍未发出" */
   summary: string
-  /** 转异常时定分类用 */
-  meta?: { stepMode?: StepMode; supplierId?: string | null }
+  /** 转异常时定分类用；W5 带发放单 ID（跳转用） */
+  meta?: { stepMode?: StepMode; supplierId?: string | null; releaseId?: string }
 }
 
-/** 收集 W1–W4 关注的全部对象，并按 now 判定级别；only 只收集某一条规则 */
+/** 收集 W1–W5 关注的全部对象，并按 now 判定级别；only 只收集某一条规则 */
 export async function collectTargets(now: Date, t: Thresholds, offDays: string[], only?: ScanRule): Promise<Target[]> {
   const run = (rule: ScanRule, fn: () => Promise<Target[]>) => (!only || only === rule ? fn() : Promise.resolve([]))
   const parts = await Promise.all([
@@ -67,6 +70,7 @@ export async function collectTargets(now: Date, t: Thresholds, offDays: string[]
     run('W2', () => collectW2(now, t, offDays)),
     run('W3', () => collectW3(now, t, offDays)),
     run('W4', () => collectW4(now, t, offDays)),
+    run('W5', () => collectW5(now, t, offDays)),
   ])
   return parts.flat()
 }
@@ -105,6 +109,7 @@ async function collectW1(now: Date, t: Thresholds, offDays: string[]): Promise<T
  * W2：待开工且有"安排发出/开工"待办的步骤，从最早一条待办起计时（转交不重新计时），责任人是当前待办负责人。
  * 上一道"有异常"（QMS 不合格，已经有异常在跟）时不计时、不预警，避免与异常重复报警；
  * 上一道的异常关闭后从关闭时刻重新计时（取 待办生成 与 上一道最近一次异常关闭 中较晚的）。
+ * 标了"等变更"（R9 设计变更发放时还没开工）的步骤不计时；解除后从解除时刻重新计时。
  */
 async function collectW2(now: Date, t: Thresholds, offDays: string[]): Promise<Target[]> {
   const actions = [ARRANGE_SEND, ARRANGE_START]
@@ -112,7 +117,7 @@ async function collectW2(now: Date, t: Thresholds, offDays: string[]): Promise<T
   if (!open.length) return []
   const stepIds = [...new Set(open.map((o) => o.refId))]
   const [steps, transferred] = await Promise.all([
-    prisma.routeStep.findMany({ where: { id: { in: stepIds }, status: 'PENDING' }, include: { part: true } }),
+    prisma.routeStep.findMany({ where: { id: { in: stepIds }, status: 'PENDING', holdReleaseId: null }, include: { part: true } }),
     prisma.todo.findMany({ where: { refType: 'step', refId: { in: stepIds }, action: { in: actions }, status: 'TRANSFERRED' }, select: { refId: true, createdAt: true } }),
   ])
   if (!steps.length) return []
@@ -140,7 +145,7 @@ async function collectW2(now: Date, t: Thresholds, offDays: string[]): Promise<T
     if (prev?.status === 'BLOCKED') continue
     const mine = open.filter((o) => o.refId === s.id)
     const todoStart = Math.min(...[...mine, ...transferred.filter((x) => x.refId === s.id)].map((x) => +x.createdAt))
-    const startAt = new Date(Math.max(todoStart, (prev && lastClose.get(prev.id)) || 0))
+    const startAt = new Date(Math.max(todoStart, (prev && lastClose.get(prev.id)) || 0, s.holdClearedAt ? +s.holdClearedAt : 0))
     const elapsed = elapsedExcludingOffDays(startAt, now, offDays)
     const verb = s.mode === 'EXTERNAL_OUTSOURCE' ? '发出' : '开工'
     out.push({
@@ -160,9 +165,9 @@ async function collectW2(now: Date, t: Thresholds, offDays: string[]): Promise<T
   return out
 }
 
-/** W3：在外加工且有承诺返回日的步骤，责任人是步骤负责人 */
+/** W3：在外加工且有承诺返回日的步骤，责任人是步骤负责人。标了"等变更"的不计（变更影响确认后恢复） */
 async function collectW3(now: Date, t: Thresholds, offDays: string[]): Promise<Target[]> {
-  const steps = await prisma.routeStep.findMany({ where: { status: 'OUT', promisedReturnDate: { not: null } }, include: { part: true } })
+  const steps = await prisma.routeStep.findMany({ where: { status: 'OUT', promisedReturnDate: { not: null }, holdReleaseId: null }, include: { part: true } })
   if (!steps.length) return []
   const names = await loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId) })
   return steps.map((s) => {
@@ -229,6 +234,93 @@ async function collectW4(now: Date, t: Thresholds, offDays: string[]): Promise<T
   })
 }
 
+/**
+ * W5 发放未签收（R9）：有效发放单上待签收的签收记录，从发放起计时（不含停工日）。
+ * 责任人是接收人；黄色起加通知发放人（以及按升级阶梯：接收人所在部门负责人、工单项目经理），红色再加项目部负责人、分管领导。
+ * 设计变更的"确认变更影响"同样按 W5 计时（见 collectW5Changes），保证"等变更"不会无声地一直挂着。
+ */
+async function collectW5(now: Date, t: Thresholds, offDays: string[]): Promise<Target[]> {
+  const [receipts, changes] = await Promise.all([collectW5Receipts(now, t, offDays), collectW5Changes(now, t, offDays)])
+  return [...receipts, ...changes]
+}
+
+async function collectW5Receipts(now: Date, t: Thresholds, offDays: string[]): Promise<Target[]> {
+  const rows = await prisma.releaseReceipt.findMany({ where: { status: 'PENDING', release: { status: 'ACTIVE' } }, include: { release: true } })
+  if (!rows.length) return []
+  const names = await loadNames({ user: rows.map((r) => r.userId) })
+  return rows.map((r) => {
+    const rel = r.release
+    const elapsed = elapsedExcludingOffDays(r.createdAt, now, offDays)
+    return {
+      rule: 'W5',
+      refType: 'receipt',
+      refId: r.id,
+      key: alertKey('W5', 'receipt', r.id),
+      workOrderNumber: rel.workOrderNumber,
+      ownerIds: [r.userId],
+      watcherIds: [rel.issuerId],
+      startAt: r.createdAt,
+      level: levelByElapsed(elapsed, t.W5),
+      subject: `${TYPE_TEXT[rel.type]} ${rel.releaseNo}${rel.version ? `（${rel.version}）` : ''}`,
+      summary: `已发放 ${durationText(elapsed)}，${names.user.get(r.userId) ?? r.userId}仍未签收`,
+      meta: { releaseId: rel.id },
+    }
+  })
+}
+
+/**
+ * W5 变更影响未确认：有效、未确认的设计变更，只要
+ * - 还有打开的"确认变更影响"待办：责任人是待办人（生产经理、外协专员），从最早发出确认待办起计时；或
+ * - 还有"等变更"的工序、却已没有待签收的人（有人拒收，自动解除走不通）：责任人是发放人，从发放起计时。
+ * 两种都是黄色起加通知发放人。确认 / 作废后对象消失，告警解除。
+ */
+async function collectW5Changes(now: Date, t: Thresholds, offDays: string[]): Promise<Target[]> {
+  const rels = await prisma.release.findMany({ where: { type: 'CHANGE', status: 'ACTIVE', changeConfirmedAt: null } })
+  if (!rels.length) return []
+  const ids = rels.map((r) => r.id)
+  const [todos, held, pending] = await Promise.all([
+    prisma.todo.findMany({ where: { refType: 'release', refId: { in: ids }, action: CONFIRM_CHANGE, status: { in: ['OPEN', 'TRANSFERRED'] } }, select: { refId: true, ownerId: true, status: true, createdAt: true } }),
+    prisma.routeStep.groupBy({ by: ['holdReleaseId'], where: { holdReleaseId: { in: ids } }, _count: { _all: true } }),
+    prisma.releaseReceipt.groupBy({ by: ['releaseId'], where: { releaseId: { in: ids }, status: 'PENDING' }, _count: { _all: true } }),
+  ])
+  const heldOf = new Map(held.map((h) => [h.holdReleaseId, h._count._all]))
+  const pendingOf = new Map(pending.map((p) => [p.releaseId, p._count._all]))
+  const out: Target[] = []
+  const pick: { rel: (typeof rels)[number]; owners: string[]; startAt: Date }[] = []
+  for (const rel of rels) {
+    const mine = todos.filter((x) => x.refId === rel.id)
+    const open = [...new Set(mine.filter((x) => x.status === 'OPEN').map((x) => x.ownerId))]
+    if (open.length) {
+      // 转交过的从最早发出起算，转交不重新计时
+      const startAt = new Date(Math.min(...mine.map((x) => x.createdAt.getTime())))
+      pick.push({ rel, owners: open, startAt })
+    } else if ((heldOf.get(rel.id) ?? 0) > 0 && !pendingOf.get(rel.id)) {
+      pick.push({ rel, owners: [rel.issuerId], startAt: rel.createdAt })
+    }
+  }
+  if (!pick.length) return out
+  const names = await loadNames({ user: pick.flatMap((x) => x.owners) })
+  for (const { rel, owners, startAt } of pick) {
+    const elapsed = elapsedExcludingOffDays(startAt, now, offDays)
+    const who = owners.map((id) => names.user.get(id) ?? id).join('、')
+    out.push({
+      rule: 'W5',
+      refType: 'release',
+      refId: rel.id,
+      key: alertKey('W5', 'release', rel.id),
+      workOrderNumber: rel.workOrderNumber,
+      ownerIds: owners,
+      watcherIds: [rel.issuerId],
+      startAt,
+      level: levelByElapsed(elapsed, t.W5),
+      subject: `${TYPE_TEXT[rel.type]} ${rel.releaseNo}${rel.version ? `（${rel.version}）` : ''}`,
+      summary: `已发放 ${durationText(elapsed)}，变更影响仍未确认（待 ${who} 确认）`,
+      meta: { releaseId: rel.id },
+    })
+  }
+  return out
+}
+
 // ───────────── 通知对象 ─────────────
 
 interface NotifyContext {
@@ -255,13 +347,14 @@ export async function loadNotifyContext(targets: Pick<Target, 'ownerIds' | 'work
 
 /**
  * 升级阶梯（方案 6.2）：
- *   提醒 = 责任人；黄 = 提醒 + 责任部门负责人 + 工单项目经理；红 = 黄 + 项目部负责人 + 分管领导。
+ *   提醒 = 责任人；黄 = 提醒 + 责任部门负责人 + 工单项目经理（+ watcherIds，如 W5 的发放人）；红 = 黄 + 项目部负责人 + 分管领导。
  * 责任部门（名称）：target.deptNames（W4 异常上写明的），没有时取责任人所在部门（部门 ID 经 qms_department 换成名称）。
  * 找不到的角色跳过，收件人去重。
  */
-export function recipientsFor(level: AlertLevel, target: Pick<Target, 'ownerIds' | 'workOrderNumber' | 'deptNames'>, ctx: NotifyContext): string[] {
+export function recipientsFor(level: AlertLevel, target: Pick<Target, 'ownerIds' | 'workOrderNumber' | 'deptNames' | 'watcherIds'>, ctx: NotifyContext): string[] {
   const out = new Set(target.ownerIds)
   if (level === 'YELLOW' || level === 'RED') {
+    for (const id of target.watcherIds ?? []) out.add(id)
     const depts = new Set(target.deptNames ?? target.ownerIds.map((id) => ctx.deptOf.get(id)).filter(Boolean))
     for (const r of ctx.roles) if (r.role === 'DEPT_HEAD' && r.department && depts.has(r.department)) out.add(r.userId)
     const pm = target.workOrderNumber ? ctx.pmOf.get(target.workOrderNumber) : null

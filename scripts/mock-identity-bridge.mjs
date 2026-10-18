@@ -172,6 +172,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       'u-004': { name: '测试项目部负责人', active: true },
       'u-005': { name: '测试分管领导', active: true },
       'u-006': { name: '测试质量负责人', active: true },
+      'u-008': { name: '测试设计员', active: true }, // R9 发放签收的发放人（演示数据写入；QMS 模拟数据里没有）
     },
   })
   console.log(`mock identity bridge + QMS sync listening on ${url}`)
