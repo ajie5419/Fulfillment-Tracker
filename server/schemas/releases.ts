@@ -21,6 +21,8 @@ export const newReleaseBody = z
       .array(z.object({ department: z.string().trim().max(191).nullish(), role: notifyRole.nullish() }).strict())
       .max(20)
       .default([]),
+    /** 从出图任务一键发放（R11） */
+    drawingTaskId: z.string().min(1).max(191).nullish(),
   })
   .strict()
 

@@ -79,6 +79,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     await db.notifyRole.createMany({ data: [{ role: 'LEADER', userId: 'h-lead' }, { role: 'FINANCE', userId: 'h-fin' }] })
     // 发放单的接收人要在 QMS 用户副本里（R9）
     await db.release.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
+    await db.drawingTask.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db.qmsUser.deleteMany({ where: { id: { in: HTTP_USERS } } })
     await db.qmsUser.createMany({ data: HTTP_USERS.map((id) => ({ id, username: id, realName: id, status: 'ACTIVE', updatedAt: now })) })
     otherPartId = (await db.part.create({ data: { workOrderNumber: OTHER, name: '别人的工件' } })).id
@@ -128,6 +129,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     app?.kill()
     await bridge?.close()
     await db?.release.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
+    await db?.drawingTask.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.paymentRequest.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.purchaseLine.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.notifyRole.deleteMany({ where: { userId: 'h-fin' } })
@@ -376,5 +378,53 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(fin, 'POST', `/api/payments/${payId}/status`, { status: 'DONE' })).status).toBe(400)
     // 已付的不能删
     expect((await send(pm, 'DELETE', `/api/payments/${payId}`)).status).toBe(400)
+  })
+  it('出图任务（R11）：按工单可见范围增查改；只有设计负责人本人或管理员能标记出图；负责人本人不受工单范围限制；一键发放关联任务', async () => {
+    const pm = await login('h-pm')
+    const lead = await login('h-lead')
+    const worker = await login('h-worker')
+    const send = (sess: Record<string, string>, method: string, path: string, body?: object) =>
+      fetch(`${base}${path}`, { method, headers: { cookie: cookieHeader(sess), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+    const later = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10)
+
+    // 项目经理甲不能在别人的工单上建；自己的工单可以（负责人是一线 h-worker）
+    expect((await send(pm, 'POST', '/api/drawings', { workOrderNumber: OTHER, componentName: 'x', planDate: later })).status).toBe(403)
+    expect((await send(pm, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: 'x', planDate: '2026/1/1' })).status).toBe(400)
+    const mine = await send(pm, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: '主梁总图', ownerId: 'h-worker', planDate: later })
+    expect(mine.status).toBe(200)
+    const mineId = ((await mine.json()) as { id: string }).id
+    // 领导在别人的工单上建一个，设计负责人是甲（甲看不到这个工单）
+    const other = await send(lead, 'POST', '/api/drawings', { workOrderNumber: OTHER, componentName: '别人的图', ownerId: 'h-pm', planDate: later })
+    const otherId = ((await other.json()) as { id: string }).id
+
+    // 列表只含可见工单；"我的出图任务"含负责人是自己的（不受范围限制）
+    const list = (await (await get('/api/drawings?view=all', pm)).json()) as { rows: { id: string }[] }
+    expect(list.rows.map((r) => r.id)).toContain(mineId)
+    expect(list.rows.map((r) => r.id)).not.toContain(otherId)
+    expect((await get(`/api/drawings?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
+    const myList = (await (await get('/api/drawings?mine=1&view=all', pm)).json()) as { rows: { id: string; permissions: { markDrawn: boolean } }[] }
+    expect(myList.rows.map((r) => r.id)).toEqual([otherId])
+    expect(myList.rows[0]!.permissions.markDrawn).toBe(true)
+    expect((await get(`/api/drawings/${otherId}`, pm)).status).toBe(200)
+    // 负责人本人也要看得到工单才能改任务本身
+    expect((await send(pm, 'PATCH', `/api/drawings/${otherId}`, { note: 'x' })).status).toBe(403)
+
+    // 标记出图：不是负责人 → 403；负责人本人 → 200；看不到工单的负责人也能标
+    expect((await send(pm, 'POST', `/api/drawings/${mineId}/drawn`, {})).status).toBe(403)
+    expect((await send(lead, 'POST', `/api/drawings/${mineId}/drawn`, {})).status).toBe(403)
+    const drawn = await send(worker, 'POST', `/api/drawings/${mineId}/drawn`, {})
+    expect(drawn.status).toBe(200)
+    expect(await drawn.json()).toMatchObject({ status: 'DRAWN' })
+    expect((await send(pm, 'POST', `/api/drawings/${otherId}/drawn`, {})).status).toBe(200)
+    expect((await send(pm, 'PATCH', `/api/drawings/${mineId}`, { note: '能看到工单的人能改' })).status).toBe(200)
+
+    // 一键发放：发放单记下 drawingTaskId，任务完成；别人工单的任务甲不能发
+    const rel = await send(pm, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: '主梁总图发放', userIds: ['h-worker'], drawingTaskId: mineId })
+    expect(rel.status).toBe(200)
+    expect(await rel.json()).toMatchObject({ drawing: { status: 'DONE' } })
+    expect((await send(pm, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: OTHER, description: 'x', userIds: ['h-worker'], drawingTaskId: otherId })).status).toBe(403)
+    expect((await send(pm, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-worker'], drawingTaskId: otherId })).status).toBe(400)
+    const load = await get('/api/drawings/load', pm)
+    expect(load.status).toBe(200)
   })
 })

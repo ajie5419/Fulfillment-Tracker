@@ -73,7 +73,7 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) 
         ...t,
         actionText,
         title: `${actionText}：${p.partName}${s ? ` · ${s.processName}` : ''}`,
-        suggestion: `关键物料已全部到货（${p.arrived} 项），请安排${s ? `第一道工序${verb}` : '开工'}`,
+        suggestion: `${[p.arrived ? `关键物料已全部到货（${p.arrived} 项）` : '', p.drawings ? `图纸已发放（${p.drawings} 个出图任务）` : ''].filter(Boolean).join('，') || '物料和图纸已齐'}，请安排${s ? `第一道工序${verb}` : '开工'}`,
         step: s,
         release: null,
       }

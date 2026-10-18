@@ -2,10 +2,11 @@
 /**
  * 新建发放单（R9）：类型、工单、关联工件（可多选，可不选）、版本号、说明、附件（PDF/照片，可选），
  * 接收人按人选，或按"部门 + 角色"选（提交时展开成人）。纸质图纸照旧下发，这里登记并要求签收。
+ * prefill（R11 出图任务一键发放）：预填类型、工单、关联工件、说明，并记下 drawingTaskId；打开时装入的工单不清掉预填的工件。
  */
 import type { UploadFile } from 'ant-design-vue'
 
-const props = defineProps<{ open: boolean; workOrderNumber?: string }>()
+const props = defineProps<{ open: boolean; workOrderNumber?: string; prefill?: ReleasePrefill | null }>()
 const emit = defineEmits<{ close: []; done: [id: string] }>()
 
 const { data: workOrders } = await useWorkOrders()
@@ -23,12 +24,25 @@ const form = reactive({
 const files = ref<UploadFile[]>([])
 const submitting = ref(false)
 
+/** 打开时装入的工单：工单 watch 碰到它就不清工件（预填的工件要留着）；用户之后改工单照常清空 */
+let loadedWo: string | undefined | null = null
 watch(
   () => props.open,
   (open) => {
     if (!open) return
-    Object.assign(form, { type: 'DRAWING', workOrderNumber: props.workOrderNumber, partIds: [], version: '', description: '', userIds: [], groups: [] })
+    const p = props.prefill
+    Object.assign(form, {
+      type: p?.type ?? 'DRAWING',
+      workOrderNumber: p?.workOrderNumber ?? props.workOrderNumber,
+      partIds: [...(p?.partIds ?? [])],
+      version: '',
+      description: p?.description ?? '',
+      userIds: [],
+      groups: [],
+    })
     files.value = []
+    loadedWo = form.workOrderNumber
+    if (form.workOrderNumber) refreshParts()
   },
 )
 
@@ -41,6 +55,11 @@ const { data: parts, refresh: refreshParts } = await useFetch('/api/parts', {
 watch(
   () => form.workOrderNumber,
   (wo) => {
+    if (wo === loadedWo) {
+      loadedWo = null
+      return // 打开弹窗时装入的（含预填），上面已刷新工件
+    }
+    loadedWo = null
     form.partIds = []
     if (wo) refreshParts()
   },
@@ -74,7 +93,7 @@ async function submit() {
   submitting.value = true
   try {
     const attachmentIds = await uploadAttachments(files.value.map((f) => f.originFileObj as File).filter(Boolean))
-    const r = await releasePost<{ id: string; releaseNo: string; recipients: number; impact: { started: number; held: number; confirmers: string[] } }>('/api/releases', {
+    const r = await releasePost<{ id: string; releaseNo: string; recipients: number; impact: { started: number; held: number; confirmers: string[] }; drawing: { status: string; readySent: number } | null }>('/api/releases', {
       type: form.type,
       workOrderNumber: form.workOrderNumber,
       partIds: form.partIds,
@@ -83,12 +102,14 @@ async function submit() {
       attachmentIds,
       userIds: form.userIds,
       groups,
+      drawingTaskId: props.prefill?.drawingTaskId ?? null,
     })
     const extra =
       form.type === 'CHANGE' && (r.impact.started || r.impact.held)
         ? `；${r.impact.started ? `${r.impact.started} 道工序已在加工/在外，已通知确认变更影响` : ''}${r.impact.started && r.impact.held ? '，' : ''}${r.impact.held ? `${r.impact.held} 道未开工工序标"等变更"` : ''}`
         : ''
-    message.success(`已发放 ${r.releaseNo}，${r.recipients} 人待签收${extra}`, 6)
+    const drawing = r.drawing ? `；出图任务${r.drawing.status === 'DONE' ? '已完成' : r.drawing.status === 'CUSTOMER_PENDING' ? '待客户确认' : '已更新'}${r.drawing.readySent ? `，${r.drawing.readySent} 个工件已通知"可以开工"` : ''}` : ''
+    message.success(`已发放 ${r.releaseNo}，${r.recipients} 人待签收${extra}${drawing}`, 6)
     emit('done', r.id)
   } catch (e) {
     message.error(apiError(e))
@@ -99,7 +120,7 @@ async function submit() {
 </script>
 
 <template>
-  <a-modal :open="open" title="新建发放单" ok-text="发放" :confirm-loading="submitting" width="720px" @ok="submit" @cancel="emit('close')">
+  <a-modal :open="open" :title="prefill?.label ? `新建发放单（${prefill.label}）` : '新建发放单'" ok-text="发放" :confirm-loading="submitting" width="720px" @ok="submit" @cancel="emit('close')">
     <a-form layout="horizontal" :label-col="{ span: 4 }" :wrapper-col="{ span: 19 }">
       <a-form-item label="类型" required>
         <a-radio-group v-model:value="form.type" button-style="solid">
@@ -110,6 +131,7 @@ async function submit() {
       <a-form-item label="工单" required>
         <a-select
           v-model:value="form.workOrderNumber"
+          :disabled="!!prefill?.drawingTaskId"
           show-search
           option-filter-prop="label"
           placeholder="选择工单"

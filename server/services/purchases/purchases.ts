@@ -5,16 +5,17 @@
  * 权限从简：能看到该工单的人都能录入、修改、确认到货（采购、仓库、使用部门都可能是确认人）；可见范围由接口层 canSee 判断。
  * 责任人：采购负责人（buyerId）；没指定时是采购部负责人。W6 未到货预警见 alerts/scan.ts。
  *
- * "可以开工"：工件挂的关键物料（未取消的）全部到货的那一刻，给第一道工序负责人（没有时给生产部负责人）发待办；
- * 第一道已经开工/发出的不发。之后又挂上未到货的物料（新增、撤销到货、重新启用）时，没处理的"可以开工"待办作废。
+ * "可以开工"：工件挂的关键物料（未取消的）全部到货、且关联的出图任务（R11，未取消的）全部完成（已出图、已发放、需要时客户已确认）
+ * 的那一刻，给第一道工序负责人（没有时给生产部负责人）发待办；第一道已经开工/发出的不发。
+ * 之后又挂上未到货的物料（新增、撤销到货、重新启用）或未完成的出图任务（新建、发放单作废、撤销出图）时，没处理的"可以开工"待办作废。
  * 待办在该工件任一道工序开工、发出或返厂时自动关闭（flow.ts）。
  *
  * 并发：采购事务都用 READ COMMITTED（锁到之后读到的是最新已提交数据，而不是事务开始时的快照），
- * 加锁顺序一律 先工件（按 ID 排序）→ 再采购行（FOR UPDATE）。同一行的确认、撤销、修改串行执行；
+ * 加锁顺序一律 先工件（按 ID 排序）→ 再采购行 / 出图任务（FOR UPDATE）。出图任务（drawings.ts）沿用同一事务和顺序。同一行的确认、撤销、修改串行执行；
  * 同一工件的几项同时到货时，"是否全部到货"的判断也串行，不会谁都不发"可以开工"。
  * 先锁工件是因为写采购行时外键检查会给工件行加共享锁，之后再要排他锁会和并发的另一项互相等（死锁）。
  */
-import type { DelayReason, FlowSource, Prisma, PurchaseLine, PurchaseStatus } from '@prisma/client'
+import type { DelayReason, DrawingTaskStatus, FlowSource, Prisma, PurchaseLine, PurchaseStatus } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey, dateFieldDay, shanghaiDay } from '../alerts/rules'
@@ -130,9 +131,10 @@ async function readyOwners(tx: Tx, partId: string): Promise<string[]> {
 }
 
 /**
- * 按工件当前的关键物料情况处理"可以开工"待办：
- *   还有未到货的 → 作废没处理的"可以开工"待办；
- *   全部到货、且 notify（本次操作让最后一项缺料没了：到货、取消、删除、移走）→ 没有打开的待办时发一条。
+ * 按工件当前的关键物料和出图任务情况处理"可以开工"待办：
+ *   还有未到货的物料，或未完成的出图任务（未取消的）→ 作废没处理的"可以开工"待办；
+ *   都齐了（至少挂着一项物料或一个出图任务）、且 notify（本次操作让最后一项缺口没了：到货、取消、删除、移走、出图完成并发放）
+ *   → 没有打开的待办时发一条。
  * 只在状态变化的那一刻发（notify），改备注之类的保存不会重复发。返回 sent / revoked / null。
  */
 export async function refreshPartReady(tx: Tx, partId: string | null, notify: boolean): Promise<'sent' | 'revoked' | null> {
@@ -141,8 +143,10 @@ export async function refreshPartReady(tx: Tx, partId: string | null, notify: bo
   const part = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM part WHERE id = ${partId} FOR UPDATE`
   if (!part.length) return null
   const lines = await tx.$queryRaw<{ status: PurchaseStatus }[]>`SELECT status FROM purchase_line WHERE partId = ${partId} AND status <> 'CANCELLED' FOR SHARE`
+  const drawings = await tx.$queryRaw<{ status: DrawingTaskStatus }[]>`
+    SELECT t.status FROM drawing_task t JOIN drawing_task_part p ON p.taskId = t.id WHERE p.partId = ${partId} AND t.status <> 'CANCELLED' FOR SHARE`
   const now = new Date()
-  const ready = lines.length > 0 && lines.every((l) => l.status === 'ARRIVED')
+  const ready = lines.length + drawings.length > 0 && lines.every((l) => l.status === 'ARRIVED') && drawings.every((d) => d.status === 'DONE')
   const where = { refType: 'part', refId: partId, action: READY_TO_START, status: 'OPEN' as const }
   if (!ready) {
     const r = await tx.todo.updateMany({ where, data: { status: 'CANCELLED', doneAt: now } })
@@ -471,7 +475,11 @@ export async function describeReadyTodos(partIds: string[]) {
   if (!partIds.length) return new Map<string, Awaited<ReturnType<typeof readyPart>>>()
   const parts = await prisma.part.findMany({
     where: { id: { in: partIds } },
-    include: { steps: { orderBy: { seq: 'asc' }, take: 1 }, purchaseLines: { where: { status: 'ARRIVED' }, select: { id: true } } },
+    include: {
+      steps: { orderBy: { seq: 'asc' }, take: 1 },
+      purchaseLines: { where: { status: 'ARRIVED' }, select: { id: true } },
+      drawingTasks: { where: { task: { status: 'DONE' } }, select: { taskId: true } },
+    },
   })
   const firsts = parts.map((p) => p.steps[0]).filter((s): s is NonNullable<typeof s> => !!s)
   const names = await loadNames({ process: firsts.map((s) => s.processId), supplier: firsts.map((s) => s.supplierId) })
@@ -479,7 +487,7 @@ export async function describeReadyTodos(partIds: string[]) {
 }
 
 function readyPart(
-  p: Prisma.PartGetPayload<{ include: { steps: true; purchaseLines: { select: { id: true } } } }>,
+  p: Prisma.PartGetPayload<{ include: { steps: true; purchaseLines: { select: { id: true } }; drawingTasks: { select: { taskId: true } } } }>,
   names: Awaited<ReturnType<typeof loadNames>>,
 ) {
   const s = p.steps[0]
@@ -488,6 +496,8 @@ function readyPart(
     partName: p.name,
     workOrderNumber: p.workOrderNumber,
     arrived: p.purchaseLines.length,
+    /** 已完成（已发放）的出图任务数（R11） */
+    drawings: p.drawingTasks.length,
     step: s
       ? {
           id: s.id,

@@ -5,6 +5,7 @@ const menu = computed(() => [
   { key: '/', label: '我的提醒' },
   { key: '/alerts', label: '预警列表' },
   { key: '/issues', label: '异常列表' },
+  { key: '/drawings', label: '出图任务' },
   { key: '/releases', label: '发放签收' },
   { key: '/purchases', label: '采购到货' },
   { key: '/payments', label: '付款申请' },

@@ -181,6 +181,8 @@ model Part {
   steps           RouteStep[]
   /// 挂在这个工件上的关键物料（R10）；全部到货时给第一道工序负责人发"可以开工"待办
   purchaseLines   PurchaseLine[]
+  /// 关联这个工件的出图任务（R11）；有未完成（未取消）的出图任务时不发"可以开工"
+  drawingTasks    DrawingTaskPart[]
 
   @@unique([workOrderNumber, qmsBomId])
   @@index([workOrderNumber])
@@ -408,6 +410,7 @@ enum AlertRule {
   W4
   W5 // 发放未签收（R9）
   W6 // 关键物料未到货（R10）
+  W7 // 出图逾期 / 客户确认超期（R11）
 }
 
 enum AlertLevel {
@@ -570,12 +573,15 @@ model Release {
   /// 确认人；自动解除时为空
   changeConfirmedBy String?          @db.VarChar(64)
   changeConfirmNote String?          @db.VarChar(500)
+  /// 从出图任务一键发放时关联的出图任务（R11）。不是作废状态的发放单 = 该任务的图纸已发放
+  drawingTaskId     String?          @db.VarChar(64)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   receipts          ReleaseReceipt[]
 
   @@index([workOrderNumber, createdAt])
   @@index([issuerId])
+  @@index([drawingTaskId])
   @@map("doc_release")
 }
 
@@ -707,6 +713,64 @@ model PaymentLine {
   @@id([paymentId, purchaseLineId])
   @@index([purchaseLineId])
   @@map("payment_request_line")
+}
+
+// ───────────── 设计出图任务（R11）─────────────
+
+/**
+ * 出图任务状态（由事实推出，见 services/drawings/constants.ts deriveStatus）：
+ *   待出图 → 已出图（出图了、图纸还没发放）→ 待客户确认（已发放、需要客户确认但还没确认）→ 已完成；另有 已取消。
+ */
+enum DrawingTaskStatus {
+  PENDING // 待出图
+  DRAWN // 已出图（图纸还没发放）
+  CUSTOMER_PENDING // 待客户确认
+  DONE // 已完成（已出图、已发放、需要时客户已确认）
+  CANCELLED // 已取消
+}
+
+/**
+ * 出图任务：按部件拆。关联工件可多选，也可以不关联工件只写部件名称。
+ * 责任人：设计负责人（ownerId）；没指定时是技术部负责人（notify_role DEPT_HEAD + 部门"技术部"）。
+ * 关联工件存在未完成（未取消）的出图任务时，不发"可以开工"待办（purchases.ts refreshPartReady）。
+ */
+model DrawingTask {
+  id                    String            @id @default(cuid())
+  workOrderNumber       String            @db.VarChar(64)
+  /// 部件名称（如"主梁总图"、"液压系统"）
+  componentName         String            @db.VarChar(191)
+  ownerId               String?           @db.VarChar(64)
+  /// 计划完成日（出图）、实际出图日；日期字段，存当天 UTC 零点
+  planDate              DateTime
+  drawnDate             DateTime?
+  drawnBy               String?           @db.VarChar(64)
+  /// 客户确认：是否需要、计划日、实际确认日
+  needsCustomerConfirm  Boolean           @default(false)
+  customerPlanDate      DateTime?
+  customerConfirmedDate DateTime?
+  customerConfirmedBy   String?           @db.VarChar(64)
+  status                DrawingTaskStatus @default(PENDING)
+  note                  String?           @db.VarChar(500)
+  createdBy             String?           @db.VarChar(64)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  parts                 DrawingTaskPart[]
+
+  @@index([workOrderNumber, status])
+  @@index([ownerId, status])
+  @@index([status, planDate])
+  @@map("drawing_task")
+}
+
+model DrawingTaskPart {
+  taskId String
+  partId String
+  task   DrawingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  part   Part        @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, partId])
+  @@index([partId])
+  @@map("drawing_task_part")
 }
 
 // ───────────── 登录会话 ─────────────
