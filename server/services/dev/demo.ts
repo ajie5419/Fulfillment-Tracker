@@ -11,6 +11,7 @@ import { FlowError } from '../flow/errors'
 import { matchInspection, matchPendingInspections } from '../flow/match'
 import { syncNonconforming } from '../issues/nonconforming'
 import { removeUploadFiles } from '../issues/uploads'
+import type { QmsBomItem } from '../bom/client'
 
 const P = 'DEMO-'
 const DAY = 86_400_000
@@ -83,6 +84,77 @@ const STEPS = [
 ] as const
 
 /**
+ * 演示 BOM（R8）：模拟 QMS 项目 BOM，演示工具开着时 DEMO- 工单的"从 QMS BOM 导入"读这里，不连 QMS。
+ * 第 3 行的"探伤"在 QMS 没有关联工序 ID，演示"跳过并提示"。
+ */
+const DEMO_BOMS: Record<string, QmsBomItem[]> = {
+  [`${P}WO-002`]: [
+    {
+      id: `${P}BOMROW-201`,
+      partId: `${P}BOM-201`,
+      partName: '模具底座',
+      partNumber: `${P}DWG-201`,
+      material: 'Q355B',
+      quantity: 2,
+      unit: '件',
+      remarks: null,
+      processes: [
+        { processId: `${P}PRC-CUT`, processName: '下料' },
+        { processId: `${P}PRC-WELD`, processName: '组焊' },
+        { processId: `${P}PRC-MACH`, processName: '机加' },
+      ],
+    },
+    {
+      id: `${P}BOMROW-202`,
+      partId: `${P}BOM-202`,
+      partName: '加热板',
+      partNumber: `${P}DWG-202`,
+      material: '45#',
+      quantity: 4,
+      unit: '件',
+      remarks: null,
+      processes: [
+        { processId: `${P}PRC-MACH`, processName: '机加' },
+        { processId: `${P}PRC-PAINT`, processName: '涂装' },
+      ],
+    },
+    {
+      id: `${P}BOMROW-203`,
+      partId: `${P}BOM-203`,
+      partName: '横梁',
+      partNumber: `${P}DWG-203`,
+      material: 'Q235B',
+      quantity: 1,
+      unit: '件',
+      remarks: '有一道工序在 QMS 没有关联工序 ID',
+      processes: [
+        { processId: `${P}PRC-WELD`, processName: '组焊' },
+        { processId: null, processName: '探伤' },
+        { processId: `${P}PRC-PAINT`, processName: '涂装' },
+      ],
+    },
+  ],
+}
+
+/** 演示 BOM：只有写过演示数据（DEMO- 工单存在）时有内容 */
+export async function demoBom(workOrderNumber: string): Promise<QmsBomItem[]> {
+  const wo = await prisma.qmsWorkOrder.findFirst({ where: { workOrderNumber, isDeleted: false }, select: { workOrderNumber: true } })
+  return wo ? structuredClone(DEMO_BOMS[workOrderNumber] ?? []) : []
+}
+
+// 演示路线模板（R8）
+const TEMPLATE = {
+  id: `${P}TPL-001`,
+  name: '结构件（演示）：下料 → 组焊 → 涂装',
+  description: '演示模板：结构件常见路线，组焊、涂装走厂外外协',
+  steps: [
+    { seq: 1, processId: `${P}PRC-CUT`, mode: 'SELF', supplierId: null, defaultDays: 2 },
+    { seq: 2, processId: `${P}PRC-WELD`, mode: 'EXTERNAL_OUTSOURCE', supplierId: `${P}SUP-02`, defaultDays: 7 },
+    { seq: 3, processId: `${P}PRC-PAINT`, mode: 'EXTERNAL_OUTSOURCE', supplierId: `${P}SUP-04`, defaultDays: 5 },
+  ],
+} as const
+
+/**
  * 幂等：已存在的记录不改（不会把走到一半的演示流程打回原形）。
  * skipUsers：配置了 QMS 同步时为 true，不写演示用户（避免和同步来的真实用户冲突）
  */
@@ -129,6 +201,11 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
     for (const s of STEPS) {
       await tx.routeStep.upsert({ where: { id: s.id }, update: {}, create: { ...s, partId: PART_ID } })
     }
+    // 模板按 ID 判断是否已有；同名的真实模板存在时不写（名称唯一）
+    if (!(await tx.routeTemplate.findFirst({ where: { OR: [{ id: TEMPLATE.id }, { name: TEMPLATE.name }] }, select: { id: true } }))) {
+      const { steps, ...t } = TEMPLATE
+      await tx.routeTemplate.create({ data: { ...t, steps: { create: steps.map((x) => ({ ...x })) } } })
+    }
     // 第一道没有上一道触发待办，演示时直接给外协专员一条"安排发出"
     await tx.todo.upsert({
       where: { id: `${P}TODO-001` },
@@ -144,6 +221,7 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
     users: opts.skipUsers ? 0 : USERS.length,
     notifyRoles: NOTIFY_ROLES.length,
     parts: 1,
+    templates: 1,
   }
 }
 
@@ -192,6 +270,10 @@ export async function resetDemo(uploadDir?: string) {
     const unmatched = await tx.unmatchedInspection.deleteMany({ where: { qmsInspectionId: { in: insIds } } })
     const stepsDeleted = await tx.routeStep.deleteMany({ where: { id: { in: stepIds } } })
     const partsDeleted = await tx.part.deleteMany({ where: { id: { in: partIds } } })
+    // 演示模板，以及引用了演示工序/外协厂的模板（演示主数据删掉后它们没法用）
+    const templates = await tx.routeTemplate.deleteMany({
+      where: { OR: [{ id: { startsWith: P } }, { steps: { some: { OR: [{ processId: { startsWith: P } }, { supplierId: { startsWith: P } }] } } }] },
+    })
     await tx.qmsInspection.deleteMany({ where: { id: { in: insIds } } })
     await tx.qmsWorkOrder.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
     await tx.qmsSupplier.deleteMany({ where: { id: { startsWith: P } } })
@@ -210,6 +292,7 @@ export async function resetDemo(uploadDir?: string) {
       reminders: reminders.count,
       unmatched: unmatched.count,
       inspections: insIds.length,
+      templates: templates.count,
     }
   })
   const { storedNames, ...counts } = result
