@@ -1,5 +1,5 @@
 /**
- * scan-rules：一次跑完 W1–W5，新建、升级、消除预警，并给升级阶梯上的人写"我的提醒"（方案 6.2）。
+ * scan-rules：一次跑完 W1–W8，新建、升级、消除预警，并给升级阶梯上的人写"我的提醒"（方案 6.2）。
  *
  * 幂等：同一对象同一规则只有一条活动预警（alert.activeKey 唯一）；同一人同一预警同一级别只有一条提醒
  * （reminder 上 alertId+level+userId 唯一）。每轮都会把当前级别该收到的人补齐，所以中途失败下一轮自动补上。
@@ -17,7 +17,11 @@ import { convertAlertInTx } from '../issues/convert'
 import { CATEGORY_TEXT } from '../issues/constants'
 import { issueTransaction } from '../issues/issues'
 import { withLease } from '../jobs/lease'
+import { DELAY_REASON_TEXT, PAYMENT_STATUS_TEXT, PURCHASE_DEPT, judgeW6, w6Summary } from '../purchases/constants'
+import { DRAWING_STATUS_TEXT, OPEN_DRAWING_STATUSES, TECH_DEPT, judgeW7, w7Summary } from '../drawings/constants'
 import { CONFIRM_CHANGE, TYPE_TEXT } from '../releases/constants'
+import { KITTING_DEPT, judgeW8, w8Summary } from '../kitting/constants'
+import { NODE_LINKS, dueWindowWhere, incompleteWhere, loadKitCounts } from '../kitting/kitting'
 import { SCAN_RULES, loadOffDays, loadThresholds } from './config'
 import {
   CONVERTIBLE_RULES,
@@ -40,13 +44,13 @@ export { SCAN_RULES, loadOffDays, loadThresholds }
 /** 一个处在规则关注状态的对象（不一定已到阈值） */
 export interface Target {
   rule: ScanRule
-  refType: 'step' | 'unmatched' | 'issue' | 'receipt' | 'release'
+  refType: 'step' | 'unmatched' | 'issue' | 'receipt' | 'release' | 'purchase' | 'drawing' | 'node'
   refId: string
   key: string
   workOrderNumber: string | null
   /** 责任人 */
   ownerIds: string[]
-  /** 黄色起额外通知的人（W5：发放人，要知道谁一直没签收 / 变更影响一直没人确认） */
+  /** 黄色起额外通知的人（W5：发放人，要知道谁一直没签收 / 变更影响一直没人确认；W6：有没付的卡交期付款申请时加财务） */
   watcherIds?: string[]
   /** 黄色起要通知的"责任部门"名称；不给时取责任人所在部门（W4 的责任部门是异常上明确写的） */
   deptNames?: string[]
@@ -62,7 +66,7 @@ export interface Target {
   meta?: { stepMode?: StepMode; supplierId?: string | null; releaseId?: string }
 }
 
-/** 收集 W1–W5 关注的全部对象，并按 now 判定级别；only 只收集某一条规则 */
+/** 收集 W1–W8 关注的全部对象，并按 now 判定级别；only 只收集某一条规则 */
 export async function collectTargets(now: Date, t: Thresholds, offDays: string[], only?: ScanRule): Promise<Target[]> {
   const run = (rule: ScanRule, fn: () => Promise<Target[]>) => (!only || only === rule ? fn() : Promise.resolve([]))
   const parts = await Promise.all([
@@ -71,6 +75,9 @@ export async function collectTargets(now: Date, t: Thresholds, offDays: string[]
     run('W3', () => collectW3(now, t, offDays)),
     run('W4', () => collectW4(now, t, offDays)),
     run('W5', () => collectW5(now, t, offDays)),
+    run('W6', () => collectW6(now, t, offDays)),
+    run('W7', () => collectW7(now, t, offDays)),
+    run('W8', () => collectW8(now, t)),
   ])
   return parts.flat()
 }
@@ -316,6 +323,131 @@ async function collectW5Changes(now: Date, t: Thresholds, offDays: string[]): Pr
       subject: `${TYPE_TEXT[rel.type]} ${rel.releaseNo}${rel.version ? `（${rel.version}）` : ''}`,
       summary: `已发放 ${durationText(elapsed)}，变更影响仍未确认（待 ${who} 确认）`,
       meta: { releaseId: rel.id },
+    })
+  }
+  return out
+}
+
+/**
+ * W6 关键物料未到货（R10）：未到货的采购行，判定见 purchases/constants.ts judgeW6
+ * （承诺到货日已过；需求日前 N 天仍无承诺日；需求日已过仍未到货直接红）。
+ * 责任人：采购负责人，没指定时是采购部负责人；责任部门是采购部（黄色起通知采购部负责人、工单项目经理，红色再加项目部负责人、分管领导）。
+ * 有没付的"卡交期"付款申请时，黄色起加通知财务，标题里写明，便于区分付款原因和管理原因。
+ * 只看 QMS 里还在（未删除）的工单。红色不转异常。
+ */
+async function collectW6(now: Date, t: Thresholds, offDays: string[]): Promise<Target[]> {
+  const lines = await prisma.purchaseLine.findMany({
+    where: { status: 'OPEN' },
+    include: { payments: { select: { payment: { select: { status: true, blocksDelivery: true } } } } },
+  })
+  if (!lines.length) return []
+  const [wos, roles] = await Promise.all([
+    prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: [...new Set(lines.map((l) => l.workOrderNumber))] }, isDeleted: false }, select: { workOrderNumber: true } }),
+    prisma.notifyRole.findMany({ where: { OR: [{ role: 'FINANCE' }, { role: 'DEPT_HEAD', department: PURCHASE_DEPT }] }, select: { role: true, userId: true } }),
+  ])
+  const live = new Set(wos.map((w) => w.workOrderNumber))
+  const heads = [...new Set(roles.filter((r) => r.role === 'DEPT_HEAD').map((r) => r.userId))]
+  const finance = [...new Set(roles.filter((r) => r.role === 'FINANCE').map((r) => r.userId))]
+  const out: Target[] = []
+  for (const l of lines) {
+    if (!live.has(l.workOrderNumber)) continue
+    const r = judgeW6({ needDate: l.needDate, promisedDate: l.promisedDate, now, offDays }, t.W6)
+    if (!r.trigger) continue
+    const blocking = l.payments.map((p) => p.payment).find((p) => p.blocksDelivery && p.status !== 'PAID')
+    const extra = [blocking ? `卡交期付款${PAYMENT_STATUS_TEXT[blocking.status]}` : '', l.delayReason ? `原因：${DELAY_REASON_TEXT[l.delayReason]}` : ''].filter(Boolean)
+    out.push({
+      rule: 'W6',
+      refType: 'purchase',
+      refId: l.id,
+      key: alertKey('W6', 'purchase', l.id),
+      workOrderNumber: l.workOrderNumber,
+      ownerIds: l.buyerId ? [l.buyerId] : heads,
+      watcherIds: blocking ? finance : [],
+      deptNames: [PURCHASE_DEPT],
+      startAt: r.trigger === 'OVERDUE' ? l.promisedDate! : l.needDate,
+      level: r.level,
+      subject: `关键物料 ${l.materialName}${l.spec ? `（${l.spec}）` : ''}`,
+      summary: `${w6Summary(r, l)}${extra.length ? `；${extra.join('，')}` : ''}`,
+    })
+  }
+  return out
+}
+
+/**
+ * W7 出图逾期（R11）：未完成、未取消的出图任务，判定见 drawings/constants.ts judgeW7
+ * （计划完成日前 N 天仍未出图黄、已过计划完成日红；已出图、需要客户确认的，超客户确认计划日黄 → 红）。
+ * 责任人：设计负责人，没指定时是技术部负责人；责任部门是技术部（黄色起通知技术部负责人、工单项目经理，红色再加项目部负责人、分管领导）。
+ * 只看 QMS 里还在（未删除）的工单。红色不转异常。
+ */
+async function collectW7(now: Date, t: Thresholds, offDays: string[]): Promise<Target[]> {
+  const tasks = await prisma.drawingTask.findMany({ where: { status: { in: OPEN_DRAWING_STATUSES } } })
+  if (!tasks.length) return []
+  const [wos, heads] = await Promise.all([
+    prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: [...new Set(tasks.map((x) => x.workOrderNumber))] }, isDeleted: false }, select: { workOrderNumber: true } }),
+    prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: TECH_DEPT }, select: { userId: true } }),
+  ])
+  const live = new Set(wos.map((w) => w.workOrderNumber))
+  const headIds = [...new Set(heads.map((h) => h.userId))]
+  const names = await loadNames({ user: tasks.map((x) => x.ownerId) })
+  const out: Target[] = []
+  for (const d of tasks) {
+    if (!live.has(d.workOrderNumber)) continue
+    const r = judgeW7({ ...d, now, offDays }, t.W7)
+    if (!r.level) continue
+    const owner = d.ownerId ? (names.user.get(d.ownerId) ?? d.ownerId) : `${TECH_DEPT}负责人`
+    out.push({
+      rule: 'W7',
+      refType: 'drawing',
+      refId: d.id,
+      key: alertKey('W7', 'drawing', d.id),
+      workOrderNumber: d.workOrderNumber,
+      ownerIds: d.ownerId ? [d.ownerId] : headIds,
+      deptNames: [TECH_DEPT],
+      startAt: r.trigger === 'CONFIRM_OVERDUE' ? d.customerPlanDate! : d.planDate,
+      level: r.level,
+      subject: `出图 ${d.componentName}（${DRAWING_STATUS_TEXT[d.status]}）`,
+      summary: w7Summary(r, d, owner),
+    })
+  }
+  return out
+}
+
+/**
+ * W8 装配节点未齐套（R12）：清单不为空、齐套率 < 100%、已进入预警窗口（需求日前 N 天，含已过）的节点，判定见 kitting/constants.ts judgeW8
+ * （前 5 天黄，前 1 天、当天或已过红；按自然日）。数据库里先按"未齐套 + 窗口"筛选，齐套率一批两次查询算完。
+ * 责任人：节点负责人，没指定时是生产经理（生产部负责人）；责任部门是生产部（黄色起通知生产部负责人、工单项目经理，红色再加项目部负责人、分管领导）。
+ * 只看 QMS 里还在（未删除）的工单。不转异常；齐套率到 100% 后对象消失，本轮扫描自动消除。
+ */
+async function collectW8(now: Date, t: Thresholds): Promise<Target[]> {
+  const nodes = await prisma.assemblyNode.findMany({ where: { AND: [incompleteWhere(), dueWindowWhere(now, t.W8)] }, include: NODE_LINKS })
+  if (!nodes.length) return []
+  const [wos, heads, kits, names] = await Promise.all([
+    prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: [...new Set(nodes.map((n) => n.workOrderNumber))] }, isDeleted: false }, select: { workOrderNumber: true } }),
+    prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: KITTING_DEPT }, select: { userId: true } }),
+    loadKitCounts(nodes),
+    loadNames({ user: nodes.map((n) => n.ownerId) }),
+  ])
+  const live = new Set(wos.map((w) => w.workOrderNumber))
+  const headIds = [...new Set(heads.map((h) => h.userId))]
+  const out: Target[] = []
+  for (const n of nodes) {
+    if (!live.has(n.workOrderNumber)) continue
+    const kit = kits.get(n.id)!
+    const r = judgeW8({ ...kit, needDate: n.needDate, now }, t.W8)
+    if (!r.level) continue
+    const owner = n.ownerId ? (names.user.get(n.ownerId) ?? n.ownerId) : '生产经理'
+    out.push({
+      rule: 'W8',
+      refType: 'node',
+      refId: n.id,
+      key: alertKey('W8', 'node', n.id),
+      workOrderNumber: n.workOrderNumber,
+      ownerIds: n.ownerId ? [n.ownerId] : headIds,
+      deptNames: [KITTING_DEPT],
+      startAt: n.needDate,
+      level: r.level,
+      subject: `装配节点 ${n.name}`,
+      summary: w8Summary(r, n, kit, owner),
     })
   }
   return out

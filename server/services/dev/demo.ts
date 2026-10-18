@@ -11,23 +11,30 @@ import { FlowError } from '../flow/errors'
 import { matchInspection, matchPendingInspections } from '../flow/match'
 import { syncNonconforming } from '../issues/nonconforming'
 import { removeUploadFiles } from '../issues/uploads'
+import { todayDate } from '../purchases/constants'
 import { createRelease } from '../releases/releases'
+import { matchIncomingInspections } from '../purchases/incoming'
 import type { QmsBomItem } from '../bom/client'
 
 const P = 'DEMO-'
 const DAY = 86_400_000
 
-const day = (offset: number) => {
-  const d = new Date(Date.now() + offset * DAY)
-  return new Date(`${d.toISOString().slice(0, 10)}T00:00:00.000Z`)
+/**
+ * 演示数据里的日期一律在 seedDemo 执行时按上海日历现算（相对"工厂时区今天"偏移 offset 天，存当天 UTC 零点）。
+ * 不在模块加载时算、也不按 UTC 日期算：上海时间 0–8 点 UTC 还是前一天，会差一天（如出图任务从黄变红、需求日提前一天）。
+ */
+const dayFn = (now: Date) => {
+  const today = todayDate(now).getTime()
+  return (offset: number) => new Date(today + offset * DAY)
 }
 
-const WORK_ORDERS = [
+const workOrders = (day: (offset: number) => Date) => [
   { workOrderNumber: `${P}WO-001`, customerName: '演示客户（铁路局）', projectName: '高铁架桥机（演示）', division: '桥机事业部', quantity: 1, deliveryDate: day(35) },
   { workOrderNumber: `${P}WO-002`, customerName: '演示客户（风电）', projectName: '风电叶片模具（演示）', division: '模具事业部', quantity: 2, deliveryDate: day(60) },
   // 没有设项目经理：演示"项目经理只看到自己负责的工单"（u-003 看不到这一单）
   { workOrderNumber: `${P}WO-003`, customerName: '演示客户（港口）', projectName: '港口门机（演示）', division: '起重事业部', quantity: 1, deliveryDate: day(90) },
 ]
+const WORK_ORDER_NUMBERS = [`${P}WO-001`, `${P}WO-002`, `${P}WO-003`]
 /** 项目经理 u-003 负责的演示工单 */
 const PM_WORK_ORDERS = [`${P}WO-001`, `${P}WO-002`]
 
@@ -48,6 +55,9 @@ const SUPPLIERS = [
   { id: `${P}SUP-03`, name: '机加厂', outsourcingMode: 'EXTERNAL' },
   { id: `${P}SUP-04`, name: '涂装厂', outsourcingMode: 'EXTERNAL' },
   { id: `${P}SUP-05`, name: '热处理厂', outsourcingMode: 'EXTERNAL' },
+  // R10 关键物料供应商
+  { id: `${P}SUP-06`, name: '演示轴承厂', outsourcingMode: null },
+  { id: `${P}SUP-07`, name: '演示液压件公司', outsourcingMode: null },
 ]
 
 const PROCESSES = [
@@ -68,6 +78,11 @@ const USERS = [
   { id: 'u-006', username: `${P}u-006`, realName: '测试质量负责人', departmentId: `${P}DEPT-QA`, roleId: `${P}ROLE-QA-HEAD`, roleName: '部门负责人' },
   // R9 发放签收的发放人
   { id: 'u-008', username: `${P}u-008`, realName: '测试设计员', departmentId: `${P}DEPT-TECH`, roleId: `${P}ROLE-DESIGN`, roleName: '设计人员' },
+  // R10：采购部负责人兼采购员；财务
+  { id: 'u-009', username: `${P}u-009`, realName: '测试采购员', departmentId: `${P}DEPT-PUR`, roleId: `${P}ROLE-BUYER`, roleName: '采购员' },
+  { id: 'u-010', username: `${P}u-010`, realName: '测试财务', departmentId: `${P}DEPT-FIN`, roleId: `${P}ROLE-FIN`, roleName: '财务' },
+  // R11：技术部负责人（出图任务没指定设计负责人时的责任人；W7 黄色起收到）
+  { id: 'u-011', username: `${P}u-011`, realName: '测试技术负责人', departmentId: `${P}DEPT-TECH`, roleId: `${P}ROLE-TECH-HEAD`, roleName: '部门负责人' },
 ]
 
 // 预警升级阶梯的通知对象（方案 6.2）
@@ -77,6 +92,9 @@ const NOTIFY_ROLES = [
   { id: `${P}ROLE-3`, role: 'PROJECT_DEPT_HEAD', userId: 'u-004', department: null },
   { id: `${P}ROLE-4`, role: 'LEADER', userId: 'u-005', department: null },
   { id: `${P}ROLE-5`, role: 'DEPT_HEAD', userId: 'u-006', department: '质量部' },
+  { id: `${P}ROLE-6`, role: 'DEPT_HEAD', userId: 'u-009', department: '采购部' },
+  { id: `${P}ROLE-7`, role: 'FINANCE', userId: 'u-010', department: null },
+  { id: `${P}ROLE-8`, role: 'DEPT_HEAD', userId: 'u-011', department: '技术部' },
 ] as const
 
 const PART_ID = `${P}PART-001`
@@ -96,6 +114,60 @@ const STEPS2 = [
   { id: `${P}STEP-201`, seq: 1, processId: `${P}PRC-CUT`, mode: 'SELF', supplierId: null, ownerId: 'u-002', status: 'IN_PROGRESS' },
   { id: `${P}STEP-202`, seq: 2, processId: `${P}PRC-MACH`, mode: 'EXTERNAL_OUTSOURCE', supplierId: `${P}SUP-03`, ownerId: 'u-001', status: 'PENDING' },
 ] as const
+
+/**
+ * R10 演示关键物料（需求日、承诺日相对今天）：
+ *   钢板：承诺日、需求日都过了还没到，卡交期预付款待付、原因"付款" → W6 红；
+ *   液压马达：5 天后要用还没有承诺日 → W6 黄（没指定采购负责人 → 采购部负责人）；
+ *   回转支承：等到货，演示工具"模拟进货检验"可自动确认到货；
+ *   减速机：晚到了 2 天，原因"供应商"；加热管：按时到了。
+ * 主梁结构件挂了钢板、回转支承、减速机：钢板和回转支承都到了以后，第一道（组焊，外协专员）收到"可以开工"。
+ * 登记时间放在 20 天前：今天模拟的进货检验在登记之后，能自动对上。
+ */
+const purchaseLines = (day: (offset: number) => Date) => [
+  { id: `${P}PL-001`, workOrderNumber: `${P}WO-001`, partId: PART_ID, materialName: 'Q355B 钢板', spec: 'δ=20', quantity: 30, unit: 't', supplierId: null, supplierName: '演示钢厂（手填）', needDate: day(-2), promisedDate: day(-5), buyerId: 'u-009', delayReason: 'PAYMENT', delayNote: '预付款未付，钢厂不排产', arrivedDate: null },
+  { id: `${P}PL-002`, workOrderNumber: `${P}WO-001`, partId: PART2_ID, materialName: '进口液压马达', spec: 'A2FM 63', quantity: 2, unit: '台', supplierId: `${P}SUP-07`, supplierName: '演示液压件公司', needDate: day(5), promisedDate: null, buyerId: null, delayReason: null, delayNote: null, arrivedDate: null },
+  { id: `${P}PL-003`, workOrderNumber: `${P}WO-001`, partId: PART_ID, materialName: '回转支承', spec: '013.45.1250', quantity: 1, unit: '套', supplierId: `${P}SUP-06`, supplierName: '演示轴承厂', needDate: day(12), promisedDate: day(8), buyerId: 'u-009', delayReason: null, delayNote: null, arrivedDate: null },
+  { id: `${P}PL-004`, workOrderNumber: `${P}WO-001`, partId: PART_ID, materialName: '减速机', spec: 'ZQ-650', quantity: 2, unit: '台', supplierId: null, supplierName: '演示减速机厂（手填）', needDate: day(-6), promisedDate: day(-8), buyerId: 'u-009', delayReason: 'SUPPLIER', delayNote: '供应商排产推迟', arrivedDate: day(-4) },
+  { id: `${P}PL-005`, workOrderNumber: `${P}WO-002`, partId: null, materialName: '模具加热管', spec: 'Φ16×1200', quantity: 40, unit: '支', supplierId: null, supplierName: '演示电热元件厂（手填）', needDate: day(10), promisedDate: day(6), buyerId: 'u-009', delayReason: null, delayNote: null, arrivedDate: day(-1) },
+] as const
+
+const payments = (day: (offset: number) => Date) => [
+  { id: `${P}PAY-001`, workOrderNumber: `${P}WO-001`, amount: 186000, requestDate: day(-10), blocksDelivery: true, status: 'PENDING', note: '钢板预付款 30%，不付不排产', financeNote: null, lines: [`${P}PL-001`] },
+  { id: `${P}PAY-002`, workOrderNumber: `${P}WO-001`, amount: 52000, requestDate: day(-3), blocksDelivery: false, status: 'ON_HOLD', note: '回转支承到货款', financeNote: '月底统一付', lines: [`${P}PL-003`] },
+  { id: `${P}PAY-003`, workOrderNumber: `${P}WO-002`, amount: 8000, requestDate: day(-12), blocksDelivery: false, status: 'PAID', note: '加热管全款', financeNote: null, lines: [`${P}PL-005`] },
+] as const
+
+/**
+ * R11 演示出图任务（设计负责人 u-008 测试设计员；技术部负责人 u-011）：
+ *   主梁结构件总图：计划完成日已过 2 天还没出图 → W7 红；它挡着主梁结构件的"可以开工"（物料齐了也不发），
+ *     标记出图 → 一键发放后才发；
+ *   支腿零件图：明天到计划完成日 → W7 黄；
+ *   液压系统原理图（不关联工件）：6 天前已出图、需要客户确认，客户确认计划日已过 3 天 → W7 黄（再过 1 天红），还没发放；
+ *   模具加热系统布置图（DEMO-WO-002，负责人 u-011）：8 天后到期，不预警。
+ */
+const drawingTasks = (day: (offset: number) => Date) => {
+  return [
+    { id: `${P}DT-001`, workOrderNumber: `${P}WO-001`, componentName: '主梁结构件总图', ownerId: 'u-008', planDate: day(-2), needsCustomerConfirm: false, customerPlanDate: null, drawnDate: null, status: 'PENDING', partIds: [PART_ID] },
+    { id: `${P}DT-002`, workOrderNumber: `${P}WO-001`, componentName: '支腿零件图', ownerId: 'u-008', planDate: day(1), needsCustomerConfirm: false, customerPlanDate: null, drawnDate: null, status: 'PENDING', partIds: [PART2_ID] },
+    { id: `${P}DT-003`, workOrderNumber: `${P}WO-001`, componentName: '液压系统原理图', ownerId: 'u-008', planDate: day(-8), needsCustomerConfirm: true, customerPlanDate: day(-3), drawnDate: day(-6), status: 'DRAWN', partIds: [] },
+    { id: `${P}DT-004`, workOrderNumber: `${P}WO-002`, componentName: '模具加热系统布置图', ownerId: 'u-011', planDate: day(8), needsCustomerConfirm: true, customerPlanDate: day(15), drawnDate: null, status: 'PENDING', partIds: [] },
+  ] as const
+}
+
+/**
+ * R12 齐套演示：第三个工件"回转底座"（机加已完工），以及 DEMO-WO-001 的 3 个装配节点：
+ *   回转机构部装（负责人 u-002）：回转底座（已完成）+ 减速机（已到货）→ 齐套 100%；
+ *   主梁总装（不指定负责人 = 生产经理）：3 天后要装，主梁结构件（图纸未完成）+ 钢板（超承诺日）+ 回转支承（待到货）→ 0%，W8 黄；
+ *   支腿部装（负责人 u-002）：20 天后，支腿（下料在制）+ 进口液压马达（无承诺日）→ 缺件，还没到预警窗口。
+ */
+const PART3_ID = `${P}PART-003`
+const STEP3 = { id: `${P}STEP-301`, seq: 1, processId: `${P}PRC-MACH`, mode: 'SELF', supplierId: null, ownerId: 'u-002', status: 'DONE' } as const
+const assemblyNodes = (day: (offset: number) => Date) => [
+  { id: `${P}NODE-001`, workOrderNumber: `${P}WO-001`, name: '回转机构部装', needDate: day(10), ownerId: 'u-002', sortOrder: 1, note: '演示：齐套', partIds: [PART3_ID], purchaseIds: [`${P}PL-004`] },
+  { id: `${P}NODE-002`, workOrderNumber: `${P}WO-001`, name: '主梁总装', needDate: day(3), ownerId: null, sortOrder: 2, note: '演示：临近需求日仍缺件 → W8 黄', partIds: [PART_ID], purchaseIds: [`${P}PL-001`, `${P}PL-003`] },
+  { id: `${P}NODE-003`, workOrderNumber: `${P}WO-001`, name: '支腿部装', needDate: day(20), ownerId: 'u-002', sortOrder: 3, note: '演示：缺件，还没到预警窗口', partIds: [PART2_ID], purchaseIds: [`${P}PL-002`] },
+]
 
 /**
  * 演示 BOM（R8）：模拟 QMS 项目 BOM，演示工具开着时 DEMO- 工单的"从 QMS BOM 导入"读这里，不连 QMS。
@@ -174,8 +246,9 @@ const TEMPLATE = {
  */
 export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
   const now = new Date()
+  const day = dayFn(now)
   await prisma.$transaction(async (tx) => {
-    for (const wo of WORK_ORDERS) {
+    for (const wo of workOrders(day)) {
       await tx.qmsWorkOrder.upsert({ where: { workOrderNumber: wo.workOrderNumber }, update: {}, create: { ...wo, status: 'IN_PROGRESS', updatedAt: now } })
     }
     for (const s of SUPPLIERS) {
@@ -195,12 +268,12 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
       await tx.notifyRole.upsert({ where: { id: r.id }, update: {}, create: r })
     }
     // 演示工单 001、002 的项目经理是 u-003；003 不设项目经理
-    for (const wo of WORK_ORDERS) {
-      const pm = PM_WORK_ORDERS.includes(wo.workOrderNumber) ? 'u-003' : null
+    for (const workOrderNumber of WORK_ORDER_NUMBERS) {
+      const pm = PM_WORK_ORDERS.includes(workOrderNumber) ? 'u-003' : null
       await tx.workOrderExt.upsert({
-        where: { workOrderNumber: wo.workOrderNumber },
+        where: { workOrderNumber },
         update: {},
-        create: { workOrderNumber: wo.workOrderNumber, projectManagerId: pm, isPilot: true },
+        create: { workOrderNumber, projectManagerId: pm, isPilot: true },
       })
     }
     // 默认阈值（迁移里也写了；这里补上被清掉的）
@@ -232,6 +305,55 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
       const { steps, ...t } = TEMPLATE
       await tx.routeTemplate.create({ data: { ...t, steps: { create: steps.map((x) => ({ ...x })) } } })
     }
+    // R10 关键物料和付款申请（登记人 / 申请人 u-009；连着 QMS、没写演示用户时照样写，名字显示为 ID）
+    const registeredAt = new Date(+now - 20 * DAY)
+    for (const { arrivedDate, ...l } of purchaseLines(day)) {
+      await tx.purchaseLine.upsert({
+        where: { id: l.id },
+        update: {},
+        create: {
+          ...l,
+          createdBy: 'u-009',
+          createdAt: registeredAt,
+          ...(arrivedDate ? { status: 'ARRIVED', arrivedDate, arrivalSource: 'PC', arrivedBy: 'u-009', arrivedAt: arrivedDate } : {}),
+        },
+      })
+    }
+    for (const { lines, ...pay } of payments(day)) {
+      if (await tx.paymentRequest.findUnique({ where: { id: pay.id }, select: { id: true } })) continue
+      await tx.paymentRequest.create({
+        data: { ...pay, requesterId: 'u-009', ...(pay.status === 'PAID' ? { statusBy: 'u-010', statusAt: now } : {}), lines: { create: lines.map((purchaseLineId) => ({ purchaseLineId })) } },
+      })
+    }
+    // R11 出图任务（登记人 u-003）
+    for (const { partIds, drawnDate, ...d } of drawingTasks(day)) {
+      if (await tx.drawingTask.findUnique({ where: { id: d.id }, select: { id: true } })) continue
+      await tx.drawingTask.create({
+        data: { ...d, drawnDate, drawnBy: drawnDate ? d.ownerId : null, createdBy: 'u-003', parts: { create: partIds.map((partId) => ({ partId })) } },
+      })
+    }
+    // R12：已完工的工件"回转底座"（机加完工，记一条完工事件）和 3 个装配节点
+    await tx.part.upsert({
+      where: { id: PART3_ID },
+      update: {},
+      create: { id: PART3_ID, workOrderNumber: `${P}WO-001`, name: '回转底座', drawingNo: `${P}DWG-003`, quantity: 1, currentStepId: STEP3.id, status: 'DONE' },
+    })
+    if (!(await tx.routeStep.findUnique({ where: { id: STEP3.id }, select: { id: true } }))) {
+      const finishedAt = new Date(+now - 2 * DAY)
+      await tx.routeStep.create({ data: { ...STEP3, partId: PART3_ID, startedAt: new Date(+finishedAt - 3 * DAY), finishedAt } })
+      await tx.flowEvent.create({ data: { stepId: STEP3.id, type: 'FINISH', qty: 1, source: 'PC', actorId: 'u-002', occurredAt: finishedAt } })
+    }
+    for (const { partIds, purchaseIds, ...n } of assemblyNodes(day)) {
+      if (await tx.assemblyNode.findUnique({ where: { id: n.id }, select: { id: true } })) continue
+      await tx.assemblyNode.create({
+        data: {
+          ...n,
+          createdBy: 'u-002',
+          parts: { create: partIds.map((partId) => ({ partId })) },
+          purchases: { create: purchaseIds.map((purchaseLineId) => ({ purchaseLineId })) },
+        },
+      })
+    }
     // 第一道没有上一道触发待办，演示时直接给外协专员一条"安排发出"
     await tx.todo.upsert({
       where: { id: `${P}TODO-001` },
@@ -242,14 +364,18 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
   const releases = await seedDemoReleases()
   return {
     releases,
-    workOrders: WORK_ORDERS.length,
+    workOrders: WORK_ORDER_NUMBERS.length,
     suppliers: SUPPLIERS.length,
     processes: PROCESSES.length,
     departments: DEPARTMENTS.length,
     users: opts.skipUsers ? 0 : USERS.length,
     notifyRoles: NOTIFY_ROLES.length,
-    parts: 2,
+    parts: 3,
     templates: 1,
+    purchaseLines: purchaseLines(day).length,
+    payments: payments(day).length,
+    drawingTasks: drawingTasks(day).length,
+    assemblyNodes: assemblyNodes(day).length,
   }
 }
 
@@ -332,9 +458,21 @@ export async function resetDemo(uploadDir?: string) {
     })
     const issueRows = await tx.issue.findMany({ where: { workOrderNumber: { startsWith: P } }, select: { id: true } })
     const issueIds = issueRows.map((i) => i.id)
+    // R10：演示工单上的付款申请（关联行级联删除）、采购行、进货检验处理记录、"可以开工"待办
+    const purchaseIds = (await tx.purchaseLine.findMany({ where: { OR: [{ workOrderNumber: { startsWith: P } }, { partId: { in: partIds } }] }, select: { id: true } })).map((l) => l.id)
+    const payments = await tx.paymentRequest.deleteMany({ where: { OR: [{ workOrderNumber: { startsWith: P } }, { lines: { some: { purchaseLineId: { in: purchaseIds } } } }] } })
+    await tx.todo.deleteMany({ where: { refType: 'part', refId: { in: partIds } } })
+    await tx.incomingCheck.deleteMany({ where: { OR: [{ qmsInspectionId: { in: insIds } }, { purchaseLineId: { in: purchaseIds } }] } })
+    // R11：演示工单上的出图任务（关联工件随任务级联删除）
+    const drawingIds = (await tx.drawingTask.findMany({ where: { OR: [{ workOrderNumber: { startsWith: P } }, { parts: { some: { partId: { in: partIds } } } }] }, select: { id: true } })).map((d) => d.id)
+    // R12：演示工单上的装配节点（清单随节点级联删除）
+    const nodeIds = (await tx.assemblyNode.findMany({ where: { workOrderNumber: { startsWith: P } }, select: { id: true } })).map((n) => n.id)
     const alertRows = await tx.alert.findMany({
       where: {
         OR: [
+          { refType: 'node', refId: { in: nodeIds } },
+          { refType: 'drawing', refId: { in: drawingIds } },
+          { refType: 'purchase', refId: { in: purchaseIds } },
           { refType: 'step', refId: { in: stepIds } },
           { refType: 'unmatched', refId: { in: insIds } },
           { refType: 'issue', refId: { in: issueIds } },
@@ -356,6 +494,9 @@ export async function resetDemo(uploadDir?: string) {
       where: { OR: [{ alertId: { in: alertIds } }, { userId: { in: demoUsers } }, { dedupeKey: { in: receiptIds.map((id) => `RELEASE_REJECT:${id}`) } }] },
     })
     const releases = await tx.release.deleteMany({ where: { id: { in: releaseIds } } })
+    const purchases = await tx.purchaseLine.deleteMany({ where: { id: { in: purchaseIds } } })
+    const drawings = await tx.drawingTask.deleteMany({ where: { id: { in: drawingIds } } })
+    const nodes = await tx.assemblyNode.deleteMany({ where: { id: { in: nodeIds } } })
     const alerts = await tx.alert.deleteMany({ where: { id: { in: alertIds } } })
     await tx.notifyRole.deleteMany({ where: { OR: [{ id: { startsWith: P } }, { userId: { in: demoUsers } }] } })
     await tx.workOrderExt.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
@@ -387,6 +528,10 @@ export async function resetDemo(uploadDir?: string) {
       inspections: insIds.length,
       templates: templates.count,
       releases: releases.count,
+      purchaseLines: purchases.count,
+      payments: payments.count,
+      drawingTasks: drawings.count,
+      assemblyNodes: nodes.count,
     }
   })
   const { storedNames, ...counts } = result
@@ -402,16 +547,19 @@ export interface DemoInspectionInput {
   processName?: string | null
   supplierId?: string | null
   quantity: number
+  /** INCOMING = 进货检验（R10，确认采购行到货）；不填 = 外协返厂报检 */
+  category?: 'INCOMING' | null
 }
 
-/** 模拟 QMS 新增一条返厂报检，然后立即跑一轮匹配 */
+/** 模拟 QMS 新增一条返厂报检（或进货检验），然后立即跑一轮匹配 */
 export async function createDemoInspection(input: DemoInspectionInput) {
   const [process, supplier] = await Promise.all([
     input.processId ? prisma.qmsProcess.findUnique({ where: { id: input.processId } }) : null,
     input.supplierId ? prisma.qmsSupplier.findUnique({ where: { id: input.supplierId } }) : null,
   ])
   const partName = input.partName?.trim() || ''
-  const processName = input.processName?.trim() || process?.name || ''
+  const incoming = input.category === 'INCOMING'
+  const processName = incoming ? '进货检验' : input.processName?.trim() || process?.name || ''
   if (!input.partId && !partName) throw new FlowError('物料 ID 和物料名称至少填一个')
   const now = new Date()
   const id = `${P}INS-${now.getTime()}-${randomBytes(3).toString('hex')}`
@@ -423,8 +571,9 @@ export async function createDemoInspection(input: DemoInspectionInput) {
       workOrderNumbers: [input.workOrderNumber],
       partId: input.partId || null,
       partName,
-      processId: input.processId || null,
+      processId: incoming ? null : input.processId || null,
       processName,
+      category: incoming ? 'INCOMING' : null,
       supplierId: input.supplierId || null,
       supplierName: supplier?.name ?? null,
       responsibilityType: input.supplierId ? 'SUPPLIER' : null,
@@ -438,8 +587,9 @@ export async function createDemoInspection(input: DemoInspectionInput) {
   // 先匹配这一条（工单下还没建工件时也给出结果），再顺带处理其他待处理的
   const result = await matchInspection(id)
   const results = await matchPendingInspections()
+  const incomingResults = await matchIncomingInspections()
   const nonconforming = await syncNonconforming()
-  return { inspectionId: id, result, processed: results.length + 1, nonconforming }
+  return { inspectionId: id, result, incoming: incomingResults.find((r) => r.inspectionId === id) ?? null, processed: results.length + 1, nonconforming }
 }
 
 /** 演示用的报检列表（模拟检验结论时选择） */

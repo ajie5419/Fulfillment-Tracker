@@ -19,6 +19,7 @@ export const ROLE_TEXT: Record<NotifyRoleKind, string> = {
   DEPT_HEAD: '部门负责人',
   PROJECT_DEPT_HEAD: '项目部负责人',
   LEADER: '分管领导',
+  FINANCE: '财务',
 }
 
 /** 一次发放最多多少接收人（防误选"全部人员"时一下发几百条待办） */

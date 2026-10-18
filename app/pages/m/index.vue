@@ -28,12 +28,13 @@ async function readAll() {
 }
 type Todo = (typeof todos.value)[number]
 
-/** 安排发出 → 发出登记页（预填该步骤）；安排开工 → 确认后开工；签收 / 确认变更影响 → 手机签收页 */
+/** 安排发出 → 发出登记页（预填该步骤）；安排开工 → 确认后开工；签收 / 确认变更影响 → 手机签收页；可以开工 → 按第一道工序的方式发出或开工 */
 async function open(t: Todo) {
   if (t.release) return navigateTo(`/m/release?id=${encodeURIComponent(t.release.id)}`)
   if (!t.step) return
-  if (t.action === 'ARRANGE_SEND') return navigateTo(`/m/send?stepId=${encodeURIComponent(t.step.id)}`)
-  if (t.action === 'ARRANGE_START') {
+  const ready = t.action === 'READY_TO_START' && t.step.status === 'PENDING'
+  if (t.action === 'ARRANGE_SEND' || (ready && t.step.mode === 'EXTERNAL_OUTSOURCE')) return navigateTo(`/m/send?stepId=${encodeURIComponent(t.step.id)}`)
+  if (t.action === 'ARRANGE_START' || ready) {
     try {
       await showConfirmDialog({ title: '确认开工', message: `${t.step.partName} · ${t.step.processName}` })
     } catch {
@@ -81,6 +82,13 @@ async function transfer(action: { id: string }) {
     <div class="entries">
       <van-button type="danger" icon="warning-o" round block @click="navigateTo('/m/issue-new')">上报异常</van-button>
       <van-button type="primary" plain icon="todo-list-o" round block @click="navigateTo('/m/issues')">我的异常</van-button>
+    </div>
+    <div class="entries second">
+      <van-button type="success" plain icon="logistics" round block @click="navigateTo('/m/arrivals')">到货确认</van-button>
+      <van-button type="primary" plain icon="description" round block @click="navigateTo('/m/drawings')">我的出图任务</van-button>
+    </div>
+    <div class="entries second">
+      <van-button type="warning" plain icon="cluster-o" round block @click="navigateTo('/m/kitting')">齐套 / 缺件</van-button>
     </div>
 
     <!-- QMS 同步连续失败（管理员）：未读时置顶，点一下标为已读（处理请到电脑端设置页） -->
@@ -155,6 +163,7 @@ async function transfer(action: { id: string }) {
 <style scoped>
 .me { margin: 12px 0; }
 .entries { display: flex; gap: 12px; padding: 0 16px; }
+.entries.second { margin-top: 12px; }
 .digest { margin: 12px 16px 0; padding: 10px 12px; border-radius: 8px; background: #ecf5ff; border: 1px solid #b3d8ff; font-size: 14px; }
 .digest.lv-RED { background: #fff1f0; border-color: #ffa39e; }
 .digest.lv-YELLOW { background: #fff7e6; border-color: #ffd591; }

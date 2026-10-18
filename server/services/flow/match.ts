@@ -7,11 +7,13 @@
  * 用 teamId（qms_supplier 里 kind = TEAM 的同一 id）。
  * 恰好一个候选 → 自动记返厂；零个或多个 → 进入"待确认匹配"，人工点一下关联。
  * 幂等：flow_event.qmsInspectionId 唯一，同一报检重复同步、重复匹配不会重复记返厂和生成待办。
+ * 进货检验（INCOMING，R10）不是外协返厂：不参与这里的匹配、不进"待确认匹配"，改由 purchases/incoming.ts 确认采购行到货。
  */
 import type { Prisma, QmsInspection, StepMode, StepStatus } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
+import { isIncomingInspection } from '../purchases/constants'
 import { FlowError } from './errors'
 import { inspectionSupplierId, inspectionWorkOrders } from './inspection'
 import { recordReturn } from './flow'
@@ -125,6 +127,7 @@ export async function matchInspection(inspectionId: string): Promise<MatchResult
       }
       if (unmatched) return { inspectionId, status: 'skipped' }
       if (matched) return { inspectionId, status: 'skipped' }
+      if (isIncomingInspection(ins)) return { inspectionId, status: 'ignored' }
 
       const steps = await activeOutsourceSteps(tx, inspectionWorkOrders(ins))
       const hits = findCandidates(ins, steps)
@@ -155,6 +158,7 @@ export async function matchInspection(inspectionId: string): Promise<MatchResult
  * 处理所有还没处理的报检：既没记过返厂、也不在待确认列表里的；外加"已匹配但后来被撤销"的。
  * 同步任务（sync-qms）每轮同步完调用一次，演示工具也调用。
  *
+ * 进货检验（INCOMING）不处理（见文件头）；之前已经匹配过的仍照常检查撤销。
  * 只看履约在跟踪的工单（任一工单下已建了工件）上的报检：QMS 全量同步过来的其他工单的报检
  * 不进"待确认匹配"（否则上线首次同步会把历史报检全堆进去）；之后该工单建了工件，下一轮自然会处理。
  * 并且只看工件登记之后提交的报检：登记前的历史报检不可能是这次外协的返厂，避免误匹配到正在外协的步骤。
@@ -165,6 +169,7 @@ export async function matchPendingInspections(): Promise<MatchResult[]> {
     LEFT JOIN unmatched_inspection u ON u.qmsInspectionId = i.id
     LEFT JOIN flow_event f ON f.qmsInspectionId = i.id
     WHERE i.isDeleted = false
+      AND (f.id IS NOT NULL OR NOT (UPPER(TRIM(COALESCE(i.category, ''))) = 'INCOMING' OR (TRIM(COALESCE(i.category, '')) = '' AND TRIM(i.processName) = '进货检验')))
       AND ((u.qmsInspectionId IS NULL AND (f.id IS NULL OR i.status = 'CANCELLED'))
         OR (i.status = 'CANCELLED' AND f.id IS NOT NULL AND u.reason <> 'CANCELLED_AFTER_MATCH'))
       AND (f.id IS NOT NULL OR EXISTS (

@@ -18,6 +18,18 @@ export const RECIPIENT_ROLE_OPTIONS = [
 ] as const
 
 export type ReleaseTypeKey = keyof typeof RELEASE_TYPE_TEXT
+
+/** 新建发放单弹窗的预填（R11 出图任务一键发放） */
+export interface ReleasePrefill {
+  type?: ReleaseTypeKey
+  workOrderNumber: string
+  partIds?: string[]
+  description?: string
+  drawingTaskId?: string
+  /** 弹窗标题里的说明，如"出图任务：主梁总图" */
+  label?: string
+}
+
 export type ReceiptStatusKey = keyof typeof RECEIPT_STATUS_TEXT
 
 /** 附件上限（与服务端一致），选择时先拦一道 */

@@ -5,14 +5,17 @@ import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { alertSourceKey, convertAlertInTx } from '../issues/convert'
 import { issueTransaction } from '../issues/issues'
+import { drawingLink, drawingMobileLink } from '../drawings/constants'
+import { kittingLink, kittingMobileLink } from '../kitting/constants'
+import { purchaseLink, purchaseMobileLink } from '../purchases/constants'
 import { releaseLink, releaseMobileLink } from '../releases/constants'
 import { CONVERTIBLE_RULES, durationText, elapsedExcludingOffDays } from './rules'
 import { SCAN_RULES, type Target, collectTargets, loadOffDays, loadThresholds } from './scan'
 
 interface Link {
-  /** 电脑端：步骤 → 工件页对应工单；待确认 → 待确认匹配页；异常 → 异常列表并打开该条；签收记录（W5）→ 发放单详情 */
+  /** 电脑端：步骤 → 工件页对应工单；待确认 → 待确认匹配页；异常 → 异常列表并打开该条；签收记录（W5）→ 发放单详情；采购行（W6）→ 采购到货页并打开该行；出图任务（W7）→ 出图任务页并打开该任务；装配节点（W8）→ 齐套页并定位该节点 */
   pc: string | null
-  /** 手机端：W2 厂外步骤 → 发出登记；在外步骤 → 外协在途；异常 → 我的异常；签收记录 → 手机签收页；待确认没有手机页面 */
+  /** 手机端：W2 厂外步骤 → 发出登记；在外步骤 → 外协在途；异常 → 我的异常；签收记录 → 手机签收页；采购行 → 到货确认页；出图任务 → 我的出图任务；装配节点 → 手机齐套页；待确认没有手机页面 */
   mobile: string | null
 }
 
@@ -44,6 +47,9 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     let link: Link = { pc: null, mobile: null }
     if (a.refType === 'unmatched') link = { pc: '/unmatched', mobile: null }
     if (a.refType === 'issue') link = issueLink(a.refId)
+    if (a.refType === 'purchase') link = { pc: purchaseLink(a.refId), mobile: purchaseMobileLink(a.refId) }
+    if (a.refType === 'drawing') link = { pc: drawingLink(a.refId), mobile: drawingMobileLink(a.refId) }
+    if (a.refType === 'node') link = { pc: kittingLink(a.refId), mobile: kittingMobileLink(a.refId) }
     const releaseId = a.refType === 'receipt' ? releaseOf.get(a.refId) : a.refType === 'release' ? a.refId : undefined
     if (releaseId) link = { pc: releaseLink(releaseId), mobile: releaseMobileLink(releaseId) }
     const step = a.refType === 'step' ? stepById.get(a.refId) : undefined
@@ -170,6 +176,17 @@ function canConvert(level: AlertLevel, target: Pick<Target, 'rule' | 'ownerIds'>
   return viewer.isAdmin || target.ownerIds.includes(viewer.userId) || (!!pm && pm === viewer.userId)
 }
 
+/** 预警列表里"去处理"的电脑端地址 */
+function targetLink(t: Target): string | null {
+  if ((t.refType === 'receipt' || t.refType === 'release') && t.meta?.releaseId) return releaseLink(t.meta.releaseId)
+  if (t.refType === 'purchase') return purchaseLink(t.refId)
+  if (t.refType === 'drawing') return drawingLink(t.refId)
+  if (t.refType === 'node') return kittingLink(t.refId)
+  if (t.refType === 'unmatched') return '/unmatched'
+  if (t.refType === 'issue') return `/issues?id=${encodeURIComponent(t.refId)}`
+  return t.workOrderNumber ? `/parts?wo=${encodeURIComponent(t.workOrderNumber)}` : null
+}
+
 /** 预警列表：活动中的预警，以及已转异常但对象仍在关注状态的（显示"已转异常 YC-…"）。附对象、情况、已持续时长、责任人 */
 export async function listAlerts(filter: AlertFilter, now = new Date()) {
   const alerts = await prisma.alert.findMany({
@@ -218,22 +235,13 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
         subject: t.subject,
         summary: t.summary,
         startAt: t.startAt,
-        duration: a.rule === 'W3' || a.rule === 'W4' ? null : durationText(elapsedExcludingOffDays(t.startAt, at, offDays)),
+        duration: a.rule === 'W3' || a.rule === 'W4' || a.rule === 'W6' || a.rule === 'W7' || a.rule === 'W8' ? null : durationText(elapsedExcludingOffDays(t.startAt, at, offDays)),
         owners: t.ownerIds.map((id) => ({ id, name: names.user.get(id) ?? id })),
         firstAt: a.firstAt,
         levelAt: a.levelAt,
         issue: issue ? { id: issue.id, issueNo: issue.issueNo } : null,
         canConvert: a.status === 'ACTIVE' && canConvert(a.level, t, t.workOrderNumber ? pmOf.get(t.workOrderNumber) : null, filter.viewer),
-        link:
-          (t.refType === 'receipt' || t.refType === 'release') && t.meta?.releaseId
-            ? releaseLink(t.meta.releaseId)
-            : t.refType === 'unmatched'
-              ? '/unmatched'
-              : t.refType === 'issue'
-                ? `/issues?id=${encodeURIComponent(t.refId)}`
-                : t.workOrderNumber
-                  ? `/parts?wo=${encodeURIComponent(t.workOrderNumber)}`
-                  : null,
+        link: targetLink(t),
       }
     })
     .filter((x) => x !== null)
