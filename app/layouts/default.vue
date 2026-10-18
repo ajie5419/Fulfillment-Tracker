@@ -30,6 +30,15 @@ const groups = computed(() => [
 ].filter((g) => g.items.length))
 const menu = computed(() => groups.value.flatMap((g) => g.items))
 const collapsed = ref(false)
+/** 窄屏（< lg）时菜单收起，由页头的"菜单"按钮展开（键盘可达）；宽屏始终展开 */
+const broken = ref(false)
+function onBreakpoint(b: boolean) {
+  broken.value = b
+  collapsed.value = b
+}
+watch(() => route.path, () => {
+  if (broken.value) collapsed.value = true
+})
 const selected = computed(() => [menu.value.find((m) => m.key !== '/' && route.path.startsWith(m.key))?.key ?? '/'])
 
 // ───── 新的黄、红预警在右上角弹出（方案 6.3）：每 60 秒轮询一次 ─────
@@ -97,14 +106,25 @@ onBeforeUnmount(() => clearInterval(timer))
 <template>
   <a-layout style="min-height: 100vh">
     <a-layout-header class="header">
-      <span class="brand">项目履约</span>
+      <span class="left">
+        <a-button
+          v-if="broken"
+          size="small"
+          ghost
+          :aria-label="collapsed ? '展开菜单' : '收起菜单'"
+          :aria-expanded="!collapsed"
+          class="nav-toggle"
+          @click="collapsed = !collapsed"
+        >菜单</a-button>
+        <span class="brand">项目履约</span>
+      </span>
       <span v-if="me" class="user">
         {{ me.name }}<template v-if="me.department"> · {{ me.department }}</template>
         <a-button type="link" size="small" @click="logout">退出 / 切换账号</a-button>
       </span>
     </a-layout-header>
     <a-layout>
-      <a-layout-sider v-model:collapsed="collapsed" theme="dark" :width="148" breakpoint="lg" :collapsed-width="0" class="sider">
+      <a-layout-sider v-model:collapsed="collapsed" :trigger="null" theme="dark" :width="148" breakpoint="lg" :collapsed-width="0" class="sider" @breakpoint="onBreakpoint">
         <div class="sider-scroll">
           <a-menu theme="dark" mode="inline" :selected-keys="selected">
             <a-menu-item-group v-for="g in groups" :key="g.title" :title="g.title">
@@ -122,6 +142,7 @@ onBeforeUnmount(() => clearInterval(timer))
 
 <style scoped>
 .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 24px; position: sticky; top: 0; z-index: 10; }
+.left { display: flex; align-items: center; gap: 12px; }
 .brand { color: #fff; font-weight: 600; font-size: 16px; white-space: nowrap; }
 .user { color: rgba(255, 255, 255, 0.85); white-space: nowrap; }
 .sider { position: sticky; top: 64px; height: calc(100vh - 64px); z-index: 9; }
