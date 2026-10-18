@@ -16,7 +16,7 @@ async function run(path: string, label: string) {
     const r = await $fetch(path, { method: 'POST' })
     lastResult.value = `${label}：${JSON.stringify(r)}`
     message.success(`${label}完成`)
-    await Promise.all([refreshWo(), refreshMaster(), refreshTransit(), refreshInspections(), refreshNuxtData(['todos', 'me'])])
+    await Promise.all([refreshWo(), refreshMaster(), refreshTransit(), refreshInspections(), refreshPurchases(), refreshNuxtData(['todos', 'me'])])
   } catch (e) {
     message.error(apiError(e))
   } finally {
@@ -138,6 +138,34 @@ function breakIt() {
   form.partName = `${form.partName || '某工件'}（名称写错）`
 }
 
+// ───── 模拟进货检验（R10）─────
+const { data: openPurchases, refresh: refreshPurchases } = await useFetch('/api/purchases', { query: { view: 'open' }, default: () => ({ rows: [] as PurchaseRow[], total: 0, stats: null }) })
+const openLines = computed(() => openPurchases.value.rows as PurchaseRow[])
+const incomingLine = ref<string | undefined>()
+const incomingName = ref('')
+watch(incomingLine, (id) => (incomingName.value = openLines.value.find((l) => l.id === id)?.materialName ?? ''))
+async function submitIncoming() {
+  const l = openLines.value.find((x) => x.id === incomingLine.value)
+  if (!l) return
+  busy.value = true
+  try {
+    const send = $fetch as unknown as (u: string, o: { method: 'POST'; body: object }) => Promise<{ incoming: { result: string } | null }>
+    const r = await send('/api/dev/inspections', {
+      method: 'POST',
+      body: { workOrderNumber: l.workOrderNumber, partName: incomingName.value || l.materialName, supplierId: l.supplierId, quantity: Math.max(1, Math.round(l.quantity ?? 1)), category: 'INCOMING' },
+    })
+    const res = r.incoming?.result
+    lastResult.value = res === 'MATCHED' ? `已自动确认到货：${l.materialName}` : res === 'MULTIPLE' ? '对上多项，没有自动确认（请手工确认）' : '没对上采购行，没有自动确认（请手工确认）'
+    message.info(lastResult.value)
+    incomingLine.value = undefined
+    await Promise.all([refreshPurchases(), refreshInspections(), refreshNuxtData('todos')])
+  } catch (e) {
+    message.error(apiError(e))
+  } finally {
+    busy.value = false
+  }
+}
+
 async function submit() {
   if (!form.workOrderNumber) return message.warning('请选择工单')
   busy.value = true
@@ -182,6 +210,7 @@ async function submit() {
     <a-card title="演示数据">
       <p class="muted">不连 QMS 时用演示数据走通外协主链路。所有演示数据的 ID 带 DEMO- 前缀，可与同步来的真实数据共存；配置了 QMS 同步时不写演示用户（u-001 等，用户以 QMS 为准）。清除只删 DEMO- 数据及引用它们的工件、步骤、流转记录、待办、待确认记录、预警和提醒，并清掉演示的通知对象、工单项目经理、演示路线模板，阈值恢复默认；同步来的真实数据不动。</p>
       <p class="muted">试发放签收（R9）：写入演示数据后有两张发放单——主梁结构件图纸（u-001、u-002、u-003 待签收）和支腿设计变更（下料在加工 → u-001、u-002 收到"确认变更影响"，机加标"等变更"）。发放人是 u-008 测试设计员。"快进 1 天 / 2 天扫描"可看 W5 未签收黄 / 红。</p>
+      <p class="muted">试采购到货（R10）：写入演示数据后"采购到货"里有 5 项关键物料——钢板（超期、卡交期预付款待付、原因"付款"）、液压马达（5 天后要用还没承诺日）、回转支承（等到货）、减速机（晚到）、加热管；扫描后钢板 W6 红、液压马达 W6 黄。下面"模拟进货检验"选回转支承可自动确认到货；钢板也到了以后，主梁结构件的第一道（组焊）给 u-001 发"可以开工"。采购部负责人 u-009，财务 u-010（标记已付）。</p>
       <p class="muted">试 BOM 导入：写入演示数据后到"工件与工序链"选 DEMO-WO-002，点"从 QMS BOM 导入"（演示 BOM 不连 QMS）；试模板：到"工序路线模板"看演示模板，或给没有工序的工件"套用模板"。</p>
       <a-space>
         <a-button type="primary" :loading="busy" @click="run('/api/dev/seed', '写入演示数据')">写入演示数据</a-button>
@@ -252,6 +281,15 @@ async function submit() {
           <a-button type="primary" :loading="busy" @click="submit">提交报检并匹配</a-button>
         </a-form-item>
       </a-form>
+    </a-card>
+
+    <a-card title="模拟 QMS 进货检验（R10）">
+      <p class="muted">模拟 QMS 新增一条进货检验（分类 INCOMING，工序"进货检验"），物料名称、供应商、工单取自所选采购行，然后立即跑一轮"进货检验确认到货"：同工单、同物料名称（两边都有 QMS 供应商时还要同供应商）、报检不早于登记日，恰好一条就自动确认到货。</p>
+      <a-space wrap>
+        <a-select v-model:value="incomingLine" show-search option-filter-prop="label" placeholder="选一项未到货的关键物料" style="width: 420px" :options="openLines.map((l) => ({ value: l.id, label: `${l.workOrderNumber} · ${l.materialName}（${l.supplierName ?? '未填供应商'}）` }))" />
+        <a-input v-model:value="incomingName" placeholder="物料名称（可改成对不上的）" style="width: 200px" />
+        <a-button type="primary" :loading="busy" :disabled="!incomingLine" @click="submitIncoming">模拟进货检验</a-button>
+      </a-space>
     </a-card>
   </a-space>
 </template>

@@ -2,7 +2,7 @@
 import { prisma } from '../../utils/prisma'
 import { DEFAULT_THRESHOLDS, type ScanRule, type Thresholds, dateFieldDay } from './rules'
 
-export const SCAN_RULES: ScanRule[] = ['W1', 'W2', 'W3', 'W4', 'W5']
+export const SCAN_RULES: ScanRule[] = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6']
 
 export async function loadThresholds(): Promise<Thresholds> {
   const rows = await prisma.threshold.findMany({ where: { rule: { in: SCAN_RULES } } })

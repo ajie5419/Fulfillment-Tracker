@@ -11,6 +11,7 @@ import type { FlowEventType, FlowSource, Part, Prisma, RouteStep } from '@prisma
 import { prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
+import { READY_TO_START } from '../purchases/constants'
 import { FlowError } from './errors'
 
 type Tx = Prisma.TransactionClient
@@ -34,6 +35,11 @@ export async function lockStep(tx: Tx, stepId: string): Promise<RouteStep & { pa
 /** 立即消除该步骤上指定规则的活动预警（扫描任务也会兜底消除，这里让页面马上看到） */
 async function clearStepAlerts(tx: Tx, stepId: string, rules: ('W2' | 'W3')[]) {
   await clearAlertKeys(tx, rules.map((r) => alertKey(r, 'step', stepId)))
+}
+
+/** 工件已经动起来了（开工、发出、返厂）：关闭它的"可以开工"待办（R10） */
+async function closeReadyTodos(tx: Tx, partId: string, now: Date) {
+  await tx.todo.updateMany({ where: { refType: 'part', refId: partId, action: READY_TO_START, status: 'OPEN' }, data: { status: 'DONE', doneAt: now } })
 }
 
 /** 关闭该步骤上指定类型的未完成待办 */
@@ -80,6 +86,7 @@ export function sendStep(input: SendInput) {
       },
     })
     await closeTodos(tx, step.id, [ARRANGE_SEND], now)
+    await closeReadyTodos(tx, step.partId, now)
     await clearStepAlerts(tx, step.id, ['W2'])
     await tx.part.update({ where: { id: step.partId }, data: { currentStepId: step.id, statusSince: now } })
     return updated
@@ -108,6 +115,7 @@ export function startStep(input: ActInput) {
       data: { stepId: step.id, type: 'START', qty: step.part.quantity, source: input.source, actorId: input.actorId, occurredAt: now },
     })
     await closeTodos(tx, step.id, [ARRANGE_START], now)
+    await closeReadyTodos(tx, step.partId, now)
     await clearStepAlerts(tx, step.id, ['W2'])
     await tx.part.update({ where: { id: step.partId }, data: { currentStepId: step.id, statusSince: now } })
     return updated
@@ -241,8 +249,9 @@ async function applyReturn(
           : {}),
     },
   })
-  // 已经有了返厂，本步骤的"安排发出/开工"待办没有意义了
+  // 已经有了返厂，本步骤的"安排发出/开工"待办、工件的"可以开工"待办没有意义了
   await closeTodos(tx, step.id, [ARRANGE_SEND, ARRANGE_START], now)
+  await closeReadyTodos(tx, step.partId, now)
 
   if (done) {
     await tx.part.update({

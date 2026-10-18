@@ -5,14 +5,15 @@ import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { alertSourceKey, convertAlertInTx } from '../issues/convert'
 import { issueTransaction } from '../issues/issues'
+import { purchaseLink, purchaseMobileLink } from '../purchases/constants'
 import { releaseLink, releaseMobileLink } from '../releases/constants'
 import { CONVERTIBLE_RULES, durationText, elapsedExcludingOffDays } from './rules'
 import { SCAN_RULES, type Target, collectTargets, loadOffDays, loadThresholds } from './scan'
 
 interface Link {
-  /** 电脑端：步骤 → 工件页对应工单；待确认 → 待确认匹配页；异常 → 异常列表并打开该条；签收记录（W5）→ 发放单详情 */
+  /** 电脑端：步骤 → 工件页对应工单；待确认 → 待确认匹配页；异常 → 异常列表并打开该条；签收记录（W5）→ 发放单详情；采购行（W6）→ 采购到货页并打开该行 */
   pc: string | null
-  /** 手机端：W2 厂外步骤 → 发出登记；在外步骤 → 外协在途；异常 → 我的异常；签收记录 → 手机签收页；待确认没有手机页面 */
+  /** 手机端：W2 厂外步骤 → 发出登记；在外步骤 → 外协在途；异常 → 我的异常；签收记录 → 手机签收页；采购行 → 到货确认页；待确认没有手机页面 */
   mobile: string | null
 }
 
@@ -44,6 +45,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     let link: Link = { pc: null, mobile: null }
     if (a.refType === 'unmatched') link = { pc: '/unmatched', mobile: null }
     if (a.refType === 'issue') link = issueLink(a.refId)
+    if (a.refType === 'purchase') link = { pc: purchaseLink(a.refId), mobile: purchaseMobileLink(a.refId) }
     const releaseId = a.refType === 'receipt' ? releaseOf.get(a.refId) : a.refType === 'release' ? a.refId : undefined
     if (releaseId) link = { pc: releaseLink(releaseId), mobile: releaseMobileLink(releaseId) }
     const step = a.refType === 'step' ? stepById.get(a.refId) : undefined
@@ -218,7 +220,7 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
         subject: t.subject,
         summary: t.summary,
         startAt: t.startAt,
-        duration: a.rule === 'W3' || a.rule === 'W4' ? null : durationText(elapsedExcludingOffDays(t.startAt, at, offDays)),
+        duration: a.rule === 'W3' || a.rule === 'W4' || a.rule === 'W6' ? null : durationText(elapsedExcludingOffDays(t.startAt, at, offDays)),
         owners: t.ownerIds.map((id) => ({ id, name: names.user.get(id) ?? id })),
         firstAt: a.firstAt,
         levelAt: a.levelAt,
@@ -227,13 +229,15 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
         link:
           (t.refType === 'receipt' || t.refType === 'release') && t.meta?.releaseId
             ? releaseLink(t.meta.releaseId)
-            : t.refType === 'unmatched'
-              ? '/unmatched'
-              : t.refType === 'issue'
-                ? `/issues?id=${encodeURIComponent(t.refId)}`
-                : t.workOrderNumber
-                  ? `/parts?wo=${encodeURIComponent(t.workOrderNumber)}`
-                  : null,
+            : t.refType === 'purchase'
+              ? purchaseLink(t.refId)
+              : t.refType === 'unmatched'
+                ? '/unmatched'
+                : t.refType === 'issue'
+                  ? `/issues?id=${encodeURIComponent(t.refId)}`
+                  : t.workOrderNumber
+                    ? `/parts?wo=${encodeURIComponent(t.workOrderNumber)}`
+                    : null,
       }
     })
     .filter((x) => x !== null)
