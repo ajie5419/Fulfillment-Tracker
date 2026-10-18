@@ -164,10 +164,11 @@ const crossColumns = [
       size="small"
       :pagination="{ pageSize: 50, hideOnSinglePage: true }"
       :expand-row-by-click="false"
+      :scroll="{ x: 900 }"
     >
       <template #emptyText><a-empty :description="filter.incomplete ? '没有未齐套的装配节点' : '还没有装配节点'" /></template>
       <template #expandedRowRender="{ record }">
-        <KittingShortageTable :shortages="record.shortages" />
+        <KittingShortageTable :shortages="record.shortages" :empty-text="record.total ? '不缺件' : '清单为空：编辑节点选择需要的工件和关键物料'" />
         <div v-if="record.readyItems.length" class="muted ready">已就绪：{{ record.readyItems.join('、') }}</div>
       </template>
       <template #bodyCell="{ column, record }">
