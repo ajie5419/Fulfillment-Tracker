@@ -17,6 +17,21 @@ const redColumns = [
   { title: '交期', key: 'delivery', width: 110 },
   { title: '主要原因', dataIndex: 'reason' },
 ]
+// R14 总计划
+const planDelayColumns = [
+  { title: '工单', key: 'wo', width: 220 },
+  { title: '项目经理', key: 'pm', width: 110 },
+  { title: '合同交期', key: 'delivery', width: 110 },
+  { title: '预计交期', dataIndex: 'expectedDelivery', width: 110 },
+  { title: '拖期', key: 'delay', width: 80, align: 'center' as const },
+  { title: '源头延误节点', key: 'sources', width: 90, align: 'center' as const },
+  { title: '最早源头延误节点', dataIndex: 'cause' },
+]
+const planDeptColumns = [
+  { title: '责任部门', dataIndex: 'deptText' },
+  { title: '未完成节点', dataIndex: 'open', width: 110, align: 'center' as const },
+  { title: '源头延误', key: 'delayed', width: 100, align: 'center' as const },
+]
 </script>
 
 <template>
@@ -82,6 +97,36 @@ const redColumns = [
                 </template>
                 <template v-else-if="column.key === 'pm'">{{ record.projectManagerName ?? '—' }}</template>
                 <template v-else-if="column.key === 'delivery'">{{ dayText(record.deliveryDate) }}</template>
+              </template>
+            </a-table>
+          </a-col>
+        </a-row>
+
+        <a-row :gutter="24">
+          <a-col :xs="24" :lg="9">
+            <h3>总计划：按部门源头延误节点数</h3>
+            <a-table :columns="planDeptColumns" :data-source="data.planByDept" row-key="dept" size="small" :pagination="false" class="block">
+              <template #emptyText><a-empty description="没有已发布总计划的未完成节点" /></template>
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'delayed'">
+                  <span :class="{ warn: record.delayed > 0 }">{{ record.delayed }}</span>
+                </template>
+              </template>
+            </a-table>
+          </a-col>
+          <a-col :xs="24" :lg="15">
+            <h3>预计拖期工单（{{ data.planDelays.length }}）</h3>
+            <a-table :columns="planDelayColumns" :data-source="data.planDelays" row-key="workOrderNumber" size="small" :pagination="false" class="block">
+              <template #emptyText><a-empty description="按已发布的总计划推算，没有预计拖期的工单" /></template>
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'wo'">
+                  <NuxtLink :to="`/plan?wo=${encodeURIComponent(record.workOrderNumber)}`">{{ record.workOrderNumber }}</NuxtLink>
+                  <div class="muted">{{ record.projectName }}</div>
+                </template>
+                <template v-else-if="column.key === 'pm'">{{ record.projectManagerName ?? '—' }}</template>
+                <template v-else-if="column.key === 'delivery'">{{ dayText(record.deliveryDate) }}</template>
+                <template v-else-if="column.key === 'delay'"><span class="warn">{{ record.delayDays }} 天</span></template>
+                <template v-else-if="column.key === 'sources'">{{ record.delayedNodes }}</template>
               </template>
             </a-table>
           </a-col>

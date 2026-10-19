@@ -7,5 +7,5 @@ export default defineFlowHandler(async (event) => {
   await assertCanSeePurchase(event, id)
   await assertCanOperatePurchase(event, id)
   const line = await updateLine(id, await parseBody(event, patchLineBody))
-  return { id: line.id }
+  return { id: line.id, planWarning: line.planWarning }
 })

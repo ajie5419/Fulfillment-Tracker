@@ -7,5 +7,5 @@ export default defineFlowHandler(async (event, user) => {
   await assertCanSee(event, input.workOrderNumber)
   await assertCanOperate(event, 'drawing', { workOrderNumber: input.workOrderNumber })
   const task = await createTask(input, user.qmsUserId)
-  return { id: task.id }
+  return { id: task.id, planWarning: task.planWarning }
 })

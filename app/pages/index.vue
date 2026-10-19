@@ -81,7 +81,7 @@ async function transfer() {
       <a-list v-else :data-source="todos" item-layout="horizontal">
         <template #renderItem="{ item }">
           <a-list-item>
-            <a-list-item-meta :title="item.title" :description="`${item.step?.workOrderNumber ?? item.release?.workOrderNumber ?? ''}　${item.suggestion}`" />
+            <a-list-item-meta :title="item.title" :description="`${item.step?.workOrderNumber ?? item.release?.workOrderNumber ?? item.plan?.workOrderNumber ?? ''}　${item.suggestion}`" />
             <template #actions>
               <a-button v-if="item.action === 'ARRANGE_SEND' && item.step" type="primary" size="small" @click="openSend(item)">登记发出</a-button>
               <a-button v-else-if="item.action === 'ARRANGE_START' && item.step" type="primary" size="small" @click="start(item)">开工</a-button>
@@ -91,6 +91,7 @@ async function transfer() {
               </template>
               <a-button v-else-if="item.action === 'SIGN_RELEASE' && item.release" type="primary" size="small" @click="releaseId = item.release.id">查看并签收</a-button>
               <a-button v-else-if="item.action === 'CONFIRM_CHANGE' && item.release" type="primary" size="small" @click="releaseId = item.release.id">确认变更影响</a-button>
+              <a-button v-else-if="item.action === 'CONFIRM_PLAN_NODE' && item.plan" type="primary" size="small" @click="navigateTo(item.plan.link)">去确认</a-button>
               <a-button v-if="item.action !== 'SIGN_RELEASE'" size="small" @click="transferring = item">转交</a-button>
             </template>
             <span class="muted">{{ timeText(item.createdAt) }}</span>

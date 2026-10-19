@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { saveThreshold } from '../../../services/alerts/settings'
 
-const rule = z.enum(['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8'], { message: '规则只能是 W1–W8' })
+const rule = z.enum(['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9'], { message: '规则只能是 W1–W9' })
 const body = z
   .object({
     remindHours: z.number().int().min(1, '提醒阈值至少 1 小时').max(24 * 30).nullable(),
@@ -13,6 +13,6 @@ const body = z
 /** 修改一条规则的阈值。仅管理员 */
 export default defineAdminHandler(async (event) => {
   const r = rule.safeParse(routeId(event, 'rule'))
-  if (!r.success) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: '规则只能是 W1–W8' })
+  if (!r.success) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: '规则只能是 W1–W9' })
   return saveThreshold(r.data, await parseBody(event, body))
 })

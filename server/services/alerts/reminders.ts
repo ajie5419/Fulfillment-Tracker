@@ -9,6 +9,7 @@ import { drawingLink, drawingMobileLink } from '../drawings/constants'
 import { kittingLink, kittingMobileLink } from '../kitting/constants'
 import { purchaseLink, purchaseMobileLink } from '../purchases/constants'
 import { releaseLink, releaseMobileLink } from '../releases/constants'
+import { planLink } from '../plan/constants'
 import { CONVERTIBLE_RULES, durationText, elapsedExcludingOffDays } from './rules'
 import { SCAN_RULES, type Target, collectTargets, loadOffDays, loadThresholds } from './scan'
 
@@ -33,12 +34,15 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
   const alerts = alertIds.length ? await prisma.alert.findMany({ where: { id: { in: alertIds } } }) : []
   const stepIds = alerts.filter((a) => a.refType === 'step').map((a) => a.refId)
   const receiptIds = alerts.filter((a) => a.refType === 'receipt').map((a) => a.refId)
+  const planNodeIds = alerts.filter((a) => a.refType === 'planNode' || a.refType === 'planConfirm').map((a) => a.refId)
   const converted = alerts.filter((a) => a.status === 'CONVERTED').map((a) => alertSourceKey(a.id))
-  const [steps, issues, receipts] = await Promise.all([
+  const [steps, issues, receipts, planNodes] = await Promise.all([
     stepIds.length ? prisma.routeStep.findMany({ where: { id: { in: stepIds } }, include: { part: { select: { workOrderNumber: true } } } }) : [],
     converted.length ? prisma.issue.findMany({ where: { sourceKey: { in: converted } }, select: { id: true, issueNo: true, sourceKey: true } }) : [],
     receiptIds.length ? prisma.releaseReceipt.findMany({ where: { id: { in: receiptIds } }, select: { id: true, releaseId: true } }) : [],
+    planNodeIds.length ? prisma.planNode.findMany({ where: { id: { in: planNodeIds } }, select: { id: true, workOrderNumber: true } }) : [],
   ])
+  const planWoOf = new Map(planNodes.map((n) => [n.id, n.workOrderNumber]))
   const stepById = new Map(steps.map((s) => [s.id, s]))
   const releaseOf = new Map(receipts.map((r) => [r.id, r.releaseId]))
   const issueBySource = new Map(issues.map((i) => [i.sourceKey!, i]))
@@ -50,6 +54,10 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     if (a.refType === 'purchase') link = { pc: purchaseLink(a.refId), mobile: purchaseMobileLink(a.refId) }
     if (a.refType === 'drawing') link = { pc: drawingLink(a.refId), mobile: drawingMobileLink(a.refId) }
     if (a.refType === 'node') link = { pc: kittingLink(a.refId), mobile: kittingMobileLink(a.refId) }
+    // 总计划（W9）只有电脑端页面；节点删了就没有跳转
+    const planWo = a.refType === 'planNode' || a.refType === 'planConfirm' ? planWoOf.get(a.refId) : undefined
+    if (planWo) link = { pc: planLink(planWo, a.refId), mobile: null }
+    if (a.refType === 'plan') link = { pc: planLink(a.refId), mobile: null }
     const releaseId = a.refType === 'receipt' ? releaseOf.get(a.refId) : a.refType === 'release' ? a.refId : undefined
     if (releaseId) link = { pc: releaseLink(releaseId), mobile: releaseMobileLink(releaseId) }
     const step = a.refType === 'step' ? stepById.get(a.refId) : undefined
@@ -80,8 +88,8 @@ const mobileOf = (link: string | null) => (link?.startsWith('/releases?id=') ? `
 
 /** 同步失败提醒（管理员）：点开去设置页的"QMS 同步状态" */
 const SYNC_FAIL_LINK = '/settings?tab=sync'
-/** 预警/待办类提醒、发放单通知 + 已读的同步失败提醒（未读的置顶，不在分组里重复出现） */
-const LISTED = { OR: [{ kind: null }, { kind: 'RELEASE' }, { kind: 'SYNC_FAIL', readAt: { not: null } }] }
+/** 预警/待办类提醒、发放单通知、总计划通知（R14 节点被退回）+ 已读的同步失败提醒（未读的置顶，不在分组里重复出现） */
+const LISTED = { OR: [{ kind: null }, { kind: 'RELEASE' }, { kind: 'PLAN' }, { kind: 'SYNC_FAIL', readAt: { not: null } }] }
 
 /**
  * 我的提醒。每日汇总（kind = DIGEST）单独返回最新一条作为置顶（digest），不混在分组列表里；
@@ -108,6 +116,7 @@ export async function listReminders(userId: string) {
     items: items.map((i) => {
       if (i.kind === 'SYNC_FAIL') return { ...i, rule: null, cleared: false, issueNo: null, link: SYNC_FAIL_LINK, mobileLink: null }
       if (i.kind === 'RELEASE') return { ...i, rule: null, cleared: false, issueNo: null, link: i.link, mobileLink: mobileOf(i.link) }
+      if (i.kind === 'PLAN') return { ...i, rule: null, cleared: false, issueNo: null, link: i.link, mobileLink: null }
       const l = i.alertId ? links.get(i.alertId) : undefined
       return {
         ...i,
@@ -145,12 +154,12 @@ export async function newReminders(userId: string, since: Date | null) {
   const now = new Date()
   since ??= now
   const items = await prisma.reminder.findMany({
-    where: { userId, OR: [{ kind: null }, { kind: 'SYNC_FAIL' }, { kind: 'RELEASE' }], readAt: null, level: { in: ['YELLOW', 'RED'] }, createdAt: { gte: new Date(+since - OVERLAP_MS) } },
+    where: { userId, OR: [{ kind: null }, { kind: 'SYNC_FAIL' }, { kind: 'RELEASE' }, { kind: 'PLAN' }], readAt: null, level: { in: ['YELLOW', 'RED'] }, createdAt: { gte: new Date(+since - OVERLAP_MS) } },
     orderBy: { createdAt: 'asc' },
     select: SELECT,
   })
   const links = await linksFor([...new Set(items.map((i) => i.alertId).filter((x): x is string => !!x))])
-  return { now, items: items.map((i) => ({ ...i, link: i.kind === 'SYNC_FAIL' ? SYNC_FAIL_LINK : i.kind === 'RELEASE' ? i.link : (i.alertId && links.get(i.alertId)?.pc) || null })) }
+  return { now, items: items.map((i) => ({ ...i, link: i.kind === 'SYNC_FAIL' ? SYNC_FAIL_LINK : i.kind === 'RELEASE' || i.kind === 'PLAN' ? i.link : (i.alertId && links.get(i.alertId)?.pc) || null })) }
 }
 
 // ───────────── 预警列表 ─────────────
@@ -182,6 +191,8 @@ function targetLink(t: Target): string | null {
   if (t.refType === 'purchase') return purchaseLink(t.refId)
   if (t.refType === 'drawing') return drawingLink(t.refId)
   if (t.refType === 'node') return kittingLink(t.refId)
+  if ((t.refType === 'planNode' || t.refType === 'planConfirm') && t.workOrderNumber) return planLink(t.workOrderNumber, t.refId)
+  if (t.refType === 'plan') return planLink(t.refId)
   if (t.refType === 'unmatched') return '/unmatched'
   if (t.refType === 'issue') return `/issues?id=${encodeURIComponent(t.refId)}`
   return t.workOrderNumber ? `/parts?wo=${encodeURIComponent(t.workOrderNumber)}` : null
@@ -235,7 +246,10 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
         subject: t.subject,
         summary: t.summary,
         startAt: t.startAt,
-        duration: a.rule === 'W3' || a.rule === 'W4' || a.rule === 'W6' || a.rule === 'W7' || a.rule === 'W8' ? null : durationText(elapsedExcludingOffDays(t.startAt, at, offDays)),
+        duration:
+          a.rule === 'W3' || a.rule === 'W4' || a.rule === 'W6' || a.rule === 'W7' || a.rule === 'W8' || (a.rule === 'W9' && a.refType !== 'planConfirm')
+            ? null
+            : durationText(elapsedExcludingOffDays(t.startAt, at, offDays)),
         owners: t.ownerIds.map((id) => ({ id, name: names.user.get(id) ?? id })),
         firstAt: a.firstAt,
         levelAt: a.levelAt,

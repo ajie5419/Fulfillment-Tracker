@@ -63,6 +63,8 @@ export interface PurchaseRow {
   payments: { id: string; status: PaymentStatusKey; statusText: string; blocksDelivery: boolean; amount: number | null }[]
   blockedByPayment: boolean
   alertLevel: 'REMIND' | 'YELLOW' | 'RED' | null
+  /** 所属总计划节点（R14） */
+  planNodeId: string | null
   projectName?: string | null
   customerName?: string | null
 }

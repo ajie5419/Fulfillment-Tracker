@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
- * 设置（仅管理员）：阈值、停工日、人员与角色（原"通知对象"）、部门对照（R13）、工单项目经理、QMS 同步状态。
- * 接口也校验管理员，这里只是不给非管理员看
+ * 设置（仅管理员）：阈值、停工日、人员与角色（原"通知对象"）、部门对照（R13）、工单项目经理、QMS 同步状态、总计划模板（R14）。
+ * 项目部负责人（can.planTemplate）也能进来，只看到"总计划模板"一页。
+ * 接口也校验权限，这里只是不给没权限的人看
  */
 import dayjs, { type Dayjs } from 'dayjs'
 
@@ -10,7 +11,7 @@ const { data: master } = await useMaster()
 const { data, refresh, error } = await useFetch('/api/settings', { immediate: !!me.value?.isAdmin })
 // ?tab=sync 直接打开"QMS 同步状态"（同步失败提醒的跳转）
 const route = useRoute()
-const tab = ref(typeof route.query.tab === 'string' ? route.query.tab : 'thresholds')
+const tab = ref(typeof route.query.tab === 'string' ? route.query.tab : me.value?.isAdmin ? 'thresholds' : 'plan-templates')
 
 // ───── QMS 同步状态 ─────
 const { data: sync, refresh: refreshSync, pending: syncPending } = await useFetch('/api/settings/sync', { immediate: !!me.value?.isAdmin })
@@ -41,8 +42,8 @@ async function call(url: string, method: 'POST' | 'PUT' | 'DELETE', body?: objec
 
 // ───── 阈值 ─────
 // W3、W6、W7 的"提醒"在表里存的是小时数（W3 承诺返回日前、W6 需求日前、W7 计划完成日前），页面上按天编辑；
-// W8 不提醒，黄 / 红是"需求日前几天"（黄 ≥ 红）
-type Row = { rule: 'W1' | 'W2' | 'W3' | 'W4' | 'W5' | 'W6' | 'W7' | 'W8'; remind: number | null; yellowDays: number; redDays: number }
+// W8 不提醒，黄 / 红是"需求日前几天"（黄 ≥ 红）；W9 不提醒，黄 / 红是源头节点自身晚几天（未确认超时沿用 W5 阈值）
+type Row = { rule: 'W1' | 'W2' | 'W3' | 'W4' | 'W5' | 'W6' | 'W7' | 'W8' | 'W9'; remind: number | null; yellowDays: number; redDays: number }
 const BY_DAY = (rule: Row['rule']) => rule === 'W3' || rule === 'W6' || rule === 'W7'
 const rows = ref<Row[]>([])
 watch(
@@ -57,10 +58,10 @@ watch(
   },
   { immediate: true },
 )
-const REMIND_LABEL = { W1: '小时后提醒', W2: '（不提醒）', W3: '天前提醒（承诺返回日前）', W4: '（不提醒）', W5: '小时未签收 / 未确认提醒', W6: '天内要用仍无承诺到货日 → 黄（需求日前）', W7: '天内到计划完成日仍未出图 → 黄', W8: '（不提醒）' } as const
-const YELLOW_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（待受理 / 超期）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 黄（需求日前）' } as const
-const RED_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（超要求解决日）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 红（需求日前，已过也红）' } as const
-const NO_REMIND = (rule: Row['rule']) => rule === 'W2' || rule === 'W4' || rule === 'W8'
+const REMIND_LABEL = { W1: '小时后提醒', W2: '（不提醒）', W3: '天前提醒（承诺返回日前）', W4: '（不提醒）', W5: '小时未签收 / 未确认提醒', W6: '天内要用仍无承诺到货日 → 黄（需求日前）', W7: '天内到计划完成日仍未出图 → 黄', W8: '（不提醒）', W9: '（不提醒）' } as const
+const YELLOW_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（待受理 / 超期）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 黄（需求日前）', W9: '天（源头节点自身晚于计划日）' } as const
+const RED_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（超要求解决日）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 红（需求日前，已过也红）', W9: '天（源头节点自身晚于计划日）' } as const
+const NO_REMIND = (rule: Row['rule']) => rule === 'W2' || rule === 'W4' || rule === 'W8' || rule === 'W9'
 function saveThreshold(r: Row) {
   const remindHours = NO_REMIND(r.rule) || r.remind == null ? null : BY_DAY(r.rule) ? Math.round(r.remind * 24) : r.remind
   const url = `/api/settings/thresholds/${r.rule}`
@@ -136,7 +137,12 @@ const woColumns = [
 </script>
 
 <template>
-  <a-result v-if="me && !me.isAdmin" status="403" title="仅管理员可用" sub-title="管理员由环境变量 NUXT_ADMIN_USER_IDS 指定" />
+  <a-card v-if="me && !me.isAdmin && me.can?.planTemplate" title="设置">
+    <a-tabs active-key="plan-templates">
+      <a-tab-pane key="plan-templates" tab="总计划模板"><PlanTemplatesTab /></a-tab-pane>
+    </a-tabs>
+  </a-card>
+  <a-result v-else-if="me && !me.isAdmin" status="403" title="仅管理员可用" sub-title="管理员由环境变量 NUXT_ADMIN_USER_IDS 指定" />
   <a-result v-else-if="error" status="error" :title="apiError(error)" />
   <a-card v-else-if="data" title="设置">
     <a-tabs v-model:active-key="tab">
@@ -163,6 +169,7 @@ const woColumns = [
               <div v-if="record.rule === 'W6'" class="muted">需求日已过仍未到货直接红；有没付的卡交期付款时黄色起通知财务；红色不转异常</div>
               <div v-if="record.rule === 'W7'" class="muted">已过计划完成日仍未出图直接红；黄色起通知技术部负责人、项目经理；红色不转异常</div>
               <div v-if="record.rule === 'W8'" class="muted">按自然日；黄色天数要不小于红色。黄色起通知生产经理、项目经理，红色再加项目部负责人、分管领导；齐套后自动消除，不转异常</div>
+              <div v-if="record.rule === 'W9'" class="muted">只看已发布的总计划，按自然日。只报源头延误节点（自身就已延误；只因上游顺延的不报），黄色起通知节点责任部门负责人、项目经理，红色再加项目部负责人、分管领导；预计交期晚于合同交期另报一条工单级红色（项目经理、项目部负责人、分管领导）；不转异常。部门确认待办超时也归 W9，阈值沿用 W5（提醒 / 黄 / 红）</div>
             </template>
             <template v-else-if="column.key === 'save'">
               <a-button type="primary" size="small" @click="saveThreshold(record as Row)">保存</a-button>
@@ -290,6 +297,8 @@ const woColumns = [
         </a-table>
         <a-button size="small" style="margin-top: 12px" @click="refreshSync()">刷新</a-button>
       </a-tab-pane>
+
+      <a-tab-pane key="plan-templates" tab="总计划模板"><PlanTemplatesTab /></a-tab-pane>
 
       <a-tab-pane key="work-orders" tab="工单项目经理">
         <p class="muted">黄色预警起通知该工单的项目经理。</p>

@@ -6,5 +6,5 @@ export default defineFlowHandler(async (event, user) => {
   const input = await parseBody(event, newNodeBody)
   await assertCanSee(event, input.workOrderNumber)
   const node = await createNode(input, actorOf(event, user))
-  return { id: node.id }
+  return { id: node.id, planWarning: node.planWarning }
 })

@@ -224,15 +224,19 @@ model RouteStep {
   holdReleaseId      String?     @db.VarChar(64)
   /// 最近一次解除"等变更"的时间：W2 从它和待办生成时间里较晚的那个重新计时
   holdClearedAt      DateTime?
+  /// 所属总计划节点（R14，可空；老数据不挂）
+  planNodeId         String?
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
   part               Part        @relation(fields: [partId], references: [id], onDelete: Cascade)
+  planNode           PlanNode?   @relation(fields: [planNodeId], references: [id], onDelete: SetNull)
   events             FlowEvent[]
 
   @@unique([partId, seq])
   @@index([status])
   @@index([supplierId])
   @@index([holdReleaseId])
+  @@index([planNodeId])
   @@map("route_step")
 }
 
@@ -414,6 +418,7 @@ enum AlertRule {
   W6 // 关键物料未到货（R10）
   W7 // 出图逾期 / 客户确认超期（R11）
   W8 // 装配节点未齐套（R12）
+  W9 // 总计划节点延误 / 节点超时未确认（R14）
 }
 
 enum AlertLevel {
@@ -456,14 +461,14 @@ model Reminder {
   title     String
   level     AlertLevel @default(REMIND)
   /// 提醒种类：空 = 预警/待办类；DIGEST = 每日汇总；SYNC_FAIL = QMS 同步连续失败（发给管理员，未读时置顶）；
-  /// RELEASE = 发放单的通知（接收人拒收时发给发放人），跳转地址在 link
+  /// RELEASE = 发放单的通知（接收人拒收时发给发放人），跳转地址在 link；PLAN = 总计划节点被部门退回（发给项目经理，R14），跳转地址在 link
   kind      String?    @db.VarChar(20)
   /// 电脑端跳转地址（kind = RELEASE 时用；预警类按 alertId 现算）
   link      String?    @db.VarChar(191)
   /// 每日汇总的正文（前 5 项，一行一项）
   body      String?    @db.Text
   /// 防重复：每日汇总 "DIGEST:<YYYY-MM-DD>:<userId>"，同人同日只有一条；同步失败 "SYNC_FAIL:<故障开始时间>:<userId>"，同一轮故障只有一条；
-  /// 拒收通知 RELEASE_REJECT:<签收记录 ID>，同一次拒收只有一条
+  /// 拒收通知 RELEASE_REJECT:<签收记录 ID>，同一次拒收只有一条；总计划退回 PLAN_REJECT:<节点 ID>:<时间>:<userId>
   dedupeKey String?    @unique @db.VarChar(120)
   readAt    DateTime?
   createdAt DateTime   @default(now())
@@ -673,10 +678,13 @@ model PurchaseLine {
   arrivedAt       DateTime?
   /// QMS 进货检验自动确认到货时的报检 ID。撤销到货后保留：这一行之后只能手工确认
   qmsInspectionId String?                @unique @db.VarChar(64)
+  /// 所属总计划节点（R14，可空；老数据不挂）
+  planNodeId      String?
   createdBy       String?                @db.VarChar(64)
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
   part            Part?                  @relation(fields: [partId], references: [id], onDelete: SetNull)
+  planNode        PlanNode?              @relation(fields: [planNodeId], references: [id], onDelete: SetNull)
   payments        PaymentLine[]
   /// 需要这项物料的装配节点（R12 齐套）
   assemblyNodes   AssemblyNodePurchase[]
@@ -684,6 +692,7 @@ model PurchaseLine {
   @@index([workOrderNumber, status])
   @@index([status, needDate])
   @@index([partId])
+  @@index([planNodeId])
   @@map("purchase_line")
 }
 
@@ -776,14 +785,18 @@ model DrawingTask {
   customerConfirmedBy   String?           @db.VarChar(64)
   status                DrawingTaskStatus @default(PENDING)
   note                  String?           @db.VarChar(500)
+  /// 所属总计划节点（R14，可空；老数据不挂）
+  planNodeId            String?
   createdBy             String?           @db.VarChar(64)
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
+  planNode              PlanNode?         @relation(fields: [planNodeId], references: [id], onDelete: SetNull)
   parts                 DrawingTaskPart[]
 
   @@index([workOrderNumber, status])
   @@index([ownerId, status])
   @@index([status, planDate])
+  @@index([planNodeId])
   @@map("drawing_task")
 }
 
@@ -816,15 +829,19 @@ model AssemblyNode {
   note            String?                @db.VarChar(500)
   /// 工单内的显示顺序（小的在前）
   sortOrder       Int                    @default(0)
+  /// 所属总计划节点（R14，可空；老数据不挂）
+  planNodeId      String?
   createdBy       String?                @db.VarChar(64)
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
+  planNode        PlanNode?              @relation(fields: [planNodeId], references: [id], onDelete: SetNull)
   parts           AssemblyNodePart[]
   purchases       AssemblyNodePurchase[]
 
   @@index([workOrderNumber, sortOrder])
   @@index([needDate])
   @@index([ownerId])
+  @@index([planNodeId])
   @@map("assembly_node")
 }
 
@@ -848,6 +865,122 @@ model AssemblyNodePurchase {
   @@id([nodeId, purchaseLineId])
   @@index([purchaseLineId])
   @@map("assembly_node_purchase")
+}
+
+// ───────────── 项目部总计划（R14）─────────────
+
+/**
+ * 总计划模板：节点名称、顺序、责任部门、"交期前多少天"。按模板生成时按 QMS 交期倒推各节点计划日。
+ * 设置页"总计划模板"维护（项目部负责人、管理员）；迁移里内置一个"通用"模板。
+ */
+model PlanTemplate {
+  id          String             @id @default(cuid())
+  name        String             @unique @db.VarChar(191)
+  description String?            @db.VarChar(500)
+  createdBy   String?            @db.VarChar(64)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  nodes       PlanTemplateNode[]
+
+  @@map("plan_template")
+}
+
+model PlanTemplateNode {
+  id                 String       @id @default(cuid())
+  templateId         String
+  seq                Int
+  name               String       @db.VarChar(191)
+  dept               BusinessDept
+  /// 交期前多少天（0 = 交期当天，如"发运"）
+  daysBeforeDelivery Int
+  template           PlanTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, seq])
+  @@map("plan_template_node")
+}
+
+enum PlanStatus {
+  DRAFT // 草稿：项目经理还在排，不预警、不要求部门记录挂节点
+  PUBLISHED // 已发布：基线锁定，改日期要写原因
+}
+
+/**
+ * 每个工单一份总计划的发布状态（节点在 plan_node）
+ */
+model WorkOrderPlan {
+  workOrderNumber String     @id @db.VarChar(64)
+  status          PlanStatus @default(DRAFT)
+  /// 按哪个模板生成的（名称快照，模板改名、删除不影响）
+  templateName    String?    @db.VarChar(191)
+  publishedAt     DateTime?
+  publishedBy     String?    @db.VarChar(64)
+  createdBy       String?    @db.VarChar(64)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@map("work_order_plan")
+}
+
+enum PlanNodeConfirm {
+  PENDING // 待确认（发布后、改期后）
+  CONFIRMED // 已确认
+  REJECTED // 已退回（写原因，提醒项目经理）
+}
+
+/**
+ * 总计划节点：按 seq 排成一条主线，最后一个节点（一般是"发运"）对应工单交期。
+ * 计划日、基线日（发布时锁定）、实际完成日：日期字段，存当天 UTC 零点。
+ * 完成：挂靠的部门任务全部完成时自动完成（现算，不落库）；也可以手动标记（manualDoneAt 有值，actualDate = 手动填的日期）。
+ * 部门确认：发布后给责任部门负责人发"确认总计划节点"待办（todo.refType = planNode）；未发布时 confirmStatus 为空。
+ */
+model PlanNode {
+  id              String           @id @default(cuid())
+  workOrderNumber String           @db.VarChar(64)
+  seq             Int
+  name            String           @db.VarChar(191)
+  dept            BusinessDept
+  planDate        DateTime
+  baselineDate    DateTime?
+  /// 手动标记完成时的完成日（自动完成不写这里，现算）
+  actualDate      DateTime?
+  manualDoneBy    String?          @db.VarChar(64)
+  manualDoneAt    DateTime?
+  confirmStatus   PlanNodeConfirm?
+  confirmedBy     String?          @db.VarChar(64)
+  confirmedAt     DateTime?
+  rejectReason    String?          @db.VarChar(500)
+  note            String?          @db.VarChar(500)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  drawingTasks    DrawingTask[]
+  purchaseLines   PurchaseLine[]
+  routeSteps      RouteStep[]
+  assemblyNodes   AssemblyNode[]
+
+  @@index([workOrderNumber, seq])
+  @@index([confirmStatus])
+  @@map("plan_node")
+}
+
+/**
+ * 总计划调整记录（发布后才记）：改日期（写原因）、加节点、删节点。节点删了记录还在（存名称快照，不设外键）
+ */
+model PlanChangeLog {
+  id              String    @id @default(cuid())
+  workOrderNumber String    @db.VarChar(64)
+  nodeId          String    @db.VarChar(191)
+  nodeName        String    @db.VarChar(191)
+  /// DATE = 改计划日；ADD = 发布后加节点；DELETE = 发布后删节点
+  kind            String    @db.VarChar(20)
+  oldDate         DateTime?
+  newDate         DateTime?
+  reason          String    @db.VarChar(500)
+  actorId         String    @db.VarChar(64)
+  createdAt       DateTime  @default(now())
+
+  @@index([workOrderNumber, createdAt])
+  @@index([nodeId])
+  @@map("plan_change_log")
 }
 
 // ───────────── 登录会话 ─────────────

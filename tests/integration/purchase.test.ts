@@ -273,7 +273,7 @@ describe.skipIf(!DB)('关键物料到货与付款（R10）', () => {
       [WO, '钢板', 'δ=20', '30.5', 't', '手填钢厂', ymd(dayOff(15)), null, ymd(dayOff(-1)), null, null, null],
       [null, null, null, null, null, null, null, null, null, null, null, null], // 空行跳过
     ])
-    expect(await s.imp.importPurchases(good, 'u-buyer', canSee)).toEqual({ imported: 2, errors: [], rows: 2 })
+    expect(await s.imp.importPurchases(good, 'u-buyer', canSee)).toEqual({ imported: 2, errors: [], warnings: [], rows: 2 })
     const lines = await db.purchaseLine.findMany({ where: { workOrderNumber: WO }, orderBy: { materialName: 'asc' } })
     expect(lines.find((l) => l.materialName === '回转支承')).toMatchObject({ supplierId: 'S-BRG', supplierName: '轴承厂', buyerId: 'u-buyer', partId: part.id, needDate: dayOff(30), promisedDate: dayOff(25), status: 'OPEN', note: '进口' })
     expect(lines.find((l) => l.materialName === '钢板')).toMatchObject({ supplierId: null, supplierName: '手填钢厂', status: 'ARRIVED', arrivedDate: dayOff(-1), arrivalSource: 'PC' })

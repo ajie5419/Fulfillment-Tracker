@@ -5,6 +5,7 @@ import { userBusinessDept } from '../services/auth/departments'
 import { type Operation, type OperationTarget, OPERATION_DENIED, type RoleContext, canOperate } from '../services/auth/permissions'
 import { FlowForbidden } from '../services/flow/errors'
 import { inspectionWorkOrders } from '../services/flow/inspection'
+import { CONFIRM_PLAN_NODE, PLAN_REF } from '../services/plan/constants'
 import { prisma } from './prisma'
 
 export interface AuthUser {
@@ -220,6 +221,53 @@ export async function assertCanOperateDrawing(event: H3Event, id: string) {
 export async function assertCanOperateInspection(event: H3Event, inspectionId: string) {
   const ins = await prisma.qmsInspection.findUnique({ where: { id: inspectionId }, select: { workOrderNumber: true, workOrderNumbers: true } })
   if (ins) await assertCanOperate(event, 'route', { workOrderNumbers: inspectionWorkOrders(ins) })
+}
+
+// ───────────── 总计划（R14）─────────────
+
+/** 手里有"确认总计划节点"待办（含转交来的）：nodeId 给定时看这个节点，否则看该工单任一节点 */
+async function holdsConfirmTodo(userId: string, where: { nodeId?: string; workOrderNumber?: string }) {
+  let refIds: string[]
+  if (where.nodeId) refIds = [where.nodeId]
+  else refIds = (await prisma.planNode.findMany({ where: { workOrderNumber: where.workOrderNumber }, select: { id: true } })).map((n) => n.id)
+  if (!refIds.length) return false
+  const todo = await prisma.todo.findFirst({ where: { refType: PLAN_REF, refId: { in: refIds }, action: CONFIRM_PLAN_NODE, ownerId: userId, status: 'OPEN' }, select: { id: true } })
+  return !!todo
+}
+
+/**
+ * 总计划节点：按所属工单判断可见（节点不存在时不拦，由服务层报"不存在"）。
+ * 手里有该节点确认待办的人即使工单不在可见范围（如被转交给只管别的工单的项目经理）也能看到这个节点。
+ */
+export async function assertCanSeePlanNode(event: H3Event, id: string) {
+  const node = await prisma.planNode.findUnique({ where: { id }, select: { workOrderNumber: true } })
+  if (!node) return
+  if (canSee(await getScope(event), node.workOrderNumber)) return
+  if (await holdsConfirmTodo(requireUser(event).qmsUserId, { nodeId: id })) return
+  throw forbidden()
+}
+
+/** 总计划页：能看到该工单，或手里有该工单某个节点的确认待办 */
+export async function assertCanSeePlan(event: H3Event, workOrderNumber: string) {
+  if (canSee(await getScope(event), workOrderNumber)) return
+  if (await holdsConfirmTodo(requireUser(event).qmsUserId, { workOrderNumber })) return
+  throw forbidden()
+}
+
+/**
+ * 总计划节点上的操作：plan（改 / 删节点）—— 该工单项目经理、项目部、管理员；planNodeDone（手动完成 / 撤销）—— 该节点责任部门的人、该工单项目经理、管理员；
+ * planConfirm（确认 / 退回）—— 该节点责任部门负责人、管理员，另外手里有这个节点"确认总计划节点"待办的人（转交来的）也可以。
+ */
+export async function assertCanOperatePlanNode(event: H3Event, op: Extract<Operation, 'plan' | 'planNodeDone' | 'planConfirm'>, id: string) {
+  const node = await prisma.planNode.findUnique({ where: { id }, select: { workOrderNumber: true, dept: true } })
+  if (!node) return
+  const ctx = await getRoleContext(event)
+  if (canOperate(ctx, op, { workOrderNumber: node.workOrderNumber, dept: node.dept })) return
+  if (op === 'planConfirm') {
+    const todo = await prisma.todo.findFirst({ where: { refType: PLAN_REF, refId: id, action: CONFIRM_PLAN_NODE, ownerId: ctx.userId, status: 'OPEN' }, select: { id: true } })
+    if (todo) return
+  }
+  throw new FlowForbidden(OPERATION_DENIED[op])
 }
 
 /** 管理员：NUXT_ADMIN_USER_IDS 里列出的 QMS 用户 ID（逗号分隔）。设置页的接口都用它校验 */

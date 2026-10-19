@@ -7,6 +7,7 @@ import { prisma } from '../../utils/prisma'
 import { openIssuesOfSteps } from '../issues/issues'
 import { FlowError } from './errors'
 import { loadNames } from './names'
+import { planWarning, resolvePlanNode } from '../plan/links'
 
 type Tx = Prisma.TransactionClient
 
@@ -162,15 +163,24 @@ export interface StepInput {
   supplierId?: string | null
   ownerId?: string | null
   dueDate?: Date | null
+  /** 所属总计划节点（R14） */
+  planNodeId?: string | null
+}
+
+/** 工序的日期晚于节点计划日：厂外外协有承诺返回日看承诺返回日，否则看要求完成日 */
+function stepWarning(s: { mode: StepMode; dueDate: Date | null; promisedReturnDate: Date | null }, node: Parameters<typeof planWarning>[2]) {
+  if (s.mode === 'EXTERNAL_OUTSOURCE' && s.promisedReturnDate) return planWarning('承诺返回日', s.promisedReturnDate, node)
+  return planWarning('要求完成日', s.dueDate, node)
 }
 
 /** 追加到工序链末尾。负责人不填时默认是创建人 */
 export async function addStep(partId: string, input: StepInput, actorId: string) {
   return prisma.$transaction(async (tx) => {
-    await lockPart(tx, partId)
+    const part = await lockPart(tx, partId)
     await assertProcess(tx, input.processId)
+    const link = await resolvePlanNode(tx, part.workOrderNumber, input.planNodeId, { creating: true })
     const last = await tx.routeStep.findFirst({ where: { partId }, orderBy: { seq: 'desc' }, select: { seq: true } })
-    return tx.routeStep.create({
+    const step = await tx.routeStep.create({
       data: {
         partId,
         seq: (last?.seq ?? 0) + 1,
@@ -179,21 +189,27 @@ export async function addStep(partId: string, input: StepInput, actorId: string)
         supplierId: supplierFor(input.mode, input.supplierId),
         ownerId: input.ownerId || actorId,
         dueDate: input.dueDate ?? null,
+        planNodeId: link.value ?? null,
       },
     })
+    return { ...step, planWarning: stepWarning(step, link.node) }
   })
 }
 
 export async function updateStep(stepId: string, input: Partial<StepInput>) {
   return prisma.$transaction(async (tx) => {
+    const found = await tx.routeStep.findUnique({ where: { id: stepId }, select: { partId: true } })
+    if (!found) throw new FlowError('步骤不存在或已删除')
+    const part = await lockPart(tx, found.partId)
+    // 加锁后重读：并发修改可能已改了所属节点 / 状态，用锁后的值做校验
     const step = await tx.routeStep.findUnique({ where: { id: stepId } })
     if (!step) throw new FlowError('步骤不存在或已删除')
-    await lockPart(tx, step.partId)
     if (input.processId !== undefined) await assertProcess(tx, input.processId)
     const mode = input.mode ?? step.mode
     if (mode !== step.mode && step.status !== 'PENDING') throw new FlowError('步骤已发出或已开工，不能再改加工方式')
     const supplierId = input.supplierId !== undefined ? input.supplierId : step.supplierId
-    return tx.routeStep.update({
+    const link = await resolvePlanNode(tx, part.workOrderNumber, input.planNodeId, { creating: false, oldNodeId: step.planNodeId })
+    const updated = await tx.routeStep.update({
       where: { id: stepId },
       data: {
         ...(input.processId !== undefined ? { processId: input.processId } : {}),
@@ -201,8 +217,10 @@ export async function updateStep(stepId: string, input: Partial<StepInput>) {
         supplierId: supplierFor(mode, supplierId),
         ...(input.ownerId !== undefined ? { ownerId: input.ownerId || null } : {}),
         ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
+        ...(link.value !== undefined ? { planNodeId: link.value } : {}),
       },
     })
+    return { ...updated, planWarning: updated.status === 'DONE' ? null : stepWarning(updated, link.node) }
   })
 }
 

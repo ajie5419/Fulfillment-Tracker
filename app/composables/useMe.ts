@@ -31,6 +31,10 @@ export interface Me {
     seeAmount: boolean
     mobileSend: boolean
     overview: boolean
+    /** R14：编辑总计划（项目部、项目部负责人；该工单项目经理用 canDo 补上） */
+    plan: boolean
+    /** R14：维护总计划模板（项目部负责人） */
+    planTemplate: boolean
   }
 }
 
@@ -38,18 +42,18 @@ export function useMe() {
   return useFetch<Me>('/api/me', { key: 'me' })
 }
 
-export type Operation = 'drawing' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction'
+export type Operation = 'drawing' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction' | 'plan'
 
 /**
  * 当前用户能不能做某个操作（只用来隐藏 / 禁用按钮，后端 403 才是最终判断）。
  * 与 server/services/auth/permissions.ts 的 canOperate 一致：
- *   采购行、付款申请、工件工序编辑：该工单项目经理也可以；开工/完工/发出/返厂：该工序责任人也可以。
+ *   采购行、付款申请、工件工序编辑、总计划：该工单项目经理也可以；开工/完工/发出/返厂：该工序责任人也可以。
  */
 export function canDo(me: Me | null | undefined, op: Operation, target: { workOrderNumber?: string | null; ownerId?: string | null } = {}): boolean {
   if (!me) return false
   if (me.isAdmin || me.can?.[op]) return true
   const pm = !!target.workOrderNumber && !!me.pmOf?.includes(target.workOrderNumber)
-  if (op === 'purchase' || op === 'payment' || op === 'route') return pm
+  if (op === 'purchase' || op === 'payment' || op === 'route' || op === 'plan') return pm
   if (op === 'stepAction') return !!target.ownerId && target.ownerId === me.id
   return false
 }
@@ -58,7 +62,7 @@ export function canDo(me: Me | null | undefined, op: Operation, target: { workOr
 export function canDoAny(me: Me | null | undefined, op: Operation): boolean {
   if (!me) return false
   if (me.isAdmin || me.can?.[op]) return true
-  return (op === 'purchase' || op === 'payment' || op === 'route') && !!me.pmOf?.length
+  return (op === 'purchase' || op === 'payment' || op === 'route' || op === 'plan') && !!me.pmOf?.length
 }
 
 /** 退出并回到 QMS 登录页重新输入账号密码（可换人登录）。不带 prompt=login 的话，QMS 已登录时会直接以原账号再登录进来 */

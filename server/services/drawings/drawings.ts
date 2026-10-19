@@ -20,6 +20,7 @@ import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { todayDate } from '../purchases/constants'
 import { lockParts, purchaseTx, refreshPartReady } from '../purchases/purchases'
+import { planWarning, resolvePlanNode } from '../plan/links'
 import { TYPE_TEXT } from '../releases/constants'
 import { DRAWING_STATUS_TEXT, OPEN_DRAWING_STATUSES, TECH_DEPT, canReleaseFrom, deriveStatus, isOverdue, thisWeek } from './constants'
 
@@ -36,6 +37,8 @@ export interface TaskInput {
   componentName: string
   ownerId?: string | null
   planDate: Date
+  /** 所属总计划节点（R14） */
+  planNodeId?: string | null
   needsCustomerConfirm?: boolean
   customerPlanDate?: Date | null
   note?: string | null
@@ -138,12 +141,14 @@ export async function createTask(input: NewTaskInput, actorId: string) {
     if (!wo) throw new FlowError('工单不存在或已删除')
     await assertParts(tx, partIds, wo.workOrderNumber)
     await assertOwner(tx, input.ownerId)
+    const link = await resolvePlanNode(tx, wo.workOrderNumber, input.planNodeId, { creating: true })
     const task = await tx.drawingTask.create({
       data: {
         workOrderNumber: wo.workOrderNumber,
         componentName: input.componentName.trim(),
         ownerId: input.ownerId || null,
         planDate: input.planDate,
+        planNodeId: link.value ?? null,
         needsCustomerConfirm: needs,
         customerPlanDate: needs ? (input.customerPlanDate ?? null) : null,
         note: input.note?.trim() || null,
@@ -153,7 +158,7 @@ export async function createTask(input: NewTaskInput, actorId: string) {
     })
     // 新挂上一个待出图的任务：这些工件没处理的"可以开工"待办作废
     for (const partId of [...partIds].sort()) await refreshPartReady(tx, partId, false)
-    return task
+    return { ...task, planWarning: planWarning('计划完成日', task.planDate, link.node) }
   })
 }
 
@@ -169,6 +174,8 @@ export async function updateTask(id: string, input: PatchTaskInput) {
       data.ownerId = input.ownerId || null
     }
     if (input.planDate !== undefined) data.planDate = input.planDate
+    const link = await resolvePlanNode(tx, old.workOrderNumber, input.planNodeId, { creating: false, oldNodeId: old.planNodeId })
+    if (link.value !== undefined) data.planNodeId = link.value
     const needs = input.needsCustomerConfirm ?? old.needsCustomerConfirm
     if (input.needsCustomerConfirm !== undefined) data.needsCustomerConfirm = needs
     if (input.customerPlanDate !== undefined) data.customerPlanDate = input.customerPlanDate
@@ -195,7 +202,7 @@ export async function updateTask(id: string, input: PatchTaskInput) {
       dayOf(newCustomerPlan) !== dayOf(old.customerPlanDate)
     if (datesChanged) await clearAlertKeys(tx, [w7Key(id)])
     const r = await settleTask(tx, before, id)
-    return { id, ...r }
+    return { id, ...r, planWarning: planWarning('计划完成日', input.planDate ?? old.planDate, link.node) }
   })
 }
 

@@ -61,6 +61,16 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
   ]
   const USER_DEPT: Record<string, string> = { 'h-tech': 'T-DEPT-TECH', 'h-buyer': 'T-DEPT-BUY1', 'h-prod': 'T-DEPT-PROD', 'h-qa': 'T-DEPT-QA' }
 
+  /** R14 总计划：节点、发布状态、调整记录、确认待办（plan_node 不挂工单外键，按工单号清） */
+  async function cleanPlans() {
+    const ids = (await db.planNode.findMany({ where: { workOrderNumber: { in: [MINE, OTHER] } }, select: { id: true } })).map((n) => n.id)
+    await db.todo.deleteMany({ where: { refType: 'planNode', refId: { in: ids } } })
+    await db.planChangeLog.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
+    await db.planNode.deleteMany({ where: { id: { in: ids } } })
+    await db.workOrderPlan.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
+    await db.planTemplate.deleteMany({ where: { name: 'HTTP 测试模板' } })
+  }
+
   beforeAll(async () => {
     if (!existsSync(SERVER_ENTRY)) throw new Error('先运行 pnpm build')
     execFileSync('npx', ['prisma', 'migrate', 'deploy'], { env: { ...process.env, DATABASE_URL: DB }, stdio: 'ignore' })
@@ -68,6 +78,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     uploadDir = await mkdtemp(join(tmpdir(), 'ft-http-uploads-'))
     const now = new Date()
     // 只清本测试用到的数据
+    await cleanPlans()
     await db.issue.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db.part.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db.workOrderExt.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
@@ -153,6 +164,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
   afterAll(async () => {
     app?.kill()
     await bridge?.close()
+    if (db) await cleanPlans()
     await db?.release.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.drawingTask.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.assemblyNode.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
@@ -636,5 +648,80 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(settings.qmsDepartments.find((d) => d.id === 'T-DEPT-BUY1')).toMatchObject({ parentName: '供应部', level: 1, businessDept: null, effective: '采购部' })
     // 部门负责人只能选 6 个业务部门
     expect((await send(admin, 'POST', '/api/settings/roles', { role: 'DEPT_HEAD', userId: 'h-qa', department: '检验科' })).status).toBe(400)
+  })
+
+  it('总计划 R14：编辑限该工单项目经理 / 项目部 / 管理员；模板限项目部负责人 / 管理员；确认限责任部门负责人；手动完成限责任部门 / 项目经理；发布后挂节点必选', async () => {
+    const send = (sess: Record<string, string>, method: string, path: string, body?: object) =>
+      fetch(`${base}${path}`, { method, headers: { cookie: cookieHeader(sess), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+    const pm = await login('h-pm')
+    const buyer = await login('h-buyer')
+    const tech = await login('h-tech')
+    const prodHead = await login('h-worker') // 上面 R12 用例里设成了生产部负责人
+    const admin = await login('h-admin')
+    const later = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10)
+
+    // 模板：项目经理 403；管理员可以
+    const tpl = { name: 'HTTP 测试模板', nodes: [{ name: '设计', dept: 'TECH', daysBeforeDelivery: 30 }] }
+    expect((await send(pm, 'POST', '/api/plan/templates', tpl)).status).toBe(403)
+    const created = await send(admin, 'POST', '/api/plan/templates', tpl)
+    expect(created.status).toBe(200)
+    const tplId = ((await created.json()) as { id: string }).id
+    expect((await send(pm, 'PUT', `/api/plan/templates/${tplId}`, tpl)).status).toBe(403)
+    expect((await send(pm, 'DELETE', `/api/plan/templates/${tplId}`)).status).toBe(403)
+    expect((await send(admin, 'DELETE', `/api/plan/templates/${tplId}`)).status).toBe(200)
+    const me = (await (await get('/api/me', admin)).json()) as { can: Record<string, boolean> }
+    expect(me.can).toMatchObject({ plan: true, planTemplate: true })
+
+    // 生成：采购员 403；项目经理别人的工单 403（看不到），自己的工单 200
+    const gen = { workOrderNumber: MINE, templateId: 'plan-tpl-generic' }
+    expect((await send(buyer, 'POST', '/api/plan/generate', gen)).status).toBe(403)
+    expect((await send(pm, 'POST', '/api/plan/generate', { ...gen, workOrderNumber: OTHER })).status).toBe(403)
+    expect((await send(pm, 'POST', '/api/plan/generate', gen)).status).toBe(200)
+    // 能看到工单就能看总计划
+    expect((await get(`/api/plan?workOrderNumber=${MINE}`, buyer)).status).toBe(200)
+    expect((await get(`/api/plan?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
+    expect((await send(tech, 'POST', '/api/plan/publish', { workOrderNumber: MINE })).status).toBe(403)
+    expect((await send(pm, 'POST', '/api/plan/publish', { workOrderNumber: MINE })).status).toBe(200)
+    const view = (await (await get(`/api/plan?workOrderNumber=${MINE}`, pm)).json()) as { canEdit: boolean; nodes: { id: string; name: string; dept: string }[] }
+    expect(view.canEdit).toBe(true)
+    const design = view.nodes.find((n) => n.name === '设计出图')!
+    const cut = view.nodes.find((n) => n.name === '下料组焊')!
+    const buy = view.nodes.find((n) => n.name === '关键物料到货')!
+
+    // 发布后改日期：没原因 400；采购员改不了 403
+    const noReason = await send(pm, 'PATCH', `/api/plan/nodes/${design.id}`, { planDate: later(20) })
+    expect(noReason.status).toBe(400)
+    expect(((await noReason.json()) as { message: string }).message).toContain('调整原因')
+    expect((await send(buyer, 'PATCH', `/api/plan/nodes/${design.id}`, { planDate: later(20), reason: 'x' })).status).toBe(403)
+    expect((await send(pm, 'PATCH', `/api/plan/nodes/${design.id}`, { planDate: later(20), reason: '客户提前要图' })).status).toBe(200)
+    expect((await send(buyer, 'DELETE', `/api/plan/nodes/${design.id}`, { reason: 'x' })).status).toBe(403)
+    expect((await send(buyer, 'POST', '/api/plan/nodes', { workOrderNumber: MINE, name: 'x', dept: 'TECH', planDate: later(20), reason: 'x' })).status).toBe(403)
+
+    // 确认：项目经理、技术部普通员工 403；生产部负责人确认生产部节点 200、技术部节点 403；管理员 200
+    expect((await send(pm, 'POST', `/api/plan/nodes/${design.id}/confirm`, {})).status).toBe(403)
+    expect((await send(tech, 'POST', `/api/plan/nodes/${design.id}/confirm`, {})).status).toBe(403)
+    expect((await send(prodHead, 'POST', `/api/plan/nodes/${design.id}/confirm`, {})).status).toBe(403)
+    expect((await send(prodHead, 'POST', `/api/plan/nodes/${cut.id}/confirm`, {})).status).toBe(200)
+    expect((await send(admin, 'POST', `/api/plan/nodes/${design.id}/confirm`, {})).status).toBe(200)
+    expect((await send(buyer, 'POST', `/api/plan/nodes/${buy.id}/reject`, { reason: '排不过来' })).status).toBe(403)
+    expect((await send(admin, 'POST', `/api/plan/nodes/${buy.id}/reject`, { reason: '' })).status).toBe(400)
+
+    // 手动完成：别的部门 403；本部门员工、项目经理可以
+    expect((await send(buyer, 'POST', `/api/plan/nodes/${design.id}/complete`, {})).status).toBe(403)
+    expect((await send(tech, 'POST', `/api/plan/nodes/${design.id}/complete`, {})).status).toBe(200)
+    expect((await send(buyer, 'POST', `/api/plan/nodes/${design.id}/undo-complete`, {})).status).toBe(403)
+    expect((await send(pm, 'POST', `/api/plan/nodes/${design.id}/undo-complete`, {})).status).toBe(200)
+
+    // 已发布：新建出图任务必须选节点（400）；选了别的工单的节点 400；选对了 200
+    const noNode = await send(tech, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: 'R14 图', planDate: later(15) })
+    expect(noNode.status).toBe(400)
+    expect(((await noNode.json()) as { message: string }).message).toContain('请选择所属总计划节点')
+    const ok = await send(tech, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: 'R14 图', planDate: later(25), planNodeId: design.id })
+    expect(ok.status).toBe(200)
+    expect(((await ok.json()) as { planWarning: string | null }).planWarning).toContain('晚于总计划节点')
+    const opts = (await (await get(`/api/plan/options?workOrderNumber=${MINE}`, tech)).json()) as { published: boolean; nodes: unknown[] }
+    expect(opts.published).toBe(true)
+    expect(opts.nodes).toHaveLength(11)
+    expect((await get(`/api/plan/options?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
   })
 })

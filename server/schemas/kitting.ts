@@ -7,6 +7,8 @@ const id = z.string().min(1).max(191)
 const nodeFields = {
   name: z.string().trim().min(1, '请填写节点名称').max(191, '节点名称最多 191 字'),
   needDate: day,
+  /** 所属总计划节点（R14）；工单已发布总计划时新建必填 */
+  planNodeId: z.string().max(191).nullish(),
   /** 节点负责人；空 = 生产经理（生产部负责人） */
   ownerId: z.string().max(64).nullish(),
   note: z

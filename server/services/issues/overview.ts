@@ -3,13 +3,16 @@
  *   顶部数字：红/黄/绿工单数（看板）、本周新增异常、本周关闭异常、超期异常（看板各工单"超期异常"之和）；
  *   卡在哪个环节：设计出图逾期、采购缺料、外协超期未返、未齐套节点、超期异常（都是看板对应列之和）；
  *   按部门：未关闭异常按责任部门（换算成业务部门）统计，超期按 W4 判定（与看板一致）；
- *   红色工单清单：工单号、项目、项目经理、交期、主要原因（由看板该行的各项数字拼成）。
+ *   红色工单清单：工单号、项目、项目经理、交期、主要原因（由看板该行的各项数字拼成）；
+ *   预计拖期工单（R14）：已发布总计划、预计交期晚于 QMS 交期的工单（看板"拖期天数"> 0），附最先延误的节点；
+ *   按部门延误节点数（R14）：已发布总计划里没完成、预计晚于计划日的节点，按节点责任部门统计。
  * "本周" = 工厂时区（北京时间）本周一 00:00 起。
  */
 import { prisma } from '../../utils/prisma'
 import { loadOffDays, loadThresholds } from '../alerts/config'
 import { judgeW4, shanghaiDay, shanghaiDayStart } from '../alerts/rules'
-import { resolveDeptNames } from '../auth/departments'
+import { BUSINESS_DEPTS, BUSINESS_DEPT_NAME, resolveDeptNames } from '../auth/departments'
+import { loadPlans } from '../plan/plan'
 import { getBoard } from './board'
 import { OPEN_STATUSES } from './constants'
 
@@ -40,13 +43,14 @@ export function redReason(r: Pick<BoardRow, 'redAlerts' | 'overdueIssues' | 'ove
 
 export async function getOverview(now = new Date()) {
   const since = weekStart(now)
-  const [board, newIssues, closedLogs, openIssues, thresholds, offDays] = await Promise.all([
+  const [board, newIssues, closedLogs, openIssues, thresholds, offDays, plans] = await Promise.all([
     getBoard(undefined, now),
     prisma.issue.count({ where: { createdAt: { gte: since } } }),
     prisma.issueLog.findMany({ where: { toStatus: 'CLOSED', createdAt: { gte: since } }, select: { issueId: true }, distinct: ['issueId'] }),
     prisma.issue.findMany({ where: { status: { in: OPEN_STATUSES } }, select: { status: true, createdAt: true, dueDate: true, responsibleDeptId: true } }),
     loadThresholds(),
     loadOffDays(),
+    loadPlans({ publishedOnly: true }, now),
   ])
   const sum = (k: keyof Pick<BoardRow, 'overdueIssues' | 'overdueSteps' | 'shortage' | 'drawingOverdue' | 'incompleteNodes'>) => board.rows.reduce((n, r) => n + r[k], 0)
 
@@ -59,6 +63,26 @@ export async function getOverview(now = new Date()) {
     row.open++
     if (judgeW4({ status: i.status, createdAt: i.createdAt, dueDate: i.dueDate, now, offDays }, thresholds.W4).overdueDays > 0) row.overdue++
     byDept.set(dept, row)
+  }
+
+  // 总计划（R14）：只算看板上有的工单（QMS 里还在的）
+  const onBoard = new Set(board.rows.map((r) => r.workOrderNumber))
+  const deptDelayed = new Map(BUSINESS_DEPTS.map((d) => [d, { dept: d, deptText: BUSINESS_DEPT_NAME[d], delayed: 0, open: 0 }]))
+  for (const p of plans.values()) {
+    if (!onBoard.has(p.workOrderNumber)) continue
+    for (const n of p.nodes) {
+      const e = p.forecast.nodes.find((x) => x.id === n.id)!
+      if (e.done) continue
+      const row = deptDelayed.get(n.dept)!
+      row.open++
+      if (e.source) row.delayed++ // 源头延误节点（只因上游顺延的不算）
+    }
+  }
+  const firstDelayed = (wo: string) => {
+    const p = plans.get(wo)
+    const e = p?.forecast.nodes.find((x) => x.source)
+    const n = e && p!.nodes.find((x) => x.id === e.id)
+    return n ? `${n.name}（${BUSINESS_DEPT_NAME[n.dept]}）自身晚 ${e!.selfDelayDays} 天` : '—'
   }
 
   return {
@@ -86,5 +110,19 @@ export async function getOverview(now = new Date()) {
         deliveryDate: r.deliveryDate,
         reason: redReason(r),
       })),
+    planDelays: board.rows
+      .filter((r) => (r.delayDays ?? 0) > 0)
+      .sort((a, b) => b.delayDays! - a.delayDays! || +a.deliveryDate - +b.deliveryDate)
+      .map((r) => ({
+        workOrderNumber: r.workOrderNumber,
+        projectName: r.projectName ?? r.customerName,
+        projectManagerName: r.projectManagerName,
+        deliveryDate: r.deliveryDate,
+        expectedDelivery: r.expectedDelivery,
+        delayDays: r.delayDays,
+        delayedNodes: r.delayedPlanNodes,
+        cause: firstDelayed(r.workOrderNumber),
+      })),
+    planByDept: [...deptDelayed.values()].filter((d) => d.open > 0).sort((a, b) => b.delayed - a.delayed || b.open - a.open),
   }
 }

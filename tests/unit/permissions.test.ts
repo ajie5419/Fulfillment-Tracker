@@ -1,7 +1,7 @@
 /** 权限方案 R13：部门换算、操作权限、付款金额可见、菜单分组、领导总览的纯函数 */
 import { describe, expect, it } from 'vitest'
 import { type DeptIndex, deptIdsResolvingTo, representativeDeptId, resolveBusinessDept, resolveDeptName } from '../../server/services/auth/departments'
-import { type RoleContext, canOperate, canSeeAmount, canSeeMobileSend, canSeeOverview, inDept, menuSections, permissionFlags } from '../../server/services/auth/permissions'
+import { type RoleContext, canOperate, canSeeAmount, canSeeMobileSend, canSeeOverview, inDept, isDeptHead, menuSections, permissionFlags } from '../../server/services/auth/permissions'
 import { deptRows } from '../../server/services/alerts/settings'
 import { resolveGroup } from '../../server/services/releases/constants'
 import { redReason, weekStart } from '../../server/services/issues/overview'
@@ -151,6 +151,61 @@ describe('操作权限 canOperate', () => {
 
   it('其他部门什么都改不了', () => {
     for (const op of ['drawing', 'release', 'purchase', 'payment', 'route', 'stepAction'] as const) expect(canOperate(other, op, { workOrderNumber: 'WO-1' })).toBe(false)
+  })
+})
+
+describe('总计划权限（R14）', () => {
+  const pm = ctx({ pmOf: new Set(['WO-1']) })
+  const project = ctx({ businessDept: 'PROJECT' })
+  const projectHead = ctx({ roles: ['PROJECT_DEPT_HEAD'] })
+  const projectDeptHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['项目部'] })
+  const techHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['技术部'] })
+  const tech = ctx({ businessDept: 'TECH' })
+  const admin = ctx({ isAdmin: true })
+  const leader = ctx({ roles: ['LEADER'] })
+
+  it('编辑总计划 plan：该工单项目经理、项目部、项目部负责人、管理员', () => {
+    expect(canOperate(pm, 'plan', { workOrderNumber: 'WO-1' })).toBe(true)
+    expect(canOperate(pm, 'plan', { workOrderNumber: 'WO-2' })).toBe(false)
+    expect(canOperate(project, 'plan', { workOrderNumber: 'WO-2' })).toBe(true)
+    expect(canOperate(projectHead, 'plan', { workOrderNumber: 'WO-2' })).toBe(true)
+    expect(canOperate(admin, 'plan', { workOrderNumber: 'WO-2' })).toBe(true)
+    for (const c of [tech, techHead, leader]) expect(canOperate(c, 'plan', { workOrderNumber: 'WO-1' })).toBe(false)
+  })
+
+  it('维护模板 planTemplate：项目部负责人（角色或项目部的部门负责人）、管理员；项目经理、项目部普通员工不行', () => {
+    expect(canOperate(projectHead, 'planTemplate')).toBe(true)
+    expect(canOperate(projectDeptHead, 'planTemplate')).toBe(true)
+    expect(canOperate(admin, 'planTemplate')).toBe(true)
+    for (const c of [pm, project, techHead, leader]) expect(canOperate(c, 'planTemplate')).toBe(false)
+  })
+
+  it('确认节点 planConfirm：该节点责任部门的负责人（项目部节点另含项目部负责人角色）、管理员', () => {
+    expect(canOperate(techHead, 'planConfirm', { dept: 'TECH' })).toBe(true)
+    expect(canOperate(techHead, 'planConfirm', { dept: 'PURCHASE' })).toBe(false)
+    expect(canOperate(tech, 'planConfirm', { dept: 'TECH' })).toBe(false)
+    expect(canOperate(projectHead, 'planConfirm', { dept: 'PROJECT' })).toBe(true)
+    expect(canOperate(projectHead, 'planConfirm', { dept: 'TECH' })).toBe(false)
+    expect(canOperate(pm, 'planConfirm', { workOrderNumber: 'WO-1', dept: 'TECH' })).toBe(false)
+    expect(canOperate(admin, 'planConfirm', { dept: 'TECH' })).toBe(true)
+    expect(canOperate(techHead, 'planConfirm', {})).toBe(false)
+    expect(isDeptHead(projectDeptHead, 'PROJECT')).toBe(true)
+    expect(isDeptHead(techHead, 'PROJECT')).toBe(false)
+  })
+
+  it('手动完成节点 planNodeDone：责任部门的人（含负责人）、该工单项目经理、管理员', () => {
+    expect(canOperate(tech, 'planNodeDone', { workOrderNumber: 'WO-1', dept: 'TECH' })).toBe(true)
+    expect(canOperate(techHead, 'planNodeDone', { workOrderNumber: 'WO-1', dept: 'TECH' })).toBe(true)
+    expect(canOperate(tech, 'planNodeDone', { workOrderNumber: 'WO-1', dept: 'PURCHASE' })).toBe(false)
+    expect(canOperate(pm, 'planNodeDone', { workOrderNumber: 'WO-1', dept: 'PURCHASE' })).toBe(true)
+    expect(canOperate(pm, 'planNodeDone', { workOrderNumber: 'WO-2', dept: 'PURCHASE' })).toBe(false)
+    expect(canOperate(admin, 'planNodeDone', { workOrderNumber: 'WO-2', dept: 'PURCHASE' })).toBe(true)
+  })
+
+  it('permissionFlags 带 plan / planTemplate（项目经理靠按工单判断，不在标志里）', () => {
+    expect(permissionFlags(project)).toMatchObject({ plan: true, planTemplate: false })
+    expect(permissionFlags(projectHead)).toMatchObject({ plan: true, planTemplate: true })
+    expect(permissionFlags(pm)).toMatchObject({ plan: false, planTemplate: false })
   })
 })
 
