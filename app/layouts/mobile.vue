@@ -1,10 +1,13 @@
 <script setup lang="ts">
+// 手机端主题（前端改版第二轮）：Vant 变量覆盖、卡片、状态色，见 assets/mobile.css
+import '~/assets/mobile.css'
+
 // "发出"页签只给生产部、外协专员、管理员显示（权限方案 R13）；其余 4 个页签人人都有
 const { data: me } = await useMe()
 </script>
 
 <template>
-  <div class="mobile">
+  <div class="ft-m">
     <slot />
     <van-tabbar route placeholder safe-area-inset-bottom>
       <van-tabbar-item to="/m" icon="bell" replace>提醒</van-tabbar-item>
@@ -15,7 +18,3 @@ const { data: me } = await useMe()
     </van-tabbar>
   </div>
 </template>
-
-<style scoped>
-.mobile { min-height: 100vh; max-width: 640px; margin: 0 auto; background: #f7f8fa; }
-</style>

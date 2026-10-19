@@ -95,18 +95,23 @@ const sourceText = { MOBILE: '手机确认', PC: '电脑确认', QMS_INSPECTION:
 <template>
   <div>
     <van-nav-bar :title="line ? line.materialName : '到货确认'" left-arrow @click-left="navigateTo('/m/arrivals')" />
-    <van-loading v-if="loading && !line" class="center" />
+    <van-loading v-if="loading && !line" class="m-center" />
     <van-empty v-else-if="loadError" :description="loadError" image="error" />
     <template v-else-if="line">
-      <van-notice-bar v-if="line.status === 'CANCELLED'" color="#ed6a0c" background="#fffbe8" text="这一项已取消，不再跟踪" />
-      <van-notice-bar
-        v-else-if="line.status === 'ARRIVED'"
-        color="#07c160"
-        background="#f7f8fa"
-        :text="`已到货 ${dayText(line.arrivedDate)}（${line.arrivalSource ? sourceText[line.arrivalSource] : ''}${line.arrivedByName && line.arrivalSource !== 'QMS_INSPECTION' ? ` · ${line.arrivedByName}` : ''}）`"
-      />
-      <van-notice-bar v-else-if="line.blockedByPayment" color="#7232dd" background="#f7f0ff" text="有卡交期的付款还没付" />
-      <van-cell-group inset class="group">
+      <div v-if="line.status === 'CANCELLED'" class="m-hint none"><UiStatusIcon kind="ring" tone="none" :size="14" />这一项已取消，不再跟踪</div>
+      <div v-else-if="line.status === 'ARRIVED'" class="m-hint done">
+        <UiStatusIcon kind="check" :size="14" />已到货 {{ dayText(line.arrivedDate) }}（{{ line.arrivalSource ? sourceText[line.arrivalSource] : '' }}{{ line.arrivedByName && line.arrivalSource !== 'QMS_INSPECTION' ? ` · ${line.arrivedByName}` : '' }}）
+      </div>
+      <div v-else-if="line.blockedByPayment" class="m-hint risk"><UiStatusIcon kind="warn" :size="14" />有卡交期的付款还没付</div>
+      <div class="summary">
+        <div class="m-row">
+          <van-tag :type="PURCHASE_PROGRESS_TYPE[line.progressText] ?? 'default'">{{ line.progressText }}</van-tag>
+          <span v-if="line.lateDays" class="late m-text-late">晚 {{ line.lateDays }} 天</span>
+        </div>
+        <div class="m-title summary-name">{{ line.materialName }}</div>
+        <div class="m-meta"><span>{{ line.workOrderNumber }}</span><span>需求 {{ dayText(line.needDate) }}</span><span>{{ line.promisedDate ? `承诺 ${dayText(line.promisedDate)}` : '未承诺' }}</span></div>
+      </div>
+      <van-cell-group inset class="group" title="明细">
         <van-cell title="物料" :value="line.materialName" :label="line.spec ?? ''" />
         <van-cell title="数量" :value="qtyText(line)" />
         <van-cell title="供应商" :value="line.supplierName ?? '—'" />
@@ -122,7 +127,7 @@ const sourceText = { MOBILE: '手机确认', PC: '电脑确认', QMS_INSPECTION:
         <van-cell v-for="p in line.payments" :key="p.id" title="付款申请" :value="`${p.statusText} ${moneyWithUnit(p.amount)}`" :label="p.blocksDelivery ? '卡交期' : ''" />
       </van-cell-group>
 
-      <div class="actions">
+      <div class="m-actions">
         <template v-if="canDo(me, 'purchase', { workOrderNumber: line.workOrderNumber })">
           <van-button v-if="line.status === 'OPEN'" type="primary" block round :loading="busy" @click="openConfirm">确认到货</van-button>
           <van-button v-if="line.status === 'ARRIVED'" plain block round :disabled="busy" @click="undo">撤销到货</van-button>
@@ -145,11 +150,11 @@ const sourceText = { MOBILE: '手机确认', PC: '电脑确认', QMS_INSPECTION:
 </template>
 
 <style scoped>
-.center { display: flex; justify-content: center; padding: 32px; }
-.group { margin-top: 12px; }
+.summary { margin: 12px 12px 0; padding: 14px 16px; background: #fff; border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); }
+.summary-name { margin-top: 6px; font-size: 17px; }
+.late { font-size: 12px; font-weight: 600; }
 .pad { padding: 8px 16px; }
-.readonly-tip { color: #969799; font-size: 13px; text-align: center; margin: 8px 0; }
-.muted { color: #969799; font-size: 13px; }
+.readonly-tip { color: var(--ft-text-3); font-size: 13px; text-align: center; margin: 8px 0; }
+.muted { color: var(--ft-text-3); font-size: 13px; }
 .reasons { display: flex; flex-wrap: wrap; gap: 12px; }
-.actions { display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; }
 </style>
