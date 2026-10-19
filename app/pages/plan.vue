@@ -327,8 +327,8 @@ const logColumns = [
         <a-descriptions-item label="拖期天数">
           <a-tag v-if="(data.deliveryDelayDays ?? 0) > 0" color="red">拖期 {{ data.deliveryDelayDays }} 天</a-tag>
           <a-tag v-if="data.planAlertLevel" color="red" title="W9 交期风险：已通知项目经理、项目部负责人、分管领导">W9 交期风险</a-tag>
-          <span v-else-if="data.deliveryDelayDays != null" class="ok">不拖期</span>
-          <span v-else class="muted">—</span>
+          <span v-if="data.deliveryDelayDays != null && data.deliveryDelayDays <= 0" class="ok">不拖期</span>
+          <span v-else-if="data.deliveryDelayDays == null" class="muted">—</span>
         </a-descriptions-item>
         <a-descriptions-item label="延误节点">
           <a-tag v-if="data.sourceNodes" color="orange" title="源头延误节点：自身就已延误（W9 只报这些）">源头 {{ data.sourceNodes }} 个</a-tag>

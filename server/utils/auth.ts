@@ -225,10 +225,33 @@ export async function assertCanOperateInspection(event: H3Event, inspectionId: s
 
 // ───────────── 总计划（R14）─────────────
 
-/** 总计划节点：按所属工单判断可见（节点不存在时不拦，由服务层报"不存在"） */
+/** 手里有"确认总计划节点"待办（含转交来的）：nodeId 给定时看这个节点，否则看该工单任一节点 */
+async function holdsConfirmTodo(userId: string, where: { nodeId?: string; workOrderNumber?: string }) {
+  let refIds: string[]
+  if (where.nodeId) refIds = [where.nodeId]
+  else refIds = (await prisma.planNode.findMany({ where: { workOrderNumber: where.workOrderNumber }, select: { id: true } })).map((n) => n.id)
+  if (!refIds.length) return false
+  const todo = await prisma.todo.findFirst({ where: { refType: PLAN_REF, refId: { in: refIds }, action: CONFIRM_PLAN_NODE, ownerId: userId, status: 'OPEN' }, select: { id: true } })
+  return !!todo
+}
+
+/**
+ * 总计划节点：按所属工单判断可见（节点不存在时不拦，由服务层报"不存在"）。
+ * 手里有该节点确认待办的人即使工单不在可见范围（如被转交给只管别的工单的项目经理）也能看到这个节点。
+ */
 export async function assertCanSeePlanNode(event: H3Event, id: string) {
   const node = await prisma.planNode.findUnique({ where: { id }, select: { workOrderNumber: true } })
-  if (node) await assertCanSee(event, node.workOrderNumber)
+  if (!node) return
+  if (canSee(await getScope(event), node.workOrderNumber)) return
+  if (await holdsConfirmTodo(requireUser(event).qmsUserId, { nodeId: id })) return
+  throw forbidden()
+}
+
+/** 总计划页：能看到该工单，或手里有该工单某个节点的确认待办 */
+export async function assertCanSeePlan(event: H3Event, workOrderNumber: string) {
+  if (canSee(await getScope(event), workOrderNumber)) return
+  if (await holdsConfirmTodo(requireUser(event).qmsUserId, { workOrderNumber })) return
+  throw forbidden()
 }
 
 /**
