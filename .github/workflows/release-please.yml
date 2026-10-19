@@ -18,10 +18,11 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      # 必须用 PAT：GITHUB_TOKEN 创建的 PR 不会再触发其他 workflow，
-      # 发布 PR 上的 CI 就永远不会跑。在仓库 Secrets 里配置 RELEASE_PLEASE_TOKEN。
+      # 优先用 PAT：GITHUB_TOKEN 创建的 PR 不会再触发其他 workflow，
+      # 发布 PR 上的 CI 就永远不会跑。没配 RELEASE_PLEASE_TOKEN 时退回 GITHUB_TOKEN，
+      # 发布 PR 仍会创建，但它的 CI 不会自动跑，需要手动 close/reopen 一次触发。
       - uses: googleapis/release-please-action@v4
         with:
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
