@@ -92,10 +92,10 @@ const purchaseOptions = computed(() =>
     .filter((p) => p.status !== 'CANCELLED' || form.purchaseIds.includes(p.id))
     .map((p) => ({ value: p.id, label: `${p.label}（${p.statusText}）` })),
 )
-/** 生产部的人排前面 */
+/** 生产部的人排前面（按部门对照换算出的业务部门，如对到生产部的班组） */
 const ownerOptions = computed(() =>
   [...master.value.users]
-    .sort((a, b) => Number(b.department === '生产部') - Number(a.department === '生产部'))
+    .sort((a, b) => Number(b.businessDept === 'PRODUCTION') - Number(a.businessDept === 'PRODUCTION'))
     .map((u) => ({ value: u.id, label: `${u.name}（${u.department || '无部门'}）` })),
 )
 

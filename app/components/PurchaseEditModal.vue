@@ -85,10 +85,10 @@ const partOptions = computed(() => (form.workOrderNumber ? parts.value : []).map
 const qmsSuppliers = computed(() => master.value.suppliers.filter((s) => s.kind !== 'TEAM'))
 const supplierOptions = computed(() => qmsSuppliers.value.filter((s) => !form.supplier || s.name.includes(form.supplier)).slice(0, 50).map((s) => ({ value: s.name })))
 const matchedSupplier = computed(() => qmsSuppliers.value.find((s) => s.name === form.supplier.trim()) ?? null)
-/** 采购部的人排前面 */
+/** 采购部的人排前面（按部门对照换算出的业务部门） */
 const buyerOptions = computed(() =>
   [...master.value.users]
-    .sort((a, b) => Number(b.department === '采购部') - Number(a.department === '采购部'))
+    .sort((a, b) => Number(b.businessDept === 'PURCHASE') - Number(a.businessDept === 'PURCHASE'))
     .map((u) => ({ value: u.id, label: `${u.name}（${u.department || '无部门'}）` })),
 )
 /** 晚了（到货 / 今天晚于需求日或承诺日）才需要延误原因 */

@@ -1,8 +1,9 @@
 /** 项目部总计划（R14）接口的 zod 片段。日期一律用 schemas/flow.ts 的 day（拒绝 2026-02-30 这类不存在的日期） */
 import { z } from 'zod'
+import { BUSINESS_DEPT_NAME } from '../../shared/business-depts'
 import { day } from './flow'
 
-export const businessDept = z.enum(['TECH', 'PURCHASE', 'PRODUCTION', 'QUALITY', 'FINANCE', 'PROJECT'], { message: '责任部门只能是 技术部 / 采购部 / 生产部 / 质量部 / 财务部 / 项目部' })
+export const businessDept = z.enum(['TECH', 'PURCHASE', 'PRODUCTION', 'QUALITY', 'FINANCE', 'PROJECT'], { message: `责任部门只能是 ${Object.values(BUSINESS_DEPT_NAME).join(' / ')}` })
 
 const wo = z.string().min(1, '请选择工单').max(64)
 const reason = z

@@ -3,17 +3,12 @@
  * 设置 →"总计划模板"（R14）：节点名称、顺序、责任部门、交期前天数。项目部负责人、管理员可维护（接口也校验）。
  * 改模板不影响已经生成的总计划（生成时复制）。
  */
+import { BUSINESS_DEPT_OPTIONS } from '#shared/business-depts'
+
 interface TplNode { name: string; dept: string; daysBeforeDelivery: number }
 interface Tpl { id: string; name: string; description: string | null; createdByName: string | null; updatedAt: string; nodes: (TplNode & { seq: number; deptText: string })[] }
 
-const DEPTS = [
-  { value: 'PROJECT', label: '项目部' },
-  { value: 'TECH', label: '技术部' },
-  { value: 'PURCHASE', label: '采购部' },
-  { value: 'PRODUCTION', label: '生产部' },
-  { value: 'QUALITY', label: '质量部' },
-  { value: 'FINANCE', label: '财务部' },
-]
+const DEPTS = BUSINESS_DEPT_OPTIONS
 
 const { data, refresh, pending } = await useFetch<Tpl[]>('/api/plan/templates', { default: () => [] })
 const send = $fetch as unknown as (url: string, opts: { method: 'POST' | 'PUT' | 'DELETE'; body?: object }) => Promise<unknown>

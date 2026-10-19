@@ -5,9 +5,10 @@
 import type { AlertLevel, DelayReason, PaymentStatus, PurchaseStatus, QmsInspection } from '@prisma/client'
 import { type RuleThreshold, dateFieldDay, dayDiff, overdueDaysExcludingOffDays, shanghaiDay } from '../alerts/rules'
 import { inspectionWorkOrders } from '../flow/inspection'
+import { BUSINESS_DEPT_NAME } from '../../../shared/business-depts'
 
 /** 默认责任部门：采购行没指定采购负责人时，派给这个部门的负责人（notify_role DEPT_HEAD + 部门名称）。与 QMS 进货检验的责任部门一致 */
-export const PURCHASE_DEPT = '采购部'
+export const PURCHASE_DEPT = BUSINESS_DEPT_NAME.PURCHASE
 
 /** 待办：工件的关键物料全部到货，给第一道工序负责人发"可以开工"（refType = part，refId = 工件 ID） */
 export const READY_TO_START = 'READY_TO_START'

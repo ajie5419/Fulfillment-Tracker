@@ -592,6 +592,15 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(await me(pm)).toMatchObject({ menu: ['tech', 'purchase', 'production'], pmOf: [MINE], can: { overview: false } })
     expect(await me(lead)).toMatchObject({ menu: ['overview', 'tech', 'purchase', 'production'], can: { overview: true, seeAmount: true } })
 
+    // 主数据用户：department 仍是 QMS 原名称（给人看），businessDept 是换算出的编码（选人下拉按它排序）
+    const master = (await (await get('/api/master', pm)).json()) as { users: { id: string; department: string; businessDept: string | null }[] }
+    const mu = (id: string) => master.users.find((u) => u.id === id)
+    expect(mu('h-tech')).toMatchObject({ department: '技术科', businessDept: 'TECH' })
+    expect(mu('h-buyer')).toMatchObject({ department: '采购一组', businessDept: 'PURCHASE' })
+    expect(mu('h-prod')).toMatchObject({ department: '生产部', businessDept: 'PRODUCTION' })
+    expect(mu('h-qa')).toMatchObject({ department: '检验科', businessDept: 'QUALITY' })
+    expect(mu('h-pm')).toMatchObject({ department: '', businessDept: null })
+
     // 工件：生产部任何工单都能建；项目经理只能在自己的工单；质量部、技术部只读
     await db.qmsProcess.upsert({ where: { id: 'T-PRC-R13' }, update: {}, create: { id: 'T-PRC-R13', name: '组焊', updatedAt: new Date() } })
     const prodPart = await send(prod, 'POST', '/api/parts', { workOrderNumber: OTHER, name: 'R13 生产建的', quantity: 1 })

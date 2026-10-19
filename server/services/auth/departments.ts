@@ -9,19 +9,18 @@
  * 显示给人看的"所在部门"仍用 QMS 原名称（flow/names.ts 的 userDepartmentNames）。
  */
 import type { BusinessDept } from '@prisma/client'
+import { BUSINESS_DEPT_NAME as SHARED_BUSINESS_DEPT_NAME, type BusinessDeptCode } from '../../../shared/business-depts'
 import { prisma } from '../../utils/prisma'
 
 export type { BusinessDept }
 
-/** 业务部门显示名（与各服务里的 TECH_DEPT / PURCHASE_DEPT / PRODUCTION_DEPT 等常量一致） */
-export const BUSINESS_DEPT_NAME: Record<BusinessDept, string> = {
-  TECH: '技术部',
-  PURCHASE: '采购部',
-  PRODUCTION: '生产部',
-  QUALITY: '质量部',
-  FINANCE: '财务部',
-  PROJECT: '项目部',
-}
+/** 业务部门显示名：唯一来源在 shared/business-depts.ts（前端也用），这里转出给服务端 */
+export const BUSINESS_DEPT_NAME: Readonly<Record<BusinessDept, string>> = SHARED_BUSINESS_DEPT_NAME
+
+// 编译期校验：shared 里的编码与 prisma enum BusinessDept 完全一致（任一边增删都会在这里报错）
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
+const _sameCodes: Same<BusinessDept, BusinessDeptCode> = true
+void _sameCodes
 
 export const BUSINESS_DEPTS = Object.keys(BUSINESS_DEPT_NAME) as BusinessDept[]
 export const BUSINESS_DEPT_NAMES = Object.values(BUSINESS_DEPT_NAME)
