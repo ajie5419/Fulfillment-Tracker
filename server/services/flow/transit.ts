@@ -41,6 +41,7 @@ export async function listTransit(filter: { workOrderNumber?: string; supplierId
     processName: names.process.get(s.processId) ?? s.processId,
     supplierId: s.supplierId,
     supplierName: s.supplierId ? (names.supplier.get(s.supplierId) ?? s.supplierId) : null,
+    ownerId: s.ownerId,
     ownerName: s.ownerId ? (names.user.get(s.ownerId) ?? s.ownerId) : null,
     startedAt: s.startedAt,
     promisedReturnDate: s.promisedReturnDate,

@@ -18,6 +18,7 @@ import { prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
 import { FlowError, FlowForbidden } from '../flow/errors'
+import { loadDeptIndex, resolveDeptName } from '../auth/departments'
 import { departmentNames, loadNames, userDepartmentNames } from '../flow/names'
 import { assertReleasable, lockTask, settleTask } from '../drawings/drawings'
 import { formatIssueNo, nextSeq } from '../issues/constants'
@@ -99,8 +100,15 @@ export async function resolveRecipients(userIds: string[], groups: RecipientGrou
       prisma.qmsUser.findMany({ where: { isDeleted: false, status: 'ACTIVE' }, select: { id: true, departmentId: true } }),
       prisma.notifyRole.findMany({ select: { role: true, userId: true, department: true } }),
     ])
-    const depts = await departmentNames(users.map((u) => u.departmentId))
-    const ctx = { users: users.map((u) => ({ id: u.id, deptName: (u.departmentId && depts.get(u.departmentId)) || null })), roles }
+    const [depts, index] = await Promise.all([departmentNames(users.map((u) => u.departmentId)), loadDeptIndex()])
+    const ctx = {
+      users: users.map((u) => ({
+        id: u.id,
+        deptName: (u.departmentId && depts.get(u.departmentId)) || null,
+        businessDeptName: resolveDeptName(u.departmentId, index),
+      })),
+      roles,
+    }
     for (const g of groups) {
       if (!g.department?.trim() && !g.role) throw new FlowError('按部门/角色选人时，部门和角色至少选一个')
       const ids = resolveGroup(g, ctx).filter((id) => id !== issuerId)

@@ -167,6 +167,8 @@ export interface ImportContext {
   /** 存在且未删除的工单 */
   workOrders: Set<string>
   canSee: (wo: string) => boolean
+  /** 有权修改该工单的采购行（采购部、该工单项目经理、管理员）；不给时不限 */
+  canEdit?: (wo: string) => boolean
   /** QMS 供应商（未删除）：名称 → ID；同名多个时不关联 */
   suppliers: { id: string; name: string }[]
   /** 在职用户 */
@@ -209,6 +211,7 @@ export function validateRows(rows: RawRow[], ctx: ImportContext): { lines: Impor
     if (!wo) msgs.push('工单号必填')
     else if (!ctx.workOrders.has(wo)) msgs.push(`工单 ${wo} 不存在`)
     else if (!ctx.canSee(wo)) msgs.push(`无权查看工单 ${wo}`)
+    else if (ctx.canEdit && !ctx.canEdit(wo)) msgs.push(`无权修改工单 ${wo} 的采购行（采购部、该工单项目经理或管理员）`)
     const materialName = text(v.materialName ?? null)
     if (!materialName) msgs.push('物料名称必填')
     else if (materialName.length > 191) msgs.push('物料名称最多 191 字')
@@ -295,7 +298,13 @@ export interface ImportResult {
   rows: number
 }
 
-export async function importPurchases(buf: Buffer, actorId: string, canSee: (wo: string) => boolean, now = new Date()): Promise<ImportResult> {
+export async function importPurchases(
+  buf: Buffer,
+  actorId: string,
+  canSee: (wo: string) => boolean,
+  now = new Date(),
+  canEdit?: (wo: string) => boolean,
+): Promise<ImportResult> {
   const rows = await readWorkbook(buf)
   const wos = [...new Set(rows.map((r) => text(r.values.workOrderNumber ?? null)).filter((x): x is string => !!x))]
   const [workOrders, suppliers, users, parts, existing] = await Promise.all([
@@ -308,6 +317,7 @@ export async function importPurchases(buf: Buffer, actorId: string, canSee: (wo:
   const { lines, errors } = validateRows(rows, {
     workOrders: new Set(workOrders.map((w) => w.workOrderNumber)),
     canSee,
+    canEdit,
     suppliers,
     users,
     parts,

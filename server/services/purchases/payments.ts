@@ -1,8 +1,9 @@
 /**
  * 付款申请（R10）：关联采购行、金额、申请日、是否卡交期、财务处理状态（待付 / 已付 / 暂缓）。不做审批。
  *
- * 能看到该工单的人都能申请（一般是采购员）；申请人或管理员可以删除没付的申请。
- * 状态只有财务（设置页"通知对象"里的 财务）或管理员能改，可附一句处理意见。
+ * 采购部、该工单项目经理、管理员能申请（接口层判断，权限方案 R13）；申请人或管理员可以删除没付的申请。
+ * 金额只给财务、采购部、领导、项目部负责人、管理员、该工单项目经理看，其他人返回 null。
+ * 状态只有财务（设置页"人员与角色"里的 财务）或管理员能改，可附一句处理意见。
  * 列表按影响排序（comparePayments）：没付的在前 → 卡交期的在前 → 离需求日最近的在前。
  */
 import type { PaymentStatus, Prisma } from '@prisma/client'
@@ -98,6 +99,8 @@ export interface PaymentFilter {
   status?: 'UNPAID' | PaymentStatus | 'ALL'
   workOrderNumber?: string
   visibleWorkOrders?: string[]
+  /** 付款金额可见（权限方案 R13）；不可见的金额返回 null。不给时都可见 */
+  amountVisible?: (workOrderNumber: string) => boolean
 }
 
 /** 付款申请列表（项目和财务看）：按影响排序，附关联物料、最近需求日、当前用户能做的操作 */
@@ -133,7 +136,7 @@ export async function listPayments(filter: PaymentFilter, viewer: Actor, now = n
     return {
       id: r.id,
       workOrderNumber: r.workOrderNumber,
-      amount: num(r.amount),
+      amount: !filter.amountVisible || filter.amountVisible(r.workOrderNumber) ? num(r.amount) : null,
       requestDate: r.requestDate,
       blocksDelivery: r.blocksDelivery,
       status: r.status,

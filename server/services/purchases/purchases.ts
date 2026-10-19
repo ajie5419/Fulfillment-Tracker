@@ -325,13 +325,18 @@ export interface LineFilter {
   q?: string
   /** 可见工单（undefined = 全部） */
   visibleWorkOrders?: string[]
+  /** 付款金额可见（权限方案 R13：财务、采购部、领导、项目部负责人、管理员、该工单项目经理）；不给时都可见 */
+  amountVisible?: AmountVisible
 }
+
+/** 按工单判断付款金额是否可见；不可见时接口里金额返回 null（不只是前端隐藏） */
+export type AmountVisible = (workOrderNumber: string) => boolean
 
 type LineWithPayments = PurchaseLine & {
   payments: { payment: { id: string; status: 'PENDING' | 'PAID' | 'ON_HOLD'; blocksDelivery: boolean; amount: Prisma.Decimal } }[]
 }
 
-async function describeLines(rows: LineWithPayments[], now: Date) {
+async function describeLines(rows: LineWithPayments[], now: Date, amountVisible: AmountVisible = () => true) {
   const partIds = [...new Set(rows.map((r) => r.partId).filter((x): x is string => !!x))]
   const [parts, names, heads] = await Promise.all([
     partIds.length ? prisma.part.findMany({ where: { id: { in: partIds } }, select: { id: true, name: true, drawingNo: true } }) : [],
@@ -362,7 +367,13 @@ async function describeLines(rows: LineWithPayments[], now: Date) {
       /** 没指定采购负责人时显示的默认责任人 */
       ownerText: r.buyerId ? (names.user.get(r.buyerId) ?? r.buyerId) : deptHead,
       arrivedByName: r.arrivedBy ? (names.user.get(r.arrivedBy) ?? r.arrivedBy) : r.arrivalSource === 'QMS_INSPECTION' ? 'QMS 进货检验' : null,
-      payments: payments.map((x) => ({ id: x.payment.id, status: x.payment.status, statusText: PAYMENT_STATUS_TEXT[x.payment.status], blocksDelivery: x.payment.blocksDelivery, amount: num(x.payment.amount) })),
+      payments: payments.map((x) => ({
+        id: x.payment.id,
+        status: x.payment.status,
+        statusText: PAYMENT_STATUS_TEXT[x.payment.status],
+        blocksDelivery: x.payment.blocksDelivery,
+        amount: amountVisible(r.workOrderNumber) ? num(x.payment.amount) : null,
+      })),
       /** 有没付的"卡交期"付款申请 */
       blockedByPayment: unpaid.some((x) => x.blocksDelivery),
       alertLevel: levelOf.get(w6Key(r.id)) ?? null,
@@ -450,17 +461,17 @@ export async function listLines(filter: LineFilter, now = new Date()) {
     prisma.purchaseLine.count({ where }),
     lineStats(scope, today),
   ])
-  const rows = await describeLines(found, now)
+  const rows = await describeLines(found, now, filter.amountVisible)
   const rank = { OPEN: 0, ARRIVED: 1, CANCELLED: 2 } as const
   rows.sort((a, b) => rank[a.status] - rank[b.status] || (a.status === 'ARRIVED' ? +(b.arrivedDate ?? 0) - +(a.arrivedDate ?? 0) : +a.needDate - +b.needDate))
   return { rows, total, stats }
 }
 
 /** 单行详情（手机到货确认页、电脑详情） */
-export async function getLine(id: string, now = new Date()) {
+export async function getLine(id: string, now = new Date(), amountVisible?: AmountVisible) {
   const line = await prisma.purchaseLine.findUnique({ where: { id }, include: PAYMENTS_INCLUDE })
   if (!line) throw new FlowError('采购行不存在')
-  const [row] = await describeLines([line], now)
+  const [row] = await describeLines([line], now, amountVisible)
   const wo = await prisma.qmsWorkOrder.findUnique({ where: { workOrderNumber: line.workOrderNumber }, select: { projectName: true, customerName: true } })
   return { ...row!, projectName: wo?.projectName ?? null, customerName: wo?.customerName ?? null }
 }
