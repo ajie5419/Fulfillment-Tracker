@@ -65,6 +65,8 @@ export interface PurchaseRow {
   alertLevel: 'REMIND' | 'YELLOW' | 'RED' | null
   /** 所属总计划节点（R14） */
   planNodeId: string | null
+  /** 所属总计划节点的序号、名称（列表"总计划节点"列） */
+  planNode: { id: string; seq: number; name: string } | null
   projectName?: string | null
   customerName?: string | null
 }

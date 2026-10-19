@@ -20,7 +20,7 @@ import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { todayDate } from '../purchases/constants'
 import { lockParts, purchaseTx, refreshPartReady } from '../purchases/purchases'
-import { planWarning, resolvePlanNode } from '../plan/links'
+import { planNodeLabels, planWarning, resolvePlanNode } from '../plan/links'
 import { TYPE_TEXT } from '../releases/constants'
 import { DRAWING_STATUS_TEXT, OPEN_DRAWING_STATUSES, TECH_DEPT, canReleaseFrom, deriveStatus, isOverdue, thisWeek } from './constants'
 
@@ -332,7 +332,7 @@ async function techHeadText() {
 async function describeTasks(rows: TaskWithParts[], now: Date, viewer?: Actor) {
   const partIds = uniq(rows.flatMap((r) => r.parts.map((p) => p.partId)))
   const ids = rows.map((r) => r.id)
-  const [parts, names, releases, alerts, deptHead] = await Promise.all([
+  const [parts, names, releases, alerts, deptHead, planNodes] = await Promise.all([
     partIds.length ? prisma.part.findMany({ where: { id: { in: partIds } }, select: { id: true, name: true, drawingNo: true } }) : [],
     loadNames({ user: rows.flatMap((r) => [r.ownerId, r.drawnBy, r.customerConfirmedBy]) }),
     ids.length
@@ -340,6 +340,7 @@ async function describeTasks(rows: TaskWithParts[], now: Date, viewer?: Actor) {
       : [],
     ids.length ? prisma.alert.findMany({ where: { activeKey: { in: ids.map(w7Key) } }, select: { activeKey: true, level: true } }) : [],
     techHeadText(),
+    planNodeLabels(rows.map((r) => r.planNodeId)),
   ])
   const partOf = new Map(parts.map((p) => [p.id, p]))
   const levelOf = new Map(alerts.map((a) => [a.activeKey!, a.level]))
@@ -364,6 +365,8 @@ async function describeTasks(rows: TaskWithParts[], now: Date, viewer?: Actor) {
       overdue: isOverdue(t, now),
       releases: mine.map((r) => ({ id: r.id, releaseNo: r.releaseNo, typeText: TYPE_TEXT[r.type], status: r.status, version: r.version })),
       alertLevel: levelOf.get(w7Key(t.id)) ?? null,
+      /** 所属总计划节点的序号、名称（列表"总计划节点"列）；没挂为 null */
+      planNode: (t.planNodeId && planNodes.get(t.planNodeId)) || null,
       permissions: {
         markDrawn: drawable && t.status === 'PENDING',
         undoDrawn: drawable && !!t.drawnDate && !mine.some((r) => r.status === 'ACTIVE'),

@@ -48,7 +48,7 @@ const reasonColor = { NO_CANDIDATE: 'orange', MULTIPLE: 'blue', CANCELLED_AFTER_
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'inspection'">
           <div>{{ record.inspection?.requestNo ?? record.qmsInspectionId }}</div>
-          <div class="muted">{{ record.inspection?.workOrderNumber }}　{{ timeText(record.inspection?.submittedAt) }}</div>
+          <div class="muted"><WoLink v-if="record.inspection?.workOrderNumber" :no="record.inspection.workOrderNumber" />　{{ timeText(record.inspection?.submittedAt) }}</div>
           <a-tag v-if="record.inspection?.status === 'CANCELLED'" color="red">QMS 已撤销</a-tag>
         </template>
         <template v-else-if="column.key === 'part'">

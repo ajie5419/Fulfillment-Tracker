@@ -100,7 +100,7 @@ const statusOptions = [
 ]
 const columns = [
   { title: '', key: 'blocks', width: 70 },
-  { title: '工单', dataIndex: 'workOrderNumber', width: 130 },
+  { title: '工单', key: 'wo', width: 130 },
   { title: '物料', key: 'lines' },
   { title: '供应商', key: 'suppliers', width: 150 },
   { title: '最近需求日', key: 'need', width: 110 },
@@ -142,6 +142,7 @@ const columns = [
         <template v-if="column.key === 'blocks'">
           <a-tag v-if="record.blocksDelivery" color="red">卡交期</a-tag>
         </template>
+        <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
         <template v-else-if="column.key === 'lines'">
           <div v-for="l in record.lines" :key="l.id" class="line">
             <NuxtLink :to="`/purchases?id=${encodeURIComponent(l.id)}`">{{ l.materialName }}</NuxtLink>
@@ -190,7 +191,7 @@ const columns = [
 <style scoped>
 .totals { margin-bottom: 8px; }
 .muted { color: #999; font-size: 12px; }
-.warn { color: #cf1322; }
+.warn { color: var(--ft-late); }
 .line { line-height: 22px; }
 .small-tag { margin-left: 6px; font-size: 11px; line-height: 16px; }
 </style>

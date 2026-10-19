@@ -22,7 +22,7 @@ import { alertKey, dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { FlowError } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { PRODUCTION_DEPT } from '../releases/constants'
-import { planWarning, resolvePlanNode } from '../plan/links'
+import { planNodeLabels, planWarning, resolvePlanNode } from '../plan/links'
 import {
   DELAY_REASON_TEXT,
   PAYMENT_STATUS_TEXT,
@@ -349,10 +349,11 @@ type LineWithPayments = PurchaseLine & {
 
 async function describeLines(rows: LineWithPayments[], now: Date, amountVisible: AmountVisible = () => true) {
   const partIds = [...new Set(rows.map((r) => r.partId).filter((x): x is string => !!x))]
-  const [parts, names, heads] = await Promise.all([
+  const [parts, names, heads, planNodes] = await Promise.all([
     partIds.length ? prisma.part.findMany({ where: { id: { in: partIds } }, select: { id: true, name: true, drawingNo: true } }) : [],
     loadNames({ user: rows.flatMap((r) => [r.buyerId, r.arrivedBy]) }),
     prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PURCHASE_DEPT }, select: { userId: true } }),
+    planNodeLabels(rows.map((r) => r.planNodeId)),
   ])
   const headNames = (await loadNames({ user: heads.map((h) => h.userId) })).user
   const deptHead = heads.length ? `${PURCHASE_DEPT}（${heads.map((h) => headNames.get(h.userId) ?? h.userId).join('、')}）` : `${PURCHASE_DEPT}负责人（未设置）`
@@ -388,6 +389,8 @@ async function describeLines(rows: LineWithPayments[], now: Date, amountVisible:
       /** 有没付的"卡交期"付款申请 */
       blockedByPayment: unpaid.some((x) => x.blocksDelivery),
       alertLevel: levelOf.get(w6Key(r.id)) ?? null,
+      /** 所属总计划节点的序号、名称（列表"总计划节点"列）；没挂为 null */
+      planNode: (r.planNodeId && planNodes.get(r.planNodeId)) || null,
     }
   })
 }

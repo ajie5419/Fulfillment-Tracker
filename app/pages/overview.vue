@@ -92,7 +92,7 @@ const planDeptColumns = [
               <template #emptyText><a-empty description="没有红色工单" /></template>
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'wo'">
-                  <NuxtLink :to="`/alerts?wo=${encodeURIComponent(record.workOrderNumber)}`">{{ record.workOrderNumber }}</NuxtLink>
+                  <WoLink :no="record.workOrderNumber" />
                   <div class="muted">{{ record.projectName }}</div>
                 </template>
                 <template v-else-if="column.key === 'pm'">{{ record.projectManagerName ?? '—' }}</template>
@@ -116,11 +116,11 @@ const planDeptColumns = [
           </a-col>
           <a-col :xs="24" :lg="15">
             <h3>预计拖期工单（{{ data.planDelays.length }}）</h3>
-            <a-table :columns="planDelayColumns" :data-source="data.planDelays" row-key="workOrderNumber" size="small" :pagination="false" class="block">
+            <a-table :columns="planDelayColumns" :data-source="data.planDelays" row-key="workOrderNumber" size="small" :pagination="false" :scroll="{ x: 940 }" class="block">
               <template #emptyText><a-empty description="按已发布的总计划推算，没有预计拖期的工单" /></template>
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'wo'">
-                  <NuxtLink :to="`/plan?wo=${encodeURIComponent(record.workOrderNumber)}`">{{ record.workOrderNumber }}</NuxtLink>
+                  <WoLink :no="record.workOrderNumber" />
                   <div class="muted">{{ record.projectName }}</div>
                 </template>
                 <template v-else-if="column.key === 'pm'">{{ record.projectManagerName ?? '—' }}</template>
@@ -139,6 +139,6 @@ const planDeptColumns = [
 <style scoped>
 .block { margin-bottom: 16px; }
 .muted { color: #999; font-size: 12px; }
-.warn { color: #cf1322; font-weight: 600; }
+.warn { color: var(--ft-late); font-weight: 600; }
 h3 { font-size: 15px; margin: 8px 0; }
 </style>

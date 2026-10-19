@@ -1,4 +1,5 @@
 /** 异常页面共用：文案、颜色、操作按钮、上传照片。 */
+import { BOARD_COLOR as SHARED_BOARD_COLOR, BOARD_TEXT as SHARED_BOARD_TEXT } from '#shared/status'
 
 export const ISSUE_STATUS_TEXT = { OPEN: '待受理', ACCEPTED: '处理中', RESOLVED: '待确认', CLOSED: '已关闭' } as const
 export const ISSUE_STATUS_COLOR = { OPEN: 'orange', ACCEPTED: 'blue', RESOLVED: 'purple', CLOSED: 'default' } as const
@@ -33,8 +34,9 @@ export const ACTION_TEXT: Record<IssueAction, string> = {
 /** 这些操作必须填说明 */
 export const NOTE_REQUIRED: IssueAction[] = ['resolve', 'reject', 'note']
 
-export const BOARD_COLOR = { RED: '#f5222d', YELLOW: '#fa8c16', GREEN: '#52c41a' } as const
-export const BOARD_TEXT = { RED: '红', YELLOW: '黄', GREEN: '绿' } as const
+/** 看板红黄绿：颜色口径统一在 shared/status.ts（全站一处） */
+export const BOARD_COLOR = SHARED_BOARD_COLOR
+export const BOARD_TEXT = SHARED_BOARD_TEXT
 
 export function useIssueOptions() {
   return useFetch('/api/issues/options', { key: 'issue-options', default: () => ({ categories: [], departments: [] }) })

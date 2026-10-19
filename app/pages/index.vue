@@ -81,7 +81,11 @@ async function transfer() {
       <a-list v-else :data-source="todos" item-layout="horizontal">
         <template #renderItem="{ item }">
           <a-list-item>
-            <a-list-item-meta :title="item.title" :description="`${item.step?.workOrderNumber ?? item.release?.workOrderNumber ?? item.plan?.workOrderNumber ?? ''}　${item.suggestion}`" />
+            <a-list-item-meta :title="item.title">
+              <template #description>
+                <WoLink v-if="item.step?.workOrderNumber ?? item.release?.workOrderNumber ?? item.plan?.workOrderNumber" :no="item.step?.workOrderNumber ?? item.release?.workOrderNumber ?? item.plan?.workOrderNumber" />　{{ item.suggestion }}
+              </template>
+            </a-list-item-meta>
             <template #actions>
               <a-button v-if="item.action === 'ARRANGE_SEND' && item.step" type="primary" size="small" @click="openSend(item)">登记发出</a-button>
               <a-button v-else-if="item.action === 'ARRANGE_START' && item.step" type="primary" size="small" @click="start(item)">开工</a-button>
@@ -172,13 +176,13 @@ async function transfer() {
 .muted { color: #999; font-size: 12px; }
 .group + .group { margin-top: 12px; }
 .group-title { font-weight: 600; padding: 4px 8px; border-left: 4px solid; }
-.group-title.lv-RED { border-color: #f5222d; color: #cf1322; background: #fff1f0; }
-.group-title.lv-YELLOW { border-color: #fa8c16; color: #d46b08; background: #fff7e6; }
+.group-title.lv-RED { border-color: var(--ft-late); color: var(--ft-late); background: var(--ft-late-bg); }
+.group-title.lv-YELLOW { border-color: var(--ft-risk); color: var(--ft-risk-text); background: var(--ft-risk-bg); }
 .group-title.lv-REMIND { border-color: #1677ff; color: #0958d9; background: #e6f4ff; }
 .reminder { cursor: pointer; }
 .digest { cursor: pointer; border: 1px solid #adc6ff; background: #f0f5ff; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
-.digest.lv-RED { border-color: #ffa39e; background: #fff1f0; }
-.digest.lv-YELLOW { border-color: #ffd591; background: #fff7e6; }
+.digest.lv-RED { border-color: #ffa39e; background: var(--ft-late-bg); }
+.digest.lv-YELLOW { border-color: #ffd591; background: var(--ft-risk-bg); }
 .digest-title b { color: rgba(0, 0, 0, 0.88); }
 .digest:not(.unread) .digest-title b { font-weight: normal; color: #666; }
 .digest-lines { margin: 8px 0 0 24px; padding: 0; color: #555; }

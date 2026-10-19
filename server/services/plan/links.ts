@@ -8,6 +8,7 @@
  * 只读 plan_node / work_order_plan，不加锁（写记录时外键检查会给节点行加共享锁）。
  */
 import type { Prisma } from '@prisma/client'
+import { prisma } from '../../utils/prisma'
 import { FlowError } from '../flow/errors'
 import { lateWarning } from './constants'
 
@@ -56,4 +57,15 @@ export async function resolvePlanNode(
 /** 部门日期晚于节点计划日的提示；不晚、没挂节点或没日期时为 null */
 export function planWarning(what: string, recordDate: Date | null | undefined, node: LinkedNode | null): string | null {
   return lateWarning(what, recordDate ? recordDate.toISOString().slice(0, 10) : null, node)
+}
+
+/**
+ * 列表"总计划节点"列（前端改版第一轮）：一批节点 ID → 序号、名称（出图任务、采购行、装配节点列表共用；一次查询）。
+ * 节点已删的不在结果里（外键置空，正常不会出现）。
+ */
+export async function planNodeLabels(ids: (string | null | undefined)[]): Promise<Map<string, { id: string; seq: number; name: string }>> {
+  const uniq = [...new Set(ids.filter((x): x is string => !!x))]
+  if (!uniq.length) return new Map()
+  const nodes = await prisma.planNode.findMany({ where: { id: { in: uniq } }, select: { id: true, seq: true, name: true } })
+  return new Map(nodes.map((n) => [n.id, n]))
 }

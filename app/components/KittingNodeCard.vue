@@ -11,7 +11,7 @@ const n = computed(() => props.node)
       <span class="node-name">{{ n.name }}</span>
       <a-tag v-if="n.alertLevel === 'RED'" color="red">红</a-tag>
       <a-tag v-else-if="n.alertLevel === 'YELLOW'" color="orange">黄</a-tag>
-      <span class="muted">　{{ n.workOrderNumber }}　需求日 {{ dayText(n.needDate) }}（<span :class="{ warn: n.incomplete && n.daysLeft <= windowDays }">{{ daysLeftText(n.daysLeft) }}</span>）　负责人 {{ n.ownerText }}</span>
+      <span class="muted">　<WoLink :no="n.workOrderNumber" />　总计划节点 <PlanNodeCell :work-order-number="n.workOrderNumber" :node="n.planNode" />　需求日 {{ dayText(n.needDate) }}（<span :class="{ warn: n.incomplete && n.daysLeft <= windowDays }">{{ daysLeftText(n.daysLeft) }}</span>）　负责人 {{ n.ownerText }}</span>
     </template>
     <template #extra>
       <a-space v-if="n.canEdit" size="small">
@@ -33,9 +33,9 @@ const n = computed(() => props.node)
 
 <style scoped>
 .muted { color: #999; font-size: 12px; }
-.warn { color: #cf1322; }
+.warn { color: var(--ft-late); }
 .node { margin-bottom: 12px; }
-.node.focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.2); }
+.node.focus { border-color: var(--ft-primary); box-shadow: 0 0 0 2px rgba(42, 120, 214, 0.2); }
 .node-name { font-weight: 600; margin-right: 6px; }
 .progress { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .progress :deep(.ant-progress) { flex: 1; max-width: 480px; margin: 0; }

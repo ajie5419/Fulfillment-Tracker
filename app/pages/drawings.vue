@@ -149,7 +149,8 @@ async function released() {
 }
 
 const columns = [
-  { title: '工单', dataIndex: 'workOrderNumber', width: 130 },
+  { title: '工单', key: 'wo', width: 130 },
+  { title: '总计划节点', key: 'planNode', width: 150 },
   { title: '部件 / 关联工件', key: 'component', width: 230 },
   { title: '设计负责人', key: 'owner', width: 120 },
   { title: '计划完成', key: 'planDate', width: 100 },
@@ -208,7 +209,7 @@ const loadColumns = [
         <p class="muted">出图后点"一键发放"生成图纸发放单（R9）。关联工件的出图任务全部完成（已出图、已发放、需要时客户已确认）后，物料也齐了才给第一道工序发"可以开工"。没指定设计负责人的派给技术部负责人。</p>
         <p v-if="data.total > rows.length" class="warn">共 {{ data.total }} 项，只显示前 {{ rows.length }} 项，请按工单或负责人筛选</p>
 
-        <a-table :columns="columns" :data-source="rows" :loading="pending" row-key="id" size="small" :scroll="{ x: 1300 }" :pagination="{ pageSize: 50, hideOnSinglePage: true }">
+        <a-table :columns="columns" :data-source="rows" :loading="pending" row-key="id" size="small" :scroll="{ x: 1450 }" :pagination="{ pageSize: 50, hideOnSinglePage: true }">
           <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未完成的出图任务' : '没有记录'" /></template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'component'">
@@ -216,6 +217,8 @@ const loadColumns = [
               <span v-else>{{ record.componentName }}</span>
               <div class="muted">{{ record.parts.length ? partNames(record as DrawingRow) : '未关联工件' }}</div>
             </template>
+            <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
+            <template v-else-if="column.key === 'planNode'"><PlanNodeCell :work-order-number="record.workOrderNumber" :node="record.planNode" /></template>
             <template v-else-if="column.key === 'owner'"><span :class="{ muted: !record.ownerId }">{{ record.ownerText }}</span></template>
             <template v-else-if="column.key === 'planDate'">
               <span :class="{ warn: record.overdue && record.status === 'PENDING' }">{{ dayText(record.planDate) }}</span>
@@ -310,7 +313,7 @@ const loadColumns = [
 .stats { margin-bottom: 8px; }
 .stat { color: inherit; }
 .muted { color: #999; font-size: 12px; }
-.warn { color: #cf1322; }
+.warn { color: var(--ft-late); }
 .small { font-size: 12px; }
 .void { text-decoration: line-through; color: #999; }
 </style>

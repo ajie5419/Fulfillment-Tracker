@@ -1,1 +1,55 @@
+/*
+ * 全站基础样式与主题变量（前端改版第一轮）。
+ * 状态色与 shared/status.ts 的 STATUS_COLOR 一致（改一处要两处一起改）；Ant Design 组件的主题 token 在 app/app.vue。
+ * 页面底色只加在电脑端布局（.ft-app，layouts/default.vue）上，手机端 /m 不受影响。
+ */
+:root {
+  --ft-primary: #2a78d6;
+  --ft-page-bg: #eef1f5;
+  --ft-card-bg: #fff;
+  --ft-card-radius: 14px;
+  --ft-card-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 2px 8px rgba(16, 24, 40, 0.05);
+  --ft-text: #1b2430;
+  --ft-text-2: #5b6575;
+  --ft-text-3: #8a93a3;
+  --ft-border: #e6e9ef;
+  --ft-fill: #f4f6f9;
+  --ft-sider-bg: #16202e;
+
+  /* 状态色：已完成/正常、有风险（黄）、受上游影响、延误（红）、未开始/未建计划、按计划 */
+  --ft-done: #0ca30c;
+  --ft-risk: #fab219;
+  --ft-upstream: #ec835a;
+  --ft-late: #d03b3b;
+  --ft-none: #b3bac6;
+  --ft-on-track: #2a78d6;
+  /* 浅底（标签、提示条） */
+  --ft-done-bg: #e8f6e8;
+  --ft-risk-bg: #fff6e0;
+  --ft-upstream-bg: #fdeee8;
+  --ft-late-bg: #fbeaea;
+  --ft-none-bg: #f1f3f6;
+  /* 黄色上的文字用深一点的黄，保证对比度 */
+  --ft-risk-text: #9a6700;
+}
+
 html, body { margin: 0; background: #f5f6f8; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+
+/* ───── 电脑端通用 ───── */
+.ft-app { background: var(--ft-page-bg); color: var(--ft-text); }
+/* 页面里原有的 a-card 统一成圆角卡片 */
+.ft-app .ant-layout-content > .ant-card,
+.ft-app .ant-layout-content > .ant-space > .ant-space-item > .ant-card { border-radius: var(--ft-card-radius); border: none; box-shadow: var(--ft-card-shadow); }
+.ft-app .ant-layout-content > .ant-card > .ant-card-head { border-bottom-color: var(--ft-border); }
+.ft-app .ant-layout-content > .ant-card > .ant-card-head .ant-card-head-title { font-size: 17px; font-weight: 600; color: var(--ft-text); flex: none; margin-right: 16px; }
+/* 右上角筛选多时换行，不把标题挤成省略号 */
+.ft-app .ant-layout-content > .ant-card > .ant-card-head { padding-block: 8px; }
+.ft-app .ant-layout-content > .ant-card > .ant-card-head .ant-card-head-wrapper { flex-wrap: wrap; row-gap: 8px; }
+.ft-app .ant-layout-content > .ant-card > .ant-card-head .ant-card-extra { margin-inline-start: auto; }
+
+/* 状态文字（永远带文字，颜色只是辅助） */
+.ft-text-done { color: var(--ft-done); }
+.ft-text-risk { color: var(--ft-risk-text); }
+.ft-text-upstream { color: var(--ft-upstream); }
+.ft-text-late { color: var(--ft-late); }
+.ft-text-none, .ft-muted { color: var(--ft-text-3); }

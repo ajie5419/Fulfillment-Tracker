@@ -80,5 +80,5 @@ defineExpose({ published: computed(() => opts.value.published) })
 </template>
 
 <style scoped>
-.warn { color: #d46b08; font-size: 12px; margin-top: 2px; }
+.warn { color: var(--ft-upstream); font-size: 12px; margin-top: 2px; }
 </style>

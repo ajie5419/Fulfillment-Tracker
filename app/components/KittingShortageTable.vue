@@ -35,7 +35,7 @@ const columns = [
 
 <style scoped>
 .muted { color: #999; font-size: 12px; }
-.warn { color: #cf1322; }
+.warn { color: var(--ft-late); }
 .small { font-size: 12px; }
 .ml { margin-left: 4px; }
 </style>
