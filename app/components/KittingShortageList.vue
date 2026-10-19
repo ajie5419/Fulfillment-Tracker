@@ -1,14 +1,13 @@
 <script setup lang="ts">
-/** 手机端一个节点的缺件列表（R12，只读）：每个缺件卡在哪一步；物料带承诺日、需求日、是否逾期 */
+/** 手机端一个节点的缺件列表（R12，只读）：每个缺件卡在哪一步；物料带承诺日、需求日、是否逾期。齐套率、负责人在外面的卡片上（components/m/KitCard） */
 defineProps<{ node: KitNode }>()
 </script>
 
 <template>
   <div class="kit">
-    <div class="muted">{{ node.total ? `已就绪 ${node.ready} / 应有 ${node.total}` : '清单为空' }}　负责人 {{ node.ownerText }}</div>
     <div v-for="s in node.shortages" :key="`${s.kind}:${s.id}`" class="row">
-      <div>
-        <van-tag plain :type="s.kind === 'part' ? 'primary' : 'warning'" class="tag">{{ s.kind === 'part' ? '工件' : '物料' }}</van-tag>
+      <div class="head">
+        <van-tag plain :type="s.kind === 'part' ? 'primary' : 'warning'">{{ s.kind === 'part' ? '工件' : '物料' }}</van-tag>
         <span class="name">{{ s.name }}</span>
       </div>
       <div class="desc">
@@ -20,17 +19,16 @@ defineProps<{ node: KitNode }>()
         </template>
       </div>
     </div>
-    <div v-if="node.readyItems.length" class="muted ready">已就绪：{{ node.readyItems.join('、') }}</div>
+    <div v-if="node.readyItems.length" class="ready"><UiStatusIcon kind="check" :size="12" /> 已就绪：{{ node.readyItems.join('、') }}</div>
   </div>
 </template>
 
 <style scoped>
 .kit { font-size: 13px; }
-.row { padding: 6px 0; border-bottom: 1px solid #f2f3f5; }
-.tag { margin-right: 6px; }
-.name { color: #323233; }
-.desc { color: #646566; margin-top: 2px; }
-.warn { color: #ee0a24; }
-.muted { color: #969799; font-size: 12px; }
-.ready { margin-top: 6px; }
+.row { padding: 8px 10px; margin-bottom: 6px; border-radius: 10px; background: var(--ft-fill); }
+.head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.name { color: var(--ft-text); font-weight: 500; overflow-wrap: anywhere; min-width: 0; }
+.desc { color: var(--ft-text-2); margin-top: 4px; line-height: 18px; overflow-wrap: anywhere; }
+.warn { color: var(--ft-late-text); font-weight: 600; white-space: nowrap; }
+.ready { margin-top: 4px; color: var(--ft-done-text); font-size: 12px; line-height: 18px; }
 </style>

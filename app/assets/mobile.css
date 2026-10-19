@@ -1,0 +1,146 @@
+/*
+ * 手机端 /m 主题与通用样式（前端改版第二轮）。只在手机布局 layouts/mobile.vue 里引入。
+ * 颜色沿用 assets/base.css 的 --ft-*（主色、页面底色、卡片、状态色）；这里只覆盖 Vant 的 --van-* 变量和 .ft-m 下的样式，
+ * 不影响电脑端（电脑端不用 Vant）。
+ * Vant 每个组件的样式在 :root 上声明默认变量、加载顺序不定，所以覆盖写在 :root:root 上（优先级更高）；
+ * 弹窗、动作面板挂在 body 下，也能用到。
+ */
+:root:root {
+  /* 基础色 */
+  --van-primary-color: var(--ft-primary);
+  --van-blue: var(--ft-primary);
+  --van-success-color: var(--ft-done);
+  --van-green: var(--ft-done);
+  --van-danger-color: var(--ft-late);
+  --van-red: var(--ft-late);
+  --van-warning-color: var(--ft-risk);
+  --van-orange: var(--ft-upstream);
+  --van-text-color: var(--ft-text);
+  --van-text-color-2: var(--ft-text-2);
+  --van-text-color-3: var(--ft-text-3);
+  --van-border-color: var(--ft-border);
+  --van-background: var(--ft-page-bg);
+  --van-active-color: var(--ft-fill);
+  --van-base-font: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --van-radius-md: 8px;
+  --van-radius-lg: 14px;
+
+  /* 组件 */
+  --van-cell-group-inset-radius: var(--ft-card-radius);
+  --van-cell-group-inset-padding: 0 12px;
+  --van-cell-group-title-color: var(--ft-text-2);
+  --van-cell-label-color: var(--ft-text-2);
+  --van-cell-value-color: var(--ft-text-2);
+  --van-nav-bar-title-text-color: var(--ft-text);
+  --van-nav-bar-icon-color: var(--ft-primary);
+  --van-nav-bar-text-color: var(--ft-primary);
+  --van-tabs-bottom-bar-color: var(--ft-primary);
+  --van-tab-active-text-color: var(--ft-text);
+  --van-tab-text-color: var(--ft-text-2);
+  --van-tabbar-item-active-color: var(--ft-primary);
+  --van-tabbar-item-text-color: var(--ft-text-2);
+  --van-button-radius: 10px;
+  --van-button-default-color: var(--ft-text);
+  --van-button-default-border-color: var(--ft-border);
+  /* 黄色底上用深色字（白字对比度不够） */
+  --van-button-warning-color: var(--ft-text);
+  --van-tag-radius: 6px;
+  --van-tag-padding: 1px 6px;
+  --van-tag-line-height: 18px;
+  --van-progress-height: 6px;
+  --van-progress-background: #e6e9ef;
+  --van-progress-color: var(--ft-primary);
+  --van-dialog-radius: 16px;
+  --van-popup-round-radius: 16px;
+  --van-grid-item-content-padding: 12px 4px;
+  --van-grid-item-text-color: var(--ft-text);
+  --van-grid-item-text-font-size: 12px;
+  --van-search-background: transparent;
+  --van-search-content-background: #fff;
+  --van-dropdown-menu-background: #fff;
+  --van-dropdown-menu-shadow: none;
+  --van-dropdown-menu-title-active-text-color: var(--ft-primary);
+  --van-dropdown-menu-option-active-color: var(--ft-primary);
+  --van-notice-bar-height: auto;
+  --van-notice-bar-padding: 10px 16px;
+  --van-notice-bar-line-height: 20px;
+}
+
+/*
+ * 状态标签：实心标签改成"浅底 + 深色字"（与电脑端状态标签一致，白字配黄底、绿底对比度不够）；
+ * 描边标签用深色字。文字本身就是状态，颜色只是辅助。
+ */
+:root .van-tag--primary:not(.van-tag--plain) { background: #e7f0fb; color: #1d5fae; }
+:root .van-tag--success:not(.van-tag--plain) { background: var(--ft-done-bg); color: var(--ft-done-text); }
+:root .van-tag--warning:not(.van-tag--plain) { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
+:root .van-tag--danger:not(.van-tag--plain) { background: var(--ft-late-bg); color: var(--ft-late-text); }
+:root .van-tag--default:not(.van-tag--plain) { background: var(--ft-none-bg); color: var(--ft-text-2); }
+:root .van-tag--primary.van-tag--plain { color: #1d5fae; }
+:root .van-tag--success.van-tag--plain { color: var(--ft-done-text); }
+:root .van-tag--warning.van-tag--plain { color: var(--ft-risk-text); }
+:root .van-tag--danger.van-tag--plain { color: var(--ft-late-text); }
+:root .van-tag--default.van-tag--plain { color: var(--ft-text-2); }
+/* 大号可点的选择标签（发出登记、上报异常的选项）：选中为实心主色 */
+:root .van-tag--large { border-radius: 999px; padding: 6px 14px; }
+:root .van-tag--large.van-tag--primary:not(.van-tag--plain) { background: var(--ft-primary); color: #fff; }
+
+/* ───── 手机布局 ───── */
+.ft-m { min-height: 100vh; max-width: 640px; margin: 0 auto; background: var(--ft-page-bg); color: var(--ft-text); overflow-x: clip; }
+.ft-m .van-nav-bar__title { font-weight: 600; }
+.ft-m .van-cell-group--inset { box-shadow: var(--ft-card-shadow); }
+.ft-m .van-cell-group__title--inset { padding: 16px 16px 8px; font-size: 13px; font-weight: 600; }
+.ft-m .van-tabs__nav { background: #fff; }
+.ft-m .van-tab--active { font-weight: 600; }
+.ft-m .van-empty__description { color: var(--ft-text-3); }
+.ft-m .van-button { font-weight: 500; }
+
+/* 分组标题（区块标题） */
+.m-section { display: flex; align-items: center; gap: 6px; padding: 18px 16px 8px; font-size: 15px; font-weight: 600; color: var(--ft-text); }
+.m-section .m-section-extra { margin-left: auto; font-weight: 400; font-size: 13px; }
+.m-section .m-count { min-width: 20px; padding: 0 6px; border-radius: 10px; background: var(--ft-fill); color: var(--ft-text-2); font-size: 12px; line-height: 20px; text-align: center; font-weight: 500; }
+
+/* 卡片列表 */
+.m-list { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px 4px; }
+.m-hint { margin: 10px 12px 0; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; display: flex; gap: 6px; align-items: flex-start; }
+.m-hint.late { background: var(--ft-late-bg); color: var(--ft-late-text); }
+.m-hint.risk { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
+.m-hint.info { background: #e7f0fb; color: #1d5fae; }
+.m-hint.done { background: var(--ft-done-bg); color: var(--ft-done-text); }
+.m-hint.none { background: var(--ft-none-bg); color: var(--ft-text-2); }
+.m-hint .ft-icon { margin-top: 2px; }
+.m-foot { padding: 14px 16px 20px; color: var(--ft-text-3); font-size: 12px; text-align: center; }
+.m-center { display: flex; justify-content: center; padding: 32px; }
+.m-actions { display: flex; flex-direction: column; gap: 12px; padding: 20px 12px 24px; }
+.m-actions .van-button { height: 46px; font-size: 16px; }
+.m-submit { padding: 20px 12px 24px; }
+.m-submit .van-button { height: 46px; font-size: 16px; }
+
+/* 卡片内部排版（配合 components/m/Card.vue） */
+.m-row { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.m-title { font-size: 15px; font-weight: 600; color: var(--ft-text); line-height: 22px; min-width: 0; overflow-wrap: anywhere; }
+.m-title.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.m-desc { margin-top: 4px; font-size: 13px; line-height: 19px; color: var(--ft-text); overflow-wrap: anywhere; }
+.m-desc.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.m-meta { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; line-height: 18px; color: var(--ft-text-2); }
+.m-meta > span { white-space: nowrap; }
+.m-foot-row { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.m-foot-row .m-spacer { flex: 1; }
+.m-progress { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+.m-progress .van-progress { flex: 1; }
+.m-progress .m-progress-text { flex: none; font-size: 12px; font-weight: 600; text-align: right; }
+
+/* 状态文字（深色版，白底 / 浅底上对比度够） */
+.m-text-late { color: var(--ft-late-text); }
+.m-text-risk { color: var(--ft-risk-text); }
+.m-text-upstream { color: var(--ft-upstream-text); }
+.m-text-done { color: var(--ft-done-text); }
+.m-text-none, .m-muted { color: var(--ft-text-3); }
+.m-text-primary { color: #1d5fae; }
+
+/* 进度条颜色按状态 */
+.m-progress-late { --van-progress-color: var(--ft-late); }
+.m-progress-risk { --van-progress-color: var(--ft-risk); }
+.m-progress-upstream { --van-progress-color: var(--ft-upstream); }
+.m-progress-done { --van-progress-color: var(--ft-done); }
+.m-progress-none { --van-progress-color: var(--ft-none); }
+.m-progress-primary { --van-progress-color: var(--ft-primary); }

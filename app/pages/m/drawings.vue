@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { toneOfVant } from '#shared/mobile-todo'
+
 /**
  * 手机：我的出图任务（R11）。我是设计负责人的任务：待出图（逾期、快到期的在前）/ 已出图；
  * 待出图的可直接"标记已出图"（出图日 = 今天）。发放、客户确认、改日期请到电脑端"出图任务"。
@@ -59,63 +61,67 @@ async function markDrawn(r: DrawingRow) {
   <div>
     <van-nav-bar title="我的出图任务" left-arrow @click-left="navigateTo('/m')" />
     <template v-if="focusId">
-      <van-notice-bar v-if="focusError" color="#ee0a24" background="#fff1f0" :text="`提醒里的任务打不开：${focusError}`" />
+      <div v-if="focusError" class="m-hint late"><UiStatusIcon kind="alert" :size="14" />提醒里的任务打不开：{{ focusError }}</div>
       <template v-else-if="focus">
-        <div class="section">提醒的任务<span class="link" @click="clearFocus">只看我的</span></div>
-        <van-cell-group inset>
-          <van-cell v-for="r in [focus]" :key="r.id" center>
-            <template #title>
-              <van-tag :type="r.overdue ? 'danger' : DRAWING_STATUS_TYPE[r.status]" class="tag">{{ r.overdue ? '逾期' : r.statusText }}</van-tag>
-              <span class="name">{{ r.componentName }}</span>
-              <div class="desc">{{ r.parts.length ? r.parts.map((p) => p.name).join('、') : '未关联工件' }}</div>
-            </template>
-            <template #label>
-              {{ r.workOrderNumber }}　计划 {{ dayText(r.planDate) }}{{ r.drawnDate ? `　出图 ${dayText(r.drawnDate)}` : '' }}{{ r.needsCustomerConfirm ? (r.customerConfirmedDate ? '　客户已确认' : `　客户确认计划 ${r.customerPlanDate ? dayText(r.customerPlanDate) : '未定'}`) : '' }}
-            </template>
-            <template #right-icon>
+        <div class="m-section">提醒的任务<span class="m-section-extra link" role="button" @click="clearFocus">只看我的</span></div>
+        <div class="m-list">
+          <MCard v-for="r in [focus]" :key="r.id" :tone="r.overdue ? 'late' : toneOfVant(DRAWING_STATUS_TYPE[r.status])">
+            <div class="m-row">
+              <van-tag :type="r.overdue ? 'danger' : DRAWING_STATUS_TYPE[r.status]">{{ r.overdue ? '逾期' : r.statusText }}</van-tag>
+              <span class="wo">{{ r.workOrderNumber }}</span>
+            </div>
+            <div class="m-title name">{{ r.componentName }}</div>
+            <div class="m-desc parts">{{ r.parts.length ? r.parts.map((p) => p.name).join('、') : '未关联工件' }}</div>
+            <div class="m-meta">
+              <span :class="{ 'm-text-late': r.overdue }">计划 {{ dayText(r.planDate) }}</span>
+              <span v-if="r.drawnDate" class="m-text-done">出图 {{ dayText(r.drawnDate) }}</span>
+              <span v-if="r.needsCustomerConfirm">{{ r.customerConfirmedDate ? '客户已确认' : `客户确认计划 ${r.customerPlanDate ? dayText(r.customerPlanDate) : '未定'}` }}</span>
+            </div>
+            <div v-if="r.permissions.markDrawn || r.status === 'DRAWN'" class="m-foot-row">
+              <span class="m-spacer" />
               <van-button v-if="r.permissions.markDrawn" size="small" type="primary" :loading="busy" @click="markDrawn(r)">标记已出图</van-button>
-              <span v-else-if="r.status === 'DRAWN'" class="muted">待发放</span>
-            </template>
-          </van-cell>
-        </van-cell-group>
-        <div class="section">我的出图任务</div>
+              <span v-else class="m-muted small">待发放</span>
+            </div>
+          </MCard>
+        </div>
+        <div class="m-section">我的出图任务</div>
       </template>
     </template>
     <van-tabs v-model:active="tab">
       <van-tab :title="`待出图${stats?.pending ? `（${stats.pending}）` : ''}`" name="pending" />
       <van-tab :title="`已出图${stats && stats.drawn + stats.customerPending ? `（${stats.drawn + stats.customerPending}）` : ''}`" name="drawn" />
     </van-tabs>
-    <div v-if="stats?.overdue" class="hint">逾期 {{ stats.overdue }} 项，本周到期 {{ stats.dueThisWeek }} 项</div>
-    <van-loading v-if="pending" class="center" />
+    <div v-if="stats?.overdue" class="m-hint late"><UiStatusIcon kind="alert" :size="14" />逾期 {{ stats.overdue }} 项，本周到期 {{ stats.dueThisWeek }} 项</div>
+    <van-loading v-if="pending" class="m-center" />
     <van-empty v-else-if="!rows.length" :description="tab === 'pending' ? '没有待出图的任务' : '没有已出图待发放 / 待客户确认的任务'" image-size="80" />
-    <van-cell-group v-else inset>
-      <van-cell v-for="r in rows" :key="r.id" center>
-        <template #title>
-          <van-tag :type="r.overdue ? 'danger' : DRAWING_STATUS_TYPE[r.status]" class="tag">{{ r.overdue ? '逾期' : r.statusText }}</van-tag>
-          <span class="name">{{ r.componentName }}</span>
-          <div class="desc">{{ r.parts.length ? r.parts.map((p) => p.name).join('、') : '未关联工件' }}</div>
-        </template>
-        <template #label>
-          {{ r.workOrderNumber }}　计划 {{ dayText(r.planDate) }}{{ r.drawnDate ? `　出图 ${dayText(r.drawnDate)}` : '' }}{{ r.needsCustomerConfirm ? (r.customerConfirmedDate ? '　客户已确认' : `　客户确认计划 ${r.customerPlanDate ? dayText(r.customerPlanDate) : '未定'}`) : '' }}
-        </template>
-        <template #right-icon>
+    <div v-else class="m-list">
+      <MCard v-for="r in rows" :key="r.id" :tone="r.overdue ? 'late' : toneOfVant(DRAWING_STATUS_TYPE[r.status])">
+        <div class="m-row">
+          <van-tag :type="r.overdue ? 'danger' : DRAWING_STATUS_TYPE[r.status]">{{ r.overdue ? '逾期' : r.statusText }}</van-tag>
+          <span class="wo">{{ r.workOrderNumber }}</span>
+        </div>
+        <div class="m-title name">{{ r.componentName }}</div>
+        <div class="m-desc parts">{{ r.parts.length ? r.parts.map((p) => p.name).join('、') : '未关联工件' }}</div>
+        <div class="m-meta">
+          <span :class="{ 'm-text-late': r.overdue }">计划 {{ dayText(r.planDate) }}</span>
+          <span v-if="r.drawnDate" class="m-text-done">出图 {{ dayText(r.drawnDate) }}</span>
+          <span v-if="r.needsCustomerConfirm">{{ r.customerConfirmedDate ? '客户已确认' : `客户确认计划 ${r.customerPlanDate ? dayText(r.customerPlanDate) : '未定'}` }}</span>
+        </div>
+        <div v-if="r.permissions.markDrawn || r.status === 'DRAWN'" class="m-foot-row">
+          <span class="m-spacer" />
           <van-button v-if="r.permissions.markDrawn" size="small" type="primary" :loading="busy" @click="markDrawn(r)">标记已出图</van-button>
-          <span v-else-if="r.status === 'DRAWN'" class="muted">待发放</span>
-        </template>
-      </van-cell>
-    </van-cell-group>
-    <p class="muted foot">发放图纸、录客户确认请到电脑端"出图任务"。</p>
+          <span v-else class="m-muted small">待发放</span>
+        </div>
+      </MCard>
+    </div>
+    <p class="m-foot">发放图纸、录客户确认请到电脑端"出图任务"。</p>
   </div>
 </template>
 
 <style scoped>
-.center { display: flex; justify-content: center; padding: 32px; }
-.tag { margin-right: 6px; }
-.name { font-weight: 600; }
-.desc { color: #323233; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hint { color: #ee0a24; font-size: 13px; padding: 8px 16px; }
-.muted { color: #969799; font-size: 12px; }
-.foot { padding: 12px 16px; }
-.section { color: #646566; font-size: 13px; padding: 12px 16px 6px; display: flex; justify-content: space-between; }
-.link { color: #1989fa; }
+.wo { font-size: 13px; color: var(--ft-text-2); font-weight: 500; }
+.name { margin-top: 6px; }
+.parts { color: var(--ft-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.small { font-size: 12px; }
+.link { color: var(--ft-primary); }
 </style>

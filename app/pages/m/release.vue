@@ -83,20 +83,32 @@ const pdfs = computed(() => (detail.value?.attachments ?? []).filter((a) => !isI
 <template>
   <div>
     <van-nav-bar :title="detail ? `${detail.typeText} ${detail.releaseNo}` : '发放单'" left-arrow @click-left="navigateTo('/m/releases')" />
-    <van-loading v-if="loading && !detail" class="center" />
+    <van-loading v-if="loading && !detail" class="m-center" />
     <van-empty v-else-if="loadError" :description="loadError" image="error" />
     <template v-else-if="detail">
-      <van-notice-bar v-if="detail.status === 'VOID'" color="#ed6a0c" background="#fffbe8" text="这张发放单已作废" />
-      <van-notice-bar
-        v-else-if="detail.myReceipt && detail.myReceipt.status !== 'PENDING'"
-        :color="detail.myReceipt.status === 'SIGNED' ? '#07c160' : '#ee0a24'"
-        background="#f7f8fa"
-        :text="`你已${RECEIPT_STATUS_TEXT[detail.myReceipt.status].replace('已', '')} ${timeText(detail.myReceipt.actedAt)}${detail.myReceipt.reason ? `：${detail.myReceipt.reason}` : ''}`"
-      />
-      <div class="body">
-        <p class="desc">{{ detail.description }}</p>
+      <div v-if="detail.status === 'VOID'" class="m-hint none"><UiStatusIcon kind="ring" tone="none" :size="14" />这张发放单已作废</div>
+      <div v-else-if="detail.myReceipt && detail.myReceipt.status !== 'PENDING'" :class="['m-hint', detail.myReceipt.status === 'SIGNED' ? 'done' : 'late']">
+        <UiStatusIcon :kind="detail.myReceipt.status === 'SIGNED' ? 'check' : 'alert'" :size="14" />
+        <span>你已{{ RECEIPT_STATUS_TEXT[detail.myReceipt.status].replace('已', '') }} {{ timeText(detail.myReceipt.actedAt) }}{{ detail.myReceipt.reason ? `：${detail.myReceipt.reason}` : '' }}</span>
       </div>
-      <van-cell-group inset>
+      <div class="body">
+        <div class="m-row">
+          <van-tag :type="detail.type === 'CHANGE' ? 'danger' : 'primary'" plain>{{ detail.typeText }}</van-tag>
+          <span class="no">{{ detail.releaseNo }}</span>
+        </div>
+        <p class="desc">{{ detail.description }}</p>
+        <!-- 签收进度：已签收 / 接收人数 -->
+        <div class="m-progress">
+          <van-progress
+            :percentage="detail.receipts.length ? Math.round((detail.counts.SIGNED / detail.receipts.length) * 100) : 0"
+            :show-pivot="false"
+            :class="detail.counts.REJECTED ? 'm-progress-late' : detail.counts.SIGNED === detail.receipts.length ? 'm-progress-done' : 'm-progress-primary'"
+          />
+          <span class="m-progress-text">签收 {{ detail.counts.SIGNED }}/{{ detail.receipts.length }}</span>
+        </div>
+        <div v-if="detail.counts.REJECTED" class="rejected m-text-late"><UiStatusIcon kind="alert" :size="12" /> {{ detail.counts.REJECTED }} 人拒收</div>
+      </div>
+      <van-cell-group inset title="明细">
         <van-cell title="工单" :value="detail.workOrderNumber" :label="detail.projectName ?? detail.customerName ?? ''" />
         <van-cell title="版本号" :value="detail.version ?? '—'" />
         <van-cell title="关联工件" :value="detail.parts.map((p) => p.name).join('、') || '未关联'" />
@@ -107,7 +119,7 @@ const pdfs = computed(() => (detail.value?.attachments ?? []).filter((a) => !isI
       <div class="section">附件</div>
       <div v-if="!detail.attachments.length" class="muted pad">无附件（纸质下发）</div>
       <div v-if="images.length" class="photos">
-        <van-image v-for="a in images" :key="a.id" :src="a.url" width="96" height="96" fit="cover" radius="4" @click="showImagePreview(images.map((x) => x.url))" />
+        <van-image v-for="a in images" :key="a.id" :src="a.url" width="96" height="96" fit="cover" radius="10" @click="showImagePreview(images.map((x) => x.url))" />
       </div>
       <van-cell-group v-if="pdfs.length" inset>
         <van-cell v-for="(a, i) in pdfs" :key="a.id" :title="`PDF 附件 ${i + 1}`" :value="sizeText(a.size)" is-link :url="a.url" />
@@ -120,7 +132,7 @@ const pdfs = computed(() => (detail.value?.attachments ?? []).filter((a) => !isI
         </div>
       </template>
 
-      <div class="actions">
+      <div class="m-actions">
         <template v-if="detail.permissions.sign">
           <van-button type="primary" block round :loading="busy" @click="sign">签收</van-button>
           <van-button type="danger" plain block round :disabled="busy" @click="rejecting = true">拒收</van-button>
@@ -140,12 +152,12 @@ const pdfs = computed(() => (detail.value?.attachments ?? []).filter((a) => !isI
 </template>
 
 <style scoped>
-.center { display: flex; justify-content: center; padding: 32px; }
-.body { padding: 12px 16px 0; }
-.desc { font-size: 15px; white-space: pre-wrap; margin: 0 0 12px; }
-.section { padding: 16px 16px 8px; color: #646566; font-size: 14px; }
-.photos { display: flex; gap: 8px; padding: 0 16px; flex-wrap: wrap; }
+.body { margin: 12px 12px 0; padding: 14px 16px; background: #fff; border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); }
+.no { font-size: 16px; font-weight: 600; }
+.desc { font-size: 15px; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; }
+.rejected { margin-top: 6px; font-size: 12px; font-weight: 600; }
+.section { padding: 16px 16px 8px; color: var(--ft-text-2); font-size: 13px; font-weight: 600; }
+.photos { display: flex; gap: 8px; padding: 0 12px; flex-wrap: wrap; }
 .pad { padding: 0 16px; }
-.muted { color: #969799; font-size: 13px; }
-.actions { display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; }
+.muted { color: var(--ft-text-3); font-size: 13px; }
 </style>

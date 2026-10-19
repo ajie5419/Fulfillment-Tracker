@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { toneOfVant } from '#shared/mobile-todo'
+
 /**
  * 手机"我的异常"：等我处理 / 我负责 / 我上报。点开看详情（照片、处理日志），按权限受理、填处理结果、确认关闭、退回。
  * 改派在电脑端异常列表里做。带 ?id= 直接打开某条（提醒、上报后跳过来）。
@@ -78,7 +80,7 @@ const logText = (l: Detail['logs'][number]) =>
   <div>
     <van-nav-bar title="我的异常">
       <template #right>
-        <van-button size="small" type="danger" round @click="navigateTo('/m/issue-new')">上报</van-button>
+        <van-button size="small" type="danger" round icon="plus" @click="navigateTo('/m/issue-new')">上报</van-button>
       </template>
     </van-nav-bar>
     <van-tabs v-model:active="tab">
@@ -86,25 +88,34 @@ const logText = (l: Detail['logs'][number]) =>
       <van-tab title="我负责" name="responsible" />
       <van-tab title="我上报" name="reported" />
     </van-tabs>
-    <van-loading v-if="pending" class="center" />
+    <van-loading v-if="pending" class="m-center" />
     <van-empty v-else-if="!rows.length" description="没有异常" image-size="80" />
-    <van-cell-group v-else inset class="list">
-      <van-cell v-for="r in rows" :key="r.id" is-link center @click="selected = r.id">
-        <template #title>
+    <div v-else class="m-list">
+      <MCard v-for="r in rows" :key="r.id" :tone="r.overdue ? 'late' : toneOfVant(ISSUE_STATUS_TYPE[r.status as IssueStatusKey])" link @click="selected = r.id">
+        <div class="m-row">
+          <van-tag :type="ISSUE_STATUS_TYPE[r.status as IssueStatusKey]">{{ ISSUE_STATUS_TEXT[r.status as IssueStatusKey] }}</van-tag>
+          <van-tag v-if="r.overdue" type="danger">超期</van-tag>
           <span class="no">{{ r.issueNo }}</span>
-          <van-tag :type="ISSUE_STATUS_TYPE[r.status as IssueStatusKey]" class="tag">{{ ISSUE_STATUS_TEXT[r.status as IssueStatusKey] }}</van-tag>
-          <van-tag v-if="r.overdue" type="danger" class="tag">超期</van-tag>
-          <div class="desc">{{ r.description }}</div>
-        </template>
-        <template #label>{{ r.workOrderNumber }}　{{ r.categoryText }}　{{ r.responsibleUserName ?? r.responsibleDeptName ?? '' }}</template>
-      </van-cell>
-    </van-cell-group>
+        </div>
+        <div class="m-desc clamp desc">{{ r.description }}</div>
+        <div class="m-meta">
+          <span>{{ r.workOrderNumber }}</span>
+          <span>{{ r.categoryText }}</span>
+          <span v-if="r.responsibleUserName ?? r.responsibleDeptName">{{ r.responsibleUserName ?? r.responsibleDeptName }}</span>
+        </div>
+      </MCard>
+    </div>
+    <div class="m-foot" />
 
     <van-popup :show="!!selected" position="bottom" round closeable :style="{ height: '85%' }" @update:show="(v: boolean) => { if (!v) selected = null }">
       <div v-if="detail" class="detail">
-        <h3>{{ detail.issueNo }}　<van-tag :type="ISSUE_STATUS_TYPE[detail.status]">{{ ISSUE_STATUS_TEXT[detail.status] }}</van-tag></h3>
+        <div class="detail-head">
+          <span class="detail-no">{{ detail.issueNo }}</span>
+          <van-tag :type="ISSUE_STATUS_TYPE[detail.status]">{{ ISSUE_STATUS_TEXT[detail.status] }}</van-tag>
+          <van-tag v-if="detail.overdue" type="danger">超期</van-tag>
+        </div>
         <p class="desc-full">{{ detail.description }}</p>
-        <van-cell-group>
+        <van-cell-group inset class="info">
           <van-cell title="工单" :value="detail.workOrderNumber" />
           <van-cell v-if="detail.refText" title="关联" :value="detail.refText" />
           <van-cell title="分类 / 来源" :value="`${detail.categoryText} / ${ISSUE_SOURCE_TEXT[detail.source]}`" />
@@ -113,7 +124,7 @@ const logText = (l: Detail['logs'][number]) =>
           <van-cell title="上报" :value="detail.reporterName ?? '系统'" :label="timeText(detail.createdAt)" />
         </van-cell-group>
         <div v-if="detail.photos.length" class="photos">
-          <van-image v-for="p in detail.photos" :key="p.id" :src="p.url" width="96" height="96" fit="cover" radius="4" @click="showImagePreview(detail.photos.map((x) => x.url))" />
+          <van-image v-for="p in detail.photos" :key="p.id" :src="p.url" width="96" height="96" fit="cover" radius="10" @click="showImagePreview(detail.photos.map((x) => x.url))" />
         </div>
         <div class="actions">
           <template v-for="a in mobileActions" :key="a">
@@ -125,7 +136,7 @@ const logText = (l: Detail['logs'][number]) =>
           <van-step v-for="l in detail.logs" :key="l.id">
             <div><b>{{ logText(l) }}</b>　{{ l.actorName }}</div>
             <div v-if="l.note" class="note">{{ l.note }}</div>
-            <div class="muted">{{ timeText(l.createdAt) }}</div>
+            <div class="m-muted small">{{ timeText(l.createdAt) }}</div>
           </van-step>
         </van-steps>
       </div>
@@ -133,23 +144,24 @@ const logText = (l: Detail['logs'][number]) =>
 
     <van-dialog :show="!!acting" :title="acting ? ACTION_TEXT[acting] : ''" show-cancel-button @confirm="doAction" @cancel="acting = null">
       <van-field v-model="note" type="textarea" rows="3" autosize maxlength="1000" :placeholder="acting ? NOTE_LABEL[acting] : ''" />
-      <p v-if="acting === 'accept'" class="muted dialog-hint">受理后要求解决日默认为今天 + 3 天（已有的不变）</p>
+      <p v-if="acting === 'accept'" class="m-muted small dialog-hint">受理后要求解决日默认为今天 + 3 天（已有的不变）</p>
     </van-dialog>
   </div>
 </template>
 
 <style scoped>
-.center { display: flex; justify-content: center; padding: 32px; }
-.list { margin-top: 12px; }
-.no { font-weight: 600; margin-right: 6px; }
-.tag { margin-right: 4px; }
-.desc { color: #323233; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.detail { padding: 16px; }
-.desc-full { font-size: 15px; white-space: pre-wrap; }
-.photos { display: flex; gap: 8px; padding: 12px 0; }
-.actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 0; }
-.section { padding: 12px 0 4px; color: #646566; }
-.note { color: #646566; white-space: pre-wrap; }
-.muted { color: #969799; font-size: 12px; }
+.no { font-size: 13px; font-weight: 600; color: var(--ft-text-2); }
+.desc { font-size: 14px; font-weight: 500; margin-top: 6px; }
+.detail { padding: 16px 4px; background: var(--ft-page-bg); min-height: 100%; box-sizing: border-box; }
+.detail-head { display: flex; align-items: center; gap: 8px; padding: 0 44px 0 12px; flex-wrap: wrap; }
+.detail-no { font-size: 18px; font-weight: 600; }
+.desc-full { margin: 10px 12px 12px; padding: 12px 14px; background: #fff; border-radius: var(--ft-card-radius); font-size: 15px; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: var(--ft-card-shadow); }
+.photos { display: flex; gap: 8px; padding: 12px; flex-wrap: wrap; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px; }
+.actions .van-button { min-width: 72px; }
+.section { padding: 12px 16px 4px; color: var(--ft-text); font-weight: 600; font-size: 14px; }
+.detail :deep(.van-steps) { margin: 0 12px; border-radius: var(--ft-card-radius); }
+.note { color: var(--ft-text-2); white-space: pre-wrap; }
+.small { font-size: 12px; }
 .dialog-hint { padding: 0 16px 12px; }
 </style>

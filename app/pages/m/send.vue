@@ -168,7 +168,7 @@ async function submit() {
       <van-cell title="承诺返回日" :value="promisedReturnDate || '未选'" />
     </van-cell-group>
 
-    <div class="submit">
+    <div class="m-submit">
       <van-button type="primary" block round :disabled="!canSubmit" :loading="submitting" @click="submit">提交发出</van-button>
     </div>
 
@@ -180,7 +180,7 @@ async function submit() {
 </template>
 
 <style scoped>
-.page { padding-bottom: 16px; }
+.page { padding-bottom: 8px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; background: #fff; }
-.submit { padding: 16px; }
+.chips :deep(.van-tag) { cursor: pointer; }
 </style>
