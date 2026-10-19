@@ -1,5 +1,9 @@
 <script setup lang="ts">
-/** 工件与工序链：选工单 → 工件列表 → 行内编辑工序链；可从同类工件复制 */
+/**
+ * 工件与工序链：选工单 → 工件列表 → 行内编辑工序链；可从同类工件复制。
+ * 权限方案 R13：建/改/删工件和工序、导入 BOM、套模板、复制路线 —— 生产部、外协专员、该工单项目经理、管理员；
+ * 开工/完工/发出/补登返厂 —— 生产部、外协专员、该工序责任人、管理员。其他人只读（后端同样拦）。
+ */
 const route = useRoute()
 const router = useRouter()
 const { data: workOrders } = await useWorkOrders()
@@ -134,6 +138,8 @@ async function onExpand(expanded: boolean, s: Pick<StepRow, 'partId'>) {
 
 // ───── R8：从 QMS BOM 导入、路线模板 ─────
 const { data: me } = await useMe()
+const canRoute = computed(() => canDo(me.value, 'route', { workOrderNumber: workOrderNumber.value }))
+const canStep = (s: { ownerId: string | null }) => canDo(me.value, 'stepAction', { ownerId: s.ownerId })
 const bomImportOpen = ref(false)
 const templateTarget = ref<{ partId: string; partName: string; mode: 'apply' | 'save' } | null>(null)
 const fillCount = (p: PartRow) => p.steps.filter((s) => s.needsFill).length
@@ -168,8 +174,10 @@ const columns = [
         placeholder="选择工单"
         :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName}　交期 ${dayText(w.deliveryDate)}` }))"
       />
-      <a-button type="primary" :disabled="!workOrderNumber" @click="editPart()">新建工件</a-button>
-      <a-button :disabled="!workOrderNumber" @click="bomImportOpen = true">从 QMS BOM 导入</a-button>
+      <template v-if="canRoute">
+        <a-button type="primary" :disabled="!workOrderNumber" @click="editPart()">新建工件</a-button>
+        <a-button :disabled="!workOrderNumber" @click="bomImportOpen = true">从 QMS BOM 导入</a-button>
+      </template>
     </a-space>
   </a-card>
 
@@ -187,20 +195,20 @@ const columns = [
       </template>
       <template #extra>
         <a-space>
-          <a-button size="small" @click="editPart(p)">编辑</a-button>
-          <a-button size="small" @click="openCopy(p)">复制工序链</a-button>
+          <a-button v-if="canRoute" size="small" @click="editPart(p)">编辑</a-button>
+          <a-button v-if="canRoute" size="small" @click="openCopy(p)">复制工序链</a-button>
           <a-button size="small" danger @click="reportingPartId = p.id">上报异常</a-button>
-          <a-button size="small" danger @click="removePart(p)">删除</a-button>
+          <a-button v-if="canRoute" size="small" danger @click="removePart(p)">删除</a-button>
         </a-space>
       </template>
 
       <a-table :columns="columns" :data-source="p.steps" row-key="id" size="small" :pagination="false" @expand="onExpand">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'process'">
-            <a-select :value="record.processId" style="width: 100%" :options="processOptions" :disabled="record.eventCount > 0" @change="(v: unknown) => patchStep(record as StepRow, { processId: v })" />
+            <a-select :value="record.processId" style="width: 100%" :options="processOptions" :disabled="!canRoute || record.eventCount > 0" @change="(v: unknown) => patchStep(record as StepRow, { processId: v })" />
           </template>
           <template v-else-if="column.key === 'mode'">
-            <a-select :value="record.mode" style="width: 100%" :options="modeOptions" :disabled="record.status !== 'PENDING'" @change="(v: unknown) => patchStep(record as StepRow, { mode: v })" />
+            <a-select :value="record.mode" style="width: 100%" :options="modeOptions" :disabled="!canRoute || record.status !== 'PENDING'" @change="(v: unknown) => patchStep(record as StepRow, { mode: v })" />
           </template>
           <template v-else-if="column.key === 'supplier'">
             <a-select
@@ -210,16 +218,16 @@ const columns = [
               show-search
               option-filter-prop="label"
               :options="supplierOptions"
-              :disabled="record.mode === 'SELF'"
+              :disabled="!canRoute || record.mode === 'SELF'"
               :placeholder="record.mode === 'SELF' ? '—' : '选择外协厂'"
               @change="(v: unknown) => patchStep(record as StepRow, { supplierId: v ?? null })"
             />
           </template>
           <template v-else-if="column.key === 'owner'">
-            <a-select :value="record.ownerId ?? undefined" style="width: 100%" show-search option-filter-prop="label" placeholder="待补充" :options="userOptions" @change="(v: unknown) => patchStep(record as StepRow, { ownerId: v })" />
+            <a-select :value="record.ownerId ?? undefined" style="width: 100%" show-search option-filter-prop="label" placeholder="待补充" :options="userOptions" :disabled="!canRoute" @change="(v: unknown) => patchStep(record as StepRow, { ownerId: v })" />
           </template>
           <template v-else-if="column.key === 'dueDate'">
-            <a-date-picker :value="dayText(record.dueDate) || undefined" value-format="YYYY-MM-DD" style="width: 100%" @change="(v: unknown) => patchStep(record as StepRow, { dueDate: v || null })" />
+            <a-date-picker :value="dayText(record.dueDate) || undefined" value-format="YYYY-MM-DD" style="width: 100%" :disabled="!canRoute" @change="(v: unknown) => patchStep(record as StepRow, { dueDate: v || null })" />
           </template>
           <template v-else-if="column.key === 'status'">
             <a-tag :color="STATUS_COLOR[record.status as StepStatusKey]">{{ STATUS_TEXT[record.status as StepStatusKey] }}</a-tag>
@@ -233,19 +241,21 @@ const columns = [
           </template>
           <template v-else-if="column.key === 'actions'">
             <a-space size="small" wrap>
-              <a-button size="small" :disabled="record.eventCount > 0" @click="moveStep(record as StepRow, 'up')">上移</a-button>
-              <a-button size="small" :disabled="record.eventCount > 0" @click="moveStep(record as StepRow, 'down')">下移</a-button>
-              <a-button size="small" danger :disabled="record.eventCount > 0" @click="removeStep(record as StepRow)">删除</a-button>
-              <template v-if="record.mode === 'EXTERNAL_OUTSOURCE' && record.status === 'PENDING'">
+              <template v-if="canRoute">
+                <a-button size="small" :disabled="record.eventCount > 0" @click="moveStep(record as StepRow, 'up')">上移</a-button>
+                <a-button size="small" :disabled="record.eventCount > 0" @click="moveStep(record as StepRow, 'down')">下移</a-button>
+                <a-button size="small" danger :disabled="record.eventCount > 0" @click="removeStep(record as StepRow)">删除</a-button>
+              </template>
+              <template v-if="canStep(record as StepRow) && record.mode === 'EXTERNAL_OUTSOURCE' && record.status === 'PENDING'">
                 <a-button size="small" type="primary" @click="sending = { id: record.id, supplierId: record.supplierId, title: `${p.name} · ${record.processName}` }">发出</a-button>
               </template>
-              <template v-if="record.mode !== 'EXTERNAL_OUTSOURCE' && record.status === 'PENDING'">
+              <template v-if="canStep(record as StepRow) && record.mode !== 'EXTERNAL_OUTSOURCE' && record.status === 'PENDING'">
                 <a-button size="small" type="primary" @click="startStep(record as StepRow)">开工</a-button>
               </template>
-              <template v-if="record.mode !== 'EXTERNAL_OUTSOURCE' && (record.status === 'PENDING' || record.status === 'IN_PROGRESS')">
+              <template v-if="canStep(record as StepRow) && record.mode !== 'EXTERNAL_OUTSOURCE' && (record.status === 'PENDING' || record.status === 'IN_PROGRESS')">
                 <a-button size="small" @click="finishStep(record as StepRow)">完工</a-button>
               </template>
-              <template v-if="record.status === 'OUT' || (record.mode === 'IN_PLANT_OUTSOURCE' && record.status === 'IN_PROGRESS')">
+              <template v-if="canStep(record as StepRow) && (record.status === 'OUT' || (record.mode === 'IN_PLANT_OUTSOURCE' && record.status === 'IN_PROGRESS'))">
                 <a-button size="small" @click="openReturn(p, record as StepRow)">补登返厂</a-button>
               </template>
             </a-space>
@@ -262,7 +272,7 @@ const columns = [
         </template>
       </a-table>
 
-      <a-space class="add" wrap>
+      <a-space v-if="canRoute" class="add" wrap>
         <a-select v-model:value="draftOf(p.id).processId" placeholder="工序" style="width: 120px" :options="processOptions" />
         <a-select v-model:value="draftOf(p.id).mode" style="width: 120px" :options="modeOptions" />
         <a-select v-model:value="draftOf(p.id).supplierId" placeholder="外协厂" style="width: 160px" allow-clear show-search option-filter-prop="label" :options="supplierOptions" :disabled="draftOf(p.id).mode === 'SELF'" />

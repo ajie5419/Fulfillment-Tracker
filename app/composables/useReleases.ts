@@ -8,7 +8,7 @@ export const RECEIPT_STATUS_COLOR = { PENDING: 'orange', SIGNED: 'green', REJECT
 export const RECEIPT_STATUS_TYPE = { PENDING: 'warning', SIGNED: 'success', REJECTED: 'danger', CANCELLED: 'default' } as const
 /** 列表状态（progressText）的颜色 */
 export const PROGRESS_COLOR: Record<string, string> = { 签收中: 'orange', 有拒收: 'red', 已全部签收: 'green', 已作废: 'default' }
-/** 按"部门 + 角色"选人时的角色（与设置页"通知对象"一致）；空 = 该部门全部人员 */
+/** 按"部门 + 角色"选人时的角色（与设置页"人员与角色"一致）；空 = 该部门全部人员 */
 export const RECIPIENT_ROLE_OPTIONS = [
   { value: '', label: '全部人员' },
   { value: 'DEPT_HEAD', label: '部门负责人' },

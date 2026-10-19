@@ -2,8 +2,10 @@
 /**
  * 手机到货确认页（R10，沿用发放签收的"看内容 → 签收"）：看物料、需求日、承诺日、付款情况，点"确认到货"。
  * 晚于需求日或承诺日时可以顺手选延误原因（不清楚可不填，采购稍后补）；确认错了可以撤销。
+ * 确认 / 撤销到货：采购部、该工单项目经理、管理员（权限方案 R13），其他人只能看。
  */
 definePageMeta({ layout: 'mobile' })
+const { data: me } = await useMe()
 const route = useRoute()
 const id = computed(() => (route.query.id as string) || '')
 const line = ref<PurchaseRow | null>(null)
@@ -117,12 +119,15 @@ const sourceText = { MOBILE: '手机确认', PC: '电脑确认', QMS_INSPECTION:
         </van-cell>
         <van-cell v-if="line.delayReason" title="延误原因" :value="line.delayReasonText ?? ''" :label="line.delayNote ?? ''" />
         <van-cell title="采购负责人" :value="line.ownerText" />
-        <van-cell v-for="p in line.payments" :key="p.id" title="付款申请" :value="`${p.statusText} ${moneyText(p.amount)} 元`" :label="p.blocksDelivery ? '卡交期' : ''" />
+        <van-cell v-for="p in line.payments" :key="p.id" title="付款申请" :value="`${p.statusText} ${moneyWithUnit(p.amount)}`" :label="p.blocksDelivery ? '卡交期' : ''" />
       </van-cell-group>
 
       <div class="actions">
-        <van-button v-if="line.status === 'OPEN'" type="primary" block round :loading="busy" @click="openConfirm">确认到货</van-button>
-        <van-button v-if="line.status === 'ARRIVED'" plain block round :disabled="busy" @click="undo">撤销到货</van-button>
+        <template v-if="canDo(me, 'purchase', { workOrderNumber: line.workOrderNumber })">
+          <van-button v-if="line.status === 'OPEN'" type="primary" block round :loading="busy" @click="openConfirm">确认到货</van-button>
+          <van-button v-if="line.status === 'ARRIVED'" plain block round :disabled="busy" @click="undo">撤销到货</van-button>
+        </template>
+        <p v-else class="readonly-tip">确认到货由采购部或该工单项目经理操作</p>
       </div>
     </template>
 
@@ -143,6 +148,7 @@ const sourceText = { MOBILE: '手机确认', PC: '电脑确认', QMS_INSPECTION:
 .center { display: flex; justify-content: center; padding: 32px; }
 .group { margin-top: 12px; }
 .pad { padding: 8px 16px; }
+.readonly-tip { color: #969799; font-size: 13px; text-align: center; margin: 8px 0; }
 .muted { color: #969799; font-size: 13px; }
 .reasons { display: flex; flex-wrap: wrap; gap: 12px; }
 .actions { display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; }

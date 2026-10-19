@@ -1,7 +1,12 @@
 <script setup lang="ts">
-/** 待确认匹配：没能自动匹配的返厂报检，从候选里选一个点"关联"，或点"忽略" */
+/**
+ * 待确认匹配：没能自动匹配的返厂报检，从候选里选一个点"关联"，或点"忽略"。
+ * 关联 / 忽略：生产部、外协专员、该工单项目经理、管理员（权限方案 R13），其他人只读。
+ */
 const { data: rows, pending, refresh } = await useFetch('/api/unmatched', { default: () => [] })
 type Row = (typeof rows.value)[number]
+const { data: me } = await useMe()
+const canHandle = (r: Row) => canDo(me.value, 'route', { workOrderNumber: r.inspection?.workOrderNumber })
 const chosen = reactive<Record<string, string | undefined>>({})
 
 watch(rows, (list) => {
@@ -70,7 +75,8 @@ const reasonColor = { NO_CANDIDATE: 'orange', MULTIPLE: 'blue', CANCELLED_AFTER_
           />
         </template>
         <template v-else-if="column.key === 'actions'">
-          <a-space>
+          <span v-if="!canHandle(record as Row)" class="muted">—</span>
+          <a-space v-else>
             <a-button v-if="record.reason !== 'CANCELLED_AFTER_MATCH'" type="primary" size="small" :disabled="!record.candidates.length" @click="act(record as Row, 'resolve')">关联</a-button>
             <a-button size="small" @click="act(record as Row, 'ignore')">{{ record.reason === 'CANCELLED_AFTER_MATCH' ? '知道了' : '忽略' }}</a-button>
           </a-space>
