@@ -9,6 +9,8 @@ import { ARRANGE_SEND, ARRANGE_START } from './flow'
 import { MODE_TEXT, loadNames } from './names'
 import { CONFIRM_PLAN_NODE, PLAN_REF } from '../plan/constants'
 import { describePlanTodos } from '../plan/plan'
+import { todayDay } from './dates'
+import { workBucket } from '../../../shared/workbench'
 
 const ACTION_TEXT: Record<string, string> = {
   [ARRANGE_SEND]: '安排发出',
@@ -25,7 +27,7 @@ const ACTION_TEXT: Record<string, string> = {
  * "可以开工"（R10，refType = part）按工件所属工单判断可见；附上工件的第一道工序，页面按工序方式给"登记发出"或"开工"。
  * "确认总计划节点"（R14，refType = planNode）发给部门负责人本人，不受可见范围限制；附上总计划页的跳转地址（plan.link）。
  */
-export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) {
+export async function listMyTodos(userId: string, visibleWorkOrders?: string[], now = new Date()) {
   let todos = await prisma.todo.findMany({ where: { ownerId: userId, status: 'OPEN' }, orderBy: { createdAt: 'asc' } })
   if (!todos.length) return []
   const stepIds = todos.filter((t) => t.refType === 'step').map((t) => t.refId)
@@ -51,7 +53,7 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) 
   const releases = await describeReleaseTodos(todos)
   const plans = await describePlanTodos(todos.filter((t) => t.refType === PLAN_REF).map((t) => t.refId))
 
-  return todos.map((t) => {
+  const rows = todos.map((t) => {
     const actionText = ACTION_TEXT[t.action] ?? t.action
     if (t.refType === PLAN_REF) {
       const p = plans.get(t.refId)
@@ -129,6 +131,19 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) 
       },
       release: null,
       plan: null,
+    }
+  })
+  // 工作台卡片流（前端改版第二轮）：所属工单、截止日（待办自带的 dueAt，没有时取工序的要求完成日）、按工厂时区的今天分组
+  const today = todayDay(now)
+  return rows.map((t) => {
+    const stepDue = t.refType === 'step' ? byId.get(t.refId)?.dueDate : null
+    const due = t.dueAt ?? stepDue ?? null
+    const dueDay = due ? due.toISOString().slice(0, 10) : null
+    return {
+      ...t,
+      workOrderNumber: (t.refType === 'part' ? ready.get(t.refId)?.workOrderNumber : null) ?? t.release?.workOrderNumber ?? t.plan?.workOrderNumber ?? (t.refType === 'step' ? byId.get(t.refId)?.part.workOrderNumber : null) ?? null,
+      dueDay,
+      bucket: workBucket({ kind: 'todo', dueDay }, today),
     }
   })
 }

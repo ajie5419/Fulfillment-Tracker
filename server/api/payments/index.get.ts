@@ -9,7 +9,7 @@ export default defineFlowHandler(async (event, user) => {
   if (q.workOrderNumber) await assertCanSee(event, q.workOrderNumber)
   const ctx = await getRoleContext(event)
   return listPayments(
-    { ...q, workOrderNumber: q.workOrderNumber || undefined, visibleWorkOrders: scopeWorkOrders(await getScope(event)), amountVisible: (wo) => canSeeAmount(ctx, wo) },
+    { ...q, blocking: q.blocking === '1', workOrderNumber: q.workOrderNumber || undefined, visibleWorkOrders: scopeWorkOrders(await getScope(event)), amountVisible: (wo) => canSeeAmount(ctx, wo) },
     actorOf(event, user),
   )
 })

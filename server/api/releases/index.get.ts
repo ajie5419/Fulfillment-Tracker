@@ -5,7 +5,7 @@ import { releaseType } from '../../schemas/releases'
 const query = z.object({
   workOrderNumber: z.string().max(64).optional(),
   type: releaseType.optional(),
-  progress: z.enum(['PENDING', 'REJECTED', 'VOID']).optional(),
+  progress: z.enum(['PENDING', 'REJECTED', 'VOID', 'MINE_PENDING']).optional(),
   mine: z.enum(['issued', 'received']).optional(),
 })
 

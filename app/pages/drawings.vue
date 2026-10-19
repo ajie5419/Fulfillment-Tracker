@@ -4,7 +4,11 @@
  * 一键发放（打开 R9 新建发放单并预填）；"设计负荷"页签按设计负责人列在手、逾期、本周到期。
  * 地址栏 ?wo= 预选工单，?view= 选视图，?owner= 选负责人，?tab=load 打开设计负荷，?id= 打开某个任务（W7 提醒跳过来）。
  * 新建 / 编辑 / 客户确认：技术部、管理员；一键发放：技术部、管理员；标记出图仍限设计负责人或管理员（权限方案 R13）。
+ * 前端改版第二轮：顶部统计卡（待出图 / 逾期 / 本周到期 / 已出图待发放·待确认，点了套用对应视图，数字是接口 stats，与视图同一口径）；
+ * 列表默认按工单分组（?layout=group|table），组标题带本组出图完成度。
  */
+import { distinctPlanNodes, groupByWorkOrder, groupProgress } from '#shared/workbench'
+
 const route = useRoute()
 const router = useRouter()
 const { data: workOrders } = await useWorkOrders()
@@ -21,11 +25,13 @@ const VIEWS = [
   { value: 'cancelled', label: '已取消' },
   { value: 'all', label: '全部' },
 ] as const
+/** 只由统计卡套用的视图（不在上面的单选里）：待出图、本周到期 */
+const CARD_VIEWS = ['pending', 'week']
 const tab = ref(route.query.tab === 'load' ? 'load' : 'list')
 const filter = reactive({
   workOrderNumber: (route.query.wo as string) || undefined,
   ownerId: (route.query.owner as string) || undefined,
-  view: VIEWS.some((v) => v.value === route.query.view) ? (route.query.view as string) : route.query.id ? 'all' : 'open',
+  view: VIEWS.some((v) => v.value === route.query.view) || CARD_VIEWS.includes(route.query.view as string) ? (route.query.view as string) : route.query.id ? 'all' : 'open',
   q: '',
 })
 const keyword = ref('')
@@ -45,6 +51,19 @@ const { data, pending, refresh } = await useFetch('/api/drawings', {
 })
 const rows = computed(() => data.value.rows as DrawingRow[])
 const stats = computed(() => data.value.stats as DrawingStats | null)
+
+// ───── 统计卡、按工单分组 ─────
+/** 点统计卡：套用对应视图并回到列表；再点一次回到"未完成" */
+function applyView(view: string) {
+  filter.view = filter.view === view ? 'open' : view
+  tab.value = 'list'
+}
+const layout = useListLayout()
+/** 分组视图：每个工单一张小表（不再显示工单列）；表格视图：一张表 */
+const tables = computed(() =>
+  layout.value === 'group' ? groupByWorkOrder(rows.value).map((g) => ({ key: g.workOrderNumber, ...g })) : [{ key: '__all', workOrderNumber: '', rows: rows.value }],
+)
+const doneOf = (g: { rows: DrawingRow[] }) => groupProgress(g.rows, (r) => r.status === 'DONE', (r) => r.status !== 'CANCELLED')
 
 const { data: load, pending: loadPending, refresh: refreshLoad } = await useFetch('/api/drawings/load', {
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber })),
@@ -158,8 +177,9 @@ const columns = [
   { title: '客户确认', key: 'customer', width: 150 },
   { title: '状态', key: 'status', width: 130 },
   { title: '发放单', key: 'releases', width: 140 },
-  { title: '', key: 'actions', width: 190, fixed: 'right' as const },
+  { title: '', key: 'actions', width: 260, fixed: 'right' as const },
 ]
+const groupColumns = columns.filter((c) => c.key !== 'wo')
 const partNames = (r: DrawingRow) => r.parts.map((p) => p.name).join('、')
 const loadKey = (r: { ownerId: string | null }) => r.ownerId ?? '-'
 const loadColumns = [
@@ -173,6 +193,15 @@ const loadColumns = [
 </script>
 
 <template>
+  <div class="ft-page">
+  <div v-if="stats" class="ft-stats">
+    <UiStatCard label="待出图" :value="stats.pending" unit="项" tone="primary" accent icon="dot" clickable :active="filter.view === 'pending'" sub="还没出图的任务" @click="applyView('pending')" />
+    <UiStatCard label="逾期" :value="stats.overdue" unit="项" tone="late" accent icon="alert" clickable :active="filter.view === 'overdue'" sub="待出图过计划完成日，或客户确认过计划日" @click="applyView('overdue')" />
+    <UiStatCard label="本周到期" :value="stats.dueThisWeek" unit="项" tone="risk" accent icon="warn" clickable :active="filter.view === 'week'" sub="待出图且计划完成日在本周" @click="applyView('week')" />
+    <UiStatCard label="已出图待发放 / 待确认" :value="stats.drawn + stats.customerPending" unit="项" tone="done" accent icon="check" clickable :active="filter.view === 'drawn'" @click="applyView('drawn')">
+      <template #sub>待发放 {{ stats.drawn }} · 待客户确认 {{ stats.customerPending }}</template>
+    </UiStatCard>
+  </div>
   <a-card title="设计出图任务">
     <template #extra>
       <a-space wrap>
@@ -197,19 +226,26 @@ const loadColumns = [
           </a-radio-group>
           <a-select v-model:value="filter.ownerId" allow-clear show-search option-filter-prop="label" placeholder="全部负责人" style="width: 200px" :options="ownerOptions" />
           <a-input-search v-model:value="keyword" allow-clear placeholder="部件 / 工单 / 备注" style="width: 180px" />
+          <a-radio-group v-model:value="layout" size="small">
+            <a-radio-button value="group">按工单分组</a-radio-button>
+            <a-radio-button value="table">表格</a-radio-button>
+          </a-radio-group>
         </a-space>
-        <div v-if="stats" class="stats">
-          <a-space size="large" wrap>
-            <span>待出图 <b>{{ stats.pending }}</b></span>
-            <a class="stat" :class="{ warn: stats.overdue }" @click="filter.view = 'overdue'">逾期 <b>{{ stats.overdue }}</b></a>
-            <span>本周到期 <b>{{ stats.dueThisWeek }}</b></span>
-            <a class="stat" @click="filter.view = 'drawn'">已出图待发放 <b>{{ stats.drawn }}</b> · 待客户确认 <b>{{ stats.customerPending }}</b></a>
-          </a-space>
-        </div>
         <p class="muted">出图后点"一键发放"生成图纸发放单（R9）。关联工件的出图任务全部完成（已出图、已发放、需要时客户已确认）后，物料也齐了才给第一道工序发"可以开工"。没指定设计负责人的派给技术部负责人。</p>
         <p v-if="data.total > rows.length" class="warn">共 {{ data.total }} 项，只显示前 {{ rows.length }} 项，请按工单或负责人筛选</p>
 
-        <a-table :columns="columns" :data-source="rows" :loading="pending" row-key="id" size="small" :scroll="{ x: 1450 }" :pagination="{ pageSize: 50, hideOnSinglePage: true }">
+        <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty :description="filter.view === 'open' ? '没有未完成的出图任务' : '没有记录'" /></a-spin>
+        <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
+        <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" :nodes="distinctPlanNodes(t.rows)" v-bind="doneOf(t)" label="出图完成" :count="t.rows.length" />
+        <a-table
+          :columns="layout === 'group' ? groupColumns : columns"
+          :data-source="t.rows"
+          :loading="pending"
+          row-key="id"
+          size="small"
+          :scroll="{ x: layout === 'group' ? 1390 : 1520 }"
+          :pagination="layout === 'group' ? false : { pageSize: 50, hideOnSinglePage: true }"
+        >
           <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未完成的出图任务' : '没有记录'" /></template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'component'">
@@ -267,6 +303,7 @@ const loadColumns = [
             </template>
           </template>
         </a-table>
+        </div>
       </a-tab-pane>
 
       <a-tab-pane key="load" tab="设计负荷">
@@ -288,6 +325,7 @@ const loadColumns = [
       </a-tab-pane>
     </a-tabs>
   </a-card>
+  </div>
 
   <DrawingEditModal :open="editOpen" :task="editing" :work-order-number="filter.workOrderNumber" @close="closeEdit" @done="saved" />
   <ReleaseCreateModal :open="releaseOpen" :prefill="prefill" @close="releaseOpen = false" @done="released" />
@@ -310,8 +348,6 @@ const loadColumns = [
 
 <style scoped>
 .filters { margin-bottom: 8px; }
-.stats { margin-bottom: 8px; }
-.stat { color: inherit; }
 .muted { color: #999; font-size: 12px; }
 .warn { color: var(--ft-late); }
 .small { font-size: 12px; }

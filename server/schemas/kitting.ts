@@ -40,6 +40,8 @@ export const listQuery = z.object({
   workOrderNumber: z.string().max(64).optional(),
   /** 1 = 只看未齐套 */
   incomplete: z.enum(['0', '1']).optional(),
+  /** 1 = 只看需求日临近（W8 预警窗口内，含已过）仍未齐套的，与统计 dueSoon 同一口径 */
+  dueSoon: z.enum(['0', '1']).optional(),
   /** 1 = 我负责的节点（不受工单可见范围限制） */
   mine: z.enum(['0', '1']).optional(),
 })

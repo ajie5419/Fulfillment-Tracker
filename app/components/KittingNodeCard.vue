@@ -1,9 +1,21 @@
 <script setup lang="ts">
-/** 齐套页的一个装配节点卡片：齐套率进度条 + 缺件表（R12）。工单视图和"提醒的节点"共用 */
+/**
+ * 齐套页的一个装配节点卡片：齐套率 + 缺件表（R12）。工单视图和"提醒的节点"共用。
+ * 前端改版第二轮：齐套率改成环形进度（Ring，颜色：齐了绿、红色预警红、黄色预警黄、其余主色），旁边是缺件按原因的计数标签。
+ */
+import { shortageReasonCounts } from '#shared/workbench'
+
 // linkable=false：工单不在查看人可见范围（"提醒的节点"单独展示时），工单号和节点只显示文字，不链到会 403 的工单详情
 const props = withDefaults(defineProps<{ node: KitNode; focus?: boolean; windowDays: number; linkable?: boolean }>(), { linkable: true })
 defineEmits<{ edit: [node: KitNode]; remove: [node: KitNode] }>()
 const n = computed(() => props.node)
+const reasons = computed(() => shortageReasonCounts(n.value.shortages))
+const ringColor = computed(() => {
+  const st = kitProgressStatus(n.value)
+  if (st === 'success') return 'var(--ft-done)'
+  if (st === 'exception') return 'var(--ft-late)'
+  return n.value.alertLevel === 'YELLOW' ? 'var(--ft-risk)' : 'var(--ft-primary)'
+})
 </script>
 
 <template>
@@ -21,9 +33,17 @@ const n = computed(() => props.node)
       </a-space>
     </template>
     <div class="progress">
-      <a-progress v-if="n.percent != null" :percent="n.percent" :status="kitProgressStatus(n)" />
+      <template v-if="n.percent != null">
+        <UiRing :value="n.ready" :total="n.total" :size="72" :stroke="8" :color="ringColor" :label="`${n.percent}%`" />
+        <div class="summary">
+          <div class="count">已就绪 <b>{{ n.ready }}</b> / 应有 {{ n.total }}<template v-if="n.shortages.length">，缺 <b class="warn">{{ n.shortages.length }}</b> 项</template></div>
+          <div v-if="reasons.length" class="reasons">
+            <a-tag v-for="r in reasons" :key="r.reason" :color="BLOCKER_COLOR[r.code] ?? 'default'" class="reason">{{ r.reason }} {{ r.count }}</a-tag>
+          </div>
+          <div v-else class="muted">不缺件</div>
+        </div>
+      </template>
       <span v-else class="muted">清单为空：编辑节点选择需要的工件和关键物料</span>
-      <span v-if="n.total" class="muted count">已就绪 {{ n.ready }} / 应有 {{ n.total }}</span>
     </div>
     <KittingShortageTable v-if="n.shortages.length" :shortages="n.shortages" />
     <div v-if="n.readyItems.length" class="muted ready">已就绪：{{ n.readyItems.join('、') }}</div>
@@ -38,8 +58,13 @@ const n = computed(() => props.node)
 .node { margin-bottom: 12px; }
 .node.focus { border-color: var(--ft-primary); box-shadow: 0 0 0 2px rgba(42, 120, 214, 0.2); }
 .node-name { font-weight: 600; margin-right: 6px; }
-.progress { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-.progress :deep(.ant-progress) { flex: 1; max-width: 480px; margin: 0; }
-.count { white-space: nowrap; }
+.progress { display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
+.progress :deep(.txt) { font-size: 14px; }
+.summary { min-width: 0; }
+.count { color: var(--ft-text-2); font-size: 13px; }
+.count b { color: var(--ft-text); }
+.count b.warn { color: var(--ft-late-text); }
+.reasons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.reason { margin: 0; }
 .ready { margin-top: 6px; }
 </style>

@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { PrismaClient } from '@prisma/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startMockIdentityBridge } from '../../scripts/mock-identity-bridge.mjs'
+import { BUSINESS_DEPT_NAME } from '../../shared/business-depts'
 
 const DB = process.env.TEST_DATABASE_URL
 const SERVER_ENTRY = '.output/server/index.mjs'
@@ -169,6 +170,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     await db?.drawingTask.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.assemblyNode.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.notifyRole.deleteMany({ where: { userId: 'h-worker' } })
+    await db?.reminder.deleteMany({ where: { userId: { in: HTTP_USERS } } })
     await db?.paymentRequest.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.purchaseLine.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.notifyRole.deleteMany({ where: { userId: 'h-fin' } })
@@ -797,5 +799,81 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(drawings.rows.find((r) => r.componentName === 'R14 图')!.planNode).toMatchObject({ id: design.id, name: '设计出图' })
     const lines = (await (await get(`/api/purchases?workOrderNumber=${MINE}&view=all`, admin)).json()) as { rows: { materialName: string; planNode: unknown }[] }
     expect(lines.rows.find((r) => r.materialName === '详情未挂物料')!.planNode).toBeNull()
+  })
+
+  it('前端改版第二轮：未读提醒数只数本人的、与提醒列表同一口径；提醒 / 待办带工作台分组；各页统计卡与对应筛选同一口径', async () => {
+    const pm = await login('h-pm')
+    const pm2 = await login('h-pm2')
+    const lead = await login('h-lead')
+    const admin = await login('h-admin')
+    const json = async <T>(path: string, s: Record<string, string>) => {
+      const r = await get(path, s)
+      expect(r.status, path).toBe(200)
+      return (await r.json()) as T
+    }
+
+    // ── 未读提醒数（菜单角标）：只数本人的；标已读后减少；未登录 401 ──
+    await db.reminder.deleteMany({ where: { userId: { in: ['h-pm', 'h-pm2'] } } })
+    const [r1] = await Promise.all([
+      db.reminder.create({ data: { userId: 'h-pm', title: '总计划节点被退回', level: 'YELLOW', kind: 'PLAN', link: `/plan?wo=${MINE}&node=x` } }),
+      db.reminder.create({ data: { userId: 'h-pm', title: '普通提醒', level: 'REMIND' } }),
+      db.reminder.create({ data: { userId: 'h-pm', title: '已读的', level: 'RED', readAt: new Date() } }),
+      db.reminder.create({ data: { userId: 'h-pm2', title: '别人的', level: 'RED' } }),
+    ])
+    expect(await json('/api/reminders/unread-count', pm)).toEqual({ unread: 2 })
+    expect(await json('/api/reminders/unread-count', pm2)).toEqual({ unread: 1 })
+    const list = await json<{ unread: number; items: { id: string; workOrderNumber: string | null; dueDay: string | null; bucket: string }[] }>('/api/reminders', pm)
+    expect(list.unread).toBe(2)
+    // 总计划退回通知：工单从跳转地址取；没有截止日的不论级别都归"未定截止日"
+    expect(list.items.find((i) => i.id === r1.id)).toMatchObject({ workOrderNumber: MINE, dueDay: null, bucket: 'NO_DUE' })
+    expect(list.items.map((i) => i.bucket)).toEqual(['NO_DUE', 'NO_DUE', 'NO_DUE'])
+    const read = await fetch(`${base}/api/reminders/${r1.id}/read`, { method: 'POST', headers: { cookie: cookieHeader(pm) } })
+    expect(read.status).toBe(200)
+    expect(await json('/api/reminders/unread-count', pm)).toEqual({ unread: 1 })
+    expect((await fetch(`${base}/api/reminders/unread-count`)).status).toBe(401)
+    // 待办也带分组字段
+    const todos = await json<{ bucket: string; workOrderNumber: string | null }[]>('/api/todos', admin)
+    for (const t of todos) expect(['OVERDUE', 'TODAY', 'WEEK', 'LATER', 'NO_DUE']).toContain(t.bucket)
+
+    // ── 风险页：预警带责任部门，异常带换算后的业务部门 ──
+    const buyIssue = await db.issue.create({
+      data: { issueNo: `YC-T2-${Date.now()}`, workOrderNumber: MINE, category: 'OTHER', description: '第二轮部门', source: 'MANUAL', reporterId: 'h-pm', responsibleDeptId: 'T-DEPT-BUY1' },
+    })
+    const issues = await json<{ id: string; deptGroup: string | null }[]>('/api/issues?dept=0', pm)
+    expect(issues.find((i) => i.id === buyIssue.id)!.deptGroup).toBe(BUSINESS_DEPT_NAME.PURCHASE)
+    for (const a of await json<{ deptNames: string[] }[]>('/api/alerts', lead)) expect(Array.isArray(a.deptNames)).toBe(true)
+
+    // ── 发放签收统计：与列表筛选同一口径，范围与列表一致（项目经理只数自己的） ──
+    for (const s of [pm, lead]) {
+      const st = await json<{ all: number; pending: number; rejected: number; minePending: number }>('/api/releases/stats', s)
+      expect(st.all).toBe((await json<unknown[]>('/api/releases', s)).length)
+      expect(st.pending).toBe((await json<unknown[]>('/api/releases?progress=PENDING', s)).length)
+      expect(st.rejected).toBe((await json<unknown[]>('/api/releases?progress=REJECTED', s)).length)
+      expect(st.minePending).toBe((await json<unknown[]>('/api/releases?progress=MINE_PENDING', s)).length)
+    }
+    const leadAll = (await json<{ all: number }>('/api/releases/stats', lead)).all
+    expect(leadAll).toBeGreaterThanOrEqual((await json<{ all: number }>('/api/releases/stats', pm)).all)
+
+    // ── 付款统计：与状态筛选同一口径；项目经理只数自己的，查别人的工单 403 ──
+    await db.paymentRequest.create({ data: { workOrderNumber: OTHER, amount: 10, requestDate: new Date('2026-10-01'), blocksDelivery: true, requesterId: 'h-pm2' } })
+    for (const s of [pm, lead]) {
+      const st = await json<{ pending: number; onHold: number; paid: number; blockingUnpaid: number }>('/api/payments/stats', s)
+      expect(st.pending).toBe((await json<unknown[]>('/api/payments?status=PENDING', s)).length)
+      expect(st.onHold).toBe((await json<unknown[]>('/api/payments?status=ON_HOLD', s)).length)
+      expect(st.paid).toBe((await json<unknown[]>('/api/payments?status=PAID', s)).length)
+      expect(st.blockingUnpaid).toBe((await json<unknown[]>('/api/payments?status=UNPAID&blocking=1', s)).length)
+    }
+    expect((await json<{ blockingUnpaid: number }>(`/api/payments/stats?workOrderNumber=${OTHER}`, lead)).blockingUnpaid).toBeGreaterThanOrEqual(1)
+    expect((await get(`/api/payments/stats?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
+
+    // ── 出图"本周到期"、采购"卡付款"、齐套"需求日临近"：统计数字 = 对应筛选的条数 ──
+    const d = await json<{ total: number; stats: { dueThisWeek: number } }>(`/api/drawings?view=week`, admin)
+    expect(d.total).toBe(d.stats.dueThisWeek)
+    const p = await json<{ total: number; stats: { blockedByPayment: number } }>(`/api/purchases?view=blocked`, admin)
+    expect(p.total).toBe(p.stats.blockedByPayment)
+    const k = await json<{ total: number; stats: { dueSoon: number } }>(`/api/kitting?dueSoon=1`, admin)
+    expect(k.total).toBe(k.stats.dueSoon)
+
+    await db.reminder.deleteMany({ where: { userId: { in: ['h-pm', 'h-pm2'] } } })
   })
 })

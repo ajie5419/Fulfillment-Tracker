@@ -326,7 +326,8 @@ export async function undoArrival(id: string) {
 
 // ───────────── 查询 ─────────────
 
-export type LineView = 'open' | 'shortage' | 'late' | 'arrived' | 'cancelled' | 'all'
+/** blocked = 卡付款（未到货且有没付的卡交期付款申请，与统计 blockedByPayment 同一口径，前端改版第二轮统计卡用） */
+export type LineView = 'open' | 'shortage' | 'late' | 'blocked' | 'arrived' | 'cancelled' | 'all'
 
 export interface LineFilter {
   workOrderNumber?: string
@@ -411,8 +412,13 @@ function lateWhere(today: Date): Prisma.PurchaseLineWhereInput {
   }
 }
 
+/** 卡付款：未到货且有没付的"卡交期"付款申请 */
+const BLOCKED_WHERE: Prisma.PurchaseLineWhereInput = { status: 'OPEN', payments: { some: { payment: { blocksDelivery: true, status: { not: 'PAID' } } } } }
+
 function viewWhere(view: LineView, today: Date): Prisma.PurchaseLineWhereInput {
   switch (view) {
+    case 'blocked':
+      return BLOCKED_WHERE
     case 'open':
       return { status: 'OPEN' }
     case 'shortage':
@@ -436,7 +442,7 @@ async function lineStats(scope: Prisma.PurchaseLineWhereInput[], today: Date) {
     count({ status: 'OPEN', needDate: { lte: today } }),
     count({ status: 'OPEN', promisedDate: null }),
     count({ status: 'ARRIVED' }),
-    count({ status: 'OPEN', payments: { some: { payment: { blocksDelivery: true, status: { not: 'PAID' } } } } }),
+    count(BLOCKED_WHERE),
     prisma.purchaseLine.groupBy({ by: ['delayReason'], where: { AND: [...scope, lateWhere(today)] }, _count: { _all: true } }),
   ])
   const delay = delayStats([])

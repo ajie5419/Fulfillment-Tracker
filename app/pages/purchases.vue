@@ -4,7 +4,11 @@
  * 顶部统计：未到货、缺料、无承诺日、卡付款；延误按原因分"付款原因"和"管理原因"。
  * 地址栏 ?wo= 预选工单，?view= 选视图，?id= 打开某一行（预警提醒跳过来）。
  * 登记 / 编辑 / 删除 / 导入 / 确认到货 / 撤销 / 申请付款：采购部、该工单项目经理、管理员（权限方案 R13），其他人只读。
+ * 前端改版第二轮：顶部统计卡（未到货 / 缺料 / 延误 / 卡付款，点了套用对应视图，数字是接口 stats，与视图同一口径）；
+ * 列表默认按工单分组（?layout=group|table），组标题带本组到货完成度。
  */
+import { distinctPlanNodes, groupByWorkOrder, groupProgress } from '#shared/workbench'
+
 const route = useRoute()
 const router = useRouter()
 const { data: workOrders } = await useWorkOrders()
@@ -19,9 +23,11 @@ const VIEWS = [
   { value: 'cancelled', label: '已取消' },
   { value: 'all', label: '全部' },
 ] as const
+/** 只由统计卡套用的视图（不在上面的单选里）：卡付款 */
+const CARD_VIEWS = ['blocked']
 const filter = reactive({
   workOrderNumber: (route.query.wo as string) || undefined,
-  view: VIEWS.some((v) => v.value === route.query.view) ? (route.query.view as string) : route.query.id ? 'all' : 'open',
+  view: VIEWS.some((v) => v.value === route.query.view) || CARD_VIEWS.includes(route.query.view as string) ? (route.query.view as string) : route.query.id ? 'all' : 'open',
   q: '',
 })
 const keyword = ref('')
@@ -41,6 +47,16 @@ const { data, pending, refresh } = await useFetch('/api/purchases', {
 })
 const rows = computed(() => data.value.rows as PurchaseRow[])
 const stats = computed(() => data.value.stats as PurchaseStats | null)
+
+// ───── 统计卡、按工单分组 ─────
+/** 点统计卡：套用对应视图；再点一次回到"未到货" */
+const applyView = (view: string) => (filter.view = filter.view === view ? 'open' : view)
+const layout = useListLayout()
+/** 分组视图：每个工单一张小表（不再显示工单列）；表格视图：一张表 */
+const tables = computed(() =>
+  layout.value === 'group' ? groupByWorkOrder(rows.value).map((g) => ({ key: g.workOrderNumber, ...g })) : [{ key: '__all', workOrderNumber: '', rows: rows.value }],
+)
+const arrivedOf = (g: { rows: PurchaseRow[] }) => groupProgress(g.rows, (r) => r.status === 'ARRIVED', (r) => r.status !== 'CANCELLED')
 
 // ───── 新建 / 编辑 ─────
 const editing = ref<PurchaseRow | null>(null)
@@ -161,11 +177,15 @@ async function paid() {
   selectedKeys.value = []
   await refresh()
 }
-const rowSelection = computed(() => ({
-  selectedRowKeys: selectedKeys.value,
-  onChange: (keys: (string | number)[]) => (selectedKeys.value = keys.map(String)),
-  getCheckboxProps: (r: PurchaseRow) => ({ disabled: r.status === 'CANCELLED' || !canDo(me.value, 'payment', { workOrderNumber: r.workOrderNumber }) }),
-}))
+/** 勾选：分组时每张小表各自勾选，合并成一份（换掉这张表里的勾选，别的表不动） */
+function rowSelectionFor(list: PurchaseRow[]) {
+  const ids = new Set(list.map((r) => r.id))
+  return {
+    selectedRowKeys: selectedKeys.value.filter((k) => ids.has(k)),
+    onChange: (keys: (string | number)[]) => (selectedKeys.value = [...selectedKeys.value.filter((k) => !ids.has(k)), ...keys.map(String)]),
+    getCheckboxProps: (r: PurchaseRow) => ({ disabled: r.status === 'CANCELLED' || !canDo(me.value, 'payment', { workOrderNumber: r.workOrderNumber }) }),
+  }
+}
 
 const columns = [
   { title: '工单', key: 'wo', width: 130 },
@@ -181,10 +201,22 @@ const columns = [
   { title: '负责人', key: 'owner', width: 120 },
   { title: '', key: 'actions', width: 150, fixed: 'right' as const },
 ]
+const groupColumns = columns.filter((c) => c.key !== 'wo')
 const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货检验' } as const
 </script>
 
 <template>
+  <div class="ft-page">
+  <div v-if="stats" class="ft-stats">
+    <UiStatCard label="未到货" :value="stats.open" unit="项" tone="primary" accent icon="dot" clickable :active="filter.view === 'open'" @click="applyView('open')">
+      <template #sub>其中无承诺日 <span :class="{ warn: stats.noPromise }">{{ stats.noPromise }}</span></template>
+    </UiStatCard>
+    <UiStatCard label="缺料" :value="stats.shortage" unit="项" tone="late" accent icon="alert" clickable :active="filter.view === 'shortage'" sub="未到货且已到需求日" @click="applyView('shortage')" />
+    <UiStatCard label="延误" :value="stats.delay.late" unit="项" tone="risk" accent icon="warn" clickable :active="filter.view === 'late'" @click="applyView('late')">
+      <template #sub>付款原因 {{ stats.delay.payment }} · 管理原因 {{ stats.delay.management }}<template v-if="stats.delay.unfilled"> · <span class="warn">未填原因 {{ stats.delay.unfilled }}</span></template></template>
+    </UiStatCard>
+    <UiStatCard label="卡付款" :value="stats.blockedByPayment" unit="项" tone="upstream" accent icon="warn" clickable :active="filter.view === 'blocked'" sub="未到货，有没付的卡交期付款申请" @click="applyView('blocked')" />
+  </div>
   <a-card title="采购到货（关键物料）">
     <template #extra>
       <a-space wrap>
@@ -207,29 +239,29 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
       </a-space>
     </template>
 
-    <div v-if="stats" class="stats">
-      <a-space size="large" wrap>
-        <span>未到货 <b>{{ stats.open }}</b></span>
-        <a class="stat" :class="{ warn: stats.shortage }" @click="filter.view = 'shortage'">缺料 <b>{{ stats.shortage }}</b></a>
-        <span :class="{ warn: stats.noPromise }">无承诺日 <b>{{ stats.noPromise }}</b></span>
-        <span :class="{ warn: stats.blockedByPayment }">卡付款 <b>{{ stats.blockedByPayment }}</b></span>
-        <a class="stat" @click="filter.view = 'late'">延误 <b>{{ stats.delay.late }}</b></a>
-        <span v-if="stats.delay.late" class="muted">
-          付款原因 <b>{{ stats.delay.payment }}</b> · 管理原因 <b>{{ stats.delay.management }}</b>（供应商 {{ stats.delay.byReason.SUPPLIER }}、我方需求变化 {{ stats.delay.byReason.DEMAND_CHANGE }}、其他 {{ stats.delay.byReason.OTHER }}）<template v-if="stats.delay.unfilled"> · <span class="warn">未填原因 {{ stats.delay.unfilled }}</span></template>
-        </span>
-      </a-space>
-    </div>
+    <p v-if="stats?.delay.late" class="muted">
+      延误 {{ stats.delay.late }} 项：付款原因 <b>{{ stats.delay.payment }}</b> · 管理原因 <b>{{ stats.delay.management }}</b>（供应商 {{ stats.delay.byReason.SUPPLIER }}、我方需求变化 {{ stats.delay.byReason.DEMAND_CHANGE }}、其他 {{ stats.delay.byReason.OTHER }}）；已到货 {{ stats.arrived }} 项
+    </p>
     <p class="muted">只跟踪关键物料（长周期、进口、大件）。QMS 进货检验按"工单 + 物料名称（+ 供应商）"自动确认到货；也可以在这里或手机上手工确认。没指定采购负责人的派给采购部负责人。</p>
 
+    <div class="layout-switch">
+      <a-radio-group v-model:value="layout" size="small">
+        <a-radio-button value="group">按工单分组</a-radio-button>
+        <a-radio-button value="table">表格</a-radio-button>
+      </a-radio-group>
+    </div>
+    <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty :description="filter.view === 'open' ? '没有未到货的关键物料' : '没有记录'" /></a-spin>
+    <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
+    <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" :nodes="distinctPlanNodes(t.rows)" v-bind="arrivedOf(t)" label="到货" :count="t.rows.length" />
     <a-table
-      :columns="columns"
-      :data-source="rows"
+      :columns="layout === 'group' ? groupColumns : columns"
+      :data-source="t.rows"
       :loading="pending"
       row-key="id"
       size="small"
-      :row-selection="rowSelection"
-      :scroll="{ x: 1550 }"
-      :pagination="{ pageSize: 50, hideOnSinglePage: true }"
+      :row-selection="rowSelectionFor(t.rows)"
+      :scroll="{ x: layout === 'group' ? 1420 : 1550 }"
+      :pagination="layout === 'group' ? false : { pageSize: 50, hideOnSinglePage: true }"
     >
       <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未到货的关键物料' : '没有记录'" /></template>
       <template #bodyCell="{ column, record }">
@@ -292,7 +324,9 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
         </template>
       </template>
     </a-table>
+    </div>
   </a-card>
+  </div>
 
   <PurchaseEditModal :open="editOpen" :line="editing" :work-order-number="filter.workOrderNumber" @close="closeEdit" @done="saved" />
   <PurchaseImportModal :open="importing" @close="importing = false" @done="refresh()" />
@@ -314,8 +348,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
 </template>
 
 <style scoped>
-.stats { margin-bottom: 8px; }
-.stat { color: inherit; }
+.layout-switch { margin-bottom: 8px; }
 .muted { color: #999; font-size: 12px; }
 .warn { color: var(--ft-late); }
 .ellipsis { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

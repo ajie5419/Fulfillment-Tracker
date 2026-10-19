@@ -56,3 +56,19 @@ html, body { margin: 0; background: #f5f6f8; font-family: -apple-system, BlinkMa
 .ft-text-upstream { color: var(--ft-upstream-text); }
 .ft-text-late { color: var(--ft-late-text); }
 .ft-text-none, .ft-muted { color: var(--ft-text-3); }
+
+/* ───── 前端改版第二轮 ───── */
+/* 部门工作台：统计卡一行 + 原来的卡片；卡片样式与上面 .ant-layout-content > .ant-card 一致 */
+.ft-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.ft-app .ft-page > .ant-card { border-radius: var(--ft-card-radius); border: none; box-shadow: var(--ft-card-shadow); }
+.ft-app .ft-page > .ant-card > .ant-card-head { border-bottom-color: var(--ft-border); padding-block: 8px; }
+.ft-app .ft-page > .ant-card > .ant-card-head .ant-card-head-title { font-size: 17px; font-weight: 600; color: var(--ft-text); flex: none; margin-right: 16px; }
+.ft-app .ft-page > .ant-card > .ant-card-head .ant-card-head-wrapper { flex-wrap: wrap; row-gap: 8px; }
+.ft-app .ft-page > .ant-card > .ant-card-head .ant-card-extra { margin-inline-start: auto; }
+.ft-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.ft-stats.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 991px) { .ft-stats, .ft-stats.cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } }
+/* 按工单分组：组与组之间留白，组内小表格 */
+.ft-wo-group + .ft-wo-group { margin-top: 18px; }
+/* 表格右侧固定的操作列（第一轮遗留）：横向还能滚时左侧加明显的分隔阴影，看得出下面还有列 */
+.ft-app .ant-table-ping-right .ant-table-cell-fix-right-first { box-shadow: -8px 0 10px -8px rgba(16, 24, 40, 0.28); }

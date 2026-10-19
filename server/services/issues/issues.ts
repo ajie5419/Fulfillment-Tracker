@@ -460,11 +460,12 @@ const PAGE_LIMIT = 500
 /** 给异常补上名称、关联对象文字、超期情况和当前用户可做的操作 */
 async function decorate(issues: Issue[], actor: Actor, now: Date) {
   if (!issues.length) return []
-  const [ctx, thresholds, offDays, depts] = await Promise.all([
+  const [ctx, thresholds, offDays, depts, deptIndex] = await Promise.all([
     loadPermContext(prisma, actor, issues),
     loadThresholds(),
     loadOffDays(),
     prisma.qmsDepartment.findMany({ where: { id: { in: issues.map((i) => i.responsibleDeptId).filter((x): x is string => !!x) } }, select: { id: true, name: true } }),
+    loadDeptIndex(),
   ])
   const stepIds = issues.filter((i) => i.refType === 'STEP' && i.refId).map((i) => i.refId!)
   const partIds = issues.filter((i) => i.refType === 'PART' && i.refId).map((i) => i.refId!)
@@ -505,6 +506,8 @@ async function decorate(issues: Issue[], actor: Actor, now: Date) {
       reporterName: i.reporterId ? (names.user.get(i.reporterId) ?? i.reporterId) : null,
       responsibleDeptId: i.responsibleDeptId,
       responsibleDeptName: i.responsibleDeptId ? (deptName.get(i.responsibleDeptId) ?? i.responsibleDeptId) : null,
+      /** 责任部门换算成的业务部门名称（风险页按部门汇总，与预警的责任部门同一口径）；换算不出时为 QMS 部门名称，没有责任部门为 null */
+      deptGroup: resolveDeptName(i.responsibleDeptId, deptIndex),
       responsibleUserId: i.responsibleUserId,
       responsibleUserName: i.responsibleUserId ? (names.user.get(i.responsibleUserId) ?? i.responsibleUserId) : null,
       responsibleSupplierId: i.responsibleSupplierId,

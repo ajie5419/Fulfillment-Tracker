@@ -16,6 +16,7 @@ export default defineFlowHandler(async (event, user) => {
     {
       workOrderNumber: q.workOrderNumber || undefined,
       incompleteOnly: q.incomplete === '1',
+      dueSoonOnly: q.dueSoon === '1',
       mine: ctx ? { userId: user.qmsUserId, isProductionHead: ctx.isProductionHead } : undefined,
       visibleWorkOrders: mine ? undefined : scopeWorkOrders(await getScope(event)),
     },

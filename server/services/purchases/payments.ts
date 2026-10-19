@@ -99,15 +99,39 @@ export interface PaymentFilter {
   status?: 'UNPAID' | PaymentStatus | 'ALL'
   workOrderNumber?: string
   visibleWorkOrders?: string[]
+  /** 只看卡交期的（前端改版第二轮统计卡"卡交期未付"） */
+  blocking?: boolean
   /** 付款金额可见（权限方案 R13）；不可见的金额返回 null。不给时都可见 */
   amountVisible?: (workOrderNumber: string) => boolean
 }
 
 /** 付款申请列表（项目和财务看）：按影响排序，附关联物料、最近需求日、当前用户能做的操作 */
-export async function listPayments(filter: PaymentFilter, viewer: Actor, now = new Date()) {
+function paymentScope(filter: Pick<PaymentFilter, 'workOrderNumber' | 'visibleWorkOrders'>): Prisma.PaymentRequestWhereInput[] {
   const scope: Prisma.PaymentRequestWhereInput[] = []
   if (filter.workOrderNumber) scope.push({ workOrderNumber: filter.workOrderNumber })
   if (filter.visibleWorkOrders) scope.push({ workOrderNumber: { in: filter.visibleWorkOrders } })
+  return scope
+}
+
+/**
+ * 付款申请页顶部统计卡（前端改版第二轮）：待付、暂缓、卡交期未付、已付。范围与列表相同（工单、可见范围），
+ * 不受状态筛选影响；每个数字与列表的状态筛选（+ 只看卡交期）同一口径，用 count 不受列表截断影响。
+ */
+export async function paymentStats(filter: Pick<PaymentFilter, 'workOrderNumber' | 'visibleWorkOrders'>) {
+  const scope = paymentScope(filter)
+  const count = (w: Prisma.PaymentRequestWhereInput) => prisma.paymentRequest.count({ where: { AND: [...scope, w] } })
+  const [pending, onHold, paid, blockingUnpaid] = await Promise.all([
+    count({ status: 'PENDING' }),
+    count({ status: 'ON_HOLD' }),
+    count({ status: 'PAID' }),
+    count({ status: { in: ['PENDING', 'ON_HOLD'] }, blocksDelivery: true }),
+  ])
+  return { pending, onHold, paid, blockingUnpaid }
+}
+
+export async function listPayments(filter: PaymentFilter, viewer: Actor, now = new Date()) {
+  const scope = paymentScope(filter)
+  if (filter.blocking) scope.push({ blocksDelivery: true })
   const status = filter.status ?? 'UNPAID'
   const wanted: PaymentStatus[] = status === 'UNPAID' ? ['PENDING', 'ON_HOLD'] : status === 'ALL' ? ['PENDING', 'ON_HOLD', 'PAID'] : [status]
   const unpaid = wanted.filter((x) => x !== 'PAID')
