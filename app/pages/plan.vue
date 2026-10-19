@@ -90,7 +90,11 @@ const router = useRouter()
 const { data: workOrders } = await useWorkOrders()
 const wo = ref<string | undefined>((route.query.wo as string) || undefined)
 const focusNode = ref<string | null>((route.query.node as string) || null)
-watch(wo, (v) => router.replace({ query: { ...route.query, wo: v || undefined, node: undefined } }))
+watch(wo, (v) => {
+  // 由地址栏（如提醒链接 ?wo=&node=）带来的工单切换不清掉 node
+  if ((v || undefined) === ((route.query.wo as string) || undefined)) return
+  router.replace({ query: { ...route.query, wo: v || undefined, node: undefined } })
+})
 
 const get = $fetch as unknown as <T>(url: string, opts?: { query?: object }) => Promise<T>
 const send = $fetch as unknown as <T = unknown>(url: string, opts: { method: 'POST' | 'PATCH' | 'DELETE'; body?: object }) => Promise<T>

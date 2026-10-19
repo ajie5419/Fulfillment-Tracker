@@ -17,6 +17,7 @@ import { todayDate } from '../purchases/constants'
 import { DAY_MS, HOUR_MS, judgeW4, reminderTitle, shanghaiDay } from './rules'
 import { collectTargets } from './scan'
 import { loadPlans } from '../plan/plan'
+import { judgeW9 } from '../plan/constants'
 
 /** 工厂时区每天几点后生成（分钟） */
 export const DIGEST_AT_MINUTES = 7 * 60 + 30
@@ -72,10 +73,12 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
     prisma.drawingTask.groupBy({ by: ['workOrderNumber'], where: overdueWhere(todayDate(now)), _count: { _all: true } }),
     // 未齐套节点（R12）：已进入 W8 预警窗口（需求日前 N 天内，含已过）仍未齐套，与看板同一口径
     prisma.assemblyNode.groupBy({ by: ['workOrderNumber'], where: { AND: [incompleteWhere(), dueWindowWhere(now, thresholds.W8)] }, _count: { _all: true } }),
-    // 总计划延误节点（R14）：源头延误节点（不含只因上游顺延的），与 W9 节点级同一口径；另算预计拖期的工单和天数
+    // 总计划延误节点（R14）：达到 W9 黄/红阈值的源头延误节点（不含只因上游顺延的），与 W9 节点级预警同一口径；另算预计拖期的工单和天数
     loadPlans({ publishedOnly: true }, now),
   ])
-  const delayedPlanNodes = [...plans.values()].filter((p) => p.forecast.sourceNodes > 0).map((p) => ({ workOrderNumber: p.workOrderNumber, _count: { _all: p.forecast.sourceNodes } }))
+  const delayedPlanNodes = [...plans.values()]
+    .map((p) => ({ workOrderNumber: p.workOrderNumber, _count: { _all: p.forecast.nodes.filter((e) => judgeW9(e, thresholds.W9)).length } }))
+    .filter((p) => p._count._all > 0)
   const lateWos = [...plans.values()].filter((p) => (p.forecast.deliveryDelayDays ?? 0) > 0).map((p) => ({ workOrderNumber: p.workOrderNumber, days: p.forecast.deliveryDelayDays! }))
   const countedWos = [...new Set([...shortage, ...drawingOverdue, ...incompleteNodes, ...delayedPlanNodes, ...lateWos].map((s) => s.workOrderNumber))]
   const liveWos = new Set(

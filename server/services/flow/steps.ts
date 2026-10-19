@@ -198,9 +198,12 @@ export async function addStep(partId: string, input: StepInput, actorId: string)
 
 export async function updateStep(stepId: string, input: Partial<StepInput>) {
   return prisma.$transaction(async (tx) => {
+    const found = await tx.routeStep.findUnique({ where: { id: stepId }, select: { partId: true } })
+    if (!found) throw new FlowError('步骤不存在或已删除')
+    const part = await lockPart(tx, found.partId)
+    // 加锁后重读：并发修改可能已改了所属节点 / 状态，用锁后的值做校验
     const step = await tx.routeStep.findUnique({ where: { id: stepId } })
     if (!step) throw new FlowError('步骤不存在或已删除')
-    const part = await lockPart(tx, step.partId)
     if (input.processId !== undefined) await assertProcess(tx, input.processId)
     const mode = input.mode ?? step.mode
     if (mode !== step.mode && step.status !== 'PENDING') throw new FlowError('步骤已发出或已开工，不能再改加工方式')

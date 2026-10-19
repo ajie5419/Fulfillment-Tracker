@@ -581,6 +581,7 @@ export async function resetDemo(uploadDir?: string) {
         OR: [
           { refType: 'node', refId: { in: nodeIds } },
           { refType: { in: ['planNode', 'planConfirm'] }, refId: { in: planNodeIds } },
+          { refType: 'plan', refId: { startsWith: P } },
           { refType: 'drawing', refId: { in: drawingIds } },
           { refType: 'purchase', refId: { in: purchaseIds } },
           { refType: 'step', refId: { in: stepIds } },

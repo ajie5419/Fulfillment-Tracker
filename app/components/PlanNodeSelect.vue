@@ -23,15 +23,19 @@ const emit = defineEmits<{ pick: [planDate: string] }>()
 const get = $fetch as unknown as <T>(url: string, opts?: { query?: object }) => Promise<T>
 const opts = ref<{ published: boolean; nodes: Opt[] }>({ published: false, nodes: [] })
 async function load() {
-  if (!props.workOrderNumber) {
+  const wo = props.workOrderNumber
+  if (!wo) {
     opts.value = { published: false, nodes: [] }
     return
   }
+  let next: { published: boolean; nodes: Opt[] }
   try {
-    opts.value = await get('/api/plan/options', { query: { workOrderNumber: props.workOrderNumber } })
+    next = await get('/api/plan/options', { query: { workOrderNumber: wo } })
   } catch {
-    opts.value = { published: false, nodes: [] }
+    next = { published: false, nodes: [] }
   }
+  // 连续切换工单时，只采用当前工单的结果，避免先发后到的旧响应覆盖
+  if (wo === props.workOrderNumber) opts.value = next
 }
 watch(() => props.workOrderNumber, load, { immediate: true })
 
