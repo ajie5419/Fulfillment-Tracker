@@ -58,7 +58,10 @@ async function openFromQuery() {
   const id = route.query.id as string | undefined
   if (!id) return
   try {
-    openEdit(await fetchPurchase(id))
+    const line = await fetchPurchase(id)
+    // 没有编辑权限（如收到 W6 的财务）：不弹编辑框，只把列表筛到这一条，只读查看
+    if (!canEdit(line)) keyword.value = line.materialName
+    else openEdit(line)
   } catch (e) {
     message.error(apiError(e))
   }

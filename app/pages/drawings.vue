@@ -81,7 +81,10 @@ async function openFromQuery() {
   const id = route.query.id as string | undefined
   if (!id) return
   try {
-    openEdit(await fetchDrawing(id))
+    const task = await fetchDrawing(id)
+    // 没有编辑权限（如收到 W7 的项目经理）：不弹编辑框，只把列表筛到这一条，只读查看
+    if (!canEditTask.value) keyword.value = task.componentName
+    else openEdit(task)
   } catch (e) {
     message.error(apiError(e))
   }
