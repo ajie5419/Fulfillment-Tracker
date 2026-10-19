@@ -117,7 +117,8 @@ function convert(row: { id: string; subject: string }) {
 }
 
 // ───── 汇总图 ─────
-const tallies = computed(() => riskTallies(alerts.value, issues.value))
+// 按当前页签取数：预警页签不算异常，异常页签不算预警
+const tallies = computed(() => riskTallies(tab.value === 'issues' ? [] : alerts.value, tab.value === 'alerts' ? [] : issues.value))
 const SEVERITY_TONE: Record<RiskSeverity, string> = { RED: 'late', YELLOW: 'risk', ISSUE_OVERDUE: 'upstream', ISSUE_OPEN: 'on-track' }
 const severityBars = computed(() => RISK_SEVERITIES.map((s) => ({ key: s, label: RISK_SEVERITY_TEXT[s], value: tallies.value.bySeverity[s], tone: SEVERITY_TONE[s] })))
 /** 部门多时只列前 8 个，其余合并 */
