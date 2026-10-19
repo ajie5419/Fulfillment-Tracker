@@ -28,6 +28,8 @@ const columns = [
   { title: '未齐套节点', key: 'incompleteNodes', width: 100, align: 'center' as const },
   { title: '项目经理', key: 'pm', width: 110 },
   { title: '交期', key: 'delivery', width: 110 },
+  { title: '预计交期', key: 'expectedDelivery', width: 110 },
+  { title: '拖期天数', key: 'delayDays', width: 90, align: 'center' as const },
 ]
 </script>
 
@@ -89,6 +91,15 @@ const columns = [
         </template>
         <template v-else-if="column.key === 'pm'">{{ record.projectManagerName ?? '—' }}</template>
         <template v-else-if="column.key === 'delivery'">{{ dayText(record.deliveryDate) }}</template>
+        <template v-else-if="column.key === 'expectedDelivery'">
+          <NuxtLink v-if="record.expectedDelivery" :to="`/plan?wo=${encodeURIComponent(record.workOrderNumber)}`" :class="{ late: (record.delayDays ?? 0) > 0 }" title="按总计划推算（已发布的总计划）">{{ record.expectedDelivery }}</NuxtLink>
+          <span v-else class="muted" title="还没有发布总计划">—</span>
+        </template>
+        <template v-else-if="column.key === 'delayDays'">
+          <a-tag v-if="(record.delayDays ?? 0) > 0" color="red" :title="`${record.delayedPlanNodes} 个总计划节点延误`">{{ record.delayDays }} 天</a-tag>
+          <span v-else-if="record.delayDays != null" class="muted">0</span>
+          <span v-else class="muted">—</span>
+        </template>
       </template>
     </a-table>
   </a-card>
@@ -101,4 +112,5 @@ const columns = [
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
 .light { display: inline-block; width: 28px; height: 28px; line-height: 28px; border-radius: 50%; color: #fff; text-align: center; font-weight: 600; }
 .warn { color: #cf1322; font-weight: 600; }
+.late { color: #cf1322; font-weight: 600; }
 </style>

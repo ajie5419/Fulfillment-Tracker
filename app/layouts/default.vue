@@ -19,6 +19,7 @@ const groups = computed(() => {
       { key: '/alerts', label: '预警列表' },
       { key: '/issues', label: '异常列表' },
       { key: '/board', label: '看板' },
+      { key: '/plan', label: '总计划' },
     ]) },
     { title: '技术', items: show([
       { key: '/drawings', label: '出图任务', sections: ['tech'] },
@@ -35,7 +36,8 @@ const groups = computed(() => {
       { key: '/unmatched', label: '待确认匹配', sections: ['production'] },
     ]) },
     { title: '系统', items: [
-      ...(me.value?.isAdmin ? [{ key: '/settings', label: '设置' }] : []),
+      // 项目部负责人（总计划模板）也能进设置页，只看到"总计划模板"一页
+      ...(me.value?.isAdmin || me.value?.can?.planTemplate ? [{ key: '/settings', label: '设置' }] : []),
       ...(me.value?.devTools ? [{ key: '/dev', label: '演示工具' }] : []),
     ] },
   ].filter((g) => g.items.length)

@@ -27,6 +27,8 @@ export interface DrawingRow {
   note: string | null
   partIds: string[]
   parts: { id: string; name: string }[]
+  /** 所属总计划节点（R14） */
+  planNodeId: string | null
   overdue: boolean
   releases: { id: string; releaseNo: string; typeText: string; status: 'ACTIVE' | 'VOID'; version: string | null }[]
   alertLevel: 'REMIND' | 'YELLOW' | 'RED' | null

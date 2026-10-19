@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 新建 / 编辑关键物料采购行（R10）：工单、工件（可空）、物料名称、规格、数量、单位、供应商（选 QMS 供应商或手填）、
- * 需求日、承诺到货日、采购负责人（不选 = 采购部负责人）、备注；编辑时还能填延误原因、取消 / 重新启用、改到货日。
+ * 需求日、承诺到货日、所属总计划节点（R14，工单总计划已发布时必选）、采购负责人（不选 = 采购部负责人）、备注；编辑时还能填延误原因、取消 / 重新启用、改到货日。
  */
 const props = defineProps<{ open: boolean; line: PurchaseRow | null; workOrderNumber?: string }>()
 const emit = defineEmits<{ close: []; done: [id: string] }>()
@@ -20,6 +20,7 @@ const empty = () => ({
   needDate: undefined as string | undefined,
   promisedDate: undefined as string | undefined,
   arrivedDate: undefined as string | undefined,
+  planNodeId: null as string | null | undefined,
   buyerId: undefined as string | undefined,
   note: '',
   delayReason: undefined as string | undefined,
@@ -49,6 +50,7 @@ watch(
             needDate: dayText(l.needDate),
             promisedDate: l.promisedDate ? dayText(l.promisedDate) : undefined,
             arrivedDate: l.arrivedDate ? dayText(l.arrivedDate) : undefined,
+            planNodeId: l.planNodeId,
             buyerId: l.buyerId ?? undefined,
             note: l.note ?? '',
             delayReason: l.delayReason ?? undefined,
@@ -71,7 +73,10 @@ watch(
   () => form.workOrderNumber,
   (wo, old) => {
     // 编辑时工单不能改；这里的变化来自打开弹窗时装入另一行，不能清掉它的工件（否则保存会解绑工件）
-    if (!editing.value && old !== undefined && wo !== old) form.partId = undefined
+    if (!editing.value && old !== undefined && wo !== old) {
+      form.partId = undefined
+      form.planNodeId = null
+    }
     if (wo) refreshParts()
   },
 )
@@ -110,6 +115,7 @@ async function submit() {
     supplierName: supplier ? null : form.supplier.trim() || null,
     needDate: form.needDate,
     promisedDate: form.promisedDate ?? null,
+    planNodeId: form.planNodeId ?? null,
     buyerId: form.buyerId ?? null,
     note: form.note.trim() || null,
   }
@@ -124,12 +130,14 @@ async function submit() {
       Object.assign(body, { delayReason: form.delayReason ?? null, delayNote: form.delayNote.trim() || null })
       if (props.line.status !== 'ARRIVED') body.status = form.cancelled ? 'CANCELLED' : 'OPEN'
       else if (form.arrivedDate) body.arrivedDate = form.arrivedDate
-      await purchaseSend(`/api/purchases/${props.line.id}`, 'PATCH', body)
+      const r = await purchaseSend<{ planWarning?: string | null }>(`/api/purchases/${props.line.id}`, 'PATCH', body)
       message.success('已保存')
+      if (r?.planWarning) message.warning(r.planWarning)
       emit('done', props.line.id)
     } else {
-      const r = await purchaseSend<{ id: string }>('/api/purchases', 'POST', { ...body, workOrderNumber: form.workOrderNumber, arrivedDate: form.arrivedDate ?? null })
+      const r = await purchaseSend<{ id: string; planWarning?: string | null }>('/api/purchases', 'POST', { ...body, workOrderNumber: form.workOrderNumber, arrivedDate: form.arrivedDate ?? null })
       message.success('已登记')
+      if (r.planWarning) message.warning(r.planWarning)
       emit('done', r.id)
     }
   } catch (e) {
@@ -174,6 +182,9 @@ async function submit() {
       <a-form-item label="承诺到货日">
         <a-date-picker v-model:value="form.promisedDate" value-format="YYYY-MM-DD" placeholder="供应商承诺的日期" />
         <div class="muted">需求日前 7 天（可在设置里改）还没有承诺日会预警</div>
+      </a-form-item>
+      <a-form-item label="所属总计划节点">
+        <PlanNodeSelect v-model:value="form.planNodeId" :work-order-number="form.workOrderNumber" :record-date="form.promisedDate ?? form.needDate" @pick="(d) => (form.needDate ||= d)" />
       </a-form-item>
       <a-form-item v-if="!editing || line?.status === 'ARRIVED'" label="实际到货日">
         <a-date-picker v-model:value="form.arrivedDate" value-format="YYYY-MM-DD" :allow-clear="!editing" placeholder="已经到了才填" />

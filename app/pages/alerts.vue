@@ -13,7 +13,7 @@ const { data: rows, pending, refresh } = await useFetch('/api/alerts', {
 })
 
 const ownerText = (owners: { name: string }[]) => owners.map((o) => o.name).join('、')
-const ruleOptions = (['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8'] as const).map((r) => ({ value: r, label: RULE_TEXT[r] }))
+const ruleOptions = (['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9'] as const).map((r) => ({ value: r, label: RULE_TEXT[r] }))
 const levelOptions = LEVEL_ORDER.map((l) => ({ value: l, label: LEVEL_TEXT[l] }))
 const columns = [
   { title: '级别', key: 'level', width: 80 },

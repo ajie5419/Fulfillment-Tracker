@@ -42,6 +42,8 @@ export interface KitNode {
   excluded: string[]
   alertLevel: 'REMIND' | 'YELLOW' | 'RED' | null
   canEdit: boolean
+  /** 所属总计划节点（R14） */
+  planNodeId: string | null
 }
 
 export interface KitStats {

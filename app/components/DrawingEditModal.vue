@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 新建 / 编辑出图任务（R11）：工单、关联工件（可多选，可不选只写部件名称）、部件名称、设计负责人（不选 = 技术部负责人）、
- * 计划完成日、是否需要客户确认 + 客户确认计划日、备注；编辑时还能取消 / 重新启用。出图、客户确认在列表上操作。
+ * 计划完成日、所属总计划节点（R14，工单总计划已发布时必选）、是否需要客户确认 + 客户确认计划日、备注；编辑时还能取消 / 重新启用。出图、客户确认在列表上操作。
  */
 const props = defineProps<{ open: boolean; task: DrawingRow | null; workOrderNumber?: string }>()
 const emit = defineEmits<{ close: []; done: [id: string] }>()
@@ -15,6 +15,7 @@ const empty = () => ({
   componentName: '',
   ownerId: undefined as string | undefined,
   planDate: undefined as string | undefined,
+  planNodeId: null as string | null | undefined,
   needsCustomerConfirm: false,
   customerPlanDate: undefined as string | undefined,
   note: '',
@@ -40,6 +41,7 @@ watch(
             componentName: t.componentName,
             ownerId: t.ownerId ?? undefined,
             planDate: dayText(t.planDate),
+            planNodeId: t.planNodeId,
             needsCustomerConfirm: t.needsCustomerConfirm,
             customerPlanDate: t.customerPlanDate ? dayText(t.customerPlanDate) : undefined,
             note: t.note ?? '',
@@ -67,6 +69,7 @@ watch(
     }
     loadedWo = null
     form.partIds = []
+    form.planNodeId = null
     if (wo) refreshParts()
   },
 )
@@ -94,6 +97,7 @@ async function submit() {
     componentName: form.componentName.trim(),
     ownerId: form.ownerId ?? null,
     planDate: form.planDate,
+    planNodeId: form.planNodeId ?? null,
     needsCustomerConfirm: form.needsCustomerConfirm,
     customerPlanDate: form.needsCustomerConfirm ? (form.customerPlanDate ?? null) : null,
     note: form.note.trim() || null,
@@ -101,12 +105,14 @@ async function submit() {
   saving.value = true
   try {
     if (props.task) {
-      const r = await drawingSend(`/api/drawings/${props.task.id}`, 'PATCH', { ...body, cancelled: form.cancelled })
+      const r = await drawingSend<DrawingResult & { planWarning?: string | null }>(`/api/drawings/${props.task.id}`, 'PATCH', { ...body, cancelled: form.cancelled })
       message.success(drawingResultText(r, '已保存'))
+      if (r.planWarning) message.warning(r.planWarning)
       emit('done', props.task.id)
     } else {
-      const r = await drawingSend<{ id: string }>('/api/drawings', 'POST', { ...body, workOrderNumber: form.workOrderNumber })
+      const r = await drawingSend<{ id: string; planWarning?: string | null }>('/api/drawings', 'POST', { ...body, workOrderNumber: form.workOrderNumber })
       message.success('已新建出图任务')
+      if (r.planWarning) message.warning(r.planWarning)
       emit('done', r.id)
     }
   } catch (e) {
@@ -141,6 +147,9 @@ async function submit() {
       <a-form-item label="计划完成日" required>
         <a-date-picker v-model:value="form.planDate" value-format="YYYY-MM-DD" />
         <div class="muted">计划完成日前 2 天（可在设置里改）还没出图黄色预警，过了计划完成日红色</div>
+      </a-form-item>
+      <a-form-item label="所属总计划节点">
+        <PlanNodeSelect v-model:value="form.planNodeId" :work-order-number="form.workOrderNumber" :record-date="form.planDate" @pick="(d) => (form.planDate ||= d)" />
       </a-form-item>
       <a-form-item label="客户确认">
         <a-checkbox v-model:checked="form.needsCustomerConfirm">需要客户确认</a-checkbox>

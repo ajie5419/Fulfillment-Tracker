@@ -30,6 +30,8 @@ type Todo = (typeof todos.value)[number]
 
 /** 安排发出 → 发出登记页（预填该步骤）；安排开工 → 确认后开工；签收 / 确认变更影响 → 手机签收页；可以开工 → 按第一道工序的方式发出或开工 */
 async function open(t: Todo) {
+  // 确认总计划节点（R14）：总计划页只有电脑端
+  if (t.plan) return showToast('确认总计划节点请在电脑端“总计划”页处理')
   if (t.release) return navigateTo(`/m/release?id=${encodeURIComponent(t.release.id)}`)
   if (!t.step) return
   const ready = t.action === 'READY_TO_START' && t.step.status === 'PENDING'
@@ -111,7 +113,7 @@ async function transfer(action: { id: string }) {
     <van-loading v-if="todosPending" class="center" />
     <van-empty v-else-if="!todos.length" description="暂时没有待办" image-size="80" />
     <van-cell-group v-else inset>
-      <van-cell v-for="t in todos" :key="t.id" :title="t.title" :label="`${t.step?.workOrderNumber ?? t.release?.workOrderNumber ?? ''} ${t.suggestion}`" is-link center @click="open(t)">
+      <van-cell v-for="t in todos" :key="t.id" :title="t.title" :label="`${t.step?.workOrderNumber ?? t.release?.workOrderNumber ?? t.plan?.workOrderNumber ?? ''} ${t.suggestion}`" is-link center @click="open(t)">
         <template #right-icon>
           <van-button v-if="t.action !== 'SIGN_RELEASE'" size="mini" plain class="transfer" @click.stop="transferring = t">转交</van-button>
         </template>

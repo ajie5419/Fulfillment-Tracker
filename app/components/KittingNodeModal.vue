@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 新建 / 编辑装配节点（R12）：工单、名称、需求日、负责人（不选 = 生产经理）、排序、备注，
+ * 新建 / 编辑装配节点（R12）：工单、名称、需求日、所属总计划节点（R14，工单总计划已发布时必选）、负责人（不选 = 生产经理）、排序、备注，
  * 以及节点清单：需要的工件（可多选）和关键物料（同一工单，可多选）。同一工件 / 物料可以挂在多个节点上。
  */
 const props = defineProps<{ open: boolean; node: KitNode | null; workOrderNumber?: string }>()
@@ -13,6 +13,7 @@ const empty = () => ({
   workOrderNumber: undefined as string | undefined,
   name: '',
   needDate: undefined as string | undefined,
+  planNodeId: null as string | null | undefined,
   ownerId: undefined as string | undefined,
   sortOrder: undefined as number | undefined,
   note: '',
@@ -56,6 +57,7 @@ watch(
             workOrderNumber: n.workOrderNumber,
             name: n.name,
             needDate: dayText(n.needDate),
+            planNodeId: n.planNodeId,
             ownerId: n.ownerId ?? undefined,
             sortOrder: n.sortOrder as number | undefined,
             note: n.note ?? '',
@@ -78,6 +80,7 @@ watch(
     loadedWo = null
     form.partIds = []
     form.purchaseIds = []
+    form.planNodeId = null
     loadOptions(wo)
   },
 )
@@ -103,6 +106,7 @@ async function submit() {
   const body: Record<string, unknown> = {
     name: form.name.trim(),
     needDate: form.needDate,
+    planNodeId: form.planNodeId ?? null,
     ownerId: form.ownerId ?? null,
     sortOrder: form.sortOrder ?? null,
     note: form.note.trim() || null,
@@ -112,12 +116,14 @@ async function submit() {
   saving.value = true
   try {
     if (props.node) {
-      const r = await kittingSend<{ id: string; percent: number | null; ready: number; total: number }>(`/api/kitting/${props.node.id}`, 'PATCH', body)
+      const r = await kittingSend<{ id: string; percent: number | null; ready: number; total: number; planWarning?: string | null }>(`/api/kitting/${props.node.id}`, 'PATCH', body)
       message.success(r.total ? `已保存，齐套 ${r.ready}/${r.total}（${r.percent}%）` : '已保存（清单为空）')
+      if (r.planWarning) message.warning(r.planWarning)
       emit('done', props.node.id)
     } else {
-      const r = await kittingSend('/api/kitting', 'POST', { ...body, workOrderNumber: form.workOrderNumber })
+      const r = await kittingSend<{ id: string; planWarning?: string | null }>('/api/kitting', 'POST', { ...body, workOrderNumber: form.workOrderNumber })
       message.success('已新建装配节点')
+      if (r.planWarning) message.warning(r.planWarning)
       emit('done', r.id)
     }
   } catch (e) {
@@ -145,6 +151,9 @@ async function submit() {
       <a-form-item label="需求日" required>
         <a-date-picker v-model:value="form.needDate" value-format="YYYY-MM-DD" />
         <div class="muted">需求日前 5 天（可在设置里改）还没齐套黄色预警，前 1 天或已过红色</div>
+      </a-form-item>
+      <a-form-item label="所属总计划节点">
+        <PlanNodeSelect v-model:value="form.planNodeId" :work-order-number="form.workOrderNumber" :record-date="form.needDate" @pick="(d) => (form.needDate ||= d)" />
       </a-form-item>
       <a-form-item label="负责人">
         <a-select v-model:value="form.ownerId" allow-clear show-search option-filter-prop="label" placeholder="不选 = 生产经理（生产部负责人）" :options="ownerOptions" />

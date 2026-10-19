@@ -3,6 +3,7 @@
  * 工件与工序链：选工单 → 工件列表 → 行内编辑工序链；可从同类工件复制。
  * 权限方案 R13：建/改/删工件和工序、导入 BOM、套模板、复制路线 —— 生产部、外协专员、该工单项目经理、管理员；
  * 开工/完工/发出/补登返厂 —— 生产部、外协专员、该工序责任人、管理员。其他人只读（后端同样拦）。
+ * R14：每道工序可选"所属总计划节点"（工单总计划已发布时手工添加的工序必选；BOM 导入、套模板、复制路线生成的不强制）。
  */
 const route = useRoute()
 const router = useRouter()
@@ -34,8 +35,9 @@ const modeOptions = Object.entries(MODE_TEXT).map(([value, label]) => ({ value, 
 
 async function call(fn: () => unknown, ok?: string) {
   try {
-    await fn()
+    const r = (await fn()) as { planWarning?: string | null } | undefined
     if (ok) message.success(ok)
+    if (r?.planWarning) message.warning(r.planWarning)
   } catch (e) {
     message.error(apiError(e))
   } finally {
@@ -89,13 +91,14 @@ async function doCopy() {
 }
 
 // ───── 步骤 ─────
-const newStep = reactive<Record<string, { processId?: string; mode: StepModeKey; supplierId?: string; ownerId?: string; dueDate?: string }>>({})
+const newStep = reactive<Record<string, { processId?: string; mode: StepModeKey; supplierId?: string; ownerId?: string; dueDate?: string; planNodeId?: string }>>({})
 const draftOf = (partId: string) => (newStep[partId] ??= { mode: 'EXTERNAL_OUTSOURCE' })
 async function addStep(p: PartRow) {
   const d = draftOf(p.id)
   if (!d.processId) return message.warning('请选择工序')
-  await call(() => $fetch(`/api/parts/${p.id}/steps`, { method: 'POST', body: { ...d, supplierId: d.mode === 'SELF' ? null : d.supplierId ?? null } }))
-  newStep[p.id] = { mode: d.mode }
+  if (planOpts.value.published && !d.planNodeId) return message.warning('该工单已发布总计划，请选择所属总计划节点')
+  await call(() => $fetch(`/api/parts/${p.id}/steps`, { method: 'POST', body: { ...d, supplierId: d.mode === 'SELF' ? null : d.supplierId ?? null, planNodeId: d.planNodeId ?? null } }))
+  newStep[p.id] = { mode: d.mode, planNodeId: d.planNodeId }
 }
 // 表格插槽里的 record 类型是 Record<string, any>，这里只要求用到的字段
 type StepRef = Pick<StepRow, 'id' | 'processName'>
@@ -150,6 +153,23 @@ function afterR8() {
   eventsCache.clear()
 }
 
+// ───── R14：所属总计划节点（同一工单的节点，整页取一次）─────
+type PlanOpts = { published: boolean; nodes: { id: string; seq: number; name: string; deptText: string; planDate: string }[] }
+const { data: planOpts } = await useFetch<PlanOpts>('/api/plan/options', {
+  query: { workOrderNumber },
+  default: () => ({ published: false, nodes: [] }),
+  immediate: !!workOrderNumber.value,
+  watch: [workOrderNumber],
+})
+const planNodeOptions = computed(() => planOpts.value.nodes.map((n) => ({ value: n.id, label: `${n.seq}. ${n.name}（${n.planDate}）` })))
+const planDayOf = (id: string | null | undefined) => planOpts.value.nodes.find((n) => n.id === id)?.planDate ?? null
+/** 工序日期（外协看承诺返回日，否则要求完成日）晚于节点计划日：标红（照样保存） */
+const stepLate = (s: { planNodeId: string | null; dueDate: string | Date | null; promisedReturnDate: string | Date | null; mode: string; status: string }) => {
+  const node = planDayOf(s.planNodeId)
+  const d = dayText(s.mode === 'EXTERNAL_OUTSOURCE' && s.promisedReturnDate ? s.promisedReturnDate : s.dueDate)
+  return s.status !== 'DONE' && !!node && !!d && d > node
+}
+
 const columns = [
   { title: '序', dataIndex: 'seq', width: 48 },
   { title: '工序', key: 'process', width: 140 },
@@ -157,6 +177,7 @@ const columns = [
   { title: '外协厂', key: 'supplier', width: 160 },
   { title: '负责人', key: 'owner', width: 130 },
   { title: '要求完成日', key: 'dueDate', width: 150 },
+  { title: '总计划节点', key: 'planNode', width: 170 },
   { title: '状态', key: 'status', width: 150 },
   { title: '操作', key: 'actions' },
 ]
@@ -229,6 +250,21 @@ const columns = [
           <template v-else-if="column.key === 'dueDate'">
             <a-date-picker :value="dayText(record.dueDate) || undefined" value-format="YYYY-MM-DD" style="width: 100%" :disabled="!canRoute" @change="(v: unknown) => patchStep(record as StepRow, { dueDate: v || null })" />
           </template>
+          <template v-else-if="column.key === 'planNode'">
+            <a-select
+              :value="record.planNodeId ?? undefined"
+              style="width: 100%"
+              :allow-clear="!planOpts.published"
+              show-search
+              option-filter-prop="label"
+              :options="planNodeOptions"
+              :disabled="!canRoute || !planNodeOptions.length"
+              :status="stepLate(record as StepRow) ? 'warning' : undefined"
+              :placeholder="planNodeOptions.length ? '未挂' : '无总计划'"
+              @change="(v: unknown) => patchStep(record as StepRow, { planNodeId: v ?? null })"
+            />
+            <div v-if="stepLate(record as StepRow)" class="late-node">晚于节点 {{ planDayOf(record.planNodeId) }}</div>
+          </template>
           <template v-else-if="column.key === 'status'">
             <a-tag :color="STATUS_COLOR[record.status as StepStatusKey]">{{ STATUS_TEXT[record.status as StepStatusKey] }}</a-tag>
             <a-tag v-if="record.needsFill" color="warning">待补充</a-tag>
@@ -278,6 +314,17 @@ const columns = [
         <a-select v-model:value="draftOf(p.id).supplierId" placeholder="外协厂" style="width: 160px" allow-clear show-search option-filter-prop="label" :options="supplierOptions" :disabled="draftOf(p.id).mode === 'SELF'" />
         <a-select v-model:value="draftOf(p.id).ownerId" placeholder="负责人（默认我）" style="width: 150px" allow-clear show-search option-filter-prop="label" :options="userOptions" />
         <a-date-picker v-model:value="draftOf(p.id).dueDate" placeholder="要求完成日" value-format="YYYY-MM-DD" />
+        <a-select
+          v-if="planNodeOptions.length"
+          v-model:value="draftOf(p.id).planNodeId"
+          :placeholder="planOpts.published ? '总计划节点（必选）' : '总计划节点'"
+          style="width: 190px"
+          allow-clear
+          show-search
+          option-filter-prop="label"
+          :options="planNodeOptions"
+          @change="(v: unknown) => { const d = planDayOf(v as string); if (d && !draftOf(p.id).dueDate) draftOf(p.id).dueDate = d }"
+        />
         <a-button @click="addStep(p)">添加工序</a-button>
         <a-button v-if="!p.steps.length" @click="templateTarget = { partId: p.id, partName: p.name, mode: 'apply' }">套用模板</a-button>
         <a-button v-if="p.steps.length && me?.isAdmin" @click="templateTarget = { partId: p.id, partName: p.name, mode: 'save' }">另存为模板</a-button>
@@ -334,4 +381,5 @@ const columns = [
 .muted { color: #999; font-size: 12px; font-weight: normal; }
 .add { margin-top: 12px; }
 .issue-link { color: #cf1322; font-size: 12px; margin-right: 6px; }
+.late-node { color: #d46b08; font-size: 12px; }
 </style>
