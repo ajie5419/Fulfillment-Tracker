@@ -74,19 +74,21 @@ export function shortName(name: string, n = 4): string {
 
 /**
  * 节点多时圆点只显示头尾、省略中间：返回要显示的下标，null 表示"…"。
- * 不超过 max 个时全显示；否则保留前 head 个、后 max - head - 1 个，中间一个省略号。卡点（keep）一定保留。
+ * 不超过 max 个时全显示；否则保留前 head 个、后 max - head - 1 个，中间一个省略号。
+ * 卡点（keep）一定保留：它在中间时两侧各一个省略号，真实节点只取 max - 2 个，总格数仍不超过 max。
  */
 export function compactIndexes(count: number, max = 7, keep: number | null = null): (number | null)[] {
   const all = Array.from({ length: count }, (_, i) => i)
   if (count <= max) return all
-  const head = Math.ceil((max - 1) / 2)
-  const tail = max - 1 - head
-  const shown = new Set([...all.slice(0, head), ...all.slice(count - tail)])
-  if (keep != null && keep >= 0 && keep < count && !shown.has(keep)) {
-    // 卡点在中间：替换头部最后一个，保证它能看到
-    shown.delete(head - 1)
-    shown.add(keep)
+  let head = Math.ceil((max - 1) / 2)
+  let tail = max - 1 - head
+  const inMiddle = keep != null && keep >= head && keep < count - tail
+  if (inMiddle) {
+    head = Math.ceil((max - 3) / 2)
+    tail = max - 3 - head
   }
+  const shown = new Set([...all.slice(0, head), ...all.slice(count - tail)])
+  if (inMiddle) shown.add(keep)
   const out: (number | null)[] = []
   for (const i of all) {
     if (shown.has(i)) out.push(i)

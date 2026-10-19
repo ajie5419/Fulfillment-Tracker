@@ -51,9 +51,18 @@ describe('圆点省略 compactIndexes / shortName', () => {
   it('卡点在中间时一定显示', () => {
     const r = compactIndexes(11, 7, 5)
     expect(r).toContain(5)
-    expect(r.filter((x) => x !== null)).toHaveLength(6)
-    expect(r[0]).toBe(0)
-    expect(r.at(-1)).toBe(10)
+    expect(r).toEqual([0, 1, null, 5, null, 9, 10])
+  })
+  it('无论卡点在哪，总格数不超过上限且卡点可见', () => {
+    for (const [count, max] of [[11, 7], [20, 7], [8, 7], [12, 6], [9, 5]] as const) {
+      for (let keep = 0; keep < count; keep++) {
+        const r = compactIndexes(count, max, keep)
+        expect(r.length).toBeLessThanOrEqual(max)
+        expect(r).toContain(keep)
+        expect(r[0]).toBe(0)
+        expect(r.at(-1)).toBe(count - 1)
+      }
+    }
   })
   it('名称缩写', () => {
     expect(shortName('关键物料到货')).toBe('关键物料')
