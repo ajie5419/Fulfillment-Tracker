@@ -1,6 +1,7 @@
 /** 发放签收（R9）的常量与纯函数：文案、编号、按"部门 + 角色"选人、设计变更影响的工序。不碰数据库，便于单测。 */
 import type { NotifyRoleKind, ReceiptStatus, ReleaseType, StepStatus } from '@prisma/client'
 import { shanghaiDay } from '../alerts/rules'
+import { BUSINESS_DEPT_NAME } from '../../../shared/business-depts'
 
 export const TYPE_TEXT: Record<ReleaseType, string> = { DRAWING: '图纸', CHANGE: '设计变更', PROCESS: '工艺文件' }
 export const STEP_STATUS_TEXT: Record<StepStatus, string> = { PENDING: '待开工', OUT: '在外加工', IN_PROGRESS: '加工中', DONE: '已完成', BLOCKED: '有异常' }
@@ -12,7 +13,7 @@ export const SIGN_RELEASE = 'SIGN_RELEASE'
 export const CONFIRM_CHANGE = 'CONFIRM_CHANGE'
 
 /** "生产经理" = 生产部的部门负责人（notify_role 里 DEPT_HEAD + 部门名称"生产部"，与异常默认责任部门一致） */
-export const PRODUCTION_DEPT = '生产部'
+export const PRODUCTION_DEPT = BUSINESS_DEPT_NAME.PRODUCTION
 
 export const ROLE_TEXT: Record<NotifyRoleKind, string> = {
   OUTSOURCE_COORDINATOR: '外协专员',

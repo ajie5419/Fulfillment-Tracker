@@ -74,10 +74,10 @@ watch(
   },
 )
 const partOptions = computed(() => (form.workOrderNumber ? parts.value : []).map((p) => ({ value: p.id, label: p.drawingNo ? `${p.name}（${p.drawingNo}）` : p.name })))
-/** 技术部的人排前面 */
+/** 技术部的人排前面（按部门对照换算出的业务部门，班组、科室对到技术部的也算） */
 const ownerOptions = computed(() =>
   [...master.value.users]
-    .sort((a, b) => Number(b.department === '技术部') - Number(a.department === '技术部'))
+    .sort((a, b) => Number(b.businessDept === 'TECH') - Number(a.businessDept === 'TECH'))
     .map((u) => ({ value: u.id, label: `${u.name}（${u.department || '无部门'}）` })),
 )
 /** 选了工件、部件名称还空着时带出工件名 */

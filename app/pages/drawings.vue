@@ -61,7 +61,7 @@ function showOwner(ownerId: string | null, view = 'open') {
 
 const ownerOptions = computed(() =>
   [...master.value.users]
-    .sort((a, b) => Number(b.department === '技术部') - Number(a.department === '技术部'))
+    .sort((a, b) => Number(b.businessDept === 'TECH') - Number(a.businessDept === 'TECH'))
     .map((u) => ({ value: u.id, label: `${u.name}（${u.department || '无部门'}）` })),
 )
 

@@ -8,6 +8,7 @@
  * 地址栏 ?wo= 选工单，?node= 定位节点（W9 提醒、确认待办跳过来）。所有人可见（看不到的工单接口会拒绝）。
  */
 import dayjs, { type Dayjs } from 'dayjs'
+import { BUSINESS_DEPT_OPTIONS } from '#shared/business-depts'
 
 interface PlanTask {
   kind: string
@@ -74,14 +75,7 @@ interface PlanView {
   changeLogs: { id: string; nodeName: string; kind: 'DATE' | 'ADD' | 'DELETE'; oldDate: string | null; newDate: string | null; reason: string; actorName: string | null; createdAt: string }[]
 }
 
-const DEPTS = [
-  { value: 'PROJECT', label: '项目部' },
-  { value: 'TECH', label: '技术部' },
-  { value: 'PURCHASE', label: '采购部' },
-  { value: 'PRODUCTION', label: '生产部' },
-  { value: 'QUALITY', label: '质量部' },
-  { value: 'FINANCE', label: '财务部' },
-]
+const DEPTS = BUSINESS_DEPT_OPTIONS
 const DRIVER_TEXT: Record<string, string> = { self: '', task: '挂靠任务拖后', prev: '前序节点顺延', today: '计划日已过仍未完成', actual: '' }
 const LOG_KIND = { DATE: '改日期', ADD: '加节点', DELETE: '删节点' } as const
 

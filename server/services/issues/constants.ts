@@ -1,6 +1,7 @@
 /** 异常模块的常量与纯函数：分类、默认责任部门（方案 6.4）、编号、默认要求解决日。不碰数据库，便于单测。 */
 import type { IssueCategory, IssueSource, IssueStatus } from '@prisma/client'
 import { DAY_MS, shanghaiDay } from '../alerts/rules'
+import { BUSINESS_DEPT_NAME, type BusinessDeptCode } from '../../../shared/business-depts'
 
 export const CATEGORY_TEXT: Record<IssueCategory, string> = {
   DESIGN: '设计',
@@ -14,18 +15,23 @@ export const CATEGORY_TEXT: Record<IssueCategory, string> = {
   OTHER: '其他',
 }
 
-/** 按分类默认的责任部门（按名称匹配 qms_department.name） */
-export const DEFAULT_DEPT_NAME: Record<IssueCategory, string> = {
-  DESIGN: '技术部',
-  CHANGE: '技术部',
-  MATERIAL_PAYMENT: '财务部',
-  MATERIAL_MGMT: '采购部',
-  OUTSOURCE_SCHEDULE: '生产部',
-  OUTSOURCE_QUALITY: '质量部',
-  WORKSHOP: '生产部',
-  CUSTOMER: '项目部',
-  OTHER: '项目部',
+/** 按分类默认的责任部门（业务部门编码，方案 6.4） */
+export const DEFAULT_DEPT: Record<IssueCategory, BusinessDeptCode> = {
+  DESIGN: 'TECH',
+  CHANGE: 'TECH',
+  MATERIAL_PAYMENT: 'FINANCE',
+  MATERIAL_MGMT: 'PURCHASE',
+  OUTSOURCE_SCHEDULE: 'PRODUCTION',
+  OUTSOURCE_QUALITY: 'QUALITY',
+  WORKSHOP: 'PRODUCTION',
+  CUSTOMER: 'PROJECT',
+  OTHER: 'PROJECT',
 }
+
+/** 按分类默认的责任部门名称（按名称匹配 qms_department.name / 换算后的业务部门名） */
+export const DEFAULT_DEPT_NAME = Object.fromEntries(
+  Object.entries(DEFAULT_DEPT).map(([c, d]) => [c, BUSINESS_DEPT_NAME[d]]),
+) as Record<IssueCategory, string>
 
 /** 可以指定外协单位（责任方）的分类 */
 export const SUPPLIER_CATEGORIES: IssueCategory[] = ['OUTSOURCE_SCHEDULE', 'OUTSOURCE_QUALITY']
