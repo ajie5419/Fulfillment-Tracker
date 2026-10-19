@@ -3,11 +3,15 @@
  * 出图任务（R11）：按部件拆的出图任务列表（筛选：工单 / 设计负责人 / 视图含"逾期"）、新建 / 编辑、标记出图、录客户确认、
  * 一键发放（打开 R9 新建发放单并预填）；"设计负荷"页签按设计负责人列在手、逾期、本周到期。
  * 地址栏 ?wo= 预选工单，?view= 选视图，?owner= 选负责人，?tab=load 打开设计负荷，?id= 打开某个任务（W7 提醒跳过来）。
+ * 新建 / 编辑 / 客户确认：技术部、管理员；一键发放：技术部、管理员；标记出图仍限设计负责人或管理员（权限方案 R13）。
  */
 const route = useRoute()
 const router = useRouter()
 const { data: workOrders } = await useWorkOrders()
 const { data: master } = await useMaster()
+const { data: me } = await useMe()
+const canEditTask = computed(() => canDo(me.value, 'drawing'))
+const canRelease = computed(() => canDo(me.value, 'release'))
 
 const VIEWS = [
   { value: 'open', label: '未完成' },
@@ -77,7 +81,10 @@ async function openFromQuery() {
   const id = route.query.id as string | undefined
   if (!id) return
   try {
-    openEdit(await fetchDrawing(id))
+    const task = await fetchDrawing(id)
+    // 没有编辑权限（如收到 W7 的项目经理）：不弹编辑框，只把列表筛到这一条，只读查看
+    if (!canEditTask.value) keyword.value = task.componentName
+    else openEdit(task)
   } catch (e) {
     message.error(apiError(e))
   }
@@ -177,7 +184,7 @@ const loadColumns = [
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
         <a-button @click="reload()">刷新</a-button>
-        <a-button type="primary" @click="openEdit(null)">新建出图任务</a-button>
+        <a-button v-if="canEditTask" type="primary" @click="openEdit(null)">新建出图任务</a-button>
       </a-space>
     </template>
 
@@ -205,7 +212,8 @@ const loadColumns = [
           <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未完成的出图任务' : '没有记录'" /></template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'component'">
-              <a @click="openEdit(record as DrawingRow)">{{ record.componentName }}</a>
+              <a v-if="canEditTask" @click="openEdit(record as DrawingRow)">{{ record.componentName }}</a>
+              <span v-else>{{ record.componentName }}</span>
               <div class="muted">{{ record.parts.length ? partNames(record as DrawingRow) : '未关联工件' }}</div>
             </template>
             <template v-else-if="column.key === 'owner'"><span :class="{ muted: !record.ownerId }">{{ record.ownerText }}</span></template>
@@ -239,16 +247,16 @@ const loadColumns = [
             <template v-else-if="column.key === 'actions'">
               <a-space size="small">
                 <a-button v-if="record.permissions.markDrawn" type="primary" size="small" @click="openAct(record as DrawingRow, 'drawn')">标记出图</a-button>
-                <a-button v-if="record.status === 'DRAWN'" type="primary" size="small" @click="openRelease(record as DrawingRow)">一键发放</a-button>
-                <a-button v-if="record.permissions.confirm" size="small" @click="openAct(record as DrawingRow, 'confirm')">客户确认</a-button>
-                <a-dropdown>
+                <a-button v-if="record.status === 'DRAWN' && canRelease" type="primary" size="small" @click="openRelease(record as DrawingRow)">一键发放</a-button>
+                <a-button v-if="record.permissions.confirm && canEditTask" size="small" @click="openAct(record as DrawingRow, 'confirm')">客户确认</a-button>
+                <a-dropdown v-if="canEditTask || canRelease || record.permissions.undoDrawn">
                   <a-button size="small">更多</a-button>
                   <template #overlay>
                     <a-menu>
-                      <a-menu-item key="edit" @click="openEdit(record as DrawingRow)">编辑 / 取消</a-menu-item>
-                      <a-menu-item v-if="record.permissions.release && record.status !== 'DRAWN'" key="rel" @click="openRelease(record as DrawingRow)">再发一版</a-menu-item>
+                      <a-menu-item v-if="canEditTask" key="edit" @click="openEdit(record as DrawingRow)">编辑 / 取消</a-menu-item>
+                      <a-menu-item v-if="record.permissions.release && record.status !== 'DRAWN' && canRelease" key="rel" @click="openRelease(record as DrawingRow)">再发一版</a-menu-item>
                       <a-menu-item v-if="record.permissions.undoDrawn" key="undo" @click="undo(record as DrawingRow, 'drawn')">撤销出图</a-menu-item>
-                      <a-menu-item v-if="record.customerConfirmedDate" key="undoc" @click="undo(record as DrawingRow, 'confirm')">撤销客户确认</a-menu-item>
+                      <a-menu-item v-if="record.customerConfirmedDate && canEditTask" key="undoc" @click="undo(record as DrawingRow, 'confirm')">撤销客户确认</a-menu-item>
                     </a-menu>
                   </template>
                 </a-dropdown>

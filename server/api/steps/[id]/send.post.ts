@@ -11,10 +11,11 @@ const body = z
   })
   .strict()
 
-/** 发出登记（厂外外协） */
+/** 发出登记（厂外外协）：生产部、外协专员、该工序责任人、管理员 */
 export default defineFlowHandler(async (event, user) => {
   const input = await parseBody(event, body)
   const stepId = routeId(event)
   await assertCanSeeStep(event, stepId)
+  await assertCanOperateStep(event, 'stepAction', stepId)
   return sendStep({ ...input, stepId, actorId: user.qmsUserId })
 })

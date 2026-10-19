@@ -41,9 +41,12 @@ export interface RecipientGroup {
 }
 
 export interface GroupContext {
-  /** 在职、未删除的用户，部门已换成名称（没有部门的 deptName 为 null） */
-  users: { id: string; deptName: string | null }[]
-  /** 通知角色（设置页"通知对象"）；部门负责人的 department 是部门名称 */
+  /**
+   * 在职、未删除的用户，部门已换成名称（没有部门的 deptName 为 null）；
+   * businessDeptName 是经"部门对照"换算后的业务部门名称（没有对照时同 QMS 名称），选"生产部"时班组里的人也算
+   */
+  users: { id: string; deptName: string | null; businessDeptName?: string | null }[]
+  /** 通知角色（设置页"人员与角色"）；部门负责人的 department 是业务部门名称 */
   roles: { role: NotifyRoleKind; userId: string; department: string | null }[]
 }
 
@@ -59,13 +62,14 @@ export function groupLabel(g: RecipientGroup): string {
 export function resolveGroup(g: RecipientGroup, ctx: GroupContext): string[] {
   const dept = g.department?.trim() || null
   const active = new Map(ctx.users.map((u) => [u.id, u]))
+  const inDept = (u: GroupContext['users'][number] | undefined) => !!u && (u.deptName === dept || (!!u.businessDeptName && u.businessDeptName === dept))
   let ids: string[]
   if (!g.role) {
-    ids = dept ? ctx.users.filter((u) => u.deptName === dept).map((u) => u.id) : []
+    ids = dept ? ctx.users.filter(inDept).map((u) => u.id) : []
   } else if (g.role === 'DEPT_HEAD') {
     ids = ctx.roles.filter((r) => r.role === 'DEPT_HEAD' && (!dept || r.department === dept)).map((r) => r.userId)
   } else {
-    ids = ctx.roles.filter((r) => r.role === g.role && (!dept || active.get(r.userId)?.deptName === dept)).map((r) => r.userId)
+    ids = ctx.roles.filter((r) => r.role === g.role && (!dept || inDept(active.get(r.userId)))).map((r) => r.userId)
   }
   return [...new Set(ids.filter((id) => active.has(id)))]
 }

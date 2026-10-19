@@ -12,7 +12,8 @@
 import type { Alert, AlertLevel, NotifyRole, StepMode } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { ARRANGE_SEND, ARRANGE_START } from '../flow/flow'
-import { loadNames, userDepartmentNames } from '../flow/names'
+import { resolveDeptNames, userDeptNames } from '../auth/departments'
+import { loadNames } from '../flow/names'
 import { convertAlertInTx } from '../issues/convert'
 import { CATEGORY_TEXT } from '../issues/constants'
 import { issueTransaction } from '../issues/issues'
@@ -210,11 +211,11 @@ async function collectW3(now: Date, t: Thresholds, offDays: string[]): Promise<T
 async function collectW4(now: Date, t: Thresholds, offDays: string[]): Promise<Target[]> {
   const issues = await prisma.issue.findMany({ where: { status: { in: ['OPEN', 'ACCEPTED'] } } })
   if (!issues.length) return []
-  const [pdh, depts] = await Promise.all([
+  const [pdh, deptName] = await Promise.all([
     prisma.notifyRole.findMany({ where: { role: 'PROJECT_DEPT_HEAD' }, select: { userId: true } }),
-    prisma.qmsDepartment.findMany({ where: { id: { in: issues.map((i) => i.responsibleDeptId).filter((x): x is string => !!x) } }, select: { id: true, name: true } }),
+    // 责任部门（QMS 部门 ID）换成业务部门名称后与部门负责人对应（dept_mapping，没对照时用部门名称本身）
+    resolveDeptNames(issues.map((i) => i.responsibleDeptId)),
   ])
-  const deptName = new Map(depts.map((d) => [d.id, d.name]))
   const fallback = [...new Set(pdh.map((p) => p.userId))]
   return issues.map((i) => {
     const r = judgeW4({ status: i.status, createdAt: i.createdAt, dueDate: i.dueDate, now, offDays }, t.W4)
@@ -466,8 +467,8 @@ export async function loadNotifyContext(targets: Pick<Target, 'ownerIds' | 'work
   const wos = [...new Set(targets.map((x) => x.workOrderNumber).filter((w): w is string => !!w))]
   const [roles, deptOf, exts] = await Promise.all([
     prisma.notifyRole.findMany(),
-    // 用户的部门是部门 ID，换成名称后与 notify_role.department（部门名称）对应
-    userDepartmentNames(ownerIds),
+    // 用户的部门是 QMS 部门 ID，换成业务部门名称（dept_mapping，没对照时用部门名称本身）后与 notify_role.department 对应
+    userDeptNames(ownerIds),
     wos.length ? prisma.workOrderExt.findMany({ where: { workOrderNumber: { in: wos } } }) : [],
   ])
   return {
@@ -480,7 +481,7 @@ export async function loadNotifyContext(targets: Pick<Target, 'ownerIds' | 'work
 /**
  * 升级阶梯（方案 6.2）：
  *   提醒 = 责任人；黄 = 提醒 + 责任部门负责人 + 工单项目经理（+ watcherIds，如 W5 的发放人）；红 = 黄 + 项目部负责人 + 分管领导。
- * 责任部门（名称）：target.deptNames（W4 异常上写明的），没有时取责任人所在部门（部门 ID 经 qms_department 换成名称）。
+ * 责任部门（名称）：target.deptNames（W4 异常上写明的），没有时取责任人所在部门（部门 ID 经 dept_mapping 换成业务部门名称）。
  * 找不到的角色跳过，收件人去重。
  */
 export function recipientsFor(level: AlertLevel, target: Pick<Target, 'ownerIds' | 'workOrderNumber' | 'deptNames' | 'watcherIds'>, ctx: NotifyContext): string[] {

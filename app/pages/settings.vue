@@ -1,5 +1,8 @@
 <script setup lang="ts">
-/** 设置（仅管理员）：阈值、停工日、通知对象、工单项目经理、QMS 同步状态。接口也校验管理员，这里只是不给非管理员看 */
+/**
+ * 设置（仅管理员）：阈值、停工日、人员与角色（原"通知对象"）、部门对照（R13）、工单项目经理、QMS 同步状态。
+ * 接口也校验管理员，这里只是不给非管理员看
+ */
 import dayjs, { type Dayjs } from 'dayjs'
 
 const { data: me } = await useMe()
@@ -82,10 +85,10 @@ function addOffDay() {
 const removeOffDay = (date: string) => call(`/api/settings/off-days/${date}`, 'DELETE', undefined, `已删除停工日 ${date}`)
 const isOffDay = (d: Dayjs) => !!data.value?.offDays.includes(d.format('YYYY-MM-DD'))
 
-// ───── 通知对象 ─────
+// ───── 人员与角色 ─────
 const ROLES = [
   { role: 'OUTSOURCE_COORDINATOR', label: '外协专员', hint: 'W1 待确认匹配的责任人' },
-  { role: 'DEPT_HEAD', label: '部门负责人', hint: '黄色起：责任人所在部门的负责人（按部门名称对应）；采购部负责人是没指定采购负责人的关键物料的责任人；技术部负责人是没指定设计负责人的出图任务的责任人；生产部负责人（生产经理）是没指定负责人的装配节点的责任人，并可编辑所有工单的装配节点' },
+  { role: 'DEPT_HEAD', label: '部门负责人', hint: '黄色起：责任人所在部门的负责人（责任人的 QMS 部门经"部门对照"换成业务部门后对应）；采购部负责人是没指定采购负责人的关键物料的责任人；技术部负责人是没指定设计负责人的出图任务的责任人；生产部负责人（生产经理）是没指定负责人的装配节点的责任人，并可编辑所有工单的装配节点' },
   { role: 'PROJECT_DEPT_HEAD', label: '项目部负责人', hint: '红色：加上项目部负责人' },
   { role: 'LEADER', label: '分管领导', hint: '红色：加上分管领导' },
   { role: 'FINANCE', label: '财务', hint: '付款申请标记已付 / 暂缓；卡交期的付款没付、物料超期时收到 W6 预警' },
@@ -107,6 +110,20 @@ function addRole(role: RoleKey) {
   return call('/api/settings/roles', 'POST', body, '已添加')
 }
 const removeRole = (id: string) => call(`/api/settings/roles/${id}`, 'DELETE', undefined, '已移除')
+/** 部门负责人的部门只能选 6 个业务部门；不在其中的旧值标出来，可以删掉重新选 */
+const isLegacyDept = (d: string | null) => !!d && !!data.value?.legacyDepartments.includes(d)
+
+// ───── 部门对照（QMS 部门 → 业务部门）─────
+const NO_MAPPING = '__NONE__'
+const mappingOptions = computed(() => [{ value: NO_MAPPING, label: '不对应' }, ...(data.value?.businessDepts ?? [])])
+const setMapping = (deptId: string, v: unknown) =>
+  call(`/api/settings/dept-mappings/${encodeURIComponent(deptId)}`, 'PUT', { businessDept: v === NO_MAPPING || !v ? null : v })
+const mappingColumns = [
+  { title: 'QMS 部门', key: 'name' },
+  { title: '上级部门', key: 'parent', width: 180 },
+  { title: '对应业务部门', key: 'mapping', width: 200 },
+  { title: '实际生效', key: 'effective', width: 160 },
+]
 
 // ───── 工单项目经理 ─────
 const setPm = (wo: string, projectManagerId: unknown) =>
@@ -168,8 +185,19 @@ const woColumns = [
         </div>
       </a-tab-pane>
 
-      <a-tab-pane key="roles" tab="通知对象">
-        <p class="muted">提醒 → 责任人；黄 → 加部门负责人、工单项目经理；红 → 再加项目部负责人、分管领导。没有设置的角色跳过。</p>
+      <a-tab-pane key="roles" tab="人员与角色">
+        <p class="muted">
+          提醒 → 责任人；黄 → 加部门负责人、工单项目经理；红 → 再加项目部负责人、分管领导。没有设置的角色跳过。
+          这里的角色也决定能看到的菜单和能做的操作（权限按角色固定，一个人有多个角色时取并集）；普通员工按"部门对照"自动归到业务部门。
+        </p>
+        <a-alert
+          v-if="data.deptsWithoutHead.length"
+          type="warning"
+          show-icon
+          :message="`还没有负责人的业务部门：${data.deptsWithoutHead.join('、')}`"
+          description="这些部门的黄色预警、异常默认责任人会找不到人（直接跳过，不报错）。"
+          class="tip"
+        />
         <a-descriptions :column="1" bordered size="small">
           <a-descriptions-item v-for="r in ROLES" :key="r.role">
             <template #label>
@@ -178,8 +206,15 @@ const woColumns = [
             </template>
             <div class="role-users">
               <span v-if="!data.roles.some((x) => x.role === r.role)" class="muted">未设置</span>
-              <a-tag v-for="x in data.roles.filter((x) => x.role === r.role)" :key="x.id" closable @close.prevent="removeRole(x.id)">
-                {{ x.userName }}<template v-if="x.department">（{{ x.department }}）</template>
+              <a-tag
+                v-for="x in data.roles.filter((x) => x.role === r.role)"
+                :key="x.id"
+                closable
+                :color="isLegacyDept(x.department) ? 'orange' : undefined"
+                :title="isLegacyDept(x.department) ? '旧的部门名称，不是 6 个业务部门之一，请删掉后重新选部门' : undefined"
+                @close.prevent="removeRole(x.id)"
+              >
+                {{ x.userName }}<template v-if="x.department">（{{ x.department }}<template v-if="isLegacyDept(x.department)">，旧值</template>）</template>
               </a-tag>
             </div>
             <a-space>
@@ -204,6 +239,28 @@ const woColumns = [
             </a-space>
           </a-descriptions-item>
         </a-descriptions>
+      </a-tab-pane>
+
+      <a-tab-pane key="depts" tab="部门对照">
+        <p class="muted">
+          把同步过来的 QMS 部门对到 6 个业务部门，只配一次。班组、科室没单独对照时跟上级走；都没有对照时，部门名称正好是"技术部""生产部"等的按名称算，其余算"其他部门"。
+          业务部门决定普通员工的菜单和操作权限，也用于部门负责人、异常责任部门的对应。
+        </p>
+        <a-alert v-if="data.deptsWithoutHead.length" type="warning" show-icon :message="`还没有负责人的业务部门：${data.deptsWithoutHead.join('、')}（到“人员与角色”里添加部门负责人）`" class="tip" />
+        <a-table :columns="mappingColumns" :data-source="data.qmsDepartments" row-key="id" size="small" :pagination="{ pageSize: 50, hideOnSinglePage: true }">
+          <template #emptyText><a-empty description="还没有同步到 QMS 部门" /></template>
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'name'"><span :style="{ paddingLeft: `${record.level * 20}px` }">{{ record.name }}</span></template>
+            <template v-else-if="column.key === 'parent'">{{ record.parentName ?? '—' }}</template>
+            <template v-else-if="column.key === 'mapping'">
+              <a-select :value="record.businessDept ?? NO_MAPPING" size="small" style="width: 100%" :options="mappingOptions" @change="(v: unknown) => setMapping(record.id, v)" />
+            </template>
+            <template v-else-if="column.key === 'effective'">
+              <span v-if="record.effective">{{ record.effective }}<span v-if="!record.businessDept" class="muted">（{{ record.effective === record.name ? '按名称' : '随上级' }}）</span></span>
+              <span v-else class="muted">其他部门</span>
+            </template>
+          </template>
+        </a-table>
       </a-tab-pane>
 
       <a-tab-pane key="sync" tab="QMS 同步状态">
@@ -264,6 +321,7 @@ const woColumns = [
 .off-days { margin-top: 16px; }
 .off-day { margin-bottom: 8px; font-size: 14px; padding: 2px 8px; }
 .role-users { margin-bottom: 8px; }
+.tip { margin-bottom: 12px; }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 .sync-err { color: #cf1322; }
 </style>

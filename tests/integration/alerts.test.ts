@@ -58,6 +58,7 @@ describe.skipIf(!DB)('预警与提醒', () => {
     await db.qmsProcess.deleteMany()
     await db.qmsUser.deleteMany()
     await db.qmsDepartment.deleteMany()
+    await db.deptMapping.deleteMany()
 
     const now = new Date()
     await db.qmsWorkOrder.create({
@@ -327,5 +328,32 @@ describe.skipIf(!DB)('预警与提醒', () => {
     await s.reminders.markAllRead('u-pm')
     expect((await s.reminders.listReminders('u-pm')).unread).toBe(0)
     expect((await s.reminders.newReminders('u-pm', since)).items).toEqual([])
+  })
+
+  it('R13 部门对照：责任人在对到生产部的班组里，黄色起通知生产部负责人；没有对照时按部门名称（原有行为不变）', async () => {
+    const now = new Date()
+    await db.qmsDepartment.createMany({
+      data: [
+        { id: 'T-R13-MFG', name: '制造中心', parentId: '0', status: 1, updatedAt: now },
+        { id: 'T-R13-TEAM', name: '组焊班', parentId: 'T-R13-MFG', status: 1, updatedAt: now },
+        { id: 'T-R13-NAMED', name: '生产部', parentId: '0', status: 1, updatedAt: now },
+        { id: 'T-R13-OTHER', name: '行政部', parentId: '0', status: 1, updatedAt: now },
+      ],
+    })
+    await db.deptMapping.create({ data: { qmsDepartmentId: 'T-R13-MFG', businessDept: 'PRODUCTION' } })
+    const u = (id: string, departmentId: string) => ({ id, username: id, departmentId, status: 'ACTIVE', updatedAt: now })
+    await db.qmsUser.createMany({ data: [u('u-r13-team', 'T-R13-TEAM'), u('u-r13-named', 'T-R13-NAMED'), u('u-r13-other', 'T-R13-OTHER')] })
+    const head = await db.notifyRole.create({ data: { role: 'DEPT_HEAD', userId: 'u-r13-head', department: '生产部' } })
+    try {
+      const ctx = await s.scan.loadNotifyContext([{ ownerIds: ['u-r13-team', 'u-r13-named', 'u-r13-other'], workOrderNumber: null }])
+      const to = (level: 'REMIND' | 'YELLOW', owner: string) => s.scan.recipientsFor(level, { ownerIds: [owner], workOrderNumber: null }, ctx)
+      expect(to('YELLOW', 'u-r13-team')).toContain('u-r13-head')
+      expect(to('YELLOW', 'u-r13-named')).toContain('u-r13-head')
+      expect(to('YELLOW', 'u-r13-other')).not.toContain('u-r13-head')
+      expect(to('REMIND', 'u-r13-team')).toEqual(['u-r13-team'])
+    } finally {
+      await db.notifyRole.delete({ where: { id: head.id } })
+      await db.deptMapping.deleteMany({ where: { qmsDepartmentId: { startsWith: 'T-R13-' } } })
+    }
   })
 })

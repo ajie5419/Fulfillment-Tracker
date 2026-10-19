@@ -79,6 +79,7 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     await db.qmsSupplier.deleteMany()
     await db.qmsProcess.deleteMany()
     await db.qmsDepartment.deleteMany()
+    await db.deptMapping.deleteMany()
     await db.qmsUser.deleteMany()
 
     const now = new Date()
@@ -643,5 +644,31 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     expect((await s.uploads.readUpload(uploadDir, f1.id, 'u-pm2', (wo) => s.auth.canSee(pm2, wo)))?.file.mime).toBe('image/jpeg')
     const detail = await s.issues.getIssue(issue.id, as('u-pm2'))
     expect(detail.photos).toEqual([{ id: f1.id, url: `/api/files/${f1.id}` }, { id: f2.id, url: `/api/files/${f2.id}` }])
+  })
+
+  it('R13 部门对照：异常责任部门是对到生产部的班组时，生产部负责人能受理；"本部门"含班组', async () => {
+    const { FlowForbidden } = await import('../../server/services/flow/errors')
+    const now = new Date()
+    await db.qmsDepartment.createMany({
+      data: [
+        { id: 'D-R13-MFG', name: '制造中心', parentId: '0', status: 1, updatedAt: now },
+        { id: 'D-R13-TEAM', name: '组焊班', parentId: 'D-R13-MFG', status: 1, updatedAt: now },
+      ],
+    })
+    await db.deptMapping.create({ data: { qmsDepartmentId: 'D-R13-MFG', businessDept: 'PRODUCTION' } })
+    try {
+      const issue = await report()
+      await s.issues.reassignIssue(issue.id, as('u-pdh'), { responsibleDeptId: 'D-R13-TEAM', responsibleUserId: 'u-qa2' })
+      // 质量部负责人不是责任部门负责人；生产部负责人经部门对照是
+      await expect(s.issues.acceptIssue(issue.id, as('u-qa'))).rejects.toBeInstanceOf(FlowForbidden)
+      const detail = await s.issues.getIssue(issue.id, as('u-head'))
+      expect(detail.can).toMatchObject({ accept: true, reassign: true })
+      await s.issues.acceptIssue(issue.id, as('u-head'))
+      // "本部门"：按名称的生产部 + 对照到生产部的制造中心及其下级班组
+      expect((await s.issues.myDepartmentIds('u-head')).sort()).toEqual(['D-4', 'D-R13-MFG', 'D-R13-TEAM'])
+      expect(await s.issues.myDepartmentIds('u-qa')).toEqual(['D-3'])
+    } finally {
+      await db.deptMapping.deleteMany({ where: { qmsDepartmentId: { startsWith: 'D-R13-' } } })
+    }
   })
 })

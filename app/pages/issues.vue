@@ -15,6 +15,8 @@ const filter = reactive({
   // 部门负责人默认看本部门，可切换全部
   dept: (route.query.dept as string) ?? (me.value?.deptHeadOf.length ? '1' : '0'),
   mine: (route.query.mine as string) || undefined,
+  // 只看超期（从领导总览"超期异常"点进来）
+  overdue: route.query.overdue === '1' ? '1' : undefined,
 })
 const { data: rows, pending, refresh } = await useFetch('/api/issues', {
   query: computed(() => ({ ...filter, status: filter.status || undefined })),
@@ -79,6 +81,7 @@ const columns = [
           style="width: 180px"
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
+        <a-tag v-if="filter.overdue" color="red" closable @close="filter.overdue = undefined">只看超期</a-tag>
         <a-button @click="refresh()">刷新</a-button>
         <a-button type="primary" danger @click="reporting = true">上报异常</a-button>
       </a-space>

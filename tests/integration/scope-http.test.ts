@@ -50,7 +50,16 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
   const OTHER = 'T-WO-PM-OTHER'
   let otherIssueId = ''
   let otherPartId = ''
-  const HTTP_USERS = ['h-pm', 'h-pm2', 'h-lead', 'h-worker', 'h-fin']
+  const HTTP_USERS = ['h-pm', 'h-pm2', 'h-lead', 'h-worker', 'h-fin', 'h-tech', 'h-buyer', 'h-prod', 'h-qa', 'h-admin']
+  // R13 部门对照：技术科 → 技术部（直接对照）；采购一组挂在供应部下（供应部 → 采购部，下级继承）；生产部没有对照（按名称）；检验科 → 质量部
+  const DEPTS = [
+    { id: 'T-DEPT-TECH', name: '技术科', parentId: '0' },
+    { id: 'T-DEPT-SUPPLY', name: '供应部', parentId: '0' },
+    { id: 'T-DEPT-BUY1', name: '采购一组', parentId: 'T-DEPT-SUPPLY' },
+    { id: 'T-DEPT-PROD', name: '生产部', parentId: '0' },
+    { id: 'T-DEPT-QA', name: '检验科', parentId: '0' },
+  ]
+  const USER_DEPT: Record<string, string> = { 'h-tech': 'T-DEPT-TECH', 'h-buyer': 'T-DEPT-BUY1', 'h-prod': 'T-DEPT-PROD', 'h-qa': 'T-DEPT-QA' }
 
   beforeAll(async () => {
     if (!existsSync(SERVER_ENTRY)) throw new Error('先运行 pnpm build')
@@ -82,7 +91,17 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     await db.drawingTask.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db.assemblyNode.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db.qmsUser.deleteMany({ where: { id: { in: HTTP_USERS } } })
-    await db.qmsUser.createMany({ data: HTTP_USERS.map((id) => ({ id, username: id, realName: id, status: 'ACTIVE', updatedAt: now })) })
+    await db.deptMapping.deleteMany({ where: { qmsDepartmentId: { in: DEPTS.map((d) => d.id) } } })
+    await db.qmsDepartment.deleteMany({ where: { id: { in: DEPTS.map((d) => d.id) } } })
+    await db.qmsDepartment.createMany({ data: DEPTS.map((d) => ({ ...d, status: 1, updatedAt: now })) })
+    await db.deptMapping.createMany({
+      data: [
+        { qmsDepartmentId: 'T-DEPT-TECH', businessDept: 'TECH' },
+        { qmsDepartmentId: 'T-DEPT-SUPPLY', businessDept: 'PURCHASE' },
+        { qmsDepartmentId: 'T-DEPT-QA', businessDept: 'QUALITY' },
+      ],
+    })
+    await db.qmsUser.createMany({ data: HTTP_USERS.map((id) => ({ id, username: id, realName: id, departmentId: USER_DEPT[id] ?? null, status: 'ACTIVE', updatedAt: now })) })
     otherPartId = (await db.part.create({ data: { workOrderNumber: OTHER, name: '别人的工件' } })).id
     otherIssueId = (
       await db.issue.create({
@@ -97,6 +116,11 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
         'h-lead': { name: '领导', active: true },
         'h-worker': { name: '一线', active: true },
         'h-fin': { name: '财务', active: true },
+        'h-tech': { name: '技术员', active: true },
+        'h-buyer': { name: '采购员', active: true },
+        'h-prod': { name: '生产员工', active: true },
+        'h-qa': { name: '质检员', active: true },
+        'h-admin': { name: '管理员', active: true },
       },
     })
     const port = await freePort()
@@ -137,6 +161,8 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     await db?.purchaseLine.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.notifyRole.deleteMany({ where: { userId: 'h-fin' } })
     await db?.qmsUser.deleteMany({ where: { id: { in: HTTP_USERS } } })
+    await db?.deptMapping.deleteMany({ where: { qmsDepartmentId: { in: DEPTS.map((d) => d.id) } } })
+    await db?.qmsDepartment.deleteMany({ where: { id: { in: DEPTS.map((d) => d.id) } } })
     await db?.issue.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db?.$disconnect()
     if (uploadDir) await rm(uploadDir, { recursive: true, force: true })
@@ -252,6 +278,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     const pm = await login('h-pm')
     const pm2 = await login('h-pm2')
     const worker = await login('h-worker')
+    const tech = await login('h-tech')
     const post = (s: Record<string, string>, path: string, body: object) =>
       fetch(`${base}${path}`, { method: 'POST', headers: { cookie: cookieHeader(s), 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
@@ -263,7 +290,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     const upload = (kind: string) => {
       const form = new FormData()
       form.append('file', new Blob([pdf], { type: 'application/pdf' }), 'drawing.pdf')
-      return fetch(`${base}/api/uploads${kind ? `?kind=${kind}` : ''}`, { method: 'POST', headers: { cookie: cookieHeader(pm) }, body: form })
+      return fetch(`${base}/api/uploads${kind ? `?kind=${kind}` : ''}`, { method: 'POST', headers: { cookie: cookieHeader(tech) }, body: form })
     }
     expect((await upload('')).status).toBe(400)
     const up = await upload('attachment')
@@ -271,8 +298,13 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     const [att] = (await up.json()) as { id: string; mime: string; url: string }[]
     expect(att!.mime).toBe('application/pdf')
 
-    // 甲在自己的工单上发给乙（乙看不到甲的工单）和一线
-    const created = await post(pm, '/api/releases', { type: 'CHANGE', workOrderNumber: MINE, description: '孔位变更', userIds: ['h-pm2', 'h-worker'], attachmentIds: [att!.id] })
+    // R13：建发放单只限技术部、管理员 —— 项目经理甲在自己的工单上也不行，一线也不行
+    const denied = await post(pm, '/api/releases', { type: 'CHANGE', workOrderNumber: MINE, description: 'x', userIds: ['h-worker'] })
+    expect(denied.status).toBe(403)
+    expect(((await denied.json()) as { message: string }).message).toBe('只有技术部或管理员可以新建发放单')
+    expect((await post(worker, '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-pm'] })).status).toBe(403)
+    // 技术员（技术科经部门对照算技术部）在甲的工单上发给乙（乙看不到甲的工单）和一线
+    const created = await post(tech, '/api/releases', { type: 'CHANGE', workOrderNumber: MINE, description: '孔位变更', userIds: ['h-pm2', 'h-worker'], attachmentIds: [att!.id] })
     expect(created.status).toBe(200)
     const { id } = (await created.json()) as { id: string }
     // 乙是接收人：能看详情和附件（虽然不是他的工单）
@@ -293,7 +325,8 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
 
     // 别人工单上的发放单：甲（不是接收人）看不到，列表也没有，附件 404
     const lead = await login('h-lead')
-    const other = await post(lead, '/api/releases', { type: 'DRAWING', workOrderNumber: OTHER, description: '别的工单', userIds: ['h-worker'] })
+    expect((await post(lead, '/api/releases', { type: 'DRAWING', workOrderNumber: OTHER, description: 'x', userIds: ['h-worker'] })).status).toBe(403)
+    const other = await post(tech, '/api/releases', { type: 'DRAWING', workOrderNumber: OTHER, description: '别的工单', userIds: ['h-worker'] })
     expect(other.status).toBe(200)
     const otherId = ((await other.json()) as { id: string }).id
     expect((await get(`/api/releases/${otherId}`, pm)).status).toBe(403)
@@ -301,6 +334,8 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(list.some((r) => r.id === otherId)).toBe(false)
     expect(list.some((r) => r.id === id)).toBe(true)
     expect((await post(pm, `/api/releases/${otherId}/void`, {})).status).toBe(403)
+    // 作废仍限发放人或管理员：技术员能作废自己发的
+    expect((await post(tech, `/api/releases/${otherId}/void`, {})).status).toBe(200)
     // 签收待办不能转交
     const todos = (await (await get('/api/todos', worker)).json()) as { id: string; action: string }[]
     const signTodo = todos.find((t) => t.action === 'SIGN_RELEASE')!
@@ -311,6 +346,8 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     const pm = await login('h-pm')
     const lead = await login('h-lead')
     const fin = await login('h-fin')
+    const buyer = await login('h-buyer')
+    const worker = await login('h-worker')
     const send = (sess: Record<string, string>, method: string, path: string, body?: object) =>
       fetch(`${base}${path}`, { method, headers: { cookie: cookieHeader(sess), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
     const today = new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10)
@@ -321,8 +358,19 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     const mine = await send(pm, 'POST', '/api/purchases', { workOrderNumber: MINE, materialName: '回转支承', quantity: 1, needDate: later })
     expect(mine.status).toBe(200)
     const mineId = ((await mine.json()) as { id: string }).id
-    const otherRes = await send(lead, 'POST', '/api/purchases', { workOrderNumber: OTHER, materialName: '钢板', quantity: 2, needDate: later })
+    // R13：采购行只限采购部、该工单项目经理、管理员 —— 领导、一线不行；采购员（采购一组随上级供应部算采购部）能在任何工单上登记
+    expect((await send(lead, 'POST', '/api/purchases', { workOrderNumber: OTHER, materialName: '钢板', quantity: 2, needDate: later })).status).toBe(403)
+    const workerDenied = await send(worker, 'POST', '/api/purchases', { workOrderNumber: MINE, materialName: 'x', quantity: 1, needDate: later })
+    expect(workerDenied.status).toBe(403)
+    expect(((await workerDenied.json()) as { message: string }).message).toContain('只有采购部、该工单项目经理或管理员')
+    const otherRes = await send(buyer, 'POST', '/api/purchases', { workOrderNumber: OTHER, materialName: '钢板', quantity: 2, needDate: later })
+    expect(otherRes.status).toBe(200)
     const otherId = ((await otherRes.json()) as { id: string }).id
+    // 一线能看（看全部）但改不了、标不了到货
+    expect((await get(`/api/purchases/${otherId}`, worker)).status).toBe(200)
+    expect((await send(worker, 'PATCH', `/api/purchases/${otherId}`, { note: 'x' })).status).toBe(403)
+    expect((await send(worker, 'POST', `/api/purchases/${otherId}/arrive`, { source: 'MOBILE' })).status).toBe(403)
+    expect((await send(worker, 'DELETE', `/api/purchases/${otherId}`)).status).toBe(403)
     // 日期格式校验
     expect((await send(pm, 'POST', '/api/purchases', { workOrderNumber: MINE, materialName: 'x', quantity: 1, needDate: '2026/1/1' })).status).toBe(400)
 
@@ -361,6 +409,8 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(await denied.json()).toMatchObject({ imported: 0, errors: [{ row: 2, messages: [`无权查看工单 ${OTHER}`] }] })
     const ok = await upload(pm, await book(MINE))
     expect(await ok.json()).toMatchObject({ imported: 1, errors: [] })
+    // 一线整个导入都不允许
+    expect((await upload(worker, await book(MINE))).status).toBe(403)
     expect((await upload(pm, new TextEncoder().encode('a,b,c'), 'p.csv')).status).toBe(400)
 
     // 付款申请：甲申请；甲不能标记已付，财务可以；甲看不到别人工单的付款申请
@@ -368,8 +418,27 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     const pay = await send(pm, 'POST', '/api/payments', { purchaseLineIds: [mineId], amount: 1200.5, requestDate: today, blocksDelivery: true })
     expect(pay.status).toBe(200)
     const payId = ((await pay.json()) as { id: string }).id
-    const otherPay = await send(lead, 'POST', '/api/payments', { purchaseLineIds: [otherId], amount: 9, requestDate: today, blocksDelivery: false })
+    expect((await send(lead, 'POST', '/api/payments', { purchaseLineIds: [otherId], amount: 9, requestDate: today, blocksDelivery: false })).status).toBe(403)
+    expect((await send(worker, 'POST', '/api/payments', { purchaseLineIds: [otherId], amount: 9, requestDate: today, blocksDelivery: false })).status).toBe(403)
+    const otherPay = await send(buyer, 'POST', '/api/payments', { purchaseLineIds: [otherId], amount: 9, requestDate: today, blocksDelivery: false })
+    expect(otherPay.status).toBe(200)
     const otherPayId = ((await otherPay.json()) as { id: string }).id
+
+    // R13 付款金额：财务、采购部、领导、该工单项目经理能看；一线的接口里金额是 null（采购行关联的付款也是）
+    type PayRow = { id: string; amount: number | null }
+    const amounts = async (s: Record<string, string>) => new Map(((await (await get('/api/payments?status=ALL', s)).json()) as PayRow[]).map((p) => [p.id, p.amount]))
+    expect((await amounts(worker)).get(payId)).toBeNull()
+    expect((await amounts(worker)).get(otherPayId)).toBeNull()
+    expect((await amounts(pm)).get(payId)).toBe(1200.5)
+    expect((await amounts(lead)).get(otherPayId)).toBe(9)
+    expect((await amounts(buyer)).get(payId)).toBe(1200.5)
+    expect((await amounts(fin)).get(otherPayId)).toBe(9)
+    const workerLine = (await (await get(`/api/purchases/${mineId}`, worker)).json()) as { payments: PayRow[] }
+    expect(workerLine.payments.map((p) => p.amount)).toEqual([null])
+    const workerLines = (await (await get('/api/purchases?view=all', worker)).json()) as { rows: { id: string; payments: PayRow[] }[] }
+    expect(workerLines.rows.find((r) => r.id === mineId)!.payments.map((p) => p.amount)).toEqual([null])
+    const pmLine = (await (await get(`/api/purchases/${mineId}`, pm)).json()) as { payments: PayRow[] }
+    expect(pmLine.payments.map((p) => p.amount)).toEqual([1200.5])
     const pmPays = (await (await get('/api/payments?status=ALL', pm)).json()) as { id: string; permissions: { setStatus: boolean } }[]
     expect(pmPays.map((p) => p.id)).toEqual([payId])
     expect(pmPays[0]!.permissions.setStatus).toBe(false)
@@ -386,18 +455,24 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     const pm = await login('h-pm')
     const lead = await login('h-lead')
     const worker = await login('h-worker')
+    const tech = await login('h-tech')
     const send = (sess: Record<string, string>, method: string, path: string, body?: object) =>
       fetch(`${base}${path}`, { method, headers: { cookie: cookieHeader(sess), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
     const later = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10)
 
-    // 项目经理甲不能在别人的工单上建；自己的工单可以（负责人是一线 h-worker）
+    // 项目经理甲不能在别人的工单上建（看不到）；R13：自己的工单也不能建（出图任务只限技术部、管理员），领导也不行
     expect((await send(pm, 'POST', '/api/drawings', { workOrderNumber: OTHER, componentName: 'x', planDate: later })).status).toBe(403)
-    expect((await send(pm, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: 'x', planDate: '2026/1/1' })).status).toBe(400)
-    const mine = await send(pm, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: '主梁总图', ownerId: 'h-worker', planDate: later })
+    expect((await send(tech, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: 'x', planDate: '2026/1/1' })).status).toBe(400)
+    const pmDenied = await send(pm, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: 'x', planDate: later })
+    expect(pmDenied.status).toBe(403)
+    expect(((await pmDenied.json()) as { message: string }).message).toBe('只有技术部或管理员可以编辑出图任务')
+    expect((await send(lead, 'POST', '/api/drawings', { workOrderNumber: OTHER, componentName: 'x', planDate: later })).status).toBe(403)
+    // 技术员在甲的工单上建（负责人是一线 h-worker）
+    const mine = await send(tech, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: '主梁总图', ownerId: 'h-worker', planDate: later })
     expect(mine.status).toBe(200)
     const mineId = ((await mine.json()) as { id: string }).id
-    // 领导在别人的工单上建一个，设计负责人是甲（甲看不到这个工单）
-    const other = await send(lead, 'POST', '/api/drawings', { workOrderNumber: OTHER, componentName: '别人的图', ownerId: 'h-pm', planDate: later })
+    // 技术员在别人的工单上建一个，设计负责人是甲（甲看不到这个工单）
+    const other = await send(tech, 'POST', '/api/drawings', { workOrderNumber: OTHER, componentName: '别人的图', ownerId: 'h-pm', planDate: later })
     const otherId = ((await other.json()) as { id: string }).id
 
     // 列表只含可见工单；"我的出图任务"含负责人是自己的（不受范围限制）
@@ -419,14 +494,17 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(drawn.status).toBe(200)
     expect(await drawn.json()).toMatchObject({ status: 'DRAWN' })
     expect((await send(pm, 'POST', `/api/drawings/${otherId}/drawn`, {})).status).toBe(200)
-    expect((await send(pm, 'PATCH', `/api/drawings/${mineId}`, { note: '能看到工单的人能改' })).status).toBe(200)
+    // R13：编辑只限技术部、管理员（能看到工单的项目经理、设计负责人本人都不行）
+    expect((await send(pm, 'PATCH', `/api/drawings/${mineId}`, { note: 'x' })).status).toBe(403)
+    expect((await send(worker, 'PATCH', `/api/drawings/${mineId}`, { note: 'x' })).status).toBe(403)
+    expect((await send(tech, 'PATCH', `/api/drawings/${mineId}`, { note: '技术部能改' })).status).toBe(200)
 
     // 一键发放：发放单记下 drawingTaskId，任务完成；别人工单的任务甲不能发
-    const rel = await send(pm, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: '主梁总图发放', userIds: ['h-worker'], drawingTaskId: mineId })
+    const rel = await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: '主梁总图发放', userIds: ['h-worker'], drawingTaskId: mineId })
     expect(rel.status).toBe(200)
     expect(await rel.json()).toMatchObject({ drawing: { status: 'DONE' } })
     expect((await send(pm, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: OTHER, description: 'x', userIds: ['h-worker'], drawingTaskId: otherId })).status).toBe(403)
-    expect((await send(pm, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-worker'], drawingTaskId: otherId })).status).toBe(400)
+    expect((await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-worker'], drawingTaskId: otherId })).status).toBe(400)
     const load = await get('/api/drawings/load', pm)
     expect(load.status).toBe(200)
   })
@@ -480,5 +558,83 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(patched.status).toBe(200)
     expect((await send(worker, 'DELETE', `/api/kitting/${mineId}`)).status).toBe(200)
     expect((await get(`/api/kitting/${mineId}`, pm)).status).toBe(400)
+  })
+  it('权限 R13：部门对照决定业务部门和菜单；工件工序、开工完工按角色收紧；领导总览、部门对照设置', async () => {
+    const send = (sess: Record<string, string>, method: string, path: string, body?: object) =>
+      fetch(`${base}${path}`, { method, headers: { cookie: cookieHeader(sess), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+    const me = async (s: Record<string, string>) =>
+      (await (await get('/api/me', s)).json()) as { businessDept: string | null; menu: string[]; pmOf: string[]; can: Record<string, boolean> }
+    const tech = await login('h-tech')
+    const buyer = await login('h-buyer')
+    const prod = await login('h-prod')
+    const qa = await login('h-qa')
+    const pm = await login('h-pm')
+    const lead = await login('h-lead')
+    const admin = await login('h-admin')
+
+    // 业务部门：直接对照 / 随上级 / 按名称（没有对照）
+    expect(await me(tech)).toMatchObject({ businessDept: 'TECH', menu: ['tech'] })
+    expect(await me(buyer)).toMatchObject({ businessDept: 'PURCHASE', menu: ['purchase', 'kitting'], can: { purchase: true, seeAmount: true } })
+    expect(await me(prod)).toMatchObject({ businessDept: 'PRODUCTION', menu: ['production', 'releases'], can: { route: true, stepAction: true, mobileSend: true } })
+    expect(await me(qa)).toMatchObject({ businessDept: 'QUALITY', menu: ['production'], can: { route: false, mobileSend: false } })
+    expect(await me(pm)).toMatchObject({ menu: ['tech', 'purchase', 'production'], pmOf: [MINE], can: { overview: false } })
+    expect(await me(lead)).toMatchObject({ menu: ['overview', 'tech', 'purchase', 'production'], can: { overview: true, seeAmount: true } })
+
+    // 工件：生产部任何工单都能建；项目经理只能在自己的工单；质量部、技术部只读
+    await db.qmsProcess.upsert({ where: { id: 'T-PRC-R13' }, update: {}, create: { id: 'T-PRC-R13', name: '组焊', updatedAt: new Date() } })
+    const prodPart = await send(prod, 'POST', '/api/parts', { workOrderNumber: OTHER, name: 'R13 生产建的', quantity: 1 })
+    expect(prodPart.status).toBe(200)
+    const qaDenied = await send(qa, 'POST', '/api/parts', { workOrderNumber: MINE, name: 'x', quantity: 1 })
+    expect(qaDenied.status).toBe(403)
+    expect(((await qaDenied.json()) as { message: string }).message).toBe('只有生产部、外协专员、该工单项目经理或管理员可以修改工件和工序')
+    expect((await send(tech, 'POST', '/api/parts', { workOrderNumber: MINE, name: 'x', quantity: 1 })).status).toBe(403)
+    const pmPart = await send(pm, 'POST', '/api/parts', { workOrderNumber: MINE, name: 'R13 项目经理建的', quantity: 1 })
+    expect(pmPart.status).toBe(200)
+    const partId = ((await pmPart.json()) as { id: string }).id
+    expect((await send(qa, 'PATCH', `/api/parts/${partId}`, { name: 'x' })).status).toBe(403)
+
+    // 工序：项目经理在自己的工单上加；责任人是质检员
+    const step = await send(pm, 'POST', `/api/parts/${partId}/steps`, { processId: 'T-PRC-R13', mode: 'SELF', ownerId: 'h-qa' })
+    expect(step.status).toBe(200)
+    const stepId = (await db.routeStep.findFirstOrThrow({ where: { partId }, select: { id: true } })).id
+    // 改工序：责任人本人也不行（只能开工完工）；项目经理可以
+    expect((await send(qa, 'PATCH', `/api/steps/${stepId}`, { ownerId: 'h-qa' })).status).toBe(403)
+    expect((await send(qa, 'POST', `/api/steps/${stepId}/move`, { direction: 'up' })).status).toBe(403)
+    expect((await send(pm, 'PATCH', `/api/steps/${stepId}`, { ownerId: 'h-qa' })).status).toBe(200)
+
+    // 开工 / 完工：项目经理、技术员不行；工序责任人本人可以；生产部可以
+    const startDenied = await send(pm, 'POST', `/api/steps/${stepId}/start`, {})
+    expect(startDenied.status).toBe(403)
+    expect(((await startDenied.json()) as { message: string }).message).toBe('只有生产部、外协专员、该工序责任人或管理员可以登记开工、完工、发出、返厂')
+    expect((await send(tech, 'POST', `/api/steps/${stepId}/start`, {})).status).toBe(403)
+    expect((await send(qa, 'POST', `/api/steps/${stepId}/start`, {})).status).toBe(200)
+    expect((await send(prod, 'POST', `/api/steps/${stepId}/finish`, {})).status).toBe(200)
+
+    // 领导总览：领导、管理员可调；其他人 403（项目经理、项目部以外的部门）
+    expect((await get('/api/overview', qa)).status).toBe(403)
+    expect((await get('/api/overview', pm)).status).toBe(403)
+    const ov = await get('/api/overview', lead)
+    expect(ov.status).toBe(200)
+    const overview = (await ov.json()) as { summary: Record<string, number>; stages: { key: string; count: number }[]; byDept: unknown[]; redWorkOrders: unknown[] }
+    expect(Object.keys(overview.summary).sort()).toEqual(['closedIssues', 'green', 'newIssues', 'overdueIssues', 'red', 'yellow'])
+    expect(overview.stages.map((x) => x.key)).toEqual(['drawing', 'shortage', 'outsource', 'kitting', 'issue'])
+    expect((await get('/api/overview', admin)).status).toBe(200)
+
+    // 部门对照设置：仅管理员；改了立即生效；"不对应"删掉对照后回到按名称
+    expect((await send(lead, 'PUT', '/api/settings/dept-mappings/T-DEPT-PROD', { businessDept: 'QUALITY' })).status).toBe(403)
+    expect((await send(admin, 'PUT', '/api/settings/dept-mappings/T-NOPE', { businessDept: 'QUALITY' })).status).toBe(400)
+    expect((await send(admin, 'PUT', '/api/settings/dept-mappings/T-DEPT-PROD', { businessDept: 'QUALITY' })).status).toBe(200)
+    expect((await me(await login('h-prod'))).businessDept).toBe('QUALITY')
+    expect((await send(admin, 'PUT', '/api/settings/dept-mappings/T-DEPT-PROD', { businessDept: null })).status).toBe(200)
+    expect((await me(await login('h-prod'))).businessDept).toBe('PRODUCTION')
+    const settings = (await (await get('/api/settings', admin)).json()) as {
+      departments: string[]
+      deptsWithoutHead: string[]
+      qmsDepartments: { id: string; parentName: string | null; level: number; businessDept: string | null; effective: string | null }[]
+    }
+    expect(settings.departments).toEqual(['技术部', '采购部', '生产部', '质量部', '财务部', '项目部'])
+    expect(settings.qmsDepartments.find((d) => d.id === 'T-DEPT-BUY1')).toMatchObject({ parentName: '供应部', level: 1, businessDept: null, effective: '采购部' })
+    // 部门负责人只能选 6 个业务部门
+    expect((await send(admin, 'POST', '/api/settings/roles', { role: 'DEPT_HEAD', userId: 'h-qa', department: '检验科' })).status).toBe(400)
   })
 })

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-/** 外协在途：已发出未全部返回的步骤；超期标红；可补登返厂（QMS 漏报时） */
+/** 外协在途：已发出未全部返回的步骤；超期标红；可补登返厂（QMS 漏报时；生产部、外协专员、该工序责任人、管理员） */
 definePageMeta({ layout: 'mobile' })
+const { data: me } = await useMe()
 const { data: workOrders } = await useWorkOrders()
 const { data: master } = await useMaster()
 const route = useRoute()
@@ -55,7 +56,7 @@ async function doReturn() {
           </div>
         </template>
         <template #value>
-          <van-button size="small" :type="r.overdueDays > 0 ? 'danger' : 'primary'" plain @click="openReturn(r)">补登返厂</van-button>
+          <van-button v-if="canDo(me, 'stepAction', { ownerId: r.ownerId })" size="small" :type="r.overdueDays > 0 ? 'danger' : 'primary'" plain @click="openReturn(r)">补登返厂</van-button>
         </template>
       </van-cell>
     </van-cell-group>

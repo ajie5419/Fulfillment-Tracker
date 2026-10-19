@@ -16,7 +16,8 @@ import { loadOffDays, loadThresholds } from '../alerts/config'
 import { alertKey, dateFieldDay, judgeW4 } from '../alerts/rules'
 import { FlowError, FlowForbidden } from '../flow/errors'
 import { restoreBlockedStep } from '../flow/flow'
-import { departmentNames, loadNames } from '../flow/names'
+import { deptIdsResolvingTo, loadDeptIndex, representativeDeptId, resolveDeptName, resolveDeptNames } from '../auth/departments'
+import { loadNames } from '../flow/names'
 import {
   CATEGORY_TEXT,
   DEFAULT_DEPT_NAME,
@@ -68,32 +69,35 @@ async function nextIssueNo(tx: Tx, now: Date) {
 
 // ───────────── 责任部门与负责人 ─────────────
 
-/** 部门负责人（notify_role 的 DEPT_HEAD，按部门名称对应），取第一个 */
+/** 部门负责人（notify_role 的 DEPT_HEAD，按业务部门名称对应），取第一个 */
 async function deptHeadOf(db: Db, deptName: string | null | undefined) {
   if (!deptName) return null
   const head = await db.notifyRole.findFirst({ where: { role: 'DEPT_HEAD', department: deptName }, orderBy: { id: 'asc' }, select: { userId: true } })
   return head?.userId ?? null
 }
 
-/** 按分类默认的责任部门（按名称匹配 qms_department）和默认责任人（该部门负责人，没有则为空） */
+/**
+ * 按分类默认的责任部门和默认责任人（该部门负责人，没有则为空）。
+ * 责任部门：名称正好是该业务部门的 QMS 部门；没有时取设置页"部门对照"里对到它的部门（departments.representativeDeptId）
+ */
 export async function defaultResponsible(db: Db, category: IssueCategory) {
   const name = DEFAULT_DEPT_NAME[category]
-  const dept = await db.qmsDepartment.findFirst({ where: { name, isDeleted: false }, orderBy: { id: 'asc' }, select: { id: true } })
-  return { deptId: dept?.id ?? null, userId: await deptHeadOf(db, name) }
+  return { deptId: representativeDeptId(name, await loadDeptIndex()), userId: await deptHeadOf(db, name) }
 }
 
 /**
- * "本部门"筛选：我担任负责人的部门（notify_role 按名称配置，换成 qms_department.id）+ 我自己所在的部门。
- * 我所在部门在 QMS 里存的就是部门 ID；同名部门（同名不同 ID）也算本部门，与按名称配置的负责人口径一致。
+ * "本部门"筛选：我担任负责人的部门 + 我自己所在的部门，都按业务部门换算（departments.ts）后，
+ * 换算结果相同的全部 QMS 部门 ID（班组、科室对到大部门的也算），与部门负责人、预警升级的口径一致。
  */
 export async function myDepartmentIds(userId: string): Promise<string[]> {
-  const [roles, user] = await Promise.all([
+  const [roles, user, index] = await Promise.all([
     prisma.notifyRole.findMany({ where: { userId, role: 'DEPT_HEAD' }, select: { department: true } }),
     prisma.qmsUser.findUnique({ where: { id: userId }, select: { departmentId: true } }),
+    loadDeptIndex(),
   ])
-  const own = user?.departmentId ? (await departmentNames([user.departmentId])).get(user.departmentId) : undefined
+  const own = resolveDeptName(user?.departmentId, index)
   const names = [...new Set([...roles.map((r) => r.department), own].filter((x): x is string => !!x))]
-  const ids = names.length ? (await prisma.qmsDepartment.findMany({ where: { name: { in: names }, isDeleted: false }, select: { id: true } })).map((d) => d.id) : []
+  const ids = names.flatMap((n) => deptIdsResolvingTo(n, index))
   return [...new Set([...ids, ...(user?.departmentId ? [user.departmentId] : [])])]
 }
 
@@ -109,15 +113,16 @@ interface PermContext {
 async function loadPermContext(db: Db, actor: Actor, issues: Pick<Issue, 'responsibleDeptId' | 'workOrderNumber'>[]): Promise<PermContext> {
   const deptIds = [...new Set(issues.map((i) => i.responsibleDeptId).filter((x): x is string => !!x))]
   const wos = [...new Set(issues.map((i) => i.workOrderNumber))]
-  const [roles, depts, exts] = await Promise.all([
+  const [roles, deptName, exts] = await Promise.all([
     db.notifyRole.findMany({ where: { userId: actor.userId } }),
-    deptIds.length ? db.qmsDepartment.findMany({ where: { id: { in: deptIds } }, select: { id: true, name: true } }) : [],
+    // 责任部门（QMS 部门 ID）换成业务部门名称，与部门负责人的 department 对应
+    resolveDeptNames(deptIds),
     wos.length ? db.workOrderExt.findMany({ where: { workOrderNumber: { in: wos } }, select: { workOrderNumber: true, projectManagerId: true } }) : [],
   ])
   return {
     actor,
     roles,
-    deptName: new Map(depts.map((d) => [d.id, d.name])),
+    deptName,
     pmOf: new Map(exts.map((e) => [e.workOrderNumber, e.projectManagerId])),
   }
 }

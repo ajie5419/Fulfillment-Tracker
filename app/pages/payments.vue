@@ -1,7 +1,9 @@
 <script setup lang="ts">
 /**
  * 付款申请（R10）：项目和财务看。按影响排序：卡交期的在前，再按离需求日最近。
- * 财务（设置页"通知对象"里的 财务）或管理员标记 已付 / 暂缓 / 待付，可写一句处理意见；不做审批。
+ * 财务（设置页"人员与角色"里的 财务）或管理员标记 已付 / 暂缓 / 待付，可写一句处理意见；不做审批。
+ * 金额只给财务、采购部、领导、项目部负责人、管理员、该工单项目经理看（接口里其他人的金额是 null，显示"—"）。
+ * 申请付款：采购部、该工单项目经理、管理员。
  */
 const route = useRoute()
 const { data: workOrders } = await useWorkOrders()
@@ -37,7 +39,13 @@ const rows = computed(() => data.value as unknown as PaymentRow[])
 const canSetStatus = computed(() => !!me.value?.isAdmin || !!me.value?.roles.includes('FINANCE'))
 const totals = computed(() => {
   const unpaid = rows.value.filter((r) => r.status !== 'PAID')
-  return { count: unpaid.length, blocking: unpaid.filter((r) => r.blocksDelivery).length, amount: unpaid.reduce((n, r) => n + (r.amount ?? 0), 0) }
+  return {
+    count: unpaid.length,
+    blocking: unpaid.filter((r) => r.blocksDelivery).length,
+    amount: unpaid.reduce((n, r) => n + (r.amount ?? 0), 0),
+    // 有看不到金额的行时不显示合计，免得合计少算
+    amountHidden: unpaid.some((r) => r.amount == null),
+  }
 })
 
 const creating = ref(false)
@@ -117,16 +125,16 @@ const columns = [
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
         <a-button @click="refresh()">刷新</a-button>
-        <a-button type="primary" @click="creating = true">申请付款</a-button>
+        <a-button v-if="canDoAny(me, 'payment')" type="primary" @click="creating = true">申请付款</a-button>
       </a-space>
     </template>
     <a-space size="large" class="totals">
       <span>未付 <b>{{ totals.count }}</b> 笔</span>
       <span :class="{ warn: totals.blocking }">其中卡交期 <b>{{ totals.blocking }}</b> 笔</span>
-      <span>未付金额 <b>{{ moneyText(totals.amount) }}</b> 元</span>
+      <span v-if="!totals.amountHidden">未付金额 <b>{{ moneyText(totals.amount) }}</b> 元</span>
     </a-space>
     <p class="muted">
-      排序：卡交期的在前，再按关联物料里离需求日最近的。不做审批：{{ canSetStatus ? '你可以直接标记 已付 / 暂缓。' : '财务标记 已付 / 暂缓（财务在设置页"通知对象"里配置）。' }}
+      排序：卡交期的在前，再按关联物料里离需求日最近的。不做审批：{{ canSetStatus ? '你可以直接标记 已付 / 暂缓。' : '财务标记 已付 / 暂缓（财务在设置页"人员与角色"里配置）。' }}
     </p>
     <a-table :columns="columns" :data-source="rows" :loading="pending" row-key="id" size="small" :pagination="{ pageSize: 50, hideOnSinglePage: true }">
       <template #emptyText><a-empty description="没有付款申请" /></template>
@@ -174,7 +182,7 @@ const columns = [
   <PaymentCreateModal :open="creating" @close="creating = false" @done="creating = false; refresh()" />
 
   <a-modal :open="!!acting" :title="acting ? `标记为${PAYMENT_STATUS_TEXT[acting.status]}` : ''" ok-text="确定" :confirm-loading="busy" @ok="submitStatus" @cancel="acting = null">
-    <p v-if="acting">{{ acting.row.workOrderNumber }} · {{ acting.row.lines.map((l) => l.materialName).join('、') }} · {{ moneyText(acting.row.amount) }} 元</p>
+    <p v-if="acting">{{ acting.row.workOrderNumber }} · {{ acting.row.lines.map((l) => l.materialName).join('、') }} · {{ moneyWithUnit(acting.row.amount) }}</p>
     <a-input v-model:value="financeNote" :maxlength="500" placeholder="处理意见，可空（如：月底统一付）" />
   </a-modal>
 </template>

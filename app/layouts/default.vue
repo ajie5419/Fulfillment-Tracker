@@ -1,33 +1,45 @@
 <script setup lang="ts">
 const { data: me } = await useMe()
 const route = useRoute()
-// 左侧竖向菜单，按岗位分组；条目多了也能纵向排下，窄屏（< lg）收起，点左侧把手展开
-const groups = computed(() => [
-  { title: '每日', items: [
-    { key: '/', label: '我的提醒' },
-    { key: '/alerts', label: '预警列表' },
-    { key: '/issues', label: '异常列表' },
-    { key: '/board', label: '看板' },
-  ] },
-  { title: '技术', items: [
-    { key: '/drawings', label: '出图任务' },
-    { key: '/releases', label: '发放签收' },
-  ] },
-  { title: '采购', items: [
-    { key: '/purchases', label: '采购到货' },
-    { key: '/payments', label: '付款申请' },
-  ] },
-  { title: '生产', items: [
-    { key: '/kitting', label: '齐套' },
-    { key: '/parts', label: '工件与工序链' },
-    { key: '/templates', label: '路线模板' },
-    { key: '/unmatched', label: '待确认匹配' },
-  ] },
-  { title: '系统', items: [
-    ...(me.value?.isAdmin ? [{ key: '/settings', label: '设置' }] : []),
-    ...(me.value?.devTools ? [{ key: '/dev', label: '演示工具' }] : []),
-  ] },
-].filter((g) => g.items.length))
+// 左侧竖向菜单，按岗位分组；条目多了也能纵向排下，窄屏（< lg）收起，点左侧把手展开。
+// 按角色只显示相关分组（权限方案 R13 第二节，me.menu 由后端算，多角色取并集）；页面本身不拦，从提醒链接点进去仍能只读查看。
+// sections：条目属于哪些菜单分区，有任一分区可见就显示；没写的（"每日"组）人人可见
+interface MenuItem {
+  key: string
+  label: string
+  sections?: string[]
+}
+const groups = computed(() => {
+  const visible = new Set(me.value?.menu ?? [])
+  const show = (items: MenuItem[]) => items.filter((i) => !i.sections || i.sections.some((s) => visible.has(s)))
+  return [
+    { title: '每日', items: show([
+      { key: '/', label: '我的提醒' },
+      { key: '/overview', label: '领导总览', sections: ['overview'] },
+      { key: '/alerts', label: '预警列表' },
+      { key: '/issues', label: '异常列表' },
+      { key: '/board', label: '看板' },
+    ]) },
+    { title: '技术', items: show([
+      { key: '/drawings', label: '出图任务', sections: ['tech'] },
+      { key: '/releases', label: '发放签收', sections: ['tech', 'releases'] },
+    ]) },
+    { title: '采购', items: show([
+      { key: '/purchases', label: '采购到货', sections: ['purchase'] },
+      { key: '/payments', label: '付款申请', sections: ['purchase', 'payments'] },
+    ]) },
+    { title: '生产', items: show([
+      { key: '/kitting', label: '齐套', sections: ['production', 'kitting'] },
+      { key: '/parts', label: '工件与工序链', sections: ['production'] },
+      { key: '/templates', label: '路线模板', sections: ['production'] },
+      { key: '/unmatched', label: '待确认匹配', sections: ['production'] },
+    ]) },
+    { title: '系统', items: [
+      ...(me.value?.isAdmin ? [{ key: '/settings', label: '设置' }] : []),
+      ...(me.value?.devTools ? [{ key: '/dev', label: '演示工具' }] : []),
+    ] },
+  ].filter((g) => g.items.length)
+})
 const menu = computed(() => groups.value.flatMap((g) => g.items))
 const collapsed = ref(false)
 /** 窄屏（< lg）时菜单收起，由页头的"菜单"按钮展开（键盘可达）；宽屏始终展开 */
@@ -119,7 +131,7 @@ onBeforeUnmount(() => clearInterval(timer))
         <span class="brand">项目履约</span>
       </span>
       <span v-if="me" class="user">
-        {{ me.name }}<template v-if="me.department"> · {{ me.department }}</template>
+        {{ me.name }}<template v-if="me.department"> · {{ me.department }}</template><template v-if="me.businessDeptName && me.businessDeptName !== me.department">（{{ me.businessDeptName }}）</template>
         <a-button type="link" size="small" @click="logout">退出 / 切换账号</a-button>
       </span>
     </a-layout-header>

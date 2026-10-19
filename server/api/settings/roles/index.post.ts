@@ -9,5 +9,5 @@ const body = z
   })
   .strict()
 
-/** 添加通知对象。仅管理员 */
+/** 添加人员角色（通知对象）；部门负责人的部门只能是 6 个业务部门之一。仅管理员 */
 export default defineAdminHandler(async (event) => addNotifyRole(await parseBody(event, body)))

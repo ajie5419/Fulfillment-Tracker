@@ -88,6 +88,9 @@ export function fetchPurchase(id: string) {
 }
 
 /** 金额：千分位，两位小数 */
-export const moneyText = (n: number | null | undefined) => (n == null ? '' : n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+/** 金额；null = 无权查看（接口按权限去掉了，权限方案 R13），显示"—" */
+export const moneyText = (n: number | null | undefined) => (n == null ? '—' : n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+/** 金额带单位；无权查看时只显示"—" */
+export const moneyWithUnit = (n: number | null | undefined) => (n == null ? '—' : `${moneyText(n)} 元`)
 /** 数量 + 单位 */
 export const qtyText = (r: { quantity: number | null; unit: string | null }) => `${r.quantity ?? ''}${r.unit ? ` ${r.unit}` : ''}`

@@ -47,7 +47,21 @@ const DEPARTMENTS = [
   { id: `${P}DEPT-PROD`, name: '生产部' },
   { id: `${P}DEPT-PROJ`, name: '项目部' },
   { id: `${P}DEPT-LEAD`, name: '公司领导' },
+  // R13：班组、科室挂在大部门下面（部门对照只对到大部门，下级自动继承）；行政部不对应任何业务部门（算"其他"）
+  { id: `${P}DEPT-WELD`, name: '组焊班', parentId: `${P}DEPT-PROD` },
+  { id: `${P}DEPT-QC`, name: '检验科', parentId: `${P}DEPT-QA` },
+  { id: `${P}DEPT-ADMIN`, name: '行政部' },
 ]
+
+/** R13 部门对照：大部门对到业务部门（演示各部门视角；班组、科室不单独对照，沿上级继承） */
+const DEPT_MAPPINGS = [
+  { qmsDepartmentId: `${P}DEPT-TECH`, businessDept: 'TECH' },
+  { qmsDepartmentId: `${P}DEPT-PUR`, businessDept: 'PURCHASE' },
+  { qmsDepartmentId: `${P}DEPT-FIN`, businessDept: 'FINANCE' },
+  { qmsDepartmentId: `${P}DEPT-QA`, businessDept: 'QUALITY' },
+  { qmsDepartmentId: `${P}DEPT-PROD`, businessDept: 'PRODUCTION' },
+  { qmsDepartmentId: `${P}DEPT-PROJ`, businessDept: 'PROJECT' },
+] as const
 
 const SUPPLIERS = [
   { id: `${P}SUP-01`, name: '厂内组焊队', outsourcingMode: 'IN_PLANT', kind: 'TEAM' }, // 厂内外协班组
@@ -83,6 +97,10 @@ const USERS = [
   { id: 'u-010', username: `${P}u-010`, realName: '测试财务', departmentId: `${P}DEPT-FIN`, roleId: `${P}ROLE-FIN`, roleName: '财务' },
   // R11：技术部负责人（出图任务没指定设计负责人时的责任人；W7 黄色起收到）
   { id: 'u-011', username: `${P}u-011`, realName: '测试技术负责人', departmentId: `${P}DEPT-TECH`, roleId: `${P}ROLE-TECH-HEAD`, roleName: '部门负责人' },
+  // R13 各部门视角：组焊班（经部门对照算生产部）、检验科（算质量部）、行政部（其他部门，只看"每日"）
+  { id: 'u-012', username: `${P}u-012`, realName: '测试焊工', departmentId: `${P}DEPT-WELD`, roleId: `${P}ROLE-WORKER`, roleName: '操作工' },
+  { id: 'u-013', username: `${P}u-013`, realName: '测试检验员', departmentId: `${P}DEPT-QC`, roleId: `${P}ROLE-QC`, roleName: '检验员' },
+  { id: 'u-014', username: `${P}u-014`, realName: '测试行政', departmentId: `${P}DEPT-ADMIN`, roleId: `${P}ROLE-ADMIN`, roleName: '行政' },
 ]
 
 // 预警升级阶梯的通知对象（方案 6.2）
@@ -258,7 +276,11 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
       await tx.qmsProcess.upsert({ where: { id: p.id }, update: {}, create: { ...p, supplierSource: 'Supplier', updatedAt: now } })
     }
     for (const d of DEPARTMENTS) {
-      await tx.qmsDepartment.upsert({ where: { id: d.id }, update: {}, create: { ...d, parentId: '0', status: 1, updatedAt: now } })
+      await tx.qmsDepartment.upsert({ where: { id: d.id }, update: {}, create: { parentId: '0', ...d, status: 1, updatedAt: now } })
+    }
+    // 部门对照：管理员在设置页改过的不覆盖
+    for (const m of DEPT_MAPPINGS) {
+      await tx.deptMapping.upsert({ where: { qmsDepartmentId: m.qmsDepartmentId }, update: {}, create: m })
     }
     for (const u of opts.skipUsers ? [] : USERS) {
       // 已有同 ID 的真实用户（同步来的）时不覆盖
@@ -368,6 +390,7 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
     suppliers: SUPPLIERS.length,
     processes: PROCESSES.length,
     departments: DEPARTMENTS.length,
+    deptMappings: DEPT_MAPPINGS.length,
     users: opts.skipUsers ? 0 : USERS.length,
     notifyRoles: NOTIFY_ROLES.length,
     parts: 3,
@@ -513,6 +536,7 @@ export async function resetDemo(uploadDir?: string) {
     await tx.qmsSupplier.deleteMany({ where: { id: { startsWith: P } } })
     await tx.qmsProcess.deleteMany({ where: { id: { startsWith: P } } })
     await tx.qmsUser.deleteMany({ where: { username: { startsWith: P } } })
+    await tx.deptMapping.deleteMany({ where: { qmsDepartmentId: { startsWith: P } } })
     await tx.qmsDepartment.deleteMany({ where: { id: { startsWith: P } } })
     return {
       storedNames: uploads.map((u) => u.storedName),

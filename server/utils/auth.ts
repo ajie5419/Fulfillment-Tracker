@@ -1,6 +1,9 @@
 import type { H3Event } from 'h3'
 import type { IdentityBridgeConfig } from '../services/auth/identity-bridge'
 import { SESSION_COOKIE } from '../services/auth/session'
+import { userBusinessDept } from '../services/auth/departments'
+import { type Operation, type OperationTarget, OPERATION_DENIED, type RoleContext, canOperate } from '../services/auth/permissions'
+import { FlowForbidden } from '../services/flow/errors'
 import { inspectionWorkOrders } from '../services/flow/inspection'
 import { prisma } from './prisma'
 
@@ -19,6 +22,7 @@ declare module 'h3' {
   interface H3EventContext {
     user?: AuthUser
     scope?: Scope
+    roleContext?: RoleContext
   }
 }
 
@@ -149,6 +153,73 @@ export async function assertCanSeeInspection(event: H3Event, inspectionId: strin
   if (!ins) return
   const scope = await getScope(event)
   if (!inspectionWorkOrders(ins).some((wo) => canSee(scope, wo))) throw forbidden()
+}
+
+// ───────────── 角色与操作权限（权限方案 R13）─────────────
+//
+// 角色上下文一次算出：管理员、通知角色、担任负责人的部门、本人业务部门（QMS 部门经 dept_mapping 换算）、担任项目经理的工单。
+// 规则在 services/auth/permissions.ts（纯函数）；这里只负责按请求加载和缓存，以及"无权 → 403"。
+// 只用于用户发起的接口；QMS 同步、报检匹配自动到货、自动转序等后台流程直接调服务，不经过这里。
+
+/** 按用户算角色上下文（不依赖请求） */
+export async function loadRoleContext(userId: string, admin: boolean): Promise<RoleContext> {
+  const [roles, managed, businessDept] = await Promise.all([
+    prisma.notifyRole.findMany({ where: { userId }, select: { role: true, department: true } }),
+    prisma.workOrderExt.findMany({ where: { projectManagerId: userId }, select: { workOrderNumber: true } }),
+    userBusinessDept(userId),
+  ])
+  return {
+    userId,
+    isAdmin: admin,
+    roles: [...new Set(roles.map((r) => r.role))],
+    deptHeadOf: [...new Set(roles.filter((r) => r.role === 'DEPT_HEAD' && r.department).map((r) => r.department!))],
+    businessDept,
+    pmOf: new Set(managed.map((m) => m.workOrderNumber)),
+  }
+}
+
+/** 当前请求用户的角色上下文（按请求缓存，像 getScope 一样） */
+export async function getRoleContext(event: H3Event): Promise<RoleContext> {
+  if (event.context.roleContext) return event.context.roleContext
+  const user = requireUser(event)
+  const ctx = await loadRoleContext(user.qmsUserId, isAdmin(event, user))
+  event.context.roleContext = ctx
+  return ctx
+}
+
+/** 无权做该操作时抛 FlowForbidden（defineFlowHandler 转成 403 + 中文提示） */
+export async function assertCanOperate(event: H3Event, op: Operation, target: OperationTarget = {}) {
+  if (!canOperate(await getRoleContext(event), op, target)) throw new FlowForbidden(OPERATION_DENIED[op])
+}
+
+/** 工件所属工单上的操作（工件不存在时不拦，由服务层报"不存在"） */
+export async function assertCanOperatePart(event: H3Event, op: Operation, partId: string) {
+  const part = await prisma.part.findUnique({ where: { id: partId }, select: { workOrderNumber: true } })
+  if (part) await assertCanOperate(event, op, { workOrderNumber: part.workOrderNumber })
+}
+
+/** 工序上的操作：带上工序所属工单和工序责任人 */
+export async function assertCanOperateStep(event: H3Event, op: Operation, stepId: string) {
+  const step = await prisma.routeStep.findUnique({ where: { id: stepId }, select: { ownerId: true, part: { select: { workOrderNumber: true } } } })
+  if (step) await assertCanOperate(event, op, { workOrderNumber: step.part.workOrderNumber, ownerId: step.ownerId })
+}
+
+/** 采购行上的操作 */
+export async function assertCanOperatePurchase(event: H3Event, id: string) {
+  const line = await prisma.purchaseLine.findUnique({ where: { id }, select: { workOrderNumber: true } })
+  if (line) await assertCanOperate(event, 'purchase', { workOrderNumber: line.workOrderNumber })
+}
+
+/** 出图任务上的编辑 */
+export async function assertCanOperateDrawing(event: H3Event, id: string) {
+  const task = await prisma.drawingTask.findUnique({ where: { id }, select: { workOrderNumber: true } })
+  if (task) await assertCanOperate(event, 'drawing', { workOrderNumber: task.workOrderNumber })
+}
+
+/** 待确认匹配（报检）上的处理：主工单或任一关联工单的项目经理也算 */
+export async function assertCanOperateInspection(event: H3Event, inspectionId: string) {
+  const ins = await prisma.qmsInspection.findUnique({ where: { id: inspectionId }, select: { workOrderNumber: true, workOrderNumbers: true } })
+  if (ins) await assertCanOperate(event, 'route', { workOrderNumbers: inspectionWorkOrders(ins) })
 }
 
 /** 管理员：NUXT_ADMIN_USER_IDS 里列出的 QMS 用户 ID（逗号分隔）。设置页的接口都用它校验 */

@@ -3,10 +3,13 @@
  * 采购到货（R10）：关键物料采购行列表、登记 / 编辑、Excel 导入、确认到货、申请付款。
  * 顶部统计：未到货、缺料、无承诺日、卡付款；延误按原因分"付款原因"和"管理原因"。
  * 地址栏 ?wo= 预选工单，?view= 选视图，?id= 打开某一行（预警提醒跳过来）。
+ * 登记 / 编辑 / 删除 / 导入 / 确认到货 / 撤销 / 申请付款：采购部、该工单项目经理、管理员（权限方案 R13），其他人只读。
  */
 const route = useRoute()
 const router = useRouter()
 const { data: workOrders } = await useWorkOrders()
+const { data: me } = await useMe()
+const canEdit = (r: { workOrderNumber: string }) => canDo(me.value, 'purchase', { workOrderNumber: r.workOrderNumber })
 
 const VIEWS = [
   { value: 'open', label: '未到货' },
@@ -55,7 +58,10 @@ async function openFromQuery() {
   const id = route.query.id as string | undefined
   if (!id) return
   try {
-    openEdit(await fetchPurchase(id))
+    const line = await fetchPurchase(id)
+    // 没有编辑权限（如收到 W6 的财务）：不弹编辑框，只把列表筛到这一条，只读查看
+    if (!canEdit(line)) keyword.value = line.materialName
+    else openEdit(line)
   } catch (e) {
     message.error(apiError(e))
   }
@@ -158,7 +164,7 @@ async function paid() {
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedKeys.value,
   onChange: (keys: (string | number)[]) => (selectedKeys.value = keys.map(String)),
-  getCheckboxProps: (r: PurchaseRow) => ({ disabled: r.status === 'CANCELLED' }),
+  getCheckboxProps: (r: PurchaseRow) => ({ disabled: r.status === 'CANCELLED' || !canDo(me.value, 'payment', { workOrderNumber: r.workOrderNumber }) }),
 }))
 
 const columns = [
@@ -194,9 +200,9 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
         />
         <a-input-search v-model:value="keyword" allow-clear placeholder="物料 / 规格 / 供应商" style="width: 180px" />
         <a-button @click="refresh()">刷新</a-button>
-        <a-button @click="importing = true">Excel 导入</a-button>
-        <a-button :disabled="!selectedKeys.length" @click="openPay">申请付款{{ selectedKeys.length ? `（${selectedKeys.length}）` : '' }}</a-button>
-        <a-button type="primary" @click="openEdit(null)">登记关键物料</a-button>
+        <a-button v-if="canDoAny(me, 'purchase')" @click="importing = true">Excel 导入</a-button>
+        <a-button v-if="canDoAny(me, 'payment')" :disabled="!selectedKeys.length" @click="openPay">申请付款{{ selectedKeys.length ? `（${selectedKeys.length}）` : '' }}</a-button>
+        <a-button v-if="canDoAny(me, 'purchase')" type="primary" @click="openEdit(null)">登记关键物料</a-button>
       </a-space>
     </template>
 
@@ -227,7 +233,8 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
       <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未到货的关键物料' : '没有记录'" /></template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'material'">
-          <a @click="openEdit(record as PurchaseRow)">{{ record.materialName }}</a>
+          <a v-if="canEdit(record as PurchaseRow)" @click="openEdit(record as PurchaseRow)">{{ record.materialName }}</a>
+          <span v-else>{{ record.materialName }}</span>
           <div class="muted">{{ [record.spec, record.partName ? `用于 ${record.partName}` : ''].filter(Boolean).join(' · ') }}</div>
         </template>
         <template v-else-if="column.key === 'qty'">{{ qtyText(record as PurchaseRow) }}</template>
@@ -259,12 +266,14 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
             <a-tag :color="record.delayReason === 'PAYMENT' ? 'purple' : 'default'">{{ record.delayReasonText }}</a-tag>
             <div v-if="record.delayNote" class="muted ellipsis" :title="record.delayNote">{{ record.delayNote }}</div>
           </template>
-          <a v-else-if="record.late" class="warn" @click="openEdit(record as PurchaseRow)">待填</a>
+          <a v-else-if="record.late && canEdit(record as PurchaseRow)" class="warn" @click="openEdit(record as PurchaseRow)">待填</a>
+          <span v-else-if="record.late" class="warn">待填</span>
           <span v-else class="muted">—</span>
         </template>
         <template v-else-if="column.key === 'owner'"><span :class="{ muted: !record.buyerId }">{{ record.ownerText }}</span></template>
         <template v-else-if="column.key === 'actions'">
-          <a-space size="small">
+          <span v-if="!canEdit(record as PurchaseRow)" class="muted">—</span>
+          <a-space v-else size="small">
             <a-button v-if="record.status === 'OPEN'" type="primary" size="small" @click="openArrive(record as PurchaseRow)">确认到货</a-button>
             <a-button v-if="record.status === 'ARRIVED'" size="small" @click="undo(record as PurchaseRow)">撤销到货</a-button>
             <a-dropdown>
