@@ -7,5 +7,5 @@ export default defineFlowHandler(async (event, user) => {
   await assertCanSee(event, input.workOrderNumber)
   await assertCanOperate(event, 'purchase', { workOrderNumber: input.workOrderNumber })
   const line = await createLine(input, user.qmsUserId)
-  return { id: line.id }
+  return { id: line.id, planWarning: line.planWarning }
 })

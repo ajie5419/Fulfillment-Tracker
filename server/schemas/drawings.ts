@@ -11,6 +11,8 @@ const taskFields = {
   /** 设计负责人；空 = 技术部负责人 */
   ownerId: z.string().max(64).nullish(),
   planDate: day,
+  /** 所属总计划节点（R14）；工单已发布总计划时新建必填 */
+  planNodeId: z.string().max(191).nullish(),
   needsCustomerConfirm: z.boolean(),
   customerPlanDate: day.nullish(),
   note: z

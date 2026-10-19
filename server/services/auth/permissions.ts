@@ -44,8 +44,14 @@ const isPM = (ctx: RoleContext, wo: string | null | undefined) => !!wo && ctx.pm
  * payment：提付款申请 —— 采购部、该工单项目经理、管理员
  * route：建/改/删工件和工序、调工序顺序、导入 BOM、套模板/复制路线、处理/忽略待确认匹配 —— 生产部、外协专员、该工单项目经理、管理员
  * stepAction：开工/完工/发出/补登返厂 —— 生产部、外协专员、该工序责任人、管理员
+ *
+ * 总计划（R14，总计划设计第 8 节）：
+ * plan：建/改/发布总计划、调整日期、增删节点 —— 该工单项目经理、项目部（含项目部负责人）、管理员
+ * planTemplate：维护总计划模板 —— 项目部负责人、管理员
+ * planConfirm：确认/退回节点 —— 该节点责任部门负责人、管理员（项目部的节点：项目部负责人也算）；手里有这条确认待办的人（转交来的）由服务层另外放行
+ * planNodeDone：手动标记节点完成 / 撤销 —— 该节点责任部门的人、该工单项目经理、管理员
  */
-export type Operation = 'drawing' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction'
+export type Operation = 'drawing' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction' | 'plan' | 'planTemplate' | 'planConfirm' | 'planNodeDone'
 
 export interface OperationTarget {
   /** 所属工单（判断"该工单项目经理"） */
@@ -54,6 +60,8 @@ export interface OperationTarget {
   workOrderNumbers?: (string | null | undefined)[]
   /** 工序责任人（stepAction） */
   ownerId?: string | null
+  /** 总计划节点的责任部门（planConfirm、planNodeDone） */
+  dept?: BusinessDept | null
 }
 
 export const OPERATION_DENIED: Record<Operation, string> = {
@@ -63,6 +71,10 @@ export const OPERATION_DENIED: Record<Operation, string> = {
   payment: '只有采购部、该工单项目经理或管理员可以提付款申请',
   route: '只有生产部、外协专员、该工单项目经理或管理员可以修改工件和工序',
   stepAction: '只有生产部、外协专员、该工序责任人或管理员可以登记开工、完工、发出、返厂',
+  plan: '只有该工单项目经理、项目部或管理员可以编辑、发布总计划',
+  planTemplate: '只有项目部负责人或管理员可以维护总计划模板',
+  planConfirm: '只有该节点责任部门的负责人或管理员可以确认、退回总计划节点',
+  planNodeDone: '只有该节点责任部门的人、该工单项目经理或管理员可以标记节点完成',
 }
 
 export function canOperate(ctx: RoleContext, op: Operation, target: OperationTarget = {}): boolean {
@@ -80,7 +92,23 @@ export function canOperate(ctx: RoleContext, op: Operation, target: OperationTar
       return inDept(ctx, 'PRODUCTION') || outsource || pm
     case 'stepAction':
       return inDept(ctx, 'PRODUCTION') || outsource || (!!target.ownerId && target.ownerId === ctx.userId)
+    case 'plan':
+      return pm || inDept(ctx, 'PROJECT') || has(ctx, 'PROJECT_DEPT_HEAD')
+    case 'planTemplate':
+      return isProjectHead(ctx)
+    case 'planConfirm':
+      return !!target.dept && isDeptHead(ctx, target.dept)
+    case 'planNodeDone':
+      return pm || (!!target.dept && inDept(ctx, target.dept))
   }
+}
+
+/** 项目部负责人：通知角色"项目部负责人"，或部门负责人且部门是项目部 */
+const isProjectHead = (ctx: RoleContext) => has(ctx, 'PROJECT_DEPT_HEAD') || ctx.deptHeadOf.includes(BUSINESS_DEPT_NAME.PROJECT)
+
+/** 某业务部门的负责人（项目部另含"项目部负责人"角色） */
+export function isDeptHead(ctx: RoleContext, dept: BusinessDept): boolean {
+  return ctx.deptHeadOf.includes(BUSINESS_DEPT_NAME[dept]) || (dept === 'PROJECT' && has(ctx, 'PROJECT_DEPT_HEAD'))
 }
 
 /** 财务：通知角色"财务"，或业务部门是财务部的人 */
@@ -145,5 +173,8 @@ export function permissionFlags(ctx: RoleContext) {
     seeAmount: canSeeAmount(ctx, null),
     mobileSend: canSeeMobileSend(ctx),
     overview: canSeeOverview(ctx),
+    /** 总计划：项目部、管理员（该工单项目经理由前端用 pmOf 补上） */
+    plan: canOperate(ctx, 'plan'),
+    planTemplate: canOperate(ctx, 'planTemplate'),
   }
 }

@@ -7,6 +7,8 @@ import { describeReleaseTodos } from '../releases/releases'
 import { FlowError } from './errors'
 import { ARRANGE_SEND, ARRANGE_START } from './flow'
 import { MODE_TEXT, loadNames } from './names'
+import { CONFIRM_PLAN_NODE, PLAN_REF } from '../plan/constants'
+import { describePlanTodos } from '../plan/plan'
 
 const ACTION_TEXT: Record<string, string> = {
   [ARRANGE_SEND]: '安排发出',
@@ -14,12 +16,14 @@ const ACTION_TEXT: Record<string, string> = {
   [SIGN_RELEASE]: '签收',
   [CONFIRM_CHANGE]: '确认变更影响',
   [READY_TO_START]: '可以开工',
+  [CONFIRM_PLAN_NODE]: '确认总计划节点',
 }
 
 /**
  * visibleWorkOrders：可见工单（undefined = 全部）；不可见工单上的步骤待办不列出。
  * 发放相关的待办（签收、确认变更影响）是发给本人的，不受可见范围限制（接收人看得到发给自己的发放单）。
  * "可以开工"（R10，refType = part）按工件所属工单判断可见；附上工件的第一道工序，页面按工序方式给"登记发出"或"开工"。
+ * "确认总计划节点"（R14，refType = planNode）发给部门负责人本人，不受可见范围限制；附上总计划页的跳转地址（plan.link）。
  */
 export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) {
   let todos = await prisma.todo.findMany({ where: { ownerId: userId, status: 'OPEN' }, orderBy: { createdAt: 'asc' } })
@@ -45,12 +49,26 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) 
   })
   const byId = new Map(steps.map((s) => [s.id, s]))
   const releases = await describeReleaseTodos(todos)
+  const plans = await describePlanTodos(todos.filter((t) => t.refType === PLAN_REF).map((t) => t.refId))
 
   return todos.map((t) => {
     const actionText = ACTION_TEXT[t.action] ?? t.action
+    if (t.refType === PLAN_REF) {
+      const p = plans.get(t.refId)
+      if (!p) return { ...t, actionText, title: actionText, suggestion: '关联的总计划节点已删除', step: null, release: null, plan: null }
+      return {
+        ...t,
+        actionText,
+        title: `${actionText}：${p.workOrderNumber} · ${p.name}（${p.deptText}，计划 ${p.planDate}）`,
+        suggestion: '项目经理已发布总计划：请确认本部门能按这个日期完成；做不到请退回并写原因',
+        step: null,
+        release: null,
+        plan: { ...p, nodeId: t.refId },
+      }
+    }
     if (t.refType === 'receipt' || t.refType === 'release') {
       const release = (t.refType === 'receipt' ? releases.byReceipt.get(t.refId) : releases.byRelease.get(t.refId)) ?? null
-      if (!release) return { ...t, actionText, title: actionText, suggestion: '关联的发放单已删除', step: null, release: null }
+      if (!release) return { ...t, actionText, title: actionText, suggestion: '关联的发放单已删除', step: null, release: null, plan: null }
       const what = `${release.typeText} ${release.releaseNo}${release.version ? `（${release.version}）` : ''}${release.parts.length ? ` · ${release.parts.join('、')}` : ''}`
       return {
         ...t,
@@ -62,11 +80,12 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) 
             : '关联工件已在加工或在外协：请确认变更影响（是否返工、是否通知外协厂），确认后解除未开工工序的"等变更"',
         step: null,
         release: { ...release, receiptId: t.refType === 'receipt' ? t.refId : null },
+        plan: null,
       }
     }
     if (t.refType === 'part') {
       const p = ready.get(t.refId)
-      if (!p) return { ...t, actionText, title: actionText, suggestion: '关联的工件已删除', step: null, release: null }
+      if (!p) return { ...t, actionText, title: actionText, suggestion: '关联的工件已删除', step: null, release: null, plan: null }
       const s = p.step
       const verb = s?.mode === 'EXTERNAL_OUTSOURCE' ? '登记发出' : '开工'
       return {
@@ -76,10 +95,11 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) 
         suggestion: `${[p.arrived ? `关键物料已全部到货（${p.arrived} 项）` : '', p.drawings ? `图纸已发放（${p.drawings} 个出图任务）` : ''].filter(Boolean).join('，') || '物料和图纸已齐'}，请安排${s ? `第一道工序${verb}` : '开工'}`,
         step: s,
         release: null,
+        plan: null,
       }
     }
     const step = byId.get(t.refId)
-    if (!step) return { ...t, actionText, title: actionText, suggestion: '关联对象已删除', step: null, release: null }
+    if (!step) return { ...t, actionText, title: actionText, suggestion: '关联对象已删除', step: null, release: null, plan: null }
     const processName = names.process.get(step.processId) ?? step.processId
     const prev = prevSteps.find((p) => p.partId === step.partId && p.seq < step.seq)
     const prevName = prev ? (names.process.get(prev.processId) ?? prev.processId) : null
@@ -108,6 +128,7 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[]) 
         held: !!step.holdReleaseId,
       },
       release: null,
+      plan: null,
     }
   })
 }

@@ -6,9 +6,11 @@
  * 同一工单下物料名称 + 规格 + 需求日都相同、且没取消的采购行视为重复（文件里重复、或已经导入过），报错不导。
  *
  * 列按表头名称识别（顺序可调，表头的 * 可有可无）：
- *   工单号*、物料名称*、规格型号、数量*、单位、供应商、需求日*、承诺到货日、实际到货日、采购负责人、工件（名称或图号）、备注
+ *   工单号*、物料名称*、规格型号、数量*、单位、供应商、需求日*、承诺到货日、实际到货日、采购负责人、工件（名称或图号）、总计划节点、备注
  * 供应商：和 QMS 供应商名称完全一致时关联到该供应商，否则按手填名称保存。
  * 采购负责人：QMS 姓名或账号；工件：该工单下的工件名称或图号。找不到或有重名时报错。
+ * 总计划节点（R14，可选列）：按该工单的节点名称匹配；匹配不到（或重名）时留空照常导入，结果里逐行提示（warnings）；
+ * 工单已发布总计划、这一行又没填节点的也提示。导入不因节点拦截（页面上可以再补挂）。
  */
 import ExcelJS from 'exceljs'
 import type { Prisma } from '@prisma/client'
@@ -32,6 +34,7 @@ export const TEMPLATE_COLUMNS = [
   { key: 'arrivedDate', header: '实际到货日', required: false, width: 13, hint: '可空，已经到了的填，不能晚于今天' },
   { key: 'buyer', header: '采购负责人', required: false, width: 12, hint: '可空，QMS 姓名或账号；空 = 采购部负责人' },
   { key: 'part', header: '工件（名称或图号）', required: false, width: 20, hint: '可空，用这批物料的工件；全部到货时给它的第一道工序发"可以开工"' },
+  { key: 'planNode', header: '总计划节点', required: false, width: 16, hint: '可空，该工单总计划里的节点名称，如"关键物料到货"；对不上时留空导入并提示' },
   { key: 'note', header: '备注', required: false, width: 24, hint: '可空' },
 ] as const
 
@@ -71,6 +74,7 @@ export async function buildTemplate(): Promise<Buffer> {
     arrivedDate: '',
     buyer: '张三',
     part: '回转平台',
+    planNode: '关键物料到货',
     note: '进口，周期 90 天',
   }
   for (const c of TEMPLATE_COLUMNS) help.addRow({ col: c.header, hint: c.hint, example: example[c.key] })
@@ -178,6 +182,10 @@ export interface ImportContext {
   /** 已有的没取消的采购行（查重） */
   existing: { workOrderNumber: string; materialName: string; spec: string | null; needDate: Date }[]
   today: string
+  /** 相关工单的总计划节点（R14）；不给时不匹配 */
+  planNodes?: { id: string; workOrderNumber: string; name: string }[]
+  /** 已发布总计划的工单 */
+  publishedWos?: Set<string>
 }
 
 export interface ImportLine {
@@ -194,15 +202,17 @@ export interface ImportLine {
   arrivedDate: string | null
   buyerId: string | null
   partId: string | null
+  planNodeId: string | null
   note: string | null
 }
 
 const dupKey = (wo: string, name: string, spec: string | null, need: string) => `${wo}\u0000${normalizeName(name)}\u0000${normalizeName(spec)}\u0000${need}`
 
-/** 逐行校验：返回可导入的行和每行的问题（有问题的行不进 lines） */
-export function validateRows(rows: RawRow[], ctx: ImportContext): { lines: ImportLine[]; errors: RowError[] } {
+/** 逐行校验：返回可导入的行、每行的问题（有问题的行不进 lines），以及不拦截的提示（总计划节点对不上等） */
+export function validateRows(rows: RawRow[], ctx: ImportContext): { lines: ImportLine[]; errors: RowError[]; warnings: RowError[] } {
   const lines: ImportLine[] = []
   const errors: RowError[] = []
+  const warnings: RowError[] = []
   const seen = new Map<string, number>()
   for (const e of ctx.existing) seen.set(dupKey(e.workOrderNumber, e.materialName, e.spec, dateFieldDay(e.needDate)), 0)
   for (const { row, values: v } of rows) {
@@ -256,6 +266,17 @@ export function validateRows(rows: RawRow[], ctx: ImportContext): { lines: Impor
       if (hit.length === 1) partId = hit[0]!.id
       else msgs.push(hit.length ? `工件"${part}"有重名，请填图号` : `工单 ${wo} 下没有工件"${part}"`)
     }
+    let planNodeId: string | null = null
+    const nodeName = text(v.planNode ?? null)
+    if (wo && ctx.workOrders.has(wo)) {
+      if (nodeName) {
+        const hit = (ctx.planNodes ?? []).filter((n) => n.workOrderNumber === wo && n.name.trim() === nodeName)
+        if (hit.length === 1) planNodeId = hit[0]!.id
+        else warnings.push({ row, messages: [hit.length ? `总计划节点"${nodeName}"有重名，已留空，请在页面上选择` : `工单 ${wo} 的总计划里没有节点"${nodeName}"，已留空`] })
+      } else if (ctx.publishedWos?.has(wo)) {
+        warnings.push({ row, messages: [`工单 ${wo} 已发布总计划，这一行没填总计划节点，已留空，请在页面上补挂`] })
+      }
+    }
     const note = text(v.note ?? null)
     if (note && note.length > 500) msgs.push('备注最多 500 字')
     if (wo && materialName && d.needDate) {
@@ -283,10 +304,11 @@ export function validateRows(rows: RawRow[], ctx: ImportContext): { lines: Impor
       arrivedDate: d.arrivedDate,
       buyerId,
       partId,
+      planNodeId,
       note,
     })
   }
-  return { lines, errors }
+  return { lines, errors, warnings }
 }
 
 // ───────────── 导入 ─────────────
@@ -295,6 +317,8 @@ export interface ImportResult {
   imported: number
   /** 有问题的行；不为空时什么都没导入 */
   errors: RowError[]
+  /** 不拦截的提示（总计划节点对不上、已发布总计划却没填节点）；导入照常 */
+  warnings: RowError[]
   rows: number
 }
 
@@ -307,14 +331,16 @@ export async function importPurchases(
 ): Promise<ImportResult> {
   const rows = await readWorkbook(buf)
   const wos = [...new Set(rows.map((r) => text(r.values.workOrderNumber ?? null)).filter((x): x is string => !!x))]
-  const [workOrders, suppliers, users, parts, existing] = await Promise.all([
+  const [workOrders, suppliers, users, parts, existing, planNodes, plans] = await Promise.all([
     prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: wos }, isDeleted: false }, select: { workOrderNumber: true } }),
     prisma.qmsSupplier.findMany({ where: { isDeleted: false, kind: 'SUPPLIER' }, select: { id: true, name: true } }),
     prisma.qmsUser.findMany({ where: { isDeleted: false, status: 'ACTIVE' }, select: { id: true, username: true, realName: true } }),
     prisma.part.findMany({ where: { workOrderNumber: { in: wos } }, select: { id: true, workOrderNumber: true, name: true, drawingNo: true } }),
     prisma.purchaseLine.findMany({ where: { workOrderNumber: { in: wos }, status: { not: 'CANCELLED' } }, select: { workOrderNumber: true, materialName: true, spec: true, needDate: true } }),
+    prisma.planNode.findMany({ where: { workOrderNumber: { in: wos } }, select: { id: true, workOrderNumber: true, name: true } }),
+    prisma.workOrderPlan.findMany({ where: { workOrderNumber: { in: wos }, status: 'PUBLISHED' }, select: { workOrderNumber: true } }),
   ])
-  const { lines, errors } = validateRows(rows, {
+  const { lines, errors, warnings } = validateRows(rows, {
     workOrders: new Set(workOrders.map((w) => w.workOrderNumber)),
     canSee,
     canEdit,
@@ -323,8 +349,10 @@ export async function importPurchases(
     parts,
     existing,
     today: shanghaiDay(now),
+    planNodes,
+    publishedWos: new Set(plans.map((p) => p.workOrderNumber)),
   })
-  if (errors.length) return { imported: 0, errors, rows: rows.length }
+  if (errors.length) return { imported: 0, errors, warnings, rows: rows.length }
   await purchaseTx(async (tx) => {
     // 先锁要挂的工件（与确认到货同一加锁顺序：工件 → 采购行）
     await lockParts(tx, lines.map((l) => l.partId))
@@ -340,6 +368,7 @@ export async function importPurchases(
       needDate: parseDay(l.needDate),
       promisedDate: l.promisedDate ? parseDay(l.promisedDate) : null,
       buyerId: l.buyerId,
+      planNodeId: l.planNodeId,
       note: l.note,
       createdBy: actorId,
       ...(l.arrivedDate ? { status: 'ARRIVED' as const, arrivedDate: parseDay(l.arrivedDate), arrivalSource: 'PC' as const, arrivedBy: actorId, arrivedAt: now } : {}),
@@ -348,5 +377,5 @@ export async function importPurchases(
     // 挂上了未到货物料的工件：作废没处理的"可以开工"
     for (const partId of new Set(lines.filter((l) => l.partId && !l.arrivedDate).map((l) => l.partId!))) await refreshPartReady(tx, partId, false)
   })
-  return { imported: lines.length, errors: [], rows: rows.length }
+  return { imported: lines.length, errors: [], warnings, rows: rows.length }
 }

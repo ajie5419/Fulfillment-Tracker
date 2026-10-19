@@ -1,0 +1,55 @@
+/** 项目部总计划（R14）接口的 zod 片段。日期一律用 schemas/flow.ts 的 day（拒绝 2026-02-30 这类不存在的日期） */
+import { z } from 'zod'
+import { day } from './flow'
+
+export const businessDept = z.enum(['TECH', 'PURCHASE', 'PRODUCTION', 'QUALITY', 'FINANCE', 'PROJECT'], { message: '责任部门只能是 技术部 / 采购部 / 生产部 / 质量部 / 财务部 / 项目部' })
+
+const wo = z.string().min(1, '请选择工单').max(64)
+const reason = z
+  .string()
+  .trim()
+  .max(500, '原因最多 500 字')
+  .nullish()
+  .transform((v) => (v === undefined ? undefined : v || null))
+
+const nodeFields = {
+  name: z.string().trim().min(1, '请填写节点名称').max(191, '节点名称最多 191 字'),
+  dept: businessDept,
+  planDate: day,
+  /** 顺序号：小的在前；不填 = 排最后 */
+  seq: z.number().int().min(-100000).max(100000).nullish(),
+  note: z
+    .string()
+    .trim()
+    .max(500, '备注最多 500 字')
+    .nullish()
+    .transform((v) => (v === undefined ? undefined : v || null)),
+  /** 已发布时改日期、加节点必填 */
+  reason,
+}
+
+export const woQuery = z.object({ workOrderNumber: wo })
+export const woBody = z.object({ workOrderNumber: wo }).strict()
+export const generateBody = z.object({ workOrderNumber: wo, templateId: z.string().min(1, '请选择模板').max(191) }).strict()
+export const newNodeBody = z.object({ workOrderNumber: wo, ...nodeFields }).strict()
+export const patchNodeBody = z.object(nodeFields).partial().strict()
+export const deleteNodeBody = z.object({ reason }).strict()
+export const rejectBody = z.object({ reason: z.string().trim().min(1, '请写退回原因').max(500, '原因最多 500 字') }).strict()
+export const completeBody = z.object({ date: day.nullish() }).strict()
+
+export const templateBody = z
+  .object({
+    name: z.string().trim().min(1, '请填写模板名称').max(191, '模板名称最多 191 字'),
+    description: z.string().trim().max(500, '说明最多 500 字').nullish(),
+    nodes: z
+      .array(
+        z.object({
+          name: z.string().trim().min(1, '请填写节点名称').max(191, '节点名称最多 191 字'),
+          dept: businessDept,
+          daysBeforeDelivery: z.number().int('天数要是整数').min(-365, '天数太小').max(2000, '天数太大'),
+        }).strict(),
+      )
+      .min(1, '模板至少要有一个节点')
+      .max(60, '模板最多 60 个节点'),
+  })
+  .strict()

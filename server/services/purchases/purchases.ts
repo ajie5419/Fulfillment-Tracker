@@ -22,6 +22,7 @@ import { alertKey, dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { FlowError } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { PRODUCTION_DEPT } from '../releases/constants'
+import { planWarning, resolvePlanNode } from '../plan/links'
 import {
   DELAY_REASON_TEXT,
   PAYMENT_STATUS_TEXT,
@@ -45,6 +46,8 @@ export interface LineInput {
   supplierName?: string | null
   needDate: Date
   promisedDate?: Date | null
+  /** 所属总计划节点（R14） */
+  planNodeId?: string | null
   buyerId?: string | null
   note?: string | null
 }
@@ -173,6 +176,7 @@ export async function createLine(input: NewLineInput, actorId: string) {
     await assertPart(tx, input.partId, wo.workOrderNumber)
     await assertBuyer(tx, input.buyerId)
     const supplier = await resolveSupplier(tx, input.supplierId, input.supplierName)
+    const link = await resolvePlanNode(tx, wo.workOrderNumber, input.planNodeId, { creating: true })
     const line = await tx.purchaseLine.create({
       data: {
         workOrderNumber: wo.workOrderNumber,
@@ -184,6 +188,7 @@ export async function createLine(input: NewLineInput, actorId: string) {
         ...supplier,
         needDate: input.needDate,
         promisedDate: input.promisedDate ?? null,
+        planNodeId: link.value ?? null,
         buyerId: input.buyerId || null,
         note: input.note?.trim() || null,
         createdBy: actorId,
@@ -192,9 +197,13 @@ export async function createLine(input: NewLineInput, actorId: string) {
     })
     // 补录已到货的不发"可以开工"（不是这一刻到的）；挂上未到货的，作废没处理的"可以开工"
     await refreshPartReady(tx, line.partId, false)
-    return line
+    return { ...line, planWarning: purchaseWarning(line, link.node) }
   })
 }
+
+/** 采购行的日期晚于节点计划日：有承诺到货日看承诺日，否则看需求日 */
+const purchaseWarning = (l: { needDate: Date; promisedDate: Date | null }, node: Parameters<typeof planWarning>[2]) =>
+  l.promisedDate ? planWarning('承诺到货日', l.promisedDate, node) : planWarning('需求日', l.needDate, node)
 
 export async function updateLine(id: string, input: PatchLineInput) {
   const now = new Date()
@@ -214,6 +223,8 @@ export async function updateLine(id: string, input: PatchLineInput) {
     }
     if (input.needDate !== undefined) data.needDate = input.needDate
     if (input.promisedDate !== undefined) data.promisedDate = input.promisedDate
+    const link = await resolvePlanNode(tx, old.workOrderNumber, input.planNodeId, { creating: false, oldNodeId: old.planNodeId })
+    if (link.value !== undefined) data.planNodeId = link.value
     if (input.buyerId !== undefined) {
       await assertBuyer(tx, input.buyerId)
       data.buyerId = input.buyerId || null
@@ -236,7 +247,7 @@ export async function updateLine(id: string, input: PatchLineInput) {
     const leftOld = old.partId && (line.partId !== old.partId || line.status === 'CANCELLED')
     if (leftOld) await refreshPartReady(tx, old.partId, old.status === 'OPEN')
     if (line.partId && (line.partId !== old.partId || line.status !== old.status)) await refreshPartReady(tx, line.partId, false)
-    return line
+    return { ...line, planWarning: line.status === 'OPEN' ? purchaseWarning(line, link.node) : null }
   })
 }
 

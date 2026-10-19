@@ -18,6 +18,7 @@ import { OPEN_DRAWING_STATUSES } from '../drawings/constants'
 import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { PURCHASE_STATUS_TEXT, num, todayDate } from '../purchases/constants'
+import { planWarning, resolvePlanNode } from '../plan/links'
 import {
   KITTING_DEPT,
   type KitCount,
@@ -47,6 +48,8 @@ export interface Actor {
 export interface NodeInput {
   name: string
   needDate: Date
+  /** 所属总计划节点（R14） */
+  planNodeId?: string | null
   /** 空 = 生产经理（生产部负责人） */
   ownerId?: string | null
   note?: string | null
@@ -154,14 +157,16 @@ export async function createNode(input: NewNodeInput, actor: Actor) {
     await assertCanEdit(tx, actor, wo.workOrderNumber)
     await assertOwner(tx, input.ownerId)
     await assertItems(tx, wo.workOrderNumber, partIds, purchaseIds)
+    const link = await resolvePlanNode(tx, wo.workOrderNumber, input.planNodeId, { creating: true })
     // 不填排序时排在该工单最后
     const sortOrder =
       input.sortOrder ?? ((await tx.assemblyNode.aggregate({ where: { workOrderNumber: wo.workOrderNumber }, _max: { sortOrder: true } }))._max.sortOrder ?? 0) + 1
-    return tx.assemblyNode.create({
+    const node = await tx.assemblyNode.create({
       data: {
         workOrderNumber: wo.workOrderNumber,
         name: input.name.trim(),
         needDate: input.needDate,
+        planNodeId: link.value ?? null,
         ownerId: input.ownerId || null,
         note: input.note?.trim() || null,
         sortOrder,
@@ -170,6 +175,7 @@ export async function createNode(input: NewNodeInput, actor: Actor) {
         purchases: { create: purchaseIds.map((purchaseLineId) => ({ purchaseLineId })) },
       },
     })
+    return { ...node, planWarning: planWarning('需求日', node.needDate, link.node) }
   })
 }
 
@@ -182,6 +188,8 @@ export async function updateNode(id: string, input: Partial<NodeInput>, actor: A
     const data: Prisma.AssemblyNodeUncheckedUpdateInput = {}
     if (input.name !== undefined) data.name = input.name.trim()
     if (input.needDate !== undefined) data.needDate = input.needDate
+    const link = await resolvePlanNode(tx, old.workOrderNumber, input.planNodeId, { creating: false, oldNodeId: old.planNodeId })
+    if (link.value !== undefined) data.planNodeId = link.value
     if (input.ownerId !== undefined) {
       await assertOwner(tx, input.ownerId)
       data.ownerId = input.ownerId || null
@@ -203,7 +211,7 @@ export async function updateNode(id: string, input: Partial<NodeInput>, actor: A
     const kit = await kitCountOf(tx, id)
     const dateChanged = input.needDate !== undefined && dateFieldDay(input.needDate) !== dateFieldDay(old.needDate)
     if (!isIncomplete(kit) || dateChanged) await clearAlertKeys(tx, [w8Key(id)])
-    return { id, ...kit, percent: kitPercent(kit) }
+    return { id, ...kit, percent: kitPercent(kit), planWarning: planWarning('需求日', input.needDate ?? old.needDate, link.node) }
   })
 }
 

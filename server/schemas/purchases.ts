@@ -31,6 +31,8 @@ const lineFields = {
   supplierName: optText(191, '供应商'),
   needDate: day,
   promisedDate: day.nullish(),
+  /** 所属总计划节点（R14）；工单已发布总计划时新建必填 */
+  planNodeId: z.string().max(191).nullish(),
   /** 采购负责人；空 = 采购部负责人 */
   buyerId: z.string().max(64).nullish(),
   note: optText(500, '备注'),
