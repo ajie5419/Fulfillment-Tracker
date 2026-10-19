@@ -77,11 +77,11 @@ a.card:hover { color: var(--ft-text); box-shadow: 0 2px 4px rgba(16, 24, 40, 0.0
 .right.ft-muted { font-weight: normal; font-size: 12px; }
 .sub { margin-top: 2px; font-size: 12px; color: var(--ft-text-2); }
 .banner { margin-top: 10px; padding: 6px 10px; border-radius: 8px; font-size: 12px; }
-.banner.late { background: var(--ft-late-bg); color: var(--ft-late); }
+.banner.late { background: var(--ft-late-bg); color: var(--ft-late-text); }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .tags:empty { display: none; }
 .tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 6px; font-size: 12px; background: var(--ft-fill); color: var(--ft-text-2); }
-.t-late { background: var(--ft-late-bg); color: var(--ft-late); }
+.t-late { background: var(--ft-late-bg); color: var(--ft-late-text); }
 .t-risk { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
-.t-done { background: var(--ft-done-bg); color: var(--ft-done); }
+.t-done { background: var(--ft-done-bg); color: var(--ft-done-text); }
 </style>

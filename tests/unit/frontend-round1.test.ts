@@ -41,6 +41,16 @@ describe('nodeState / stuckNode / lagByDept', () => {
   })
 })
 
+describe('月份刻度跨年带年份', () => {
+  it('抽稀后跳过 1 月时，跨年后的第一个刻度仍带年份', () => {
+    const t = monthTicks({ start: '2026-01-15', end: '2027-12-20' })
+    const y2027 = t.find((x) => x.label.startsWith('2027'))
+    expect(y2027).toBeTruthy()
+    expect(t[0]!.label.startsWith('2026')).toBe(true)
+    expect(t.filter((x) => /年/.test(x.label))).toHaveLength(2)
+  })
+})
+
 describe('圆点省略 compactIndexes / shortName', () => {
   it('不超过上限全显示', () => {
     expect(compactIndexes(5, 7)).toEqual([0, 1, 2, 3, 4])

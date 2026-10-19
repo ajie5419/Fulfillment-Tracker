@@ -29,8 +29,11 @@
   --ft-upstream-bg: #fdeee8;
   --ft-late-bg: #fbeaea;
   --ft-none-bg: #f1f3f6;
-  /* 黄色上的文字用深一点的黄，保证对比度 */
+  /* 状态色做文字时用深一档，白底和浅底上对比度都 ≥ 4.5:1（上面的色只用于圆点、色条等非文字） */
   --ft-risk-text: #9a6700;
+  --ft-done-text: #0a7a0a;
+  --ft-upstream-text: #a8481f;
+  --ft-late-text: #b42828;
 }
 
 html, body { margin: 0; background: #f5f6f8; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
@@ -48,8 +51,8 @@ html, body { margin: 0; background: #f5f6f8; font-family: -apple-system, BlinkMa
 .ft-app .ant-layout-content > .ant-card > .ant-card-head .ant-card-extra { margin-inline-start: auto; }
 
 /* 状态文字（永远带文字，颜色只是辅助） */
-.ft-text-done { color: var(--ft-done); }
+.ft-text-done { color: var(--ft-done-text); }
 .ft-text-risk { color: var(--ft-risk-text); }
-.ft-text-upstream { color: var(--ft-upstream); }
-.ft-text-late { color: var(--ft-late); }
+.ft-text-upstream { color: var(--ft-upstream-text); }
+.ft-text-late { color: var(--ft-late-text); }
 .ft-text-none, .ft-muted { color: var(--ft-text-3); }

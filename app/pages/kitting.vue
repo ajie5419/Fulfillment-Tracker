@@ -135,7 +135,7 @@ const crossColumns = [
     </p>
     <template v-if="standalone">
       <div class="section muted">提醒的节点（你是负责人；该工单不在你的可见范围，只能看这个节点）<a @click="standalone = null">收起</a></div>
-      <KittingNodeCard :node="standalone" focus :window-days="stats?.windowDays ?? 5" @edit="openEdit" @remove="remove" />
+      <KittingNodeCard :node="standalone" focus :linkable="false" :window-days="stats?.windowDays ?? 5" @edit="openEdit" @remove="remove" />
     </template>
     <p v-if="data.total > rows.length" class="warn">共 {{ data.total }} 个节点，只显示前 {{ rows.length }} 个，请按工单筛选</p>
 

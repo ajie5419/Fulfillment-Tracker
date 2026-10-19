@@ -43,5 +43,5 @@ const tip = (n: (typeof props.nodes)[number]) =>
 .s-UPSTREAM .dot { border-color: var(--ft-upstream); }
 .ellipsis { position: relative; z-index: 1; height: 14px; line-height: 10px; padding: 0 2px; background: #fff; color: var(--ft-text-3); font-size: 12px; }
 .name { margin-top: 4px; max-width: 100%; font-size: 11px; color: var(--ft-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.s-SOURCE .name { color: var(--ft-late); }
+.s-SOURCE .name { color: var(--ft-late-text); }
 </style>

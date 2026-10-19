@@ -126,7 +126,7 @@ onBeforeUnmount(() => clearInterval(timer))
           <span class="logo" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>
           项目履约
         </NuxtLink>
-        <nav class="sider-scroll" aria-label="主菜单">
+        <nav class="sider-scroll" aria-label="主菜单" :inert="collapsed || undefined">
           <div v-for="g in groups" :key="g.title" class="group">
             <div class="group-title">{{ g.title }}</div>
             <NuxtLink v-for="m in g.items" :key="m.key" :to="m.key" class="item" :class="{ active: selected[0] === m.key }" :aria-current="selected[0] === m.key ? 'page' : undefined">{{ m.label }}</NuxtLink>

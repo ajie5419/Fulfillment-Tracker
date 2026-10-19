@@ -85,7 +85,9 @@ export async function getWorkOrderDetail(workOrderNumber: string, ctx: RoleConte
   const main = pickMainAssembly(assemblies.map((a) => ({ ...a, needDay: dateFieldDay(a.needDate) })))
   const kit = main ? (await loadKits([main], now)).get(main.id)! : null
 
-  const stuck = stuckNode(nodes)
+  // 卡点、谁在拖与预计交期、拖期同一口径：只按已发布的总计划算（草稿不算，和项目总览一致）
+  const published = plan.plan?.status === 'PUBLISHED'
+  const stuck = published ? stuckNode(nodes) : null
   const red = alerts.filter((a) => a.level === 'RED').length
   const yellow = alerts.filter((a) => a.level === 'YELLOW').length
   const oldestAlert = alerts.length ? alerts.map((a) => shanghaiDay(a.firstAt)).reduce((a, b) => (a < b ? a : b)) : null
@@ -122,7 +124,6 @@ export async function getWorkOrderDetail(workOrderNumber: string, ctx: RoleConte
     })),
   ])
 
-  const published = plan.plan?.status === 'PUBLISHED'
   const planStart = planRow ? [shanghaiDay(planRow.createdAt), ...(planRow.publishedAt ? [shanghaiDay(planRow.publishedAt)] : [])].reduce((a, b) => (a < b ? a : b)) : null
 
   return {
@@ -164,7 +165,7 @@ export async function getWorkOrderDetail(workOrderNumber: string, ctx: RoleConte
     },
     actions,
     /** 谁在拖：源头延误节点按责任部门汇总自身延误天数 */
-    lagByDept: lagByDept(nodes).map((d) => ({ ...d, deptText: BUSINESS_DEPT_NAME[d.dept] })),
+    lagByDept: !published ? [] : lagByDept(nodes).map((d) => ({ ...d, deptText: BUSINESS_DEPT_NAME[d.dept] })),
     unlinked: plan.unlinked,
   }
 }
