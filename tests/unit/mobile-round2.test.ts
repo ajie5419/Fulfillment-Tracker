@@ -44,6 +44,9 @@ describe('dueGroup / groupByDue / dueStats', () => {
 describe('todoDueDay / todoPrimaryLabel', () => {
   it('总计划节点用计划日期，其余用 dueAt', () => {
     expect(todoDueDay({ dueAt: '2026-10-19T17:00:00Z', plan: { planDate: '2026-11-02' } })).toBe('2026-11-02')
+    // 服务端给了 dueDay（含 null）时以服务端为准，与电脑端工作台同口径
+    expect(todoDueDay({ dueDay: '2026-10-25', plan: { planDate: '2026-11-02' } })).toBe('2026-10-25')
+    expect(todoDueDay({ dueDay: null, dueAt: '2026-10-19T17:00:00Z' })).toBe(null)
     expect(todoDueDay({ dueAt: '2026-10-19T17:00:00Z', plan: null })).toBe('2026-10-20')
     expect(todoDueDay({ dueAt: null })).toBeNull()
   })

@@ -65,7 +65,9 @@ export function dueStats<T>(items: T[], dueOf: (t: T) => string | null, today: s
 /**
  * 待办的截止日：总计划节点用计划日期（服务端给的 'YYYY-MM-DD'），其余用 dueAt（按工厂时区取日期）；都没有为 null。
  */
-export function todoDueDay(t: { dueAt?: string | Date | null; plan?: { planDate?: string | null } | null }): string | null {
+export function todoDueDay(t: { dueDay?: string | null; dueAt?: string | Date | null; plan?: { planDate?: string | null } | null }): string | null {
+  // 服务端 /api/todos 已按统一口径算好 dueDay（电脑端工作台同源），有就直接用
+  if (t.dueDay !== undefined) return t.dueDay
   if (t.plan?.planDate) return t.plan.planDate
   return t.dueAt ? factoryDay(t.dueAt) : null
 }

@@ -10,6 +10,7 @@ import { MODE_TEXT, loadNames } from './names'
 import { CONFIRM_PLAN_NODE, PLAN_REF } from '../plan/constants'
 import { describePlanTodos } from '../plan/plan'
 import { todayDay } from './dates'
+import { dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { workBucket } from '../../../shared/workbench'
 
 const ACTION_TEXT: Record<string, string> = {
@@ -133,12 +134,12 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[], 
       plan: null,
     }
   })
-  // 工作台卡片流（前端改版第二轮）：所属工单、截止日（待办自带的 dueAt，没有时取工序的要求完成日）、按工厂时区的今天分组
+  // 工作台卡片流（前端改版第二轮）：所属工单、截止日、按工厂时区的今天分组。电脑端工作台和手机端 /m 共用这里的 dueDay / bucket。
+  // 截止日：总计划节点确认取节点计划日；否则待办自带的 dueAt（按工厂时区取日期）；再没有取工序的要求完成日（日期字段）
   const today = todayDay(now)
   return rows.map((t) => {
     const stepDue = t.refType === 'step' ? byId.get(t.refId)?.dueDate : null
-    const due = t.dueAt ?? stepDue ?? null
-    const dueDay = due ? due.toISOString().slice(0, 10) : null
+    const dueDay = t.plan?.planDate ?? (t.dueAt ? shanghaiDay(t.dueAt) : stepDue ? dateFieldDay(stepDue) : null)
     return {
       ...t,
       workOrderNumber: (t.refType === 'part' ? ready.get(t.refId)?.workOrderNumber : null) ?? t.release?.workOrderNumber ?? t.plan?.workOrderNumber ?? (t.refType === 'step' ? byId.get(t.refId)?.part.workOrderNumber : null) ?? null,
