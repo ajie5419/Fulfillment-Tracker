@@ -57,6 +57,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     // 总计划（W9）只有电脑端页面；节点删了就没有跳转
     const planWo = a.refType === 'planNode' || a.refType === 'planConfirm' ? planWoOf.get(a.refId) : undefined
     if (planWo) link = { pc: planLink(planWo, a.refId), mobile: null }
+    if (a.refType === 'plan') link = { pc: planLink(a.refId), mobile: null }
     const releaseId = a.refType === 'receipt' ? releaseOf.get(a.refId) : a.refType === 'release' ? a.refId : undefined
     if (releaseId) link = { pc: releaseLink(releaseId), mobile: releaseMobileLink(releaseId) }
     const step = a.refType === 'step' ? stepById.get(a.refId) : undefined
@@ -191,6 +192,7 @@ function targetLink(t: Target): string | null {
   if (t.refType === 'drawing') return drawingLink(t.refId)
   if (t.refType === 'node') return kittingLink(t.refId)
   if ((t.refType === 'planNode' || t.refType === 'planConfirm') && t.workOrderNumber) return planLink(t.workOrderNumber, t.refId)
+  if (t.refType === 'plan') return planLink(t.refId)
   if (t.refType === 'unmatched') return '/unmatched'
   if (t.refType === 'issue') return `/issues?id=${encodeURIComponent(t.refId)}`
   return t.workOrderNumber ? `/parts?wo=${encodeURIComponent(t.workOrderNumber)}` : null
@@ -245,7 +247,7 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
         summary: t.summary,
         startAt: t.startAt,
         duration:
-          a.rule === 'W3' || a.rule === 'W4' || a.rule === 'W6' || a.rule === 'W7' || a.rule === 'W8' || (a.rule === 'W9' && a.refType === 'planNode')
+          a.rule === 'W3' || a.rule === 'W4' || a.rule === 'W6' || a.rule === 'W7' || a.rule === 'W8' || (a.rule === 'W9' && a.refType !== 'planConfirm')
             ? null
             : durationText(elapsedExcludingOffDays(t.startAt, at, offDays)),
         owners: t.ownerIds.map((id) => ({ id, name: names.user.get(id) ?? id })),

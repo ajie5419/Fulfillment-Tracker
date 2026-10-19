@@ -59,7 +59,8 @@ async function alertWorkOrders(alerts: { id: string; refType: string; refId: str
     wo.set(`planNode:${n.id}`, n.workOrderNumber)
     wo.set(`planConfirm:${n.id}`, n.workOrderNumber)
   }
-  return new Map(alerts.map((a) => [a.id, wo.get(`${a.refType}:${a.refId}`) ?? null]))
+  // W9 工单级（交期风险）：refId 就是工单号
+  return new Map(alerts.map((a) => [a.id, a.refType === 'plan' ? a.refId : (wo.get(`${a.refType}:${a.refId}`) ?? null)]))
 }
 
 export async function getBoard(visibleWorkOrders: string[] | undefined, now = new Date()) {
@@ -148,10 +149,10 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
       shortage: shortageOf.get(wo) ?? 0,
       drawingOverdue: drawingOverdueOf.get(wo) ?? 0,
       incompleteNodes: incompleteNodesOf.get(wo) ?? 0,
-      /** 已发布总计划的预计交期（'YYYY-MM-DD'）、拖期天数（正数 = 晚于 QMS 交期）、延误节点数；没有已发布总计划为 null / 0 */
+      /** 已发布总计划的预计交期（'YYYY-MM-DD'）、拖期天数（正数 = 晚于 QMS 交期）、源头延误节点数（不含只因上游顺延的）；没有已发布总计划为 null / 0 */
       expectedDelivery: plan?.forecast.expectedDelivery ?? null,
       delayDays: plan?.forecast.deliveryDelayDays ?? null,
-      delayedPlanNodes: plan?.forecast.delayedNodes ?? 0,
+      delayedPlanNodes: plan?.forecast.sourceNodes ?? 0,
     }
   })
   const rank = { RED: 0, YELLOW: 1, GREEN: 2 } as const

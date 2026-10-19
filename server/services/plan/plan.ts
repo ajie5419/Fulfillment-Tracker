@@ -41,6 +41,7 @@ import {
   stepFacts,
   w9ConfirmKey,
   w9Key,
+  w9PlanKey,
 } from './constants'
 
 type Tx = Prisma.TransactionClient
@@ -201,10 +202,11 @@ export async function getPlan(workOrderNumber: string, ctx: RoleContext, now = n
   const [names, mine, alerts] = await Promise.all([
     loadNames({ user: [ext?.projectManagerId ?? null, plan?.publishedBy ?? null, ...data.nodes.flatMap((n) => [n.confirmedBy, n.manualDoneBy]), ...logs.map((l) => l.actorId)] }),
     myConfirmTodos(ctx.userId, nodeIds),
-    nodeIds.length ? prisma.alert.findMany({ where: { activeKey: { in: [...nodeIds.map(w9Key), ...nodeIds.map(w9ConfirmKey)] } }, select: { activeKey: true, level: true } }) : [],
+    prisma.alert.findMany({ where: { activeKey: { in: [w9PlanKey(workOrderNumber), ...nodeIds.map(w9Key), ...nodeIds.map(w9ConfirmKey)] } }, select: { activeKey: true, level: true } }),
   ])
   const user = (id: string | null | undefined) => (id ? (names.user.get(id) ?? id) : null)
   const levelOf = new Map(alerts.map((a) => [a.activeKey!, a.level]))
+  const planAlert = alerts.find((a) => a.activeKey === w9PlanKey(workOrderNumber))
   const published = plan?.status === 'PUBLISHED'
   const est = new Map(data.forecast.nodes.map((n) => [n.id, n]))
   return {
@@ -220,6 +222,9 @@ export async function getPlan(workOrderNumber: string, ctx: RoleContext, now = n
     expectedDelivery: data.forecast.expectedDelivery,
     deliveryDelayDays: data.forecast.deliveryDelayDays,
     delayedNodes: data.forecast.delayedNodes,
+    sourceNodes: data.forecast.sourceNodes,
+    /** W9 工单级（预计交期晚于合同交期）的活动预警级别 */
+    planAlertLevel: planAlert?.level ?? null,
     unlinked,
     canEdit: canOperate(ctx, 'plan', { workOrderNumber }),
     nodes: data.nodes.map((n) => {
@@ -241,6 +246,10 @@ export async function getPlan(workOrderNumber: string, ctx: RoleContext, now = n
         manualDoneByName: user(n.manualDoneBy),
         delayDays: e.delayDays,
         driver: e.driver,
+        selfExpectedDate: e.selfExpectedDay,
+        selfDelayDays: e.selfDelayDays,
+        source: e.source,
+        upstream: e.upstream,
         confirmStatus: n.confirmStatus,
         confirmText: n.confirmStatus ? CONFIRM_TEXT[n.confirmStatus] : null,
         confirmedByName: user(n.confirmedBy),

@@ -24,12 +24,13 @@ const planDelayColumns = [
   { title: '合同交期', key: 'delivery', width: 110 },
   { title: '预计交期', dataIndex: 'expectedDelivery', width: 110 },
   { title: '拖期', key: 'delay', width: 80, align: 'center' as const },
-  { title: '最早延误节点', dataIndex: 'cause' },
+  { title: '源头延误节点', key: 'sources', width: 90, align: 'center' as const },
+  { title: '最早源头延误节点', dataIndex: 'cause' },
 ]
 const planDeptColumns = [
   { title: '责任部门', dataIndex: 'deptText' },
   { title: '未完成节点', dataIndex: 'open', width: 110, align: 'center' as const },
-  { title: '其中延误', key: 'delayed', width: 100, align: 'center' as const },
+  { title: '源头延误', key: 'delayed', width: 100, align: 'center' as const },
 ]
 </script>
 
@@ -103,7 +104,7 @@ const planDeptColumns = [
 
         <a-row :gutter="24">
           <a-col :xs="24" :lg="9">
-            <h3>总计划：按部门延误节点数</h3>
+            <h3>总计划：按部门源头延误节点数</h3>
             <a-table :columns="planDeptColumns" :data-source="data.planByDept" row-key="dept" size="small" :pagination="false" class="block">
               <template #emptyText><a-empty description="没有已发布总计划的未完成节点" /></template>
               <template #bodyCell="{ column, record }">
@@ -125,6 +126,7 @@ const planDeptColumns = [
                 <template v-else-if="column.key === 'pm'">{{ record.projectManagerName ?? '—' }}</template>
                 <template v-else-if="column.key === 'delivery'">{{ dayText(record.deliveryDate) }}</template>
                 <template v-else-if="column.key === 'delay'"><span class="warn">{{ record.delayDays }} 天</span></template>
+                <template v-else-if="column.key === 'sources'">{{ record.delayedNodes }}</template>
               </template>
             </a-table>
           </a-col>

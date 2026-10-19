@@ -96,7 +96,7 @@ const columns = [
           <span v-else class="muted" title="还没有发布总计划">—</span>
         </template>
         <template v-else-if="column.key === 'delayDays'">
-          <a-tag v-if="(record.delayDays ?? 0) > 0" color="red" :title="`${record.delayedPlanNodes} 个总计划节点延误`">{{ record.delayDays }} 天</a-tag>
+          <a-tag v-if="(record.delayDays ?? 0) > 0" color="red" :title="`源头延误节点 ${record.delayedPlanNodes} 个`">{{ record.delayDays }} 天</a-tag>
           <span v-else-if="record.delayDays != null" class="muted">0</span>
           <span v-else class="muted">—</span>
         </template>

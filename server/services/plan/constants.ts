@@ -11,7 +11,10 @@
  *   节点完成：挂靠任务 ≥ 1 条（不算已取消的）且全部完成时自动完成，实际完成日 = 最晚的完成日；也可以手动标记（手动优先）。
  *     完成的节点预计日 = 实际完成日。
  *   预计交期 = 最后一个节点的预计日；与 QMS 交期比得出拖期天数。
- *   W9：没完成的节点预计日晚于计划日 ≥ 黄阈值天 → 黄；≥ 红阈值天，或预计交期晚于 QMS 交期 → 红。
+ *   源头节点：不计前序顺延，节点自身（计划日 vs 挂靠任务预计日；计划日已过仍未完成且上游没把它推后时按今天）就已延误的没完成节点。
+ *     只因上游顺延而延误的节点不是源头（页面标"受上游影响"）。
+ *   W9（节点级，refType = planNode）：只报源头节点，级别按自身延误天数（≥ 黄阈值黄、≥ 红阈值红）。
+ *   W9（工单级，refType = plan，refId = 工单号）：预计交期晚于 QMS 交期 → 红，发给项目经理、项目部负责人、分管领导。
  */
 import type { AlertLevel, BusinessDept, DrawingTaskStatus, PlanNodeConfirm, PurchaseStatus, StepMode, StepStatus } from '@prisma/client'
 import { type RuleThreshold, alertKey, dayDiff } from '../alerts/rules'
@@ -31,6 +34,8 @@ export const planLink = (workOrderNumber: string, nodeId?: string | null) =>
 /** W9 节点延误预警 / 节点超时未确认（同一规则，不同对象类型；超时未确认按 W5 的阈值计时） */
 export const w9Key = (nodeId: string) => alertKey('W9', 'planNode', nodeId)
 export const w9ConfirmKey = (nodeId: string) => alertKey('W9', 'planConfirm', nodeId)
+/** W9 工单级：预计交期晚于合同交期 */
+export const w9PlanKey = (workOrderNumber: string) => alertKey('W9', 'plan', workOrderNumber)
 
 const maxDay = (a: string, b: string) => (a >= b ? a : b)
 const minDay = (a: string, b: string) => (a <= b ? a : b)
@@ -152,6 +157,16 @@ export interface NodeEstimate {
   delayDays: number
   /** 预计日由什么决定：self 自身计划日 / task 挂靠任务 / prev 前一节点顺延 / today 计划日已过 / actual 已完成 */
   driver: 'self' | 'task' | 'prev' | 'today' | 'actual'
+  /** 不计前序顺延的自身预计日（完成的 = 实际完成日） */
+  selfExpectedDay: string
+  /** 自身延误天数 = 自身预计日 - 计划日（没完成且 > 0 才算源头） */
+  selfDelayDays: number
+  /** 自身预计日由什么决定：self / task / today / actual */
+  selfDriver: 'self' | 'task' | 'today' | 'actual'
+  /** 源头延误节点：没完成、自身就已延误 */
+  source: boolean
+  /** 受上游影响：没完成，且顺延后比自身预计日更晚 */
+  upstream: boolean
   /** 计入的挂靠任务数（不含已取消）、其中完成的、超期的、日期晚于节点的 */
   taskCount: number
   doneCount: number
@@ -179,23 +194,33 @@ export function estimateNodes(nodes: NodeFacts[], today: string): NodeEstimate[]
     const actualDay = n.manualDoneDay ?? auto.day
     let expectedDay: string
     let driver: NodeEstimate['driver']
+    let selfExpectedDay: string
+    let selfDriver: NodeEstimate['selfDriver']
+    let upstream = false
     if (actualDay) {
-      expectedDay = actualDay
-      driver = 'actual'
+      expectedDay = selfExpectedDay = actualDay
+      driver = selfDriver = 'actual'
     } else {
-      expectedDay = n.planDay
-      driver = 'self'
+      // 自身：计划日、挂靠任务
+      selfExpectedDay = n.planDay
+      selfDriver = 'self'
       const taskMax = counted.map((t) => t.expectedDay).filter((d): d is string => !!d)
       if (taskMax.length) {
         const m = taskMax.reduce(maxDay)
-        if (m > expectedDay) [expectedDay, driver] = [m, 'task']
+        if (m > selfExpectedDay) [selfExpectedDay, selfDriver] = [m, 'task']
       }
-      if (prev) {
-        const shifted = addDays(prev.expectedDay, dayDiff(prev.planDay, n.planDay))
-        if (shifted > expectedDay) [expectedDay, driver] = [shifted, 'prev']
+      const shifted = prev ? addDays(prev.expectedDay, dayDiff(prev.planDay, n.planDay)) : null
+      // 计划日已过仍未完成：上游没把它推到计划日之后时算自身的（否则是在等上游）
+      if (today > selfExpectedDay && (!shifted || shifted <= n.planDay)) [selfExpectedDay, selfDriver] = [today, 'today']
+      expectedDay = selfExpectedDay
+      driver = selfDriver
+      if (shifted && shifted > expectedDay) {
+        ;[expectedDay, driver] = [shifted, 'prev']
+        upstream = true
       }
       if (today > expectedDay) [expectedDay, driver] = [today, 'today']
     }
+    const selfDelayDays = dayDiff(n.planDay, selfExpectedDay)
     out.push({
       id: n.id,
       done: !!actualDay,
@@ -204,6 +229,11 @@ export function estimateNodes(nodes: NodeFacts[], today: string): NodeEstimate[]
       expectedDay,
       delayDays: dayDiff(n.planDay, expectedDay),
       driver,
+      selfExpectedDay,
+      selfDelayDays,
+      selfDriver,
+      source: !actualDay && selfDelayDays > 0,
+      upstream: !actualDay && upstream && dayDiff(n.planDay, expectedDay) > 0,
       taskCount: counted.length,
       doneCount: counted.filter((t) => t.done).length,
       overdueCount: counted.filter((t) => t.overdue).length,
@@ -221,8 +251,10 @@ export interface PlanForecast {
   expectedDelivery: string | null
   /** 预计交期 - QMS 交期（天，正数 = 拖期）；没有节点为 null */
   deliveryDelayDays: number | null
-  /** 延误节点：没完成、预计日晚于计划日 */
+  /** 延误节点：没完成、预计日晚于计划日（含只因上游顺延的） */
   delayedNodes: number
+  /** 源头延误节点：没完成、自身就已延误（看板、总览、每日汇总的"延误节点数"按这个口径） */
+  sourceNodes: number
 }
 
 export function forecastPlan(nodes: NodeFacts[], deliveryDay: string, today: string): PlanForecast {
@@ -233,6 +265,7 @@ export function forecastPlan(nodes: NodeFacts[], deliveryDay: string, today: str
     expectedDelivery: last?.expectedDay ?? null,
     deliveryDelayDays: last ? dayDiff(deliveryDay, last.expectedDay) : null,
     delayedNodes: est.filter(isDelayed).length,
+    sourceNodes: est.filter((n) => n.source).length,
   }
 }
 
@@ -242,22 +275,33 @@ export const isDelayed = (n: Pick<NodeEstimate, 'done' | 'delayDays'>) => !n.don
 // ───────────── W9 ─────────────
 
 /**
- * W9 总计划节点延误：只看没完成的节点。晚 ≥ 红阈值天，或（节点在延误且）预计交期晚于 QMS 交期 → 红；晚 ≥ 黄阈值天 → 黄。
+ * W9 节点级：只报源头节点（自身就已延误；只因上游顺延的不报），级别按自身延误天数：≥ 红阈值红，≥ 黄阈值黄。
  */
-export function judgeW9(n: Pick<NodeEstimate, 'done' | 'delayDays'>, deliveryLate: boolean, t: RuleThreshold): AlertLevel | null {
-  if (!isDelayed(n)) return null
-  if (n.delayDays >= t.redDays || deliveryLate) return 'RED'
-  if (n.delayDays >= t.yellowDays) return 'YELLOW'
+export function judgeW9(n: Pick<NodeEstimate, 'source' | 'selfDelayDays'>, t: RuleThreshold): AlertLevel | null {
+  if (!n.source) return null
+  if (n.selfDelayDays >= t.redDays) return 'RED'
+  if (n.selfDelayDays >= t.yellowDays) return 'YELLOW'
   return null
 }
 
-const DRIVER_TEXT = { self: '', task: '部门任务延误', prev: '前序节点顺延', today: '计划日已过仍未完成', actual: '' } as const
+/** W9 工单级：预计交期晚于 QMS 交期 → 红 */
+export function judgeW9Plan(deliveryDelayDays: number | null): AlertLevel | null {
+  return deliveryDelayDays != null && deliveryDelayDays > 0 ? 'RED' : null
+}
 
-/** W9 提醒标题里冒号后面的部分 */
-export function w9Summary(n: Pick<NodeEstimate, 'expectedDay' | 'delayDays' | 'driver'>, planDay: string, delivery: { expected: string | null; delayDays: number | null }): string {
-  const why = DRIVER_TEXT[n.driver]
-  const tail = delivery.delayDays != null && delivery.delayDays > 0 ? `；预计交期 ${delivery.expected}，拖期 ${delivery.delayDays} 天` : ''
-  return `计划 ${planDay}，预计 ${n.expectedDay} 完成，晚 ${n.delayDays} 天${why ? `（${why}）` : ''}${tail}`
+const SELF_DRIVER_TEXT = { self: '', task: '部门任务延误', today: '计划日已过仍未完成', actual: '' } as const
+
+/** W9 节点级提醒标题里冒号后面的部分 */
+export function w9Summary(n: Pick<NodeEstimate, 'selfExpectedDay' | 'selfDelayDays' | 'selfDriver' | 'expectedDay' | 'delayDays'>, planDay: string): string {
+  const why = SELF_DRIVER_TEXT[n.selfDriver]
+  const tail = n.delayDays > n.selfDelayDays ? `；加上游顺延预计 ${n.expectedDay}` : ''
+  return `计划 ${planDay}，预计 ${n.selfExpectedDay} 完成，晚 ${n.selfDelayDays} 天${why ? `（${why}）` : ''}${tail}`
+}
+
+/** W9 工单级提醒标题里冒号后面的部分 */
+export function w9PlanSummary(deliveryDay: string, f: Pick<PlanForecast, 'expectedDelivery' | 'deliveryDelayDays'>, sources: string[]): string {
+  const src = sources.length ? `；源头延误节点：${sources.join('、')}` : ''
+  return `合同交期 ${deliveryDay}，按总计划预计 ${f.expectedDelivery} 交付，拖期 ${f.deliveryDelayDays} 天${src}`
 }
 
 /** 部门日期晚于节点日的提示（保存时返回给页面；只提示不拦截） */

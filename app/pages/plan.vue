@@ -41,6 +41,11 @@ interface PlanNodeRow {
   manualDoneByName: string | null
   delayDays: number
   driver: string
+  /** 不计上游顺延的自身预计日 / 自身延误天数；source = 源头延误节点（W9 只报它），upstream = 受上游影响 */
+  selfExpectedDate: string
+  selfDelayDays: number
+  source: boolean
+  upstream: boolean
   confirmStatus: 'PENDING' | 'CONFIRMED' | 'REJECTED' | null
   confirmText: string | null
   confirmedByName: string | null
@@ -61,6 +66,8 @@ interface PlanView {
   expectedDelivery: string | null
   deliveryDelayDays: number | null
   delayedNodes: number
+  sourceNodes: number
+  planAlertLevel: 'YELLOW' | 'RED' | null
   unlinked: { drawing: number; purchase: number; step: number; assembly: number; total: number }
   canEdit: boolean
   nodes: PlanNodeRow[]
@@ -319,12 +326,14 @@ const logColumns = [
         </a-descriptions-item>
         <a-descriptions-item label="拖期天数">
           <a-tag v-if="(data.deliveryDelayDays ?? 0) > 0" color="red">拖期 {{ data.deliveryDelayDays }} 天</a-tag>
+          <a-tag v-if="data.planAlertLevel" color="red" title="W9 交期风险：已通知项目经理、项目部负责人、分管领导">W9 交期风险</a-tag>
           <span v-else-if="data.deliveryDelayDays != null" class="ok">不拖期</span>
           <span v-else class="muted">—</span>
         </a-descriptions-item>
         <a-descriptions-item label="延误节点">
-          <a-tag v-if="data.delayedNodes" color="orange">{{ data.delayedNodes }} 个</a-tag>
-          <span v-else class="muted">0</span>
+          <a-tag v-if="data.sourceNodes" color="orange" title="源头延误节点：自身就已延误（W9 只报这些）">源头 {{ data.sourceNodes }} 个</a-tag>
+          <span v-if="data.delayedNodes > data.sourceNodes" class="muted">另 {{ data.delayedNodes - data.sourceNodes }} 个受上游影响</span>
+          <span v-if="!data.delayedNodes" class="muted">0</span>
         </a-descriptions-item>
       </a-descriptions>
 
@@ -363,7 +372,9 @@ const logColumns = [
             <template v-if="record.done"><span class="muted">—</span></template>
             <template v-else>
               <span :class="{ late: record.delayDays > 0 }">{{ record.expectedDate }}</span>
-              <div v-if="record.delayDays > 0" class="late small">晚 {{ record.delayDays }} 天<template v-if="DRIVER_TEXT[record.driver]">（{{ DRIVER_TEXT[record.driver] }}）</template></div>
+              <div v-if="record.delayDays > 0" class="late small">晚 {{ record.delayDays }} 天<template v-if="record.source && DRIVER_TEXT[record.driver] && record.driver !== 'prev'">（{{ DRIVER_TEXT[record.driver] }}）</template></div>
+              <div v-if="record.source && record.upstream" class="late small">其中自身晚 {{ record.selfDelayDays }} 天</div>
+              <a-tag v-if="record.upstream && !record.source" color="default" class="small">受上游影响</a-tag>
             </template>
           </template>
           <template v-else-if="column.key === 'actual'">

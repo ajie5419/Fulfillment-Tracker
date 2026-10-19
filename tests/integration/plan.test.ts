@@ -3,7 +3,7 @@
  * 覆盖：按模板生成（计划日 = 交期 − 天数）、草稿随便改；发布（基线、给部门负责人发确认待办、没负责人的部门报出来）；
  * 确认 / 退回（退回提醒项目经理）；发布后改日期必须写原因、记调整记录、重新请确认；
  * 部门记录挂节点（只能同一工单、已发布必选、晚于节点日只提示、老数据照旧）；Excel 导入按节点名匹配不拦截；
- * 预计日顺延 / 预计交期；W9 黄 / 红（含预计交期晚于合同交期）与自动清除；超时未确认（W5 阈值）；看板、领导总览、每日汇总。
+ * 预计日顺延 / 预计交期；W9 只报源头节点（按自身延误）、交期风险单独一条工单级红、自动清除；超时未确认（W5 阈值）；看板、领导总览、每日汇总。
  * 运行：TEST_DATABASE_URL=mysql://…/fulfillment_test pnpm test:integration
  */
 import { execFileSync } from 'node:child_process'
@@ -22,6 +22,8 @@ type Services = {
   rules: typeof import('../../server/services/alerts/rules')
   board: typeof import('../../server/services/issues/board')
   overview: typeof import('../../server/services/issues/overview')
+  digest: typeof import('../../server/services/alerts/digest')
+  reminders: typeof import('../../server/services/alerts/reminders')
   todos: typeof import('../../server/services/flow/todos')
   pur: typeof import('../../server/services/purchases/purchases')
   imp: typeof import('../../server/services/purchases/import')
@@ -80,6 +82,8 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
       rules: await import('../../server/services/alerts/rules'),
       board: await import('../../server/services/issues/board'),
       overview: await import('../../server/services/issues/overview'),
+      digest: await import('../../server/services/alerts/digest'),
+      reminders: await import('../../server/services/alerts/reminders'),
       todos: await import('../../server/services/flow/todos'),
       pur: await import('../../server/services/purchases/purchases'),
       imp: await import('../../server/services/purchases/import'),
@@ -310,7 +314,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     expect(res.warnings[0]!.messages[0]).toContain('没有节点"不存在的节点"')
   })
 
-  it('预计日顺延、预计交期；W9 黄 → 红（≥3 天）→ 预计交期晚于合同交期也红；完成后自动清除；看板 / 总览', async () => {
+  it('预计日顺延、预计交期；W9 只报源头节点（按自身延误 1 天黄、3 天红），受上游影响的不报；交期风险单独一条工单级红；完成后自动清除；看板 / 总览 / 每日汇总', async () => {
     // 交期 60 天后，主线留有余量：设计 10 天后、制造 30 天后（最后一个节点，比交期早 30 天）
     const a = await s.plan.createNode(W9WO, { name: '设计', dept: 'TECH', planDate: dayOff(10) }, 'u-pm')
     const b = await s.plan.createNode(W9WO, { name: '制造', dept: 'PRODUCTION', planDate: dayOff(30) }, 'u-pm')
@@ -319,52 +323,70 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     const now = new Date()
     await s.scan.scanRules(now)
     const alert = (nodeId: string) => db.alert.findFirst({ where: { rule: 'W9', refType: 'planNode', refId: nodeId, status: 'ACTIVE' } })
-    // 晚 2 天：黄；制造节点顺延 2 天也黄；预计交期 32 天后，不拖期
+    const planAlert = () => db.alert.findFirst({ where: { rule: 'W9', refType: 'plan', refId: W9WO, status: 'ACTIVE' } })
+    // 设计自身晚 2 天：源头，黄；制造只因顺延晚 2 天：不报；预计交期 32 天后，不拖期：没有工单级
     expect((await alert(a.id))?.level).toBe('YELLOW')
-    expect((await alert(b.id))?.level).toBe('YELLOW')
+    expect(await alert(b.id)).toBeNull()
+    expect(await planAlert()).toBeNull()
     let view = await s.plan.getPlan(W9WO, await ctxOf('u-pm'))
-    expect(view.nodes.map((n) => [n.expectedDate, n.delayDays, n.driver])).toEqual([
-      [dayStr(12), 2, 'task'],
-      [dayStr(32), 2, 'prev'],
+    expect(view.nodes.map((n) => [n.expectedDate, n.delayDays, n.driver, n.source, n.upstream, n.selfDelayDays])).toEqual([
+      [dayStr(12), 2, 'task', true, false, 2],
+      [dayStr(32), 2, 'prev', false, true, 0],
     ])
-    expect(view).toMatchObject({ expectedDelivery: dayStr(32), deliveryDelayDays: -28, delayedNodes: 2 })
+    expect(view).toMatchObject({ expectedDelivery: dayStr(32), deliveryDelayDays: -28, delayedNodes: 2, sourceNodes: 1, planAlertLevel: null })
     expect(view.nodes[0]!.tasks[0]).toMatchObject({ kind: 'drawing', id: t.id, lateForNode: true, link: `/drawings?id=${t.id}` })
     // 黄色起通知：技术部负责人 + 项目经理
     const yellowTo = (await db.reminder.findMany({ where: { alertId: (await alert(a.id))!.id } })).map((r) => r.userId)
     expect(yellowTo).toEqual(expect.arrayContaining(['u-techhead', 'u-pm']))
 
-    // 晚 4 天：红
+    // 设计自身晚 4 天：红；制造仍只是受上游影响
     await s.dr.updateTask(t.id, { planDate: dayOff(14) })
     await s.scan.scanRules(now)
     expect((await alert(a.id))?.level).toBe('RED')
-    expect((await alert(b.id))?.level).toBe('RED')
+    expect(await alert(b.id)).toBeNull()
 
-    // 预计交期晚于合同交期：把交期提前到 31 天后 → 制造预计 34 天后，拖期 3 天
-    await db.qmsWorkOrder.update({ where: { workOrderNumber: W9WO }, data: { deliveryDate: dayOff(31) } })
-    view = await s.plan.getPlan(W9WO, await ctxOf('u-pm'))
-    expect(view.deliveryDelayDays).toBe(3)
-    const row = (await s.board.getBoard(undefined)).rows.find((r) => r.workOrderNumber === W9WO)!
-    expect(row).toMatchObject({ expectedDelivery: dayStr(34), delayDays: 3, delayedPlanNodes: 2 })
-    const ov = await s.overview.getOverview()
-    expect(ov.planDelays.find((d) => d.workOrderNumber === W9WO)).toMatchObject({ delayDays: 3, cause: '设计（技术部）预计晚 4 天' })
-    expect(ov.planByDept.find((d) => d.dept === 'TECH')!.delayed).toBeGreaterThanOrEqual(1)
-
-    // 只晚 1 天（本来是黄），但顺延后预计交期晚于合同交期 → 红
-    await s.dr.updateTask(t.id, { planDate: dayOff(11) })
-    await db.qmsWorkOrder.update({ where: { workOrderNumber: W9WO }, data: { deliveryDate: dayOff(30) } })
-    await db.alert.deleteMany({ where: { rule: 'W9', refType: 'planNode' } })
+    // 制造自己也挂了晚 1 天的物料（顺延后总共晚 4 天）：成了源头，级别按自身 1 天 → 黄
+    const l = await s.pur.createLine({ workOrderNumber: W9WO, materialName: '电机', quantity: 1, needDate: dayOff(31), planNodeId: b.id }, 'u-pm')
     await s.scan.scanRules(now)
-    expect((await alert(a.id))?.level).toBe('RED')
+    expect((await alert(b.id))?.level).toBe('YELLOW')
 
-    // 出图完成（任务全部完成 → 节点自动完成）：设计节点的预警消失；制造节点按实际顺延
+    // 预计交期晚于合同交期：交期提前到 33 天后 → 预计 34 天后，拖期 1 天 → 工单级红；节点级不跟着升红
+    await db.qmsWorkOrder.update({ where: { workOrderNumber: W9WO }, data: { deliveryDate: dayOff(33) } })
+    await s.scan.scanRules(now)
+    const pa = await planAlert()
+    expect(pa?.level).toBe('RED')
+    expect((await alert(b.id))?.level).toBe('YELLOW')
+    const paTo = (await db.reminder.findMany({ where: { alertId: pa!.id } })).map((r) => r.userId).sort()
+    expect(paTo).toEqual(['u-lead', 'u-pdh', 'u-pm'])
+    const paTitle = (await db.reminder.findFirst({ where: { alertId: pa!.id } }))!.title
+    expect(paTitle).toContain(`按总计划预计 ${dayStr(34)} 交付，拖期 1 天；源头延误节点：设计、制造`)
+    view = await s.plan.getPlan(W9WO, await ctxOf('u-pm'))
+    expect(view).toMatchObject({ deliveryDelayDays: 1, sourceNodes: 2, planAlertLevel: 'RED' })
+    // 预警列表：工单级一行，跳到总计划页，不显示持续时长；节点级只有两个源头节点
+    const list = await s.reminders.listAlerts({ rule: 'W9', workOrderNumber: W9WO })
+    expect(list.filter((x) => x.refType === 'plan')).toMatchObject([{ level: 'RED', link: `/plan?wo=${W9WO}`, duration: null, subject: '总计划预计交期' }])
+    expect(list.filter((x) => x.refType === 'planNode').map((x) => x.refId).sort()).toEqual([a.id, b.id].sort())
+    const row = (await s.board.getBoard(undefined)).rows.find((r) => r.workOrderNumber === W9WO)!
+    expect(row).toMatchObject({ expectedDelivery: dayStr(34), delayDays: 1, delayedPlanNodes: 2 })
+    const ov = await s.overview.getOverview()
+    expect(ov.planDelays.find((d) => d.workOrderNumber === W9WO)).toMatchObject({ delayDays: 1, delayedNodes: 2, cause: '设计（技术部）自身晚 4 天' })
+    expect(ov.planByDept.find((d) => d.dept === 'TECH')!.delayed).toBeGreaterThanOrEqual(1)
+    await s.digest.generateDailyDigest({ now, force: true })
+    const digest = await db.reminder.findFirst({ where: { userId: 'u-pm', kind: 'DIGEST' }, orderBy: { createdAt: 'desc' } })
+    expect(digest?.title).toMatch(/总计划延误节点 \d+ 个，预计拖期工单 \d+ 个（最长 \d+ 天）/)
+
+    // 处理掉：交期改回、物料删掉、出图完成（节点自动完成）→ 节点级、工单级预警全部消除
+    await db.qmsWorkOrder.update({ where: { workOrderNumber: W9WO }, data: { deliveryDate: dayOff(60) } })
+    await s.pur.deleteLine(l.id)
     await db.drawingTask.update({ where: { id: t.id }, data: { status: 'DONE', drawnDate: dayOff(0) } })
     await s.scan.scanRules(now)
     expect(await alert(a.id)).toBeNull()
+    expect(await alert(b.id)).toBeNull()
+    expect(await planAlert()).toBeNull()
     view = await s.plan.getPlan(W9WO, await ctxOf('u-pm'))
     expect(view.nodes[0]).toMatchObject({ done: true, doneBy: 'AUTO', actualDate: dayStr(0) })
-    expect(view.nodes[1]).toMatchObject({ expectedDate: dayStr(30), delayDays: 0 })
-    expect(await alert(b.id)).toBeNull()
-    expect(view.deliveryDelayDays).toBe(0)
+    expect(view.nodes[1]).toMatchObject({ expectedDate: dayStr(30), delayDays: 0, source: false, upstream: false })
+    expect(view.deliveryDelayDays).toBe(-30)
   })
 
   it('手动完成 / 撤销：手动优先；撤销后回到按挂靠任务自动判断；自动完成的不能撤销', async () => {

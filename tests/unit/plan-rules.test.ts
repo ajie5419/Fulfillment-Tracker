@@ -11,10 +11,12 @@ import {
   estimateTask,
   forecastPlan,
   judgeW9,
+  judgeW9Plan,
   lateWarning,
   planLink,
   purchaseFacts,
   stepFacts,
+  w9PlanSummary,
   w9Summary,
 } from '../../server/services/plan/constants'
 
@@ -135,7 +137,7 @@ describe('节点预计日与顺延 estimateNodes', () => {
 describe('预计交期 forecastPlan', () => {
   it('最后一个节点的预计日；与 QMS 交期比得出拖期；延误节点数', () => {
     const f = forecastPlan([node('A', '2026-10-25', [task({ planDay: '2026-10-29' })]), node('B', '2026-11-30')], '2026-11-30', TODAY)
-    expect(f).toMatchObject({ expectedDelivery: '2026-12-04', deliveryDelayDays: 4, delayedNodes: 2 })
+    expect(f).toMatchObject({ expectedDelivery: '2026-12-04', deliveryDelayDays: 4, delayedNodes: 2, sourceNodes: 1 })
   })
   it('不拖期为 0 或负；没有节点为 null', () => {
     expect(forecastPlan([node('A', '2026-11-20')], '2026-11-30', TODAY)).toMatchObject({ expectedDelivery: '2026-11-20', deliveryDelayDays: -10, delayedNodes: 0 })
@@ -143,25 +145,61 @@ describe('预计交期 forecastPlan', () => {
   })
 })
 
-describe('W9 judgeW9 / w9Summary / lateWarning', () => {
-  it('晚 1 天黄、3 天红；没晚、已完成不报', () => {
-    expect(judgeW9({ done: false, delayDays: 1 }, false, T9)).toBe('YELLOW')
-    expect(judgeW9({ done: false, delayDays: 2 }, false, T9)).toBe('YELLOW')
-    expect(judgeW9({ done: false, delayDays: 3 }, false, T9)).toBe('RED')
-    expect(judgeW9({ done: false, delayDays: 0 }, true, T9)).toBeNull()
-    expect(judgeW9({ done: true, delayDays: 5 }, true, T9)).toBeNull()
+describe('源头节点 source / upstream', () => {
+  it('自身延误的是源头；只因上游顺延的不是（标受上游影响）；自身也晚但更晚是上游推的：两者都标', () => {
+    const est = estimateNodes(
+      [
+        node('A', '2026-10-25', [task({ planDay: '2026-10-29' })]), // 自身晚 4
+        node('B', '2026-11-05'), // 只因顺延晚 4
+        node('C', '2026-11-20', [task({ planDay: '2026-11-22' })]), // 自身晚 2，顺延晚 4
+      ],
+      TODAY,
+    )
+    expect(est.map((n) => [n.source, n.upstream, n.selfDelayDays, n.delayDays, n.selfDriver])).toEqual([
+      [true, false, 4, 4, 'task'],
+      [false, true, 0, 4, 'self'],
+      [true, true, 2, 4, 'task'],
+    ])
+    expect(forecastPlan([node('A', '2026-10-25', [task({ planDay: '2026-10-29' })]), node('B', '2026-11-05')], '2026-11-30', TODAY)).toMatchObject({ delayedNodes: 2, sourceNodes: 1 })
   })
-  it('预计交期晚于 QMS 交期：延误节点直接红', () => {
-    expect(judgeW9({ done: false, delayDays: 1 }, true, T9)).toBe('RED')
+  it('计划日已过仍未完成：上游没推后时算自身延误（源头）；上游已经推过计划日时算受上游影响', () => {
+    const [a] = estimateNodes([node('A', '2026-10-15')], TODAY)
+    expect(a).toMatchObject({ source: true, selfDelayDays: 4, selfDriver: 'today' })
+    const est = estimateNodes([node('A', '2026-10-10', [task({ planDay: '2026-10-25' })]), node('B', '2026-10-16')], TODAY)
+    // B 计划日已过，但 A 预计 10-25，顺延到 10-31：B 不是源头
+    expect(est[1]).toMatchObject({ source: false, upstream: true, expectedDay: '2026-10-31', selfDelayDays: 0 })
+  })
+  it('已完成的节点不是源头也不受上游影响', () => {
+    const [a] = estimateNodes([node('A', '2026-10-10', [], '2026-10-14')], TODAY)
+    expect(a).toMatchObject({ done: true, source: false, upstream: false, selfDelayDays: 4 })
+  })
+})
+
+describe('W9 judgeW9 / judgeW9Plan / 摘要 / lateWarning', () => {
+  it('节点级只报源头，按自身延误天数：1 天黄、3 天红', () => {
+    expect(judgeW9({ source: true, selfDelayDays: 1 }, T9)).toBe('YELLOW')
+    expect(judgeW9({ source: true, selfDelayDays: 2 }, T9)).toBe('YELLOW')
+    expect(judgeW9({ source: true, selfDelayDays: 3 }, T9)).toBe('RED')
+    expect(judgeW9({ source: false, selfDelayDays: 0 }, T9)).toBeNull()
+    expect(judgeW9({ source: false, selfDelayDays: 5 }, T9)).toBeNull() // 已完成
   })
   it('黄阈值调大后晚 1 天不报', () => {
-    expect(judgeW9({ done: false, delayDays: 1 }, false, { remindHours: null, yellowDays: 2, redDays: 5 })).toBeNull()
+    expect(judgeW9({ source: true, selfDelayDays: 1 }, { remindHours: null, yellowDays: 2, redDays: 5 })).toBeNull()
   })
-  it('摘要带原因和拖期', () => {
-    expect(w9Summary({ expectedDay: '2026-11-09', delayDays: 4, driver: 'prev' }, '2026-11-05', { expected: '2026-12-04', delayDays: 4 })).toBe(
-      '计划 2026-11-05，预计 2026-11-09 完成，晚 4 天（前序节点顺延）；预计交期 2026-12-04，拖期 4 天',
+  it('工单级：预计交期晚于合同交期才报，红', () => {
+    expect(judgeW9Plan(1)).toBe('RED')
+    expect(judgeW9Plan(0)).toBeNull()
+    expect(judgeW9Plan(-3)).toBeNull()
+    expect(judgeW9Plan(null)).toBeNull()
+  })
+  it('摘要', () => {
+    expect(w9Summary({ selfExpectedDay: '2026-11-06', selfDelayDays: 1, selfDriver: 'task', expectedDay: '2026-11-06', delayDays: 1 }, '2026-11-05')).toBe('计划 2026-11-05，预计 2026-11-06 完成，晚 1 天（部门任务延误）')
+    expect(w9Summary({ selfExpectedDay: '2026-11-07', selfDelayDays: 2, selfDriver: 'task', expectedDay: '2026-11-09', delayDays: 4 }, '2026-11-05')).toBe(
+      '计划 2026-11-05，预计 2026-11-07 完成，晚 2 天（部门任务延误）；加上游顺延预计 2026-11-09',
     )
-    expect(w9Summary({ expectedDay: '2026-11-06', delayDays: 1, driver: 'task' }, '2026-11-05', { expected: '2026-11-20', delayDays: -3 })).toBe('计划 2026-11-05，预计 2026-11-06 完成，晚 1 天（部门任务延误）')
+    expect(w9PlanSummary('2026-11-30', { expectedDelivery: '2026-12-04', deliveryDelayDays: 4 }, ['设计出图', '关键物料到货'])).toBe(
+      '合同交期 2026-11-30，按总计划预计 2026-12-04 交付，拖期 4 天；源头延误节点：设计出图、关键物料到货',
+    )
   })
   it('部门日期晚于节点日才提示', () => {
     expect(lateWarning('需求日', '2026-10-27', { name: '装配', planDay: '2026-10-25' })).toContain('晚 2 天')

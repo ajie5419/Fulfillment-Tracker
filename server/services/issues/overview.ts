@@ -12,7 +12,6 @@ import { prisma } from '../../utils/prisma'
 import { loadOffDays, loadThresholds } from '../alerts/config'
 import { judgeW4, shanghaiDay, shanghaiDayStart } from '../alerts/rules'
 import { BUSINESS_DEPTS, BUSINESS_DEPT_NAME, resolveDeptNames } from '../auth/departments'
-import { isDelayed } from '../plan/constants'
 import { loadPlans } from '../plan/plan'
 import { getBoard } from './board'
 import { OPEN_STATUSES } from './constants'
@@ -76,14 +75,14 @@ export async function getOverview(now = new Date()) {
       if (e.done) continue
       const row = deptDelayed.get(n.dept)!
       row.open++
-      if (isDelayed(e)) row.delayed++
+      if (e.source) row.delayed++ // 源头延误节点（只因上游顺延的不算）
     }
   }
   const firstDelayed = (wo: string) => {
     const p = plans.get(wo)
-    const e = p?.forecast.nodes.find(isDelayed)
+    const e = p?.forecast.nodes.find((x) => x.source)
     const n = e && p!.nodes.find((x) => x.id === e.id)
-    return n ? `${n.name}（${BUSINESS_DEPT_NAME[n.dept]}）预计晚 ${e!.delayDays} 天` : '—'
+    return n ? `${n.name}（${BUSINESS_DEPT_NAME[n.dept]}）自身晚 ${e!.selfDelayDays} 天` : '—'
   }
 
   return {

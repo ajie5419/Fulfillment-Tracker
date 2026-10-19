@@ -72,11 +72,12 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
     prisma.drawingTask.groupBy({ by: ['workOrderNumber'], where: overdueWhere(todayDate(now)), _count: { _all: true } }),
     // 未齐套节点（R12）：已进入 W8 预警窗口（需求日前 N 天内，含已过）仍未齐套，与看板同一口径
     prisma.assemblyNode.groupBy({ by: ['workOrderNumber'], where: { AND: [incompleteWhere(), dueWindowWhere(now, thresholds.W8)] }, _count: { _all: true } }),
-    // 总计划延误节点（R14）：与总计划页、W9 同一口径
+    // 总计划延误节点（R14）：源头延误节点（不含只因上游顺延的），与 W9 节点级同一口径；另算预计拖期的工单和天数
     loadPlans({ publishedOnly: true }, now),
   ])
-  const delayedPlanNodes = [...plans.values()].filter((p) => p.forecast.delayedNodes > 0).map((p) => ({ workOrderNumber: p.workOrderNumber, _count: { _all: p.forecast.delayedNodes } }))
-  const countedWos = [...new Set([...shortage, ...drawingOverdue, ...incompleteNodes, ...delayedPlanNodes].map((s) => s.workOrderNumber))]
+  const delayedPlanNodes = [...plans.values()].filter((p) => p.forecast.sourceNodes > 0).map((p) => ({ workOrderNumber: p.workOrderNumber, _count: { _all: p.forecast.sourceNodes } }))
+  const lateWos = [...plans.values()].filter((p) => (p.forecast.deliveryDelayDays ?? 0) > 0).map((p) => ({ workOrderNumber: p.workOrderNumber, days: p.forecast.deliveryDelayDays! }))
+  const countedWos = [...new Set([...shortage, ...drawingOverdue, ...incompleteNodes, ...delayedPlanNodes, ...lateWos].map((s) => s.workOrderNumber))]
   const liveWos = new Set(
     countedWos.length
       ? (await prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: countedWos } }, select: { workOrderNumber: true, isDeleted: true } })).filter((w) => !w.isDeleted).map((w) => w.workOrderNumber)
@@ -106,6 +107,8 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
     const drawingCount = countIn(drawingOverdue)
     const nodeCount = countIn(incompleteNodes)
     const planCount = countIn(delayedPlanNodes)
+    const myLate = lateWos.filter((w) => liveWos.has(w.workOrderNumber) && visible(w.workOrderNumber))
+    const lateText = myLate.length ? `，预计拖期工单 ${myLate.length} 个（最长 ${Math.max(...myLate.map((w) => w.days))} 天）` : ''
     const lines = [
       ...mine.map((x) => reminderTitle(x.a.level, x.t.subject, x.t.summary, x.t.workOrderNumber)),
       ...myIssues.map((x) => `${x.overdue ? '【超期】' : ''}异常 ${x.i.issueNo}（${CATEGORY_TEXT[x.i.category]}，${STATUS_TEXT[x.i.status]}）：${x.i.description.slice(0, 40)}（${x.i.workOrderNumber}）`),
@@ -116,7 +119,7 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
       kind: 'DIGEST',
       level,
       dedupeKey: digestKey(day, userId),
-      title: `【每日汇总】${mmdd}：红色预警 ${red} 条、黄色预警 ${yellow} 条，未关闭异常 ${myIssues.length} 条${unsignedCount ? `，未签收发放 ${unsignedCount} 份` : ''}${shortageCount ? `，缺料 ${shortageCount} 项` : ''}${drawingCount ? `，出图逾期 ${drawingCount} 项` : ''}${nodeCount ? `，未齐套节点 ${nodeCount} 个` : ''}${planCount ? `，总计划延误节点 ${planCount} 个` : ''}`,
+      title: `【每日汇总】${mmdd}：红色预警 ${red} 条、黄色预警 ${yellow} 条，未关闭异常 ${myIssues.length} 条${unsignedCount ? `，未签收发放 ${unsignedCount} 份` : ''}${shortageCount ? `，缺料 ${shortageCount} 项` : ''}${drawingCount ? `，出图逾期 ${drawingCount} 项` : ''}${nodeCount ? `，未齐套节点 ${nodeCount} 个` : ''}${planCount ? `，总计划延误节点 ${planCount} 个` : ''}${lateText}`,
       body: lines.length ? lines.join('\n') : '今天没有红黄预警和未关闭异常',
     })
   }
