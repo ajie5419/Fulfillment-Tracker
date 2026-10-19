@@ -20,12 +20,17 @@ git fetch --tags --force origin
 git checkout --force "$TAG"
 git rev-parse --short HEAD
 
-# 回滚点：当前在跑的镜像打成 prev
-if docker image inspect "$IMAGE:latest" >/dev/null 2>&1; then
-  log "保存回滚镜像 $IMAGE:prev"
-  docker tag "$IMAGE:latest" "$IMAGE:prev"
+# 回滚点：取"正在运行"的容器所用的镜像 ID，而不是 latest 标签。
+# latest 会被 docker compose build 改成新构建的镜像；若迁移或启动失败，用 latest 当 prev
+# 就把失败镜像记成了回滚点，下一次失败就没法回到真正在跑的那一版。
+if docker inspect fulfillment >/dev/null 2>&1; then
+  RUNNING_IMAGE=$(docker inspect -f '{{.Image}}' fulfillment)
+  log "保存回滚镜像 $IMAGE:prev <- ${RUNNING_IMAGE:7:12}（当前运行中）"
+  docker tag "$RUNNING_IMAGE" "$IMAGE:prev"
+elif docker image inspect "$IMAGE:prev" >/dev/null 2>&1; then
+  log "没有运行中的容器，保留已有的 $IMAGE:prev 作为回滚点"
 else
-  log "没有现成的 $IMAGE:latest，跳过回滚点（首次上线）"
+  log "没有运行中的容器，也没有 $IMAGE:prev，跳过回滚点（首次上线）"
 fi
 
 log "构建镜像"

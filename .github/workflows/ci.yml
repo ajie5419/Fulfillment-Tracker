@@ -19,7 +19,10 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
+      # postinstall 会执行仓库里的脚本，关掉 checkout 凭据持久化
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v4
 
