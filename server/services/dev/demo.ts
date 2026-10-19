@@ -15,6 +15,8 @@ import { todayDate } from '../purchases/constants'
 import { createRelease } from '../releases/releases'
 import { matchIncomingInspections } from '../purchases/incoming'
 import type { QmsBomItem } from '../bom/client'
+import { CONFIRM_PLAN_NODE, PLAN_REF, planLink } from '../plan/constants'
+import { deptHeads } from '../plan/plan'
 
 const P = 'DEMO-'
 const DAY = 86_400_000
@@ -246,6 +248,82 @@ export async function demoBom(workOrderNumber: string): Promise<QmsBomItem[]> {
   return wo ? structuredClone(DEMO_BOMS[workOrderNumber] ?? []) : []
 }
 
+/**
+ * R14 总计划演示（DEMO-WO-001，交期 35 天后），已发布，挂上了上面的出图 / 采购 / 工序 / 装配记录：
+ *   合同评审（项目部）：已手动完成；
+ *   设计出图（技术部，计划昨天）：主梁总图逾期、液压原理图客户确认逾期（按今天算），支腿零件图计划明天（晚于节点日，标红）→ 预计晚 2 天；
+ *   关键物料到货（采购部，计划 4 天后）：回转支承承诺 8 天后到、液压马达需求 5 天后（都晚于节点日，标红）→ 预计晚 4 天，W9 红；
+ *   之后各节点按原间隔顺延 4 天 → 发运（= 交期）预计晚 4 天：看板拖期 4 天、领导总览"预计拖期工单"；预计交期拖期，所以各延误节点（含只晚 2 天的设计出图）扫描后都是 W9 红。
+ *   部门确认：合同评审、设计出图已确认；机加被生产部退回（项目经理 u-003 收到提醒）；其余待确认（部门负责人"我的待办"里有确认待办）。
+ *   调整记录：装配节点发布后改过一次日期（写了原因）。
+ */
+const PLAN_NODES = (day: (offset: number) => Date) => [
+  { id: `${P}PN-01`, seq: 1, name: '合同评审', dept: 'PROJECT', planDate: day(-30), done: day(-31), confirm: 'CONFIRMED', by: 'u-004' },
+  { id: `${P}PN-02`, seq: 2, name: '设计出图', dept: 'TECH', planDate: day(-1), confirm: 'CONFIRMED', by: 'u-011' },
+  { id: `${P}PN-03`, seq: 3, name: '关键物料到货', dept: 'PURCHASE', planDate: day(4), confirm: 'PENDING' },
+  { id: `${P}PN-04`, seq: 4, name: '组焊涂装', dept: 'PRODUCTION', planDate: day(14), confirm: 'PENDING' },
+  { id: `${P}PN-05`, seq: 5, name: '机加', dept: 'PRODUCTION', planDate: day(18), confirm: 'REJECTED', by: 'u-002', reason: '外协机加厂排产已满，最早只能比计划晚一周' },
+  { id: `${P}PN-06`, seq: 6, name: '装配', dept: 'PRODUCTION', planDate: day(25), baseline: day(23), confirm: 'PENDING' },
+  { id: `${P}PN-07`, seq: 7, name: '调试', dept: 'TECH', planDate: day(31), confirm: 'PENDING' },
+  { id: `${P}PN-08`, seq: 8, name: '发运', dept: 'PROJECT', planDate: day(35), confirm: 'PENDING' },
+] as const
+/** 部门记录挂哪个节点 */
+const PLAN_LINKS = {
+  drawing: { [`${P}PN-02`]: [`${P}DT-001`, `${P}DT-002`, `${P}DT-003`] },
+  purchase: { [`${P}PN-03`]: [`${P}PL-001`, `${P}PL-002`, `${P}PL-003`, `${P}PL-004`] },
+  step: { [`${P}PN-04`]: [`${P}STEP-001`, `${P}STEP-002`], [`${P}PN-05`]: [`${P}STEP-201`, `${P}STEP-202`, `${P}STEP-301`], [`${P}PN-06`]: [`${P}STEP-003`] },
+  assembly: { [`${P}PN-06`]: [`${P}NODE-001`, `${P}NODE-002`, `${P}NODE-003`] },
+} as const
+
+/** R14：DEMO-WO-001 还没有总计划时写入（已发布，挂上演示记录）；有了就不动（不会把走到一半的演示打回原形） */
+async function seedDemoPlan(day: (offset: number) => Date, now: Date) {
+  const wo = `${P}WO-001`
+  if (await prisma.workOrderPlan.findUnique({ where: { workOrderNumber: wo }, select: { workOrderNumber: true } })) return 0
+  if (await prisma.planNode.findFirst({ where: { workOrderNumber: wo }, select: { id: true } })) return 0
+  const nodes = PLAN_NODES(day)
+  await prisma.$transaction(async (tx) => {
+    await tx.workOrderPlan.create({ data: { workOrderNumber: wo, status: 'PUBLISHED', templateName: '通用', publishedAt: new Date(+now - 2 * DAY), publishedBy: 'u-003', createdBy: 'u-003' } })
+    for (const n of nodes) {
+      const done = 'done' in n ? n.done : null
+      await tx.planNode.create({
+        data: {
+          id: n.id,
+          workOrderNumber: wo,
+          seq: n.seq,
+          name: n.name,
+          dept: n.dept,
+          planDate: n.planDate,
+          baselineDate: 'baseline' in n ? n.baseline : n.planDate,
+          ...(done ? { actualDate: done, manualDoneBy: 'u-003', manualDoneAt: done } : {}),
+          confirmStatus: n.confirm,
+          ...('by' in n ? { confirmedBy: n.by, confirmedAt: new Date(+now - DAY) } : {}),
+          rejectReason: 'reason' in n ? n.reason : null,
+        },
+      })
+      // 待确认的节点：给责任部门负责人发确认待办（2 天前发的，扫描后 W9 未确认红）
+      if (n.confirm === 'PENDING') {
+        const owners = await deptHeads(tx, n.dept)
+        if (owners.length) await tx.todo.createMany({ data: owners.map((ownerId) => ({ ownerId, action: CONFIRM_PLAN_NODE, refType: PLAN_REF, refId: n.id, createdAt: new Date(+now - 2 * DAY) })) })
+      }
+    }
+    const assy = nodes.find((n) => n.id === `${P}PN-06`)!
+    await tx.planChangeLog.create({
+      data: { workOrderNumber: wo, nodeId: assy.id, nodeName: assy.name, kind: 'DATE', oldDate: day(23), newDate: assy.planDate, reason: '客户要求增加一项型式试验，装配顺延 2 天', actorId: 'u-003', createdAt: new Date(+now - DAY) },
+    })
+    for (const [nodeId, ids] of Object.entries(PLAN_LINKS.drawing)) await tx.drawingTask.updateMany({ where: { id: { in: [...ids] } }, data: { planNodeId: nodeId } })
+    for (const [nodeId, ids] of Object.entries(PLAN_LINKS.purchase)) await tx.purchaseLine.updateMany({ where: { id: { in: [...ids] } }, data: { planNodeId: nodeId } })
+    for (const [nodeId, ids] of Object.entries(PLAN_LINKS.step)) await tx.routeStep.updateMany({ where: { id: { in: [...ids] } }, data: { planNodeId: nodeId } })
+    for (const [nodeId, ids] of Object.entries(PLAN_LINKS.assembly)) await tx.assemblyNode.updateMany({ where: { id: { in: [...ids] } }, data: { planNodeId: nodeId } })
+    // 机加被退回：提醒项目经理
+    const rejected = nodes.find((n) => n.confirm === 'REJECTED')!
+    await tx.reminder.createMany({
+      data: [{ userId: 'u-003', kind: 'PLAN', level: 'YELLOW', title: `【退回】测试生产经理（生产部）退回了总计划节点"${rejected.name}"：${'reason' in rejected ? rejected.reason : ''}（${wo}）`, link: planLink(wo, rejected.id), dedupeKey: `PLAN_REJECT:${rejected.id}:demo:u-003` }],
+      skipDuplicates: true,
+    })
+  })
+  return nodes.length
+}
+
 // 演示路线模板（R8）
 const TEMPLATE = {
   id: `${P}TPL-001`,
@@ -384,8 +462,10 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
     })
   })
   const releases = await seedDemoReleases()
+  const planNodes = await seedDemoPlan(day, now)
   return {
     releases,
+    planNodes,
     workOrders: WORK_ORDER_NUMBERS.length,
     suppliers: SUPPLIERS.length,
     processes: PROCESSES.length,
@@ -490,10 +570,16 @@ export async function resetDemo(uploadDir?: string) {
     const drawingIds = (await tx.drawingTask.findMany({ where: { OR: [{ workOrderNumber: { startsWith: P } }, { parts: { some: { partId: { in: partIds } } } }] }, select: { id: true } })).map((d) => d.id)
     // R12：演示工单上的装配节点（清单随节点级联删除）
     const nodeIds = (await tx.assemblyNode.findMany({ where: { workOrderNumber: { startsWith: P } }, select: { id: true } })).map((n) => n.id)
+    // R14：演示工单的总计划（节点、发布状态、调整记录）及其确认待办、W9 预警、退回通知
+    const planNodeIds = (await tx.planNode.findMany({ where: { workOrderNumber: { startsWith: P } }, select: { id: true } })).map((n) => n.id)
+    await tx.todo.deleteMany({ where: { refType: PLAN_REF, refId: { in: planNodeIds } } })
+    await tx.planChangeLog.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
+    await tx.reminder.deleteMany({ where: { kind: 'PLAN', link: { startsWith: '/plan?wo=DEMO-' } } })
     const alertRows = await tx.alert.findMany({
       where: {
         OR: [
           { refType: 'node', refId: { in: nodeIds } },
+          { refType: { in: ['planNode', 'planConfirm'] }, refId: { in: planNodeIds } },
           { refType: 'drawing', refId: { in: drawingIds } },
           { refType: 'purchase', refId: { in: purchaseIds } },
           { refType: 'step', refId: { in: stepIds } },
@@ -520,6 +606,8 @@ export async function resetDemo(uploadDir?: string) {
     const purchases = await tx.purchaseLine.deleteMany({ where: { id: { in: purchaseIds } } })
     const drawings = await tx.drawingTask.deleteMany({ where: { id: { in: drawingIds } } })
     const nodes = await tx.assemblyNode.deleteMany({ where: { id: { in: nodeIds } } })
+    const planNodes = await tx.planNode.deleteMany({ where: { id: { in: planNodeIds } } })
+    await tx.workOrderPlan.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
     const alerts = await tx.alert.deleteMany({ where: { id: { in: alertIds } } })
     await tx.notifyRole.deleteMany({ where: { OR: [{ id: { startsWith: P } }, { userId: { in: demoUsers } }] } })
     await tx.workOrderExt.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
@@ -556,6 +644,7 @@ export async function resetDemo(uploadDir?: string) {
       payments: payments.count,
       drawingTasks: drawings.count,
       assemblyNodes: nodes.count,
+      planNodes: planNodes.count,
     }
   })
   const { storedNames, ...counts } = result
