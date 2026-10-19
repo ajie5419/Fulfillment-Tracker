@@ -128,7 +128,7 @@ function remove(t: TemplateRow) {
 
 <style scoped>
 .muted { color: #999; font-size: 12px; }
-.danger { color: #cf1322; }
+.danger { color: var(--ft-late); }
 .chain { margin: 4px 0 8px; line-height: 2; }
 .step { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
 .seq { width: 20px; color: #999; }

@@ -18,7 +18,7 @@ import { OPEN_DRAWING_STATUSES } from '../drawings/constants'
 import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { PURCHASE_STATUS_TEXT, num, todayDate } from '../purchases/constants'
-import { planWarning, resolvePlanNode } from '../plan/links'
+import { planNodeLabels, planWarning, resolvePlanNode } from '../plan/links'
 import {
   KITTING_DEPT,
   type KitCount,
@@ -396,11 +396,12 @@ async function productionHeadText() {
 
 async function describeNodes(rows: NodeWithLinks[], now: Date, ctx: EditorContext | null) {
   const ids = rows.map((r) => r.id)
-  const [kits, names, alerts, headText] = await Promise.all([
+  const [kits, names, alerts, headText, planNodes] = await Promise.all([
     loadKits(rows, now),
     loadNames({ user: rows.map((r) => r.ownerId) }),
     ids.length ? prisma.alert.findMany({ where: { activeKey: { in: ids.map(w8Key) } }, select: { activeKey: true, level: true } }) : [],
     productionHeadText(),
+    planNodeLabels(rows.map((r) => r.planNodeId)),
   ])
   const levelOf = new Map(alerts.map((a) => [a.activeKey!, a.level]))
   const today = shanghaiDay(now)
@@ -419,6 +420,8 @@ async function describeNodes(rows: NodeWithLinks[], now: Date, ctx: EditorContex
       // 预警下一轮扫描才消除：已经齐了就不再显示
       alertLevel: kit.incomplete ? (levelOf.get(w8Key(n.id)) ?? null) : null,
       canEdit: !!ctx && canEditWith(ctx, n.workOrderNumber),
+      /** 所属总计划节点的序号、名称（列表"总计划节点"列）；没挂为 null */
+      planNode: (n.planNodeId && planNodes.get(n.planNodeId)) || null,
     }
   })
 }

@@ -3,7 +3,7 @@ const { data: me } = await useMe()
 const route = useRoute()
 // 左侧竖向菜单，按岗位分组；条目多了也能纵向排下，窄屏（< lg）收起，点左侧把手展开。
 // 按角色只显示相关分组（权限方案 R13 第二节，me.menu 由后端算，多角色取并集）；页面本身不拦，从提醒链接点进去仍能只读查看。
-// sections：条目属于哪些菜单分区，有任一分区可见就显示；没写的（"每日"组）人人可见
+// sections：条目属于哪些菜单分区，有任一分区可见就显示；没写的人人可见
 interface MenuItem {
   key: string
   label: string
@@ -12,30 +12,31 @@ interface MenuItem {
 const groups = computed(() => {
   const visible = new Set(me.value?.menu ?? [])
   const show = (items: MenuItem[]) => items.filter((i) => !i.sections || i.sections.some((s) => visible.has(s)))
+  // 前端改版第一轮：按"我的工作 / 项目 / 部门工作台 / 其他"分组；各条目的 sections 与原来一致
   return [
-    { title: '每日', items: show([
-      { key: '/', label: '我的提醒' },
-      { key: '/overview', label: '领导总览', sections: ['overview'] },
+    { title: '我的工作', items: show([
+      { key: '/', label: '工作台' },
+      // 第二轮并进工作台，这一轮先保留
       { key: '/alerts', label: '预警列表' },
       { key: '/issues', label: '异常列表' },
-      { key: '/board', label: '看板' },
+    ]) },
+    { title: '项目', items: show([
+      { key: '/board', label: '项目总览' },
+      { key: '/wo', label: '工单详情' },
+      { key: '/overview', label: '领导总览', sections: ['overview'] },
       { key: '/plan', label: '总计划' },
     ]) },
-    { title: '技术', items: show([
+    { title: '部门工作台', items: show([
       { key: '/drawings', label: '出图任务', sections: ['tech'] },
       { key: '/releases', label: '发放签收', sections: ['tech', 'releases'] },
-    ]) },
-    { title: '采购', items: show([
       { key: '/purchases', label: '采购到货', sections: ['purchase'] },
       { key: '/payments', label: '付款申请', sections: ['purchase', 'payments'] },
-    ]) },
-    { title: '生产', items: show([
       { key: '/kitting', label: '齐套', sections: ['production', 'kitting'] },
       { key: '/parts', label: '工件与工序链', sections: ['production'] },
       { key: '/templates', label: '路线模板', sections: ['production'] },
       { key: '/unmatched', label: '待确认匹配', sections: ['production'] },
     ]) },
-    { title: '系统', items: [
+    { title: '其他', items: [
       // 项目部负责人（总计划模板）也能进设置页，只看到"总计划模板"一页
       ...(me.value?.isAdmin || me.value?.can?.planTemplate ? [{ key: '/settings', label: '设置' }] : []),
       ...(me.value?.devTools ? [{ key: '/dev', label: '演示工具' }] : []),
@@ -77,7 +78,7 @@ async function poll() {
       notification.info({
         key: 'reminders-more',
         message: `另有 ${rest} 条新预警`,
-        description: '到"我的提醒"查看全部',
+        description: '到"工作台"查看全部',
         placement: 'topRight',
         duration: 0,
         style: { cursor: 'pointer' },
@@ -118,35 +119,39 @@ onBeforeUnmount(() => clearInterval(timer))
 </script>
 
 <template>
-  <a-layout style="min-height: 100vh">
-    <a-layout-header class="header">
-      <span class="left">
-        <a-button
-          v-if="broken"
-          size="small"
-          ghost
-          :aria-label="collapsed ? '展开菜单' : '收起菜单'"
-          :aria-expanded="!collapsed"
-          class="nav-toggle"
-          @click="collapsed = !collapsed"
-        >菜单</a-button>
-        <span class="brand">项目履约</span>
-      </span>
-      <span v-if="me" class="user">
-        {{ me.name }}<template v-if="me.department"> · {{ me.department }}</template><template v-if="me.businessDeptName && me.businessDeptName !== me.department">（{{ me.businessDeptName }}）</template>
-        <a-button type="link" size="small" @click="logout">退出 / 切换账号</a-button>
-      </span>
-    </a-layout-header>
-    <a-layout>
-      <a-layout-sider v-model:collapsed="collapsed" :trigger="null" theme="dark" :width="148" breakpoint="lg" :collapsed-width="0" class="sider" @breakpoint="onBreakpoint">
-        <div class="sider-scroll">
-          <a-menu theme="dark" mode="inline" :selected-keys="selected">
-            <a-menu-item-group v-for="g in groups" :key="g.title" :title="g.title">
-              <a-menu-item v-for="m in g.items" :key="m.key"><NuxtLink :to="m.key">{{ m.label }}</NuxtLink></a-menu-item>
-            </a-menu-item-group>
-          </a-menu>
-        </div>
-      </a-layout-sider>
+  <a-layout class="ft-app" style="min-height: 100vh">
+    <a-layout-sider v-model:collapsed="collapsed" :trigger="null" :width="200" breakpoint="lg" :collapsed-width="0" class="sider" @breakpoint="onBreakpoint">
+      <div class="sider-inner">
+        <NuxtLink to="/" class="brand">
+          <span class="logo" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>
+          项目履约
+        </NuxtLink>
+        <nav class="sider-scroll" aria-label="主菜单" :inert="collapsed || undefined">
+          <div v-for="g in groups" :key="g.title" class="group">
+            <div class="group-title">{{ g.title }}</div>
+            <NuxtLink v-for="m in g.items" :key="m.key" :to="m.key" class="item" :class="{ active: selected[0] === m.key }" :aria-current="selected[0] === m.key ? 'page' : undefined">{{ m.label }}</NuxtLink>
+          </div>
+        </nav>
+      </div>
+    </a-layout-sider>
+    <a-layout class="main">
+      <a-layout-header class="header">
+        <span class="left">
+          <a-button
+            v-if="broken"
+            size="small"
+            :aria-label="collapsed ? '展开菜单' : '收起菜单'"
+            :aria-expanded="!collapsed"
+            class="nav-toggle"
+            @click="collapsed = !collapsed"
+          >菜单</a-button>
+          <span v-if="broken" class="brand-mini">项目履约</span>
+        </span>
+        <span v-if="me" class="user">
+          {{ me.name }}<template v-if="me.department"> · {{ me.department }}</template><template v-if="me.businessDeptName && me.businessDeptName !== me.department">（{{ me.businessDeptName }}）</template>
+          <a-button type="link" size="small" @click="logout">退出 / 切换账号</a-button>
+        </span>
+      </a-layout-header>
       <a-layout-content class="content">
         <slot />
       </a-layout-content>
@@ -155,14 +160,26 @@ onBeforeUnmount(() => clearInterval(timer))
 </template>
 
 <style scoped>
-.header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 24px; position: sticky; top: 0; z-index: 10; }
+.sider { position: sticky; top: 0; height: 100vh; z-index: 11; background: var(--ft-sider-bg) !important; }
+.sider-inner { height: 100%; display: flex; flex-direction: column; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 20px 22px 12px; color: #fff; font-weight: 600; font-size: 16px; white-space: nowrap; }
+.brand:hover { color: #fff; }
+.logo { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: var(--ft-primary); }
+.sider-scroll { flex: 1; overflow-y: auto; padding: 4px 12px 24px; }
+.group-title { padding: 14px 10px 6px; font-size: 12px; color: #8a96a8; }
+/* 菜单项：圆角，选中项浅色高亮；14 项在 800 高的屏幕上也能一屏放下 */
+.item { display: block; padding: 7px 10px; margin: 2px 0; border-radius: 8px; color: #d5dbe5; font-size: 14px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
+.item.active { color: #fff; background: #2b3a50; font-weight: 500; }
+.item:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 1px; }
+.main { min-width: 0; background: var(--ft-page-bg); }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 52px; line-height: 52px; padding: 0 24px; position: sticky; top: 0; z-index: 10; background: rgba(238, 241, 245, 0.92); backdrop-filter: blur(6px); }
 .left { display: flex; align-items: center; gap: 12px; }
-.brand { color: #fff; font-weight: 600; font-size: 16px; white-space: nowrap; }
-.user { color: rgba(255, 255, 255, 0.85); white-space: nowrap; }
-.sider { position: sticky; top: 64px; height: calc(100vh - 64px); z-index: 9; }
-.sider-scroll { height: 100%; overflow-y: auto; }
-/* 收紧行高和缩进，14 项在 800 高的屏幕上也能一屏放下 */
-.sider-scroll :deep(.ant-menu-item-group-title) { padding: 8px 16px 2px; font-size: 12px; }
-.sider-scroll :deep(.ant-menu-item) { height: 34px; line-height: 34px; margin-block: 2px; padding-left: 24px !important; }
-.content { padding: 24px; min-width: 0; }
+.brand-mini { font-weight: 600; color: var(--ft-text); white-space: nowrap; }
+.user { color: var(--ft-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.content { padding: 4px 24px 24px; min-width: 0; }
+@media (max-width: 575px) {
+  .header { padding: 0 12px; }
+  .content { padding: 4px 12px 16px; }
+}
 </style>

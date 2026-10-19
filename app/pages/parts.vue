@@ -195,6 +195,7 @@ const columns = [
         placeholder="选择工单"
         :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName}　交期 ${dayText(w.deliveryDate)}` }))"
       />
+      <WoLink v-if="workOrderNumber" :no="workOrderNumber" text="工单详情" />
       <template v-if="canRoute">
         <a-button type="primary" :disabled="!workOrderNumber" @click="editPart()">新建工件</a-button>
         <a-button :disabled="!workOrderNumber" @click="bomImportOpen = true">从 QMS BOM 导入</a-button>
@@ -264,6 +265,7 @@ const columns = [
               @change="(v: unknown) => patchStep(record as StepRow, { planNodeId: v ?? null })"
             />
             <div v-if="stepLate(record as StepRow)" class="late-node">晚于节点 {{ planDayOf(record.planNodeId) }}</div>
+            <WoLink v-if="record.planNodeId" :no="workOrderNumber" :node="record.planNodeId" text="看节点" class="node-link" />
           </template>
           <template v-else-if="column.key === 'status'">
             <a-tag :color="STATUS_COLOR[record.status as StepStatusKey]">{{ STATUS_TEXT[record.status as StepStatusKey] }}</a-tag>
@@ -380,6 +382,7 @@ const columns = [
 .part { margin-top: 16px; }
 .muted { color: #999; font-size: 12px; font-weight: normal; }
 .add { margin-top: 12px; }
-.issue-link { color: #cf1322; font-size: 12px; margin-right: 6px; }
-.late-node { color: #d46b08; font-size: 12px; }
+.issue-link { color: var(--ft-late); font-size: 12px; margin-right: 6px; }
+.late-node { color: var(--ft-upstream); font-size: 12px; }
+.node-link { font-size: 12px; }
 </style>

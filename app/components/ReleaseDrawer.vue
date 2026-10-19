@@ -107,7 +107,7 @@ const receiptColumns = [
         <a-descriptions :column="2" bordered size="small" class="block">
           <a-descriptions-item label="类型"><a-tag :color="RELEASE_TYPE_COLOR[detail.type]">{{ detail.typeText }}</a-tag></a-descriptions-item>
           <a-descriptions-item label="版本号">{{ detail.version ?? '—' }}</a-descriptions-item>
-          <a-descriptions-item label="工单" :span="2">{{ detail.workOrderNumber }}<span class="muted">　{{ detail.projectName ?? detail.customerName }}</span></a-descriptions-item>
+          <a-descriptions-item label="工单" :span="2"><WoLink :no="detail.workOrderNumber" /><span class="muted">　{{ detail.projectName ?? detail.customerName }}</span></a-descriptions-item>
           <a-descriptions-item label="关联工件" :span="2">
             <span v-if="!detail.parts.length && !detail.missingParts" class="muted">未关联</span>
             <a-tag v-for="p in detail.parts" :key="p.id">{{ p.name }}<template v-if="p.drawingNo">（{{ p.drawingNo }}）</template></a-tag>

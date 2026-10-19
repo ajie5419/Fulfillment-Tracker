@@ -168,7 +168,8 @@ const rowSelection = computed(() => ({
 }))
 
 const columns = [
-  { title: '工单', dataIndex: 'workOrderNumber', width: 130 },
+  { title: '工单', key: 'wo', width: 130 },
+  { title: '总计划节点', key: 'planNode', width: 150 },
   { title: '物料', key: 'material', width: 210 },
   { title: '数量', key: 'qty', width: 80 },
   { title: '供应商', key: 'supplier', width: 150 },
@@ -227,7 +228,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
       row-key="id"
       size="small"
       :row-selection="rowSelection"
-      :scroll="{ x: 1400 }"
+      :scroll="{ x: 1550 }"
       :pagination="{ pageSize: 50, hideOnSinglePage: true }"
     >
       <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未到货的关键物料' : '没有记录'" /></template>
@@ -237,6 +238,8 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
           <span v-else>{{ record.materialName }}</span>
           <div class="muted">{{ [record.spec, record.partName ? `用于 ${record.partName}` : ''].filter(Boolean).join(' · ') }}</div>
         </template>
+        <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
+        <template v-else-if="column.key === 'planNode'"><PlanNodeCell :work-order-number="record.workOrderNumber" :node="record.planNode" /></template>
         <template v-else-if="column.key === 'qty'">{{ qtyText(record as PurchaseRow) }}</template>
         <template v-else-if="column.key === 'supplier'">
           {{ record.supplierName ?? '—' }}
@@ -314,6 +317,6 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
 .stats { margin-bottom: 8px; }
 .stat { color: inherit; }
 .muted { color: #999; font-size: 12px; }
-.warn { color: #cf1322; }
+.warn { color: var(--ft-late); }
 .ellipsis { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

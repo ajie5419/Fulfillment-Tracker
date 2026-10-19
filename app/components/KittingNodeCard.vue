@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 齐套页的一个装配节点卡片：齐套率进度条 + 缺件表（R12）。工单视图和"提醒的节点"共用 */
-const props = defineProps<{ node: KitNode; focus?: boolean; windowDays: number }>()
+// linkable=false：工单不在查看人可见范围（"提醒的节点"单独展示时），工单号和节点只显示文字，不链到会 403 的工单详情
+const props = withDefaults(defineProps<{ node: KitNode; focus?: boolean; windowDays: number; linkable?: boolean }>(), { linkable: true })
 defineEmits<{ edit: [node: KitNode]; remove: [node: KitNode] }>()
 const n = computed(() => props.node)
 </script>
@@ -11,7 +12,7 @@ const n = computed(() => props.node)
       <span class="node-name">{{ n.name }}</span>
       <a-tag v-if="n.alertLevel === 'RED'" color="red">红</a-tag>
       <a-tag v-else-if="n.alertLevel === 'YELLOW'" color="orange">黄</a-tag>
-      <span class="muted">　{{ n.workOrderNumber }}　需求日 {{ dayText(n.needDate) }}（<span :class="{ warn: n.incomplete && n.daysLeft <= windowDays }">{{ daysLeftText(n.daysLeft) }}</span>）　负责人 {{ n.ownerText }}</span>
+      <span class="muted">　<WoLink v-if="linkable" :no="n.workOrderNumber" /><template v-else>{{ n.workOrderNumber }}</template>　总计划节点 <PlanNodeCell v-if="linkable" :work-order-number="n.workOrderNumber" :node="n.planNode" /><template v-else>{{ n.planNode ? `${n.planNode.seq}. ${n.planNode.name}` : '未挂节点' }}</template>　需求日 {{ dayText(n.needDate) }}（<span :class="{ warn: n.incomplete && n.daysLeft <= windowDays }">{{ daysLeftText(n.daysLeft) }}</span>）　负责人 {{ n.ownerText }}</span>
     </template>
     <template #extra>
       <a-space v-if="n.canEdit" size="small">
@@ -33,9 +34,9 @@ const n = computed(() => props.node)
 
 <style scoped>
 .muted { color: #999; font-size: 12px; }
-.warn { color: #cf1322; }
+.warn { color: var(--ft-late-text); }
 .node { margin-bottom: 12px; }
-.node.focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.2); }
+.node.focus { border-color: var(--ft-primary); box-shadow: 0 0 0 2px rgba(42, 120, 214, 0.2); }
 .node-name { font-weight: 600; margin-right: 6px; }
 .progress { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .progress :deep(.ant-progress) { flex: 1; max-width: 480px; margin: 0; }

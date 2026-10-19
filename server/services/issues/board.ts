@@ -14,6 +14,9 @@
  *     远期节点还没齐是正常的，不计入，免得这一列永远是一大串数字没人看
  *   预计交期、拖期天数（R14）= 已发布总计划的最后一个节点的预计完成日、它比 QMS 交期晚几天（负数 = 提前；只显示，延误由 W9 计入红黄）；
  *     没有总计划或还是草稿时为空
+ *   项目总览（前端改版第一轮）另加：hasPlan 是否有已发布总计划、planNodes 节点摘要（名称、状态、计划日 / 预计日）、
+ *     stuck 当前卡点（最早的源头延误节点）、kitPercent 总装齐套率（装配节点名称含"总装"的，没有取需求日最晚的；清单为空为 null），
+ *     以及顶部 sourceByDept（源头延误节点按责任部门计数）。原有字段含义不变
  */
 import { prisma } from '../../utils/prisma'
 import { loadOffDays, loadThresholds } from '../alerts/config'
@@ -25,6 +28,12 @@ import { overdueDays } from '../flow/dates'
 import { loadNames } from '../flow/names'
 import { syncOverview } from '../sync/status'
 import { loadPlans } from '../plan/plan'
+import { BUSINESS_DEPT_NAME } from '../auth/departments'
+import { NODE_LINKS, loadKitCounts } from '../kitting/kitting'
+import { kitPercent } from '../kitting/constants'
+import { dateFieldDay } from '../alerts/rules'
+import { pickMainAssembly } from '../workorder/rules'
+import { nodeState, stuckNode } from '../../../shared/status'
 import { OPEN_STATUSES } from './constants'
 
 export type BoardColor = 'RED' | 'YELLOW' | 'GREEN'
@@ -61,6 +70,13 @@ async function alertWorkOrders(alerts: { id: string; refType: string; refId: str
   }
   // W9 工单级（交期风险）：refId 就是工单号
   return new Map(alerts.map((a) => [a.id, a.refType === 'plan' ? a.refId : (wo.get(`${a.refType}:${a.refId}`) ?? null)]))
+}
+
+/** 源头延误节点按责任部门计数，多的在前 */
+function sourceByDept(rows: { planNodes: { dept: keyof typeof BUSINESS_DEPT_NAME; state: string }[] }[]) {
+  const m = new Map<keyof typeof BUSINESS_DEPT_NAME, number>()
+  for (const r of rows) for (const n of r.planNodes) if (n.state === 'SOURCE') m.set(n.dept, (m.get(n.dept) ?? 0) + 1)
+  return [...m.entries()].map(([dept, nodes]) => ({ dept, deptText: BUSINESS_DEPT_NAME[dept], nodes })).sort((a, b) => b.nodes - a.nodes)
 }
 
 export async function getBoard(visibleWorkOrders: string[] | undefined, now = new Date()) {
@@ -105,7 +121,17 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
     where: { AND: [incompleteWhere(), dueWindowWhere(now, thresholds.W8), ...(woWhere ? [{ workOrderNumber: woWhere }] : [])] },
     _count: { _all: true },
   })
-  const plans = await loadPlans({ workOrderNumbers: workOrders.map((w) => w.workOrderNumber), publishedOnly: true }, now)
+  const [plans, assemblies] = await Promise.all([
+    loadPlans({ workOrderNumbers: workOrders.map((w) => w.workOrderNumber), publishedOnly: true }, now),
+    prisma.assemblyNode.findMany({ where: { workOrderNumber: { in: workOrders.map((w) => w.workOrderNumber) } }, include: NODE_LINKS }),
+  ])
+  // 总装齐套率：每个工单一个主装配节点
+  const mains = new Map<string, (typeof assemblies)[number]>()
+  for (const wo of new Set(assemblies.map((a) => a.workOrderNumber))) {
+    const main = pickMainAssembly(assemblies.filter((a) => a.workOrderNumber === wo).map((a) => ({ ...a, needDay: dateFieldDay(a.needDate) })))
+    if (main) mains.set(wo, main)
+  }
+  const kits = await loadKitCounts([...mains.values()])
   const incompleteNodesOf = new Map(incompleteNodes.map((n) => [n.workOrderNumber, n._count._all]))
   const drawingOverdueOf = new Map(drawingOverdue.map((d) => [d.workOrderNumber, d._count._all]))
   const shortageOf = new Map(shortage.map((s) => [s.workOrderNumber, s._count._all]))
@@ -129,6 +155,14 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
     const color: BoardColor = red || issueRed ? 'RED' : yellow || issueYellow ? 'YELLOW' : 'GREEN'
     const pm = pmOf.get(wo) ?? null
     const plan = plans.get(wo)
+    const est = new Map((plan?.forecast.nodes ?? []).map((e) => [e.id, e]))
+    const planNodes = (plan?.nodes ?? []).map((n) => {
+      const e = est.get(n.id)!
+      return { id: n.id, seq: n.seq, name: n.name, dept: n.dept, deptText: BUSINESS_DEPT_NAME[n.dept], state: nodeState(e), planDate: dateFieldDay(n.planDate), expectedDate: e.expectedDay, selfDelayDays: e.selfDelayDays }
+    })
+    const stuck = stuckNode(planNodes)
+    const main = mains.get(wo)
+    const kit = main ? kits.get(main.id) : undefined
     return {
       workOrderNumber: wo,
       projectName: w.projectName,
@@ -153,6 +187,14 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
       expectedDelivery: plan?.forecast.expectedDelivery ?? null,
       delayDays: plan?.forecast.deliveryDelayDays ?? null,
       delayedPlanNodes: plan?.forecast.sourceNodes ?? 0,
+      /** 有已发布的总计划 */
+      hasPlan: !!plan,
+      /** 已发布总计划的节点摘要（按主线顺序）；state 见 shared/status.ts nodeState */
+      planNodes,
+      /** 当前卡点：最早的源头延误节点（名称、责任部门、自身晚几天） */
+      stuck: stuck ? { id: stuck.id, name: stuck.name, deptText: stuck.deptText, days: stuck.selfDelayDays } : null,
+      /** 总装齐套率（0–100）；没有装配节点或清单为空为 null */
+      kitPercent: kit ? kitPercent(kit) : null,
     }
   })
   const rank = { RED: 0, YELLOW: 1, GREEN: 2 } as const
@@ -161,6 +203,8 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
     lastSyncAt: sync.lastSyncAt,
     syncOldest: sync.oldest,
     syncErrors: sync.errors,
+    /** 源头延误节点按责任部门计数（项目总览"源头延误在哪个部门"） */
+    sourceByDept: sourceByDept(rows),
     summary: { red: rows.filter((r) => r.color === 'RED').length, yellow: rows.filter((r) => r.color === 'YELLOW').length, green: rows.filter((r) => r.color === 'GREEN').length },
     rows,
   }

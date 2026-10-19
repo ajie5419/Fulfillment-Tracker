@@ -733,4 +733,69 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(opts.nodes).toHaveLength(11)
     expect((await get(`/api/plan/options?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
   })
+  it('工单详情（前端改版第一轮）：可见工单返回总计划节点 + 挂节点记录 + 未挂计数，不含金额；项目经理看别人的工单 403；不存在 404；列表带总计划节点', async () => {
+    const pm = await login('h-pm')
+    const lead = await login('h-lead')
+    const admin = await login('h-admin')
+    const tech = await login('h-tech')
+    // 上面 R14 用例：MINE 已按通用模板发布（11 个节点），"R14 图"挂在"设计出图"上；再加一条没挂节点的采购行
+    await db.purchaseLine.create({ data: { workOrderNumber: MINE, materialName: '详情未挂物料', quantity: 1, needDate: new Date('2026-11-20') } })
+
+    const res = await get(`/api/work-orders/${MINE}/detail`, pm)
+    expect(res.status).toBe(200)
+    const text = await res.text()
+    expect(text).not.toContain('"amount"')
+    const d = JSON.parse(text) as {
+      today: string
+      published: boolean
+      workOrder: { workOrderNumber: string; deliveryDate: string; projectManagerName: string | null }
+      progress: { total: number; done: number }
+      nodes: { id: string; name: string; state: string; planDate: string; tasks: { kind: string; name: string; link: string }[] }[]
+      unlinked: { drawing: number; purchase: number; step: number; assembly: number }
+      issues: { open: number }
+      actions: unknown[]
+      expectedDelivery: string | null
+    }
+    expect(d.published).toBe(true)
+    expect(d.today).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(d.workOrder).toMatchObject({ workOrderNumber: MINE, deliveryDate: '2026-12-31' })
+    expect(d.workOrder.projectManagerName).toBeTruthy()
+    expect(d.nodes).toHaveLength(11)
+    expect(d.progress.total).toBe(11)
+    expect(d.expectedDelivery).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    for (const n of d.nodes) expect(['DONE', 'SOURCE', 'UPSTREAM', 'ON_TRACK']).toContain(n.state)
+    const design = d.nodes.find((n) => n.name === '设计出图')!
+    expect(design.tasks).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'drawing', name: 'R14 图', link: `/drawings?wo=${MINE}&view=all` })]))
+    // 未挂节点数与库里一致（已取消的不算）
+    const [drawing, purchase, step, assembly] = await Promise.all([
+      db.drawingTask.count({ where: { workOrderNumber: MINE, planNodeId: null, status: { not: 'CANCELLED' } } }),
+      db.purchaseLine.count({ where: { workOrderNumber: MINE, planNodeId: null, status: { not: 'CANCELLED' } } }),
+      db.routeStep.count({ where: { part: { workOrderNumber: MINE }, planNodeId: null } }),
+      db.assemblyNode.count({ where: { workOrderNumber: MINE, planNodeId: null } }),
+    ])
+    expect(d.unlinked).toMatchObject({ drawing, purchase, step, assembly })
+    expect(purchase).toBeGreaterThanOrEqual(1)
+    expect(d.issues.open).toBe(await db.issue.count({ where: { workOrderNumber: MINE, status: { in: ['OPEN', 'ACCEPTED', 'RESOLVED'] } } }))
+
+    // 只当项目经理的人看别人的工单：403；不在范围内的不存在工单也是 403（不泄露是否存在）
+    expect((await get(`/api/work-orders/${OTHER}/detail`, pm)).status).toBe(403)
+    expect((await get('/api/work-orders/NO-SUCH-WO/detail', pm)).status).toBe(403)
+    // 看全部的人：别人的工单 200（没有总计划：节点为空）；不存在 404
+    const other = (await (await get(`/api/work-orders/${OTHER}/detail`, lead)).json()) as { plan: unknown; nodes: unknown[]; published: boolean }
+    expect(other).toMatchObject({ plan: null, nodes: [], published: false })
+    expect((await get('/api/work-orders/NO-SUCH-WO/detail', admin)).status).toBe(404)
+    // 未登录 401
+    expect((await fetch(`${base}/api/work-orders/${MINE}/detail`)).status).toBe(401)
+
+    // 项目总览（看板）加的字段：节点摘要、是否有总计划
+    const board = (await (await get('/api/board', pm)).json()) as { rows: { workOrderNumber: string; hasPlan: boolean; planNodes: unknown[] }[]; sourceByDept: unknown[] }
+    expect(board.rows.find((r) => r.workOrderNumber === MINE)).toMatchObject({ hasPlan: true })
+    expect(board.rows.find((r) => r.workOrderNumber === MINE)!.planNodes).toHaveLength(11)
+    expect(Array.isArray(board.sourceByDept)).toBe(true)
+    // 出图 / 采购列表的"总计划节点"列
+    const drawings = (await (await get(`/api/drawings?workOrderNumber=${MINE}&view=all`, tech)).json()) as { rows: { componentName: string; planNode: { id: string; seq: number; name: string } | null }[] }
+    expect(drawings.rows.find((r) => r.componentName === 'R14 图')!.planNode).toMatchObject({ id: design.id, name: '设计出图' })
+    const lines = (await (await get(`/api/purchases?workOrderNumber=${MINE}&view=all`, admin)).json()) as { rows: { materialName: string; planNode: unknown }[] }
+    expect(lines.rows.find((r) => r.materialName === '详情未挂物料')!.planNode).toBeNull()
+  })
 })

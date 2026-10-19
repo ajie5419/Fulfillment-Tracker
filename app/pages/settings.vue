@@ -332,5 +332,5 @@ const woColumns = [
 .role-users { margin-bottom: 8px; }
 .tip { margin-bottom: 12px; }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
-.sync-err { color: #cf1322; }
+.sync-err { color: var(--ft-late); }
 </style>

@@ -94,8 +94,9 @@ function showWorkOrder(wo: string, id?: string) {
 
 const crossColumns = [
   { title: '需求日', key: 'needDate', width: 130 },
-  { title: '工单', dataIndex: 'workOrderNumber', width: 140 },
+  { title: '工单', key: 'wo', width: 140 },
   { title: '装配节点', key: 'name' },
+  { title: '总计划节点', key: 'planNode', width: 150 },
   { title: '负责人', key: 'owner', width: 140 },
   { title: '齐套率', key: 'percent', width: 200 },
   { title: '缺件', key: 'short', width: 70, align: 'center' as const },
@@ -134,7 +135,7 @@ const crossColumns = [
     </p>
     <template v-if="standalone">
       <div class="section muted">提醒的节点（你是负责人；该工单不在你的可见范围，只能看这个节点）<a @click="standalone = null">收起</a></div>
-      <KittingNodeCard :node="standalone" focus :window-days="stats?.windowDays ?? 5" @edit="openEdit" @remove="remove" />
+      <KittingNodeCard :node="standalone" focus :linkable="false" :window-days="stats?.windowDays ?? 5" @edit="openEdit" @remove="remove" />
     </template>
     <p v-if="data.total > rows.length" class="warn">共 {{ data.total }} 个节点，只显示前 {{ rows.length }} 个，请按工单筛选</p>
 
@@ -164,7 +165,7 @@ const crossColumns = [
       size="small"
       :pagination="{ pageSize: 50, hideOnSinglePage: true }"
       :expand-row-by-click="false"
-      :scroll="{ x: 900 }"
+      :scroll="{ x: 1050 }"
     >
       <template #emptyText><a-empty :description="filter.incomplete ? '没有未齐套的装配节点' : '还没有装配节点'" /></template>
       <template #expandedRowRender="{ record }">
@@ -179,6 +180,8 @@ const crossColumns = [
         <template v-else-if="column.key === 'name'">
           <a @click="showWorkOrder(record.workOrderNumber, record.id)">{{ record.name }}</a>
         </template>
+        <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
+        <template v-else-if="column.key === 'planNode'"><PlanNodeCell :work-order-number="record.workOrderNumber" :node="record.planNode" /></template>
         <template v-else-if="column.key === 'owner'"><span :class="{ muted: !record.ownerId }">{{ record.ownerText }}</span></template>
         <template v-else-if="column.key === 'percent'">
           <a-progress v-if="record.percent != null" :percent="record.percent" size="small" :status="kitProgressStatus(record as KitNode)" />
@@ -203,7 +206,7 @@ const crossColumns = [
 .stats { margin-bottom: 8px; }
 .stat { color: inherit; }
 .muted { color: #999; font-size: 12px; }
-.warn { color: #cf1322; }
+.warn { color: var(--ft-late); }
 .small { font-size: 12px; }
 .ready { margin-top: 6px; }
 .section { display: flex; justify-content: space-between; margin-bottom: 6px; }

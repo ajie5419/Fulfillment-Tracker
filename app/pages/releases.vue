@@ -50,7 +50,7 @@ const progressOptions = [
 const columns = [
   { title: '编号', key: 'releaseNo', width: 150 },
   { title: '类型', key: 'type', width: 100 },
-  { title: '工单', dataIndex: 'workOrderNumber', width: 140 },
+  { title: '工单', key: 'wo', width: 140 },
   { title: '工件 / 版本', key: 'parts', width: 200 },
   { title: '说明', key: 'description' },
   { title: '发放人', dataIndex: 'issuerName', width: 100 },
@@ -94,6 +94,7 @@ const columns = [
           <a-tag :color="RELEASE_TYPE_COLOR[record.type as ReleaseTypeKey]">{{ record.typeText }}</a-tag>
           <a-tag v-if="record.heldSteps" color="purple">等变更 {{ record.heldSteps }}</a-tag>
         </template>
+        <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
         <template v-else-if="column.key === 'parts'">
           {{ record.parts.join('、') || '—' }}
           <div v-if="record.version" class="muted">版本 {{ record.version }}</div>

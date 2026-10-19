@@ -51,7 +51,7 @@ const mineOptions = [
 ]
 const columns = [
   { title: '编号', key: 'issueNo', width: 140 },
-  { title: '工单', dataIndex: 'workOrderNumber', width: 130 },
+  { title: '工单', key: 'wo', width: 130 },
   { title: '分类', key: 'category', width: 110 },
   { title: '描述', key: 'description' },
   { title: '来源', key: 'source', width: 100 },
@@ -99,6 +99,7 @@ const columns = [
       <template #emptyText><a-empty description="没有符合条件的异常" /></template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'issueNo'"><a>{{ record.issueNo }}</a></template>
+        <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
         <template v-else-if="column.key === 'category'">{{ record.categoryText }}</template>
         <template v-else-if="column.key === 'description'">
           <div class="ellipsis">{{ record.description }}</div>

@@ -287,6 +287,7 @@ const logColumns = [
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
         <a-button :disabled="!wo" @click="load()">刷新</a-button>
+        <WoLink v-if="wo" :no="wo" text="工单详情" />
         <template v-if="data?.canEdit">
           <template v-if="!published">
             <a-select v-model:value="templateId" placeholder="模板" style="width: 140px" :options="templates.map((t) => ({ value: t.id, label: t.name }))" />
@@ -488,13 +489,13 @@ const logColumns = [
 <style scoped>
 .muted { color: #999; font-size: 12px; }
 .small { font-size: 12px; }
-.late { color: #cf1322; }
-.warn { color: #d46b08; }
+.late { color: var(--ft-late); }
+.warn { color: var(--ft-upstream); }
 .ok { color: #389e0d; }
 .changed { text-decoration: line-through; color: #999; }
 .summary { margin-bottom: 12px; }
 .tip { margin-bottom: 12px; }
 .section { margin: 20px 0 8px; }
-:deep(.late-row) td:first-child { box-shadow: inset 3px 0 0 #cf1322; }
+:deep(.late-row) td:first-child { box-shadow: inset 3px 0 0 var(--ft-late); }
 :deep(.focus-row) td { background: #fffbe6 !important; }
 </style>

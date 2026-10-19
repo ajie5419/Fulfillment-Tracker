@@ -19,7 +19,7 @@ const columns = [
   { title: '级别', key: 'level', width: 80 },
   { title: '规则', key: 'rule', width: 150 },
   { title: '对象', key: 'subject' },
-  { title: '工单', dataIndex: 'workOrderNumber', width: 140 },
+  { title: '工单', key: 'wo', width: 140 },
   { title: '情况 / 已持续', key: 'summary' },
   { title: '责任人', key: 'owners', width: 140 },
   { title: '首次预警 / 升级', key: 'time', width: 180 },
@@ -78,6 +78,7 @@ function convert(row: { id: string; subject: string }) {
           <NuxtLink v-if="record.link" :to="record.link">{{ record.subject }}</NuxtLink>
           <span v-else>{{ record.subject }}</span>
         </template>
+        <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
         <template v-else-if="column.key === 'summary'">
           {{ record.summary }}
           <div v-if="record.duration" class="muted">已持续 {{ record.duration }}（不含停工日）</div>

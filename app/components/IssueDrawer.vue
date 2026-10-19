@@ -114,7 +114,7 @@ const actions: IssueAction[] = ['accept', 'resolve', 'close', 'reject', 'reassig
         </a-space>
         <p class="desc">{{ detail.description }}</p>
         <a-descriptions :column="2" size="small" bordered>
-          <a-descriptions-item label="工单">{{ detail.workOrderNumber }}</a-descriptions-item>
+          <a-descriptions-item label="工单"><WoLink :no="detail.workOrderNumber" /></a-descriptions-item>
           <a-descriptions-item label="关联">
             <NuxtLink v-if="detail.refText" :to="`/parts?wo=${encodeURIComponent(detail.workOrderNumber)}`">{{ detail.refText }}</NuxtLink>
             <span v-else class="muted">—</span>
