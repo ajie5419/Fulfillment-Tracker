@@ -1,0 +1,42 @@
+name: CI
+
+# 合并前必须全绿。只跑单元测试：tests/integration 需要真实 MySQL 且开头清表，
+# 不能放在共享 runner 上（见 docs/代码质量审查.md E03）。
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      # postinstall 里跑 nuxt prepare + prisma generate，不需要 .env：数据库连接只在运行时校验
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build

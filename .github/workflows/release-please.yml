@@ -1,0 +1,27 @@
+name: release-please
+
+# main 上出现 Conventional Commit 后，自动创建/更新发布 PR（改 CHANGELOG.md、
+# .release-please-manifest.json）。合并那个 PR 才会打 fulfillment-v* tag。
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      # 必须用 PAT：GITHUB_TOKEN 创建的 PR 不会再触发其他 workflow，
+      # 发布 PR 上的 CI 就永远不会跑。在仓库 Secrets 里配置 RELEASE_PLEASE_TOKEN。
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

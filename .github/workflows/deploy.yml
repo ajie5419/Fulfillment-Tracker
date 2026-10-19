@@ -1,0 +1,54 @@
+name: Deploy
+
+# release-please 合并发布 PR 后打的 tag 触发，例如 fulfillment-v0.1.0。
+# 具体步骤在 scripts/deploy-remote.sh（ECS 上执行），与 docs/上线手册.md 5.3 一致。
+on:
+  push:
+    tags:
+      - 'fulfillment-v*'
+
+permissions:
+  contents: read
+
+# 同时只跑一个发布，不取消进行中的（取消到一半会留下未完成的部署）
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          missing=""
+          [ -n "$DEPLOY_HOST" ] || missing="$missing DEPLOY_HOST"
+          [ -n "$DEPLOY_USER" ] || missing="$missing DEPLOY_USER"
+          [ -n "$DEPLOY_SSH_KEY" ] || missing="$missing DEPLOY_SSH_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::缺少仓库 Secrets:$missing（见 docs/发版手册.md）"
+            exit 1
+          fi
+
+      - name: Deploy over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          # 把仓库里的脚本送过去执行，ECS 上不依赖脚本版本
+          ssh -i ~/.ssh/id_deploy -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            'bash -s -- '"${GITHUB_REF_NAME}" < scripts/deploy-remote.sh
