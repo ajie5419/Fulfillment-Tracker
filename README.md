@@ -119,13 +119,15 @@ node scripts/mock-identity-bridge.mjs         # 监听 4100，授权页上选择
 - **菜单**按角色显示（页面本身不拦，从提醒链接点进去可只读查看）；手机端"发出"页签只给生产部、外协专员、管理员。新增"领导总览"（`/overview`，领导、项目部负责人、管理员），数据与看板同源。
 - 设置页"通知对象"改名"人员与角色"，部门负责人的部门改为从 6 个业务部门里选；新增"部门对照"页签，并提示哪些业务部门还没有负责人。演示数据加了部门对照和 3 个演示用户：u-012 测试焊工（组焊班 → 生产部）、u-013 测试检验员（检验科 → 质量部）、u-014 测试行政（其他部门）。
 
-## 部署（与 QMS 同机）
+## 发版与部署（与 QMS 同机）
 
-首次上线的完整步骤（QMS 先发版、建库、IP 证书与 443 入口、环境变量、清演示数据、备份、真机验证，每步含确认与回滚）见 [docs/上线手册.md](docs/上线手册.md)。
+发版走 GitHub Actions：PR 标题校验 → CI → squash 合并 → release-please 开发布 PR → 合并后打 `fulfillment-v*` tag → deploy workflow SSH 到 ECS 执行 `scripts/deploy-remote.sh`（构建 → 迁移 → 启动 → 健康检查，失败自动回退 `prev` 镜像）。commit 和 PR 标题用 Conventional Commits（`feat(plan): ...`），完整规则和一次性仓库设置见 [docs/发版手册.md](docs/发版手册.md)。
+
+首次上线（QMS 先发版、建库、IP 证书与 443 入口、环境变量、清演示数据、备份、真机验证，每步含确认与回滚）见 [docs/上线手册.md](docs/上线手册.md)。没配 Secrets 时可以手工部署：
 
 ```bash
 docker compose build
-docker compose run --rm fulfillment prisma migrate deploy   # 上线前人工执行
+docker compose run --rm fulfillment prisma migrate deploy   # 必须在启动前执行
 docker compose up -d
 ```
 

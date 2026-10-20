@@ -1,0 +1,75 @@
+name: Deploy
+
+# release-please 合并发布 PR 后打的 tag 触发，例如 fulfillment-v0.1.0。
+# 具体步骤在 scripts/deploy-remote.sh（ECS 上执行），与 docs/上线手册.md 5.3 一致。
+on:
+  push:
+    tags:
+      - 'fulfillment-v*'
+
+permissions:
+  contents: read
+
+# 同时只跑一个发布，不取消进行中的（取消到一半会留下未完成的部署）
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      # 取全历史，用来确认 tag 指向的 commit 真的在 main 上
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # 光有 main 的分支保护不够：任何能推 tag 的人都可以给一个未合并的 commit 打
+      # fulfillment-v*，本 workflow 会把它部署上去。这里拒绝不在 main 上的 tag。
+      - name: Verify tag is on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::tag $GITHUB_REF_NAME 指向的 commit($GITHUB_SHA)不在 main 上，拒绝部署"
+            exit 1
+          fi
+
+      - name: Preflight
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+        run: |
+          missing=""
+          [ -n "$DEPLOY_HOST" ] || missing="$missing DEPLOY_HOST"
+          [ -n "$DEPLOY_USER" ] || missing="$missing DEPLOY_USER"
+          [ -n "$DEPLOY_SSH_KEY" ] || missing="$missing DEPLOY_SSH_KEY"
+          [ -n "$DEPLOY_HOST_KEY" ] || missing="$missing DEPLOY_HOST_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::缺少仓库 Secrets:$missing（见 docs/发版手册.md）"
+            exit 1
+          fi
+
+      - name: Deploy over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          # 用固定公钥而不是 ssh-keyscan：后者不做认证，DNS/路由被劫持时会接受攻击者的主机
+          printf '%s\n' "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          # 把仓库里的脚本送过去执行，ECS 上不依赖脚本版本
+          ssh -i ~/.ssh/id_deploy -p "$DEPLOY_PORT" \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            'bash -s -- '"${GITHUB_REF_NAME}" < scripts/deploy-remote.sh
