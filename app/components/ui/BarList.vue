@@ -1,21 +1,22 @@
 <script setup lang="ts">
 /**
  * 小横条图（前端改版第一轮）：一行一项"名称 —— 横条 —— 数值文字"，条长按最大值归一。
- * 用于"谁在拖（源头延误天数）""源头延误在哪个部门"。tone 是条的颜色（默认延误红）。
+ * 用于"谁在拖（源头延误天数）""源头延误在哪个部门"。tone 是条的颜色（默认延误红）；某一项单独给 tone 时用它的（第二轮：风险页按严重度）。
  */
-withDefaults(defineProps<{ items: { key: string; label: string; value: number; text?: string }[]; tone?: string; empty?: string; compact?: boolean }>(), {
+withDefaults(defineProps<{ items: { key: string; label: string; value: number; text?: string; tone?: string }[]; tone?: string; empty?: string; compact?: boolean; labelWidth?: number }>(), {
   tone: 'late',
   empty: '暂无',
   compact: false,
+  labelWidth: undefined,
 })
 </script>
 
 <template>
   <div class="ft-bars" :class="{ compact }">
     <div v-if="!items.length" class="ft-muted empty">{{ empty }}</div>
-    <div v-for="it in items" :key="it.key" class="row">
+    <div v-for="it in items" :key="it.key" class="row" :style="labelWidth ? { gridTemplateColumns: `${labelWidth}px 1fr auto` } : undefined">
       <span class="label" :title="it.label">{{ it.label }}</span>
-      <span class="track"><span class="fill" :style="{ width: `${Math.max(...items.map((i) => i.value)) > 0 ? (it.value / Math.max(...items.map((i) => i.value))) * 100 : 0}%`, background: `var(--ft-${tone})` }" /></span>
+      <span class="track"><span class="fill" :style="{ width: `${Math.max(...items.map((i) => i.value)) > 0 ? (it.value / Math.max(...items.map((i) => i.value))) * 100 : 0}%`, background: `var(--ft-${it.tone ?? tone})` }" /></span>
       <span class="num">{{ it.text ?? it.value }}</span>
     </div>
   </div>

@@ -71,7 +71,7 @@ export const arriveBody = z
 export const listQuery = z.object({
   workOrderNumber: z.string().max(64).optional(),
   partId: z.string().max(191).optional(),
-  view: z.enum(['open', 'shortage', 'late', 'arrived', 'cancelled', 'all']).optional(),
+  view: z.enum(['open', 'shortage', 'late', 'blocked', 'arrived', 'cancelled', 'all']).optional(),
   q: z.string().max(100).optional(),
 })
 
@@ -96,4 +96,6 @@ export const paymentStatusBody = z.object({ status: paymentStatus, note: optText
 export const paymentQuery = z.object({
   status: z.enum(['UNPAID', 'PENDING', 'PAID', 'ON_HOLD', 'ALL']).optional(),
   workOrderNumber: z.string().max(64).optional(),
+  /** 1 = 只看卡交期的 */
+  blocking: z.enum(['0', '1']).optional(),
 })

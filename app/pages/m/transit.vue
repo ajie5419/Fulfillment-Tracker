@@ -35,6 +35,8 @@ async function doReturn() {
     showFailToast(apiError(e))
   }
 }
+/** 已返回数量占比（进度条），0–100 */
+const returnedPercent = (r: Row) => (r.quantity > 0 ? Math.min(100, Math.round((r.returnedQty / r.quantity) * 100)) : 0)
 </script>
 
 <template>
@@ -44,27 +46,36 @@ async function doReturn() {
       <van-dropdown-item v-model="workOrderNumber" :options="woOptions" />
       <van-dropdown-item v-model="supplierId" :options="supplierOptions" />
     </van-dropdown-menu>
-    <van-loading v-if="pending" class="center" />
-    <van-empty v-else-if="!rows.length" description="没有在外的工件" />
-    <van-cell-group v-else inset class="list">
-      <van-cell v-for="r in rows" :key="r.stepId" :title="`${r.partName} · ${r.processName}`" center>
-        <template #label>
-          <div>{{ r.workOrderNumber }}　{{ r.supplierName ?? '—' }}</div>
-          <div :class="{ overdue: r.overdueDays > 0 }">
-            承诺 {{ dayText(r.promisedReturnDate) || '—' }}<template v-if="r.overdueDays > 0">　已超期 {{ r.overdueDays }} 天</template>
-            　已回 {{ r.returnedQty }}/{{ r.quantity }}
-          </div>
-        </template>
-        <template #value>
-          <van-button v-if="canDo(me, 'stepAction', { ownerId: r.ownerId })" size="small" :type="r.overdueDays > 0 ? 'danger' : 'primary'" plain @click="openReturn(r)">补登返厂</van-button>
-        </template>
-      </van-cell>
-    </van-cell-group>
+    <van-loading v-if="pending" class="m-center" />
+    <van-empty v-else-if="!rows.length" description="没有在外的工件" image-size="80" />
+    <div v-else class="m-list">
+      <MCard v-for="r in rows" :key="r.stepId" :tone="r.overdueDays > 0 ? 'late' : 'primary'">
+        <div class="m-row">
+          <van-tag v-if="r.overdueDays > 0" type="danger">已超期 {{ r.overdueDays }} 天</van-tag>
+          <van-tag v-else type="primary">在外加工</van-tag>
+          <span class="wo">{{ r.workOrderNumber }}</span>
+        </div>
+        <div class="m-title name">{{ r.partName }} · {{ r.processName }}</div>
+        <div class="m-meta">
+          <span>{{ r.supplierName ?? '—' }}</span>
+          <span :class="{ 'm-text-late': r.overdueDays > 0 }">承诺返回 {{ dayText(r.promisedReturnDate) || '—' }}</span>
+        </div>
+        <div class="m-progress">
+          <van-progress :percentage="returnedPercent(r)" :show-pivot="false" :class="r.overdueDays > 0 ? 'm-progress-late' : 'm-progress-primary'" />
+          <span class="m-progress-text">已回 {{ r.returnedQty }}/{{ r.quantity }}</span>
+        </div>
+        <div v-if="canDo(me, 'stepAction', { ownerId: r.ownerId })" class="m-foot-row">
+          <span class="m-spacer" />
+          <van-button size="small" :type="r.overdueDays > 0 ? 'danger' : 'primary'" plain @click="openReturn(r)">补登返厂</van-button>
+        </div>
+      </MCard>
+    </div>
+    <div class="m-foot" />
 
     <van-dialog :show="!!returning" title="补登返厂" show-cancel-button @confirm="doReturn" @cancel="returning = null">
       <div class="dialog">
         <p>{{ returning?.partName }} · {{ returning?.processName }}</p>
-        <p class="muted">QMS 漏报检时使用；全部返回后步骤自动完成</p>
+        <p class="m-muted tip">QMS 漏报检时使用；全部返回后步骤自动完成</p>
         <van-stepper v-model="qty" :min="1" integer />
       </div>
     </van-dialog>
@@ -72,9 +83,8 @@ async function doReturn() {
 </template>
 
 <style scoped>
-.center { display: flex; justify-content: center; padding: 32px; }
-.list { margin-top: 12px; }
-.overdue { color: #ee0a24; font-weight: 600; }
+.wo { font-size: 13px; color: var(--ft-text-2); font-weight: 500; }
+.name { margin-top: 6px; }
 .dialog { padding: 12px 24px 20px; text-align: center; }
-.muted { color: #969799; font-size: 12px; }
+.tip { font-size: 12px; }
 </style>

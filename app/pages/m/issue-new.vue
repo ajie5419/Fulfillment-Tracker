@@ -134,7 +134,7 @@ async function submit() {
       </van-cell-group>
     </template>
 
-    <div class="submit">
+    <div class="m-submit">
       <van-button type="danger" block round :disabled="!canSubmit" :loading="submitting" loading-text="提交中…" @click="submit">提交异常</van-button>
     </div>
 
@@ -153,9 +153,9 @@ async function submit() {
 </template>
 
 <style scoped>
-.page { padding-bottom: 16px; }
+.page { padding-bottom: 8px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; background: #fff; }
+.chips :deep(.van-tag) { cursor: pointer; }
 .uploader { padding: 12px 16px 4px; background: #fff; }
-.muted { color: #969799; font-size: 12px; padding-bottom: 8px; }
-.submit { padding: 16px; }
+.muted { color: var(--ft-text-3); font-size: 12px; padding-bottom: 8px; }
 </style>

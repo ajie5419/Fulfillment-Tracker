@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { toneOfVant } from '#shared/mobile-todo'
+
 /** 手机：到货确认（R10）。未到货的关键物料（缺料、超期的在前）/ 已到货；点一条进入确认页。仓库、使用部门、采购都可以确认 */
 definePageMeta({ layout: 'mobile' })
 const route = useRoute()
@@ -26,28 +28,32 @@ const rows = computed(() => data.value.rows as PurchaseRow[])
       <van-tab title="未到货" name="open" />
       <van-tab title="已到货" name="arrived" />
     </van-tabs>
-    <van-search v-model="keyword" placeholder="物料、规格、供应商、工单" />
-    <van-loading v-if="pending" class="center" />
+    <van-search v-model="keyword" placeholder="物料、规格、供应商、工单" shape="round" />
+    <van-loading v-if="pending" class="m-center" />
     <van-empty v-else-if="!rows.length" :description="tab === 'open' ? '没有未到货的关键物料' : '还没有到货记录'" image-size="80" />
-    <van-cell-group v-else inset>
-      <van-cell v-for="r in rows" :key="r.id" is-link center @click="navigateTo(`/m/arrival?id=${encodeURIComponent(r.id)}`)">
-        <template #title>
-          <van-tag :type="PURCHASE_PROGRESS_TYPE[r.progressText] ?? 'default'" class="tag">{{ r.progressText }}</van-tag>
-          <span class="name">{{ r.materialName }}</span>
-          <van-tag v-if="r.blockedByPayment && r.status === 'OPEN'" type="primary" plain class="tag">卡付款</van-tag>
-          <div class="desc">{{ [r.spec, qtyText(r), r.supplierName].filter(Boolean).join(' · ') }}</div>
-        </template>
-        <template #label>
-          {{ r.workOrderNumber }}　需求 {{ dayText(r.needDate) }}{{ r.promisedDate ? `　承诺 ${dayText(r.promisedDate)}` : '　未承诺' }}{{ r.arrivedDate ? `　到货 ${dayText(r.arrivedDate)}` : '' }}
-        </template>
-      </van-cell>
-    </van-cell-group>
+    <div v-else class="m-list">
+      <MCard v-for="r in rows" :key="r.id" :tone="toneOfVant(PURCHASE_PROGRESS_TYPE[r.progressText])" link @click="navigateTo(`/m/arrival?id=${encodeURIComponent(r.id)}`)">
+        <div class="m-row">
+          <van-tag :type="PURCHASE_PROGRESS_TYPE[r.progressText] ?? 'default'">{{ r.progressText }}</van-tag>
+          <van-tag v-if="r.blockedByPayment && r.status === 'OPEN'" type="primary" plain>卡付款</van-tag>
+          <span v-if="r.lateDays" class="late m-text-late">晚 {{ r.lateDays }} 天</span>
+        </div>
+        <div class="m-title name">{{ r.materialName }}</div>
+        <div v-if="[r.spec, qtyText(r), r.supplierName].filter(Boolean).length" class="m-desc desc">{{ [r.spec, qtyText(r), r.supplierName].filter(Boolean).join(' · ') }}</div>
+        <div class="m-meta">
+          <span>{{ r.workOrderNumber }}</span>
+          <span>需求 {{ dayText(r.needDate) }}</span>
+          <span>{{ r.promisedDate ? `承诺 ${dayText(r.promisedDate)}` : '未承诺' }}</span>
+          <span v-if="r.arrivedDate" class="m-text-done">到货 {{ dayText(r.arrivedDate) }}</span>
+        </div>
+      </MCard>
+    </div>
+    <div class="m-foot" />
   </div>
 </template>
 
 <style scoped>
-.center { display: flex; justify-content: center; padding: 32px; }
-.tag { margin-right: 6px; }
-.name { font-weight: 600; margin-right: 6px; }
-.desc { color: #323233; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.name { margin-top: 6px; }
+.late { font-size: 12px; font-weight: 600; }
+.desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

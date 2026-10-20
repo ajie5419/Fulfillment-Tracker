@@ -36,63 +36,34 @@ function clearFocus() {
 }
 const rows = computed(() => (data.value.rows as KitNode[]).filter((r) => r.id !== focus.value?.id))
 const opened = ref<string[]>([])
-const tagType = (n: KitNode) => (n.alertLevel === 'RED' ? 'danger' : n.alertLevel === 'YELLOW' ? 'warning' : n.incomplete ? 'primary' : 'success')
-const tagText = (n: KitNode) => (n.percent == null ? '清单空' : `${n.percent}%`)
+/** 展开 / 收起缺件明细 */
+const toggle = (id: string) => (opened.value = opened.value.includes(id) ? opened.value.filter((x) => x !== id) : [...opened.value, id])
 </script>
 
 <template>
   <div>
     <van-nav-bar title="齐套 / 缺件" left-arrow @click-left="navigateTo('/m')" />
     <template v-if="focusId">
-      <van-notice-bar v-if="focusError" color="#ee0a24" background="#fff1f0" :text="`提醒里的节点打不开：${focusError}`" />
+      <div v-if="focusError" class="m-hint late"><UiStatusIcon kind="alert" :size="14" />提醒里的节点打不开：{{ focusError }}</div>
       <template v-else-if="focus">
-        <div class="section">提醒的节点<span class="link" @click="clearFocus">收起</span></div>
-        <van-collapse :model-value="[focus.id]" class="group">
-          <van-collapse-item :name="focus.id" :is-link="false" readonly>
-            <template #title>
-              <van-tag :type="tagType(focus)" class="tag">{{ tagText(focus) }}</van-tag><span class="name">{{ focus.name }}</span>
-              <div class="desc">{{ focus.workOrderNumber }}　需求日 {{ dayText(focus.needDate) }}（{{ daysLeftText(focus.daysLeft) }}）　{{ focus.ownerText }}</div>
-            </template>
-            <KittingShortageList :node="focus" />
-          </van-collapse-item>
-        </van-collapse>
+        <div class="m-section">提醒的节点<span class="m-section-extra link" role="button" @click="clearFocus">收起</span></div>
+        <div class="m-list focus"><MKitCard :node="focus" :window-days="data.stats?.windowDays ?? 5" open fixed /></div>
       </template>
     </template>
     <van-tabs v-model:active="tab">
       <van-tab title="我负责的" name="mine" />
       <van-tab :title="`全部未齐套${data.stats?.incomplete ? `（${data.stats.incomplete}）` : ''}`" name="all" />
     </van-tabs>
-    <van-loading v-if="pending" class="center" />
+    <van-loading v-if="pending" class="m-center" />
     <van-empty v-else-if="!rows.length" :description="tab === 'mine' ? '没有我负责的装配节点' : '没有未齐套的装配节点'" image-size="80" />
-    <van-collapse v-else v-model="opened" class="group">
-      <van-collapse-item v-for="n in rows" :key="n.id" :name="n.id">
-        <template #title>
-          <van-tag :type="tagType(n)" class="tag">{{ tagText(n) }}</van-tag><span class="name">{{ n.name }}</span>
-          <div class="desc">
-            {{ n.workOrderNumber }}　需求日 {{ dayText(n.needDate) }}（<span :class="{ warn: n.incomplete && n.daysLeft <= (data.stats?.windowDays ?? 5) }">{{ daysLeftText(n.daysLeft) }}</span>）
-          </div>
-        </template>
-        <template #value>
-          <span v-if="n.shortages.length" class="warn">缺 {{ n.shortages.length }}</span>
-          <span v-else-if="n.total" class="ok">已齐</span>
-        </template>
-        <KittingShortageList :node="n" />
-      </van-collapse-item>
-    </van-collapse>
-    <p class="muted foot">新建、编辑装配节点请到电脑端"齐套"。</p>
+    <div v-else class="m-list">
+      <MKitCard v-for="n in rows" :key="n.id" :node="n" :window-days="data.stats?.windowDays ?? 5" :open="opened.includes(n.id)" @toggle="toggle(n.id)" />
+    </div>
+    <p class="m-foot">新建、编辑装配节点请到电脑端"齐套"。</p>
   </div>
 </template>
 
 <style scoped>
-.center { display: flex; justify-content: center; padding: 32px; }
-.group { margin: 8px 0; }
-.tag { margin-right: 6px; }
-.name { font-weight: 600; }
-.desc { color: #646566; font-size: 12px; margin-top: 2px; }
-.warn { color: #ee0a24; }
-.ok { color: #07c160; }
-.muted { color: #969799; font-size: 12px; }
-.foot { padding: 12px 16px; }
-.section { color: #646566; font-size: 13px; padding: 12px 16px 6px; display: flex; justify-content: space-between; }
-.link { color: #1989fa; }
+.link { color: var(--ft-primary); }
+.focus { padding-bottom: 12px; }
 </style>

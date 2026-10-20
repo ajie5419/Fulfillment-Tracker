@@ -16,9 +16,8 @@ const groups = computed(() => {
   return [
     { title: '我的工作', items: show([
       { key: '/', label: '工作台' },
-      // 第二轮并进工作台，这一轮先保留
-      { key: '/alerts', label: '预警列表' },
-      { key: '/issues', label: '异常列表' },
+      // 前端改版第二轮：预警列表、异常列表合并为"风险"（旧地址 /alerts、/issues 重定向到 /risks 对应页签）
+      { key: '/risks', label: '风险' },
     ]) },
     { title: '项目', items: show([
       { key: '/board', label: '项目总览' },
@@ -56,6 +55,13 @@ watch(() => route.path, () => {
 })
 const selected = computed(() => [menu.value.find((m) => m.key !== '/' && route.path.startsWith(m.key))?.key ?? '/'])
 
+// ───── 菜单"工作台"未读角标（前端改版第二轮）：独立的 key（不和首页 reminders 冲突），随下面的 60 秒轮询一起刷新 ─────
+const { data: unread, refresh: refreshUnread } = useUnreadCount()
+const unreadText = computed(() => {
+  const n = unread.value?.unread ?? 0
+  return n > 99 ? '99+' : n ? String(n) : ''
+})
+
 // ───── 新的黄、红预警在右上角弹出（方案 6.3）：每 60 秒轮询一次 ─────
 // 第一次只取服务器时间作为起点，不把旧提醒全弹一遍；弹过的按 id 记住，不重复弹
 const POLL_MS = 60_000
@@ -64,6 +70,7 @@ const shown = new Set<string>()
 let timer: ReturnType<typeof setInterval> | undefined
 
 async function poll() {
+  refreshUnread().catch(() => {})
   try {
     const r = await $fetch('/api/reminders/new', { query: since ? { since } : {} })
     const first = since === null
@@ -100,12 +107,12 @@ async function poll() {
         onClick: async () => {
           notification.close(i.id)
           await $fetch(`/api/reminders/${i.id}/read`, { method: 'POST' }).catch(() => {})
-          await refreshNuxtData('reminders')
+          await refreshReminders()
           if (i.link) await navigateTo(i.link)
         },
       })
     }
-    await refreshNuxtData('reminders')
+    await refreshReminders()
   } catch {
     // 网络抖动时下一轮再试；401 由 api-401 插件处理
   }
@@ -129,7 +136,10 @@ onBeforeUnmount(() => clearInterval(timer))
         <nav class="sider-scroll" aria-label="主菜单" :inert="collapsed || undefined">
           <div v-for="g in groups" :key="g.title" class="group">
             <div class="group-title">{{ g.title }}</div>
-            <NuxtLink v-for="m in g.items" :key="m.key" :to="m.key" class="item" :class="{ active: selected[0] === m.key }" :aria-current="selected[0] === m.key ? 'page' : undefined">{{ m.label }}</NuxtLink>
+            <NuxtLink v-for="m in g.items" :key="m.key" :to="m.key" class="item" :class="{ active: selected[0] === m.key }" :aria-current="selected[0] === m.key ? 'page' : undefined">
+              <span class="item-label">{{ m.label }}</span>
+              <span v-if="m.key === '/' && unreadText" class="badge" :aria-label="`未读提醒 ${unreadText} 条`">{{ unreadText }}</span>
+            </NuxtLink>
           </div>
         </nav>
       </div>
@@ -168,7 +178,10 @@ onBeforeUnmount(() => clearInterval(timer))
 .sider-scroll { flex: 1; overflow-y: auto; padding: 4px 12px 24px; }
 .group-title { padding: 14px 10px 6px; font-size: 12px; color: #8a96a8; }
 /* 菜单项：圆角，选中项浅色高亮；14 项在 800 高的屏幕上也能一屏放下 */
-.item { display: block; padding: 7px 10px; margin: 2px 0; border-radius: 8px; color: #d5dbe5; font-size: 14px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; margin: 2px 0; border-radius: 8px; color: #d5dbe5; font-size: 14px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* 未读角标：红底白字，数字多时变宽 */
+.badge { flex: none; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--ft-late); color: #fff; font-size: 12px; line-height: 18px; text-align: center; font-weight: 500; }
 .item:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
 .item.active { color: #fff; background: #2b3a50; font-weight: 500; }
 .item:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 1px; }

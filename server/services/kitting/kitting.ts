@@ -432,6 +432,8 @@ export interface NodeFilter {
   workOrderNumber?: string
   /** 只看未齐套 */
   incompleteOnly?: boolean
+  /** 只看需求日临近（W8 预警窗口内，含已过）仍未齐套的（与统计 dueSoon 同一口径） */
+  dueSoonOnly?: boolean
   /** 我负责的：负责人是我，或没指定负责人而我是生产经理（不受工单可见范围限制） */
   mine?: { userId: string; isProductionHead: boolean }
   /** 可见工单（undefined = 全部） */
@@ -447,7 +449,9 @@ export async function listNodes(filter: NodeFilter, actor: Actor, t: RuleThresho
   if (filter.visibleWorkOrders) scope.push({ workOrderNumber: { in: filter.visibleWorkOrders } })
   if (filter.workOrderNumber) scope.push({ workOrderNumber: filter.workOrderNumber })
   if (filter.mine) scope.push({ OR: [{ ownerId: filter.mine.userId }, ...(filter.mine.isProductionHead ? [{ ownerId: null }] : [])] })
-  const where: Prisma.AssemblyNodeWhereInput = { AND: [...scope, ...(filter.incompleteOnly ? [incompleteWhere()] : [])] }
+  const where: Prisma.AssemblyNodeWhereInput = {
+    AND: [...scope, ...(filter.incompleteOnly || filter.dueSoonOnly ? [incompleteWhere()] : []), ...(filter.dueSoonOnly ? [dueWindowWhere(now, t)] : [])],
+  }
   const orderBy: Prisma.AssemblyNodeOrderByWithRelationInput[] = filter.workOrderNumber
     ? [{ sortOrder: 'asc' }, { needDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }]
     : [{ needDate: 'asc' }, { workOrderNumber: 'asc' }, { sortOrder: 'asc' }, { id: 'asc' }]

@@ -280,7 +280,8 @@ export function assertReleasable(task: TaskWithParts, workOrderNumber: string, t
 
 // ───────────── 查询 ─────────────
 
-export type TaskView = 'open' | 'pending' | 'overdue' | 'drawn' | 'done' | 'cancelled' | 'all'
+/** week = 本周到期（待出图且计划完成日在本周，与统计 dueThisWeek 同一口径，前端改版第二轮统计卡用） */
+export type TaskView = 'open' | 'pending' | 'overdue' | 'week' | 'drawn' | 'done' | 'cancelled' | 'all'
 
 export interface TaskFilter {
   workOrderNumber?: string
@@ -304,8 +305,16 @@ export function overdueWhere(today: Date): Prisma.DrawingTaskWhereInput {
   }
 }
 
-function viewWhere(view: TaskView, today: Date): Prisma.DrawingTaskWhereInput {
+/** 本周到期：待出图且计划完成日在本周（周一到周日） */
+function dueThisWeekWhere(now: Date): Prisma.DrawingTaskWhereInput {
+  const { monday, sunday } = thisWeek(now)
+  return { status: 'PENDING', planDate: { gte: monday, lte: sunday } }
+}
+
+function viewWhere(view: TaskView, today: Date, now: Date): Prisma.DrawingTaskWhereInput {
   switch (view) {
+    case 'week':
+      return dueThisWeekWhere(now)
     case 'open':
       return { status: { in: OPEN_DRAWING_STATUSES } }
     case 'pending':
@@ -382,14 +391,13 @@ const PARTS_INCLUDE = { parts: { select: { partId: true } } } as const
 /** 统计：按可见范围、所选工单 / 负责人，不受视图和搜索影响；用 count，不受列表截断影响 */
 async function taskStats(scope: Prisma.DrawingTaskWhereInput[], now: Date) {
   const today = todayDate(now)
-  const { monday, sunday } = thisWeek(now)
   const count = (w: Prisma.DrawingTaskWhereInput) => prisma.drawingTask.count({ where: { AND: [...scope, w] } })
   const [pending, drawn, customerPending, overdue, dueThisWeek] = await Promise.all([
     count({ status: 'PENDING' }),
     count({ status: 'DRAWN' }),
     count({ status: 'CUSTOMER_PENDING' }),
     count(overdueWhere(today)),
-    count({ status: 'PENDING', planDate: { gte: monday, lte: sunday } }),
+    count(dueThisWeekWhere(now)),
   ])
   return { pending, drawn, customerPending, overdue, dueThisWeek }
 }
@@ -406,7 +414,7 @@ export async function listTasks(filter: TaskFilter, viewer: Actor, now = new Dat
   if (filter.ownerId) scope.push({ ownerId: filter.ownerId })
   const q = filter.q?.trim()
   const search: Prisma.DrawingTaskWhereInput[] = q ? [{ OR: [{ componentName: { contains: q } }, { workOrderNumber: { contains: q } }, { note: { contains: q } }] }] : []
-  const where: Prisma.DrawingTaskWhereInput = { AND: [...scope, viewWhere(filter.view ?? 'open', today), ...search] }
+  const where: Prisma.DrawingTaskWhereInput = { AND: [...scope, viewWhere(filter.view ?? 'open', today, now), ...search] }
   const orderBy: Prisma.DrawingTaskOrderByWithRelationInput[] = [{ status: 'asc' }, { planDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }]
   const [found, total, stats] = await Promise.all([
     prisma.drawingTask.findMany({ where, include: PARTS_INCLUDE, orderBy, take: MAX_LIST_ROWS }),

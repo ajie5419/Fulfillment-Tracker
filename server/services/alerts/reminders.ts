@@ -12,6 +12,9 @@ import { releaseLink, releaseMobileLink } from '../releases/constants'
 import { planLink } from '../plan/constants'
 import { CONVERTIBLE_RULES, durationText, elapsedExcludingOffDays } from './rules'
 import { SCAN_RULES, type Target, collectTargets, loadOffDays, loadThresholds } from './scan'
+import { todayDay } from '../flow/dates'
+import { userDeptNames } from '../auth/departments'
+import { workBucket } from '../../../shared/workbench'
 
 interface Link {
   /** 电脑端：步骤 → 工件页对应工单；待确认 → 待确认匹配页；异常 → 异常列表并打开该条；签收记录（W5）→ 发放单详情；采购行（W6）→ 采购到货页并打开该行；出图任务（W7）→ 出图任务页并打开该任务；装配节点（W8）→ 齐套页并定位该节点 */
@@ -21,6 +24,11 @@ interface Link {
 }
 
 interface LinkInfo extends Link {
+  /** 所属工单（工作台卡片用）；对象删了或不属于某个工单为 null */
+  workOrderNumber: string | null
+  /** 对象的截止日 'YYYY-MM-DD'（工作台按它分组）：出图计划完成日（已出图等客户确认时为客户确认计划日）、物料需求日、装配节点需求日、
+   *  总计划节点计划日、异常要求解决日、外协承诺返回日 / 工序要求完成日；节点超时未确认、发放签收等没有截止日的为 null */
+  dueDay: string | null
   rule: AlertRule
   /** 预警已消除（对象状态已变化） */
   cleared: boolean
@@ -36,12 +44,36 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
   const receiptIds = alerts.filter((a) => a.refType === 'receipt').map((a) => a.refId)
   const planNodeIds = alerts.filter((a) => a.refType === 'planNode' || a.refType === 'planConfirm').map((a) => a.refId)
   const converted = alerts.filter((a) => a.status === 'CONVERTED').map((a) => alertSourceKey(a.id))
-  const [steps, issues, receipts, planNodes] = await Promise.all([
+  const idsOf = (refType: string) => alerts.filter((a) => a.refType === refType).map((a) => a.refId)
+  const [purchaseIds, drawingIds, nodeIds, issueIds, releaseIds] = ['purchase', 'drawing', 'node', 'issue', 'release'].map(idsOf) as [string[], string[], string[], string[], string[]]
+  const [steps, issues, receipts, planNodes, purchases, drawings, nodes, refIssues, releases] = await Promise.all([
     stepIds.length ? prisma.routeStep.findMany({ where: { id: { in: stepIds } }, include: { part: { select: { workOrderNumber: true } } } }) : [],
     converted.length ? prisma.issue.findMany({ where: { sourceKey: { in: converted } }, select: { id: true, issueNo: true, sourceKey: true } }) : [],
-    receiptIds.length ? prisma.releaseReceipt.findMany({ where: { id: { in: receiptIds } }, select: { id: true, releaseId: true } }) : [],
-    planNodeIds.length ? prisma.planNode.findMany({ where: { id: { in: planNodeIds } }, select: { id: true, workOrderNumber: true } }) : [],
+    receiptIds.length ? prisma.releaseReceipt.findMany({ where: { id: { in: receiptIds } }, select: { id: true, releaseId: true, release: { select: { workOrderNumber: true } } } }) : [],
+    planNodeIds.length ? prisma.planNode.findMany({ where: { id: { in: planNodeIds } }, select: { id: true, workOrderNumber: true, planDate: true } }) : [],
+    // 工作台卡片的所属工单、截止日（前端改版第二轮）
+    purchaseIds.length ? prisma.purchaseLine.findMany({ where: { id: { in: purchaseIds } }, select: { id: true, workOrderNumber: true, needDate: true } }) : [],
+    drawingIds.length ? prisma.drawingTask.findMany({ where: { id: { in: drawingIds } }, select: { id: true, workOrderNumber: true, status: true, planDate: true, customerPlanDate: true } }) : [],
+    nodeIds.length ? prisma.assemblyNode.findMany({ where: { id: { in: nodeIds } }, select: { id: true, workOrderNumber: true, needDate: true } }) : [],
+    issueIds.length ? prisma.issue.findMany({ where: { id: { in: issueIds } }, select: { id: true, workOrderNumber: true, dueDate: true } }) : [],
+    releaseIds.length ? prisma.release.findMany({ where: { id: { in: releaseIds } }, select: { id: true, workOrderNumber: true } }) : [],
   ])
+  const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null)
+  /** 对象 → 所属工单、截止日 */
+  const facts = new Map<string, { workOrderNumber: string | null; dueDay: string | null }>()
+  for (const r of purchases) facts.set(`purchase:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: day(r.needDate) })
+  // 出图：待出图看计划完成日；已出图等客户确认看客户确认计划日
+  for (const r of drawings) facts.set(`drawing:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: day(r.status === 'PENDING' ? r.planDate : (r.customerPlanDate ?? r.planDate)) })
+  for (const r of nodes) facts.set(`node:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: day(r.needDate) })
+  for (const r of refIssues) facts.set(`issue:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: day(r.dueDate) })
+  for (const r of releases) facts.set(`release:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: null })
+  for (const r of receipts) facts.set(`receipt:${r.id}`, { workOrderNumber: r.release.workOrderNumber, dueDay: null })
+  for (const r of planNodes) {
+    facts.set(`planNode:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: day(r.planDate) })
+    // 节点超时未确认：要做的是"确认"，没有截止日（归"未定截止日"），不用节点的计划日
+    facts.set(`planConfirm:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: null })
+  }
+  for (const r of steps) facts.set(`step:${r.id}`, { workOrderNumber: r.part.workOrderNumber, dueDay: day(r.promisedReturnDate ?? r.dueDate) })
   const planWoOf = new Map(planNodes.map((n) => [n.id, n.workOrderNumber]))
   const stepById = new Map(steps.map((s) => [s.id, s]))
   const releaseOf = new Map(receipts.map((r) => [r.id, r.releaseId]))
@@ -76,7 +108,8 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     // 已转异常：跳到生成的异常
     const issue = a.status === 'CONVERTED' ? issueBySource.get(alertSourceKey(a.id)) : undefined
     if (issue) link = issueLink(issue.id)
-    out.set(a.id, { ...link, rule: a.rule, cleared: a.status === 'CLEARED', issueNo: issue?.issueNo ?? null })
+    const f = facts.get(`${a.refType}:${a.refId}`) ?? { workOrderNumber: a.refType === 'plan' ? a.refId : null, dueDay: null }
+    out.set(a.id, { ...link, ...f, rule: a.rule, cleared: a.status === 'CLEARED', issueNo: issue?.issueNo ?? null })
   }
   return out
 }
@@ -96,7 +129,7 @@ const LISTED = { OR: [{ kind: null }, { kind: 'RELEASE' }, { kind: 'PLAN' }, { k
  * 生成新汇总时旧汇总已自动标为已读，所以未读数里最多只有当天这一条。
  * QMS 同步连续失败（kind = SYNC_FAIL，只发给管理员）未读时置顶（pinned），读过后回到红色分组里。
  */
-export async function listReminders(userId: string) {
+export async function listReminders(userId: string, now = new Date()) {
   const [items, unread, digest, pinned] = await Promise.all([
     prisma.reminder.findMany({
       where: { userId, ...LISTED },
@@ -110,25 +143,42 @@ export async function listReminders(userId: string) {
     prisma.reminder.findMany({ where: { userId, kind: 'SYNC_FAIL', readAt: null }, orderBy: { createdAt: 'desc' }, take: 5, select: SELECT }),
   ])
   const links = await linksFor([...new Set(items.map((i) => i.alertId).filter((x): x is string => !!x))])
+  const today = todayDay(now)
+  /** 工作台卡片流（前端改版第二轮）：按截止日分组；预警类用对象的截止日，发放单 / 总计划通知没有截止日（归"未定截止日"） */
+  const card = <T extends { level: AlertLevel; cleared: boolean; dueDay: string | null }>(r: T) => ({ ...r, bucket: workBucket({ kind: 'reminder', level: r.level, cleared: r.cleared, dueDay: r.dueDay }, today) })
   return {
     digest: digest ? { ...digest, lines: (digest.body ?? '').split('\n').filter(Boolean) } : null,
     pinned: pinned.map((p) => ({ ...p, lines: (p.body ?? '').split('\n').filter(Boolean), link: SYNC_FAIL_LINK })),
     items: items.map((i) => {
-      if (i.kind === 'SYNC_FAIL') return { ...i, rule: null, cleared: false, issueNo: null, link: SYNC_FAIL_LINK, mobileLink: null }
-      if (i.kind === 'RELEASE') return { ...i, rule: null, cleared: false, issueNo: null, link: i.link, mobileLink: mobileOf(i.link) }
-      if (i.kind === 'PLAN') return { ...i, rule: null, cleared: false, issueNo: null, link: i.link, mobileLink: null }
+      const none = { workOrderNumber: null, dueDay: null }
+      if (i.kind === 'SYNC_FAIL') return card({ ...i, ...none, rule: null, cleared: false, issueNo: null, link: SYNC_FAIL_LINK, mobileLink: null })
+      if (i.kind === 'RELEASE') return card({ ...i, ...none, rule: null, cleared: false, issueNo: null, link: i.link, mobileLink: mobileOf(i.link) })
+      if (i.kind === 'PLAN') return card({ ...i, ...none, workOrderNumber: planWoOfLink(i.link), rule: null, cleared: false, issueNo: null, link: i.link, mobileLink: null })
       const l = i.alertId ? links.get(i.alertId) : undefined
-      return {
+      return card({
         ...i,
+        workOrderNumber: l?.workOrderNumber ?? null,
+        dueDay: l?.dueDay ?? null,
         rule: l?.rule ?? null,
         cleared: l?.cleared ?? false,
         issueNo: l?.issueNo ?? null,
         link: l?.pc ?? null,
         mobileLink: l?.mobile ?? null,
-      }
+      })
     }),
     unread,
   }
+}
+
+/** 总计划通知的跳转地址 /plan?wo=… 里取工单号 */
+function planWoOfLink(link: string | null): string | null {
+  if (!link?.startsWith('/plan?')) return null
+  return new URLSearchParams(link.slice('/plan?'.length)).get('wo')
+}
+
+/** 未读提醒数（菜单"工作台"角标，前端改版第二轮）：与 listReminders 的 unread 同一口径（本人的、未读的，含每日汇总） */
+export async function unreadCount(userId: string) {
+  return { unread: await prisma.reminder.count({ where: { userId, readAt: null } }) }
 }
 
 export async function markRead(userId: string, id: string) {
@@ -215,13 +265,15 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
   const [thresholds, offDays] = await Promise.all([loadThresholds(), loadOffDays()])
   const targets = new Map((await collectTargets(at, thresholds, offDays, filter.rule)).map((t) => [t.key, t]))
   const wos = [...new Set([...targets.values()].map((t) => t.workOrderNumber).filter((x): x is string => !!x))]
-  const [names, exts, issues] = await Promise.all([
+  const [names, exts, issues, deptOf] = await Promise.all([
     loadNames({ user: [...targets.values()].flatMap((t) => t.ownerIds) }),
     wos.length ? prisma.workOrderExt.findMany({ where: { workOrderNumber: { in: wos } }, select: { workOrderNumber: true, projectManagerId: true } }) : [],
     prisma.issue.findMany({
       where: { sourceKey: { in: alerts.filter((a) => a.status === 'CONVERTED').map((a) => alertSourceKey(a.id)) } },
       select: { id: true, issueNo: true, sourceKey: true },
     }),
+    // 责任部门（风险页按部门汇总）：与升级阶梯同一口径，见 scan.ts recipientsFor
+    userDeptNames([...targets.values()].flatMap((t) => t.ownerIds)),
   ])
   const pmOf = new Map(exts.map((e) => [e.workOrderNumber, e.projectManagerId]))
   const issueBySource = new Map(issues.map((i) => [i.sourceKey!, i]))
@@ -251,6 +303,8 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
             ? null
             : durationText(elapsedExcludingOffDays(t.startAt, at, offDays)),
         owners: t.ownerIds.map((id) => ({ id, name: names.user.get(id) ?? id })),
+        /** 责任部门（业务部门名称）：规则写明的部门，没有时取责任人所在部门；风险页按部门汇总用 */
+        deptNames: t.deptNames?.length ? t.deptNames : [...new Set(t.ownerIds.map((id) => deptOf.get(id)).filter((x): x is string => !!x))],
         firstAt: a.firstAt,
         levelAt: a.levelAt,
         issue: issue ? { id: issue.id, issueNo: issue.issueNo } : null,

@@ -43,7 +43,7 @@ export const dateBody = z.object({ date: day.nullish() }).strict()
 export const listQuery = z.object({
   workOrderNumber: z.string().max(64).optional(),
   ownerId: z.string().max(64).optional(),
-  view: z.enum(['open', 'pending', 'overdue', 'drawn', 'done', 'cancelled', 'all']).optional(),
+  view: z.enum(['open', 'pending', 'overdue', 'week', 'drawn', 'done', 'cancelled', 'all']).optional(),
   q: z.string().max(100).optional(),
   /** 1 = 我的出图任务（我是设计负责人的，不受工单可见范围限制） */
   mine: z.enum(['0', '1']).optional(),

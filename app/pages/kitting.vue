@@ -5,7 +5,11 @@
  *   不选工单 → 跨工单视图：按需求日从近到远，可只看未齐套的，展开看缺件。
  * 地址栏 ?wo= 选工单，?incomplete=1 只看未齐套，?id= 定位某个节点（W8 提醒跳过来）。
  * 节点负责人本人看不到该工单时（不在可见范围），工单列表接口不给它，?id= 拿到的节点在顶部单独显示。
+ * 前端改版第二轮：顶部统计卡（装配节点 / 未齐套 / 需求日临近未齐套 / 平均齐套率），前三张点了套用筛选（?incomplete=1、?dueSoon=1，
+ * 数字是接口 stats，与筛选同一口径）；平均齐套率按当前列表里清单不为空的节点算。节点卡片用环形进度 + 缺件按原因计数。
  */
+import { averagePercent, shortageReasonCounts } from '#shared/workbench'
+
 const route = useRoute()
 const router = useRouter()
 const { data: workOrders } = await useWorkOrders()
@@ -14,18 +18,33 @@ const filter = reactive({
   workOrderNumber: (route.query.wo as string) || undefined,
   // 跨工单视图默认只看未齐套；单个工单默认全看
   incomplete: route.query.incomplete ? route.query.incomplete === '1' : !route.query.wo,
+  /** 只看需求日临近（W8 预警窗口内，含已过）仍未齐套的 */
+  dueSoon: route.query.dueSoon === '1',
 })
 watch(
-  () => [filter.workOrderNumber, filter.incomplete],
-  () => router.replace({ query: { ...route.query, wo: filter.workOrderNumber || undefined, incomplete: filter.incomplete ? '1' : '0' } }),
+  () => [filter.workOrderNumber, filter.incomplete, filter.dueSoon],
+  () => router.replace({ query: { ...route.query, wo: filter.workOrderNumber || undefined, incomplete: filter.incomplete ? '1' : '0', dueSoon: filter.dueSoon ? '1' : undefined } }),
 )
 
 const { data, pending, refresh } = await useFetch('/api/kitting', {
-  query: computed(() => ({ workOrderNumber: filter.workOrderNumber, incomplete: filter.incomplete ? '1' : '0' })),
+  query: computed(() => ({ workOrderNumber: filter.workOrderNumber, incomplete: filter.incomplete ? '1' : '0', dueSoon: filter.dueSoon ? '1' : undefined })),
   default: (): KitList => ({ rows: [], total: 0, stats: null, canCreate: false }),
 })
 const rows = computed(() => data.value.rows as KitNode[])
 const stats = computed(() => data.value.stats as KitStats | null)
+const avgPercent = computed(() => averagePercent(rows.value))
+/** 点统计卡：all = 全部节点，incomplete = 未齐套，dueSoon = 需求日临近未齐套 */
+// 取消"只看未齐套"时一并取消"需求日临近"
+watch(
+  () => filter.incomplete,
+  (v) => {
+    if (!v) filter.dueSoon = false
+  },
+)
+function applyCard(kind: 'all' | 'incomplete' | 'dueSoon') {
+  filter.incomplete = kind !== 'all'
+  filter.dueSoon = kind === 'dueSoon'
+}
 
 // ───── ?id= 定位节点（W8 提醒）─────
 const focusId = ref<string | null>(null)
@@ -39,7 +58,7 @@ async function openFromQuery() {
     focusId.value = n.id
     if (workOrders.value.some((w) => w.workOrderNumber === n.workOrderNumber)) {
       standalone.value = null
-      Object.assign(filter, { workOrderNumber: n.workOrderNumber, incomplete: false })
+      Object.assign(filter, { workOrderNumber: n.workOrderNumber, incomplete: false, dueSoon: false })
     } else {
       standalone.value = n
     }
@@ -88,7 +107,7 @@ function remove(n: KitNode) {
   })
 }
 function showWorkOrder(wo: string, id?: string) {
-  Object.assign(filter, { workOrderNumber: wo, incomplete: false })
+  Object.assign(filter, { workOrderNumber: wo, incomplete: false, dueSoon: false })
   focusId.value = id ?? null
 }
 
@@ -99,12 +118,26 @@ const crossColumns = [
   { title: '总计划节点', key: 'planNode', width: 150 },
   { title: '负责人', key: 'owner', width: 140 },
   { title: '齐套率', key: 'percent', width: 200 },
-  { title: '缺件', key: 'short', width: 70, align: 'center' as const },
+  { title: '缺件', key: 'short', width: 190 },
   { title: '预警', key: 'alert', width: 70 },
 ]
 </script>
 
 <template>
+  <div class="ft-page">
+  <div v-if="stats" class="ft-stats">
+    <UiStatCard label="装配节点" :value="stats.all" unit="个" tone="primary" accent icon="dot" clickable :active="!filter.incomplete" :sub="filter.workOrderNumber ? `工单 ${filter.workOrderNumber}` : '全部工单'" @click="applyCard('all')" />
+    <UiStatCard label="未齐套" :value="stats.incomplete" unit="个" tone="risk" accent icon="warn" clickable :active="filter.incomplete && !filter.dueSoon" @click="applyCard('incomplete')" />
+    <UiStatCard label="需求日临近未齐套" :value="stats.dueSoon" unit="个" tone="late" accent icon="alert" clickable :active="filter.dueSoon" :sub="`需求日前 ${stats.windowDays} 天内（含已过）`" @click="applyCard('dueSoon')" />
+    <UiStatCard label="平均齐套率" tone="done" accent icon="check" :sub="`按当前列表 ${rows.filter((r) => r.percent != null).length} 个节点（清单为空的不算）`">
+      <template #value>
+        <span class="avg">
+          <UiRing :value="avgPercent ?? 0" :total="100" :size="44" :stroke="6" color="var(--ft-done)"  label="" />
+          <b>{{ avgPercent == null ? '—' : `${avgPercent}%` }}</b>
+        </span>
+      </template>
+    </UiStatCard>
+  </div>
   <a-card title="齐套">
     <template #extra>
       <a-space wrap>
@@ -117,18 +150,12 @@ const crossColumns = [
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
         <a-checkbox v-model:checked="filter.incomplete">只看未齐套</a-checkbox>
+        <a-tag v-if="filter.dueSoon" color="red" closable @close="filter.dueSoon = false">需求日临近</a-tag>
         <a-button @click="refresh()">刷新</a-button>
         <a-button v-if="data.canCreate" type="primary" @click="openEdit(null)">新建装配节点</a-button>
       </a-space>
     </template>
 
-    <div v-if="stats" class="stats">
-      <a-space size="large" wrap>
-        <span>装配节点 <b>{{ stats.all }}</b></span>
-        <a class="stat" @click="filter.incomplete = true">未齐套 <b>{{ stats.incomplete }}</b></a>
-        <span :class="{ warn: stats.dueSoon }">其中需求日前 {{ stats.windowDays }} 天内（含已过） <b>{{ stats.dueSoon }}</b></span>
-      </a-space>
-    </div>
     <p class="muted">
       齐套率 = 已就绪项 ÷ 应有项：工件完成（最后一道工序完成）算就绪，关键物料到货算就绪，已取消的物料不计入。同一工件 / 物料可以挂在多个节点上。
       <template v-if="stats">需求日前 {{ stats.yellowDays }} 天内仍未齐套黄色预警，{{ stats.redDays ? `前 ${stats.redDays} 天内（含当天）` : '当天' }}或已过红色（阈值在设置里改）；</template>新建、编辑节点限生产经理、该工单项目经理、管理员。
@@ -165,7 +192,7 @@ const crossColumns = [
       size="small"
       :pagination="{ pageSize: 50, hideOnSinglePage: true }"
       :expand-row-by-click="false"
-      :scroll="{ x: 1050 }"
+      :scroll="{ x: 1170 }"
     >
       <template #emptyText><a-empty :description="filter.incomplete ? '没有未齐套的装配节点' : '还没有装配节点'" /></template>
       <template #expandedRowRender="{ record }">
@@ -189,6 +216,9 @@ const crossColumns = [
         </template>
         <template v-else-if="column.key === 'short'">
           <span :class="{ warn: record.shortages.length }">{{ record.shortages.length }}</span>
+          <div v-if="record.shortages.length" class="reasons">
+            <a-tag v-for="r in shortageReasonCounts(record.shortages)" :key="r.reason" :color="BLOCKER_COLOR[r.code] ?? 'default'" class="reason">{{ r.reason }} {{ r.count }}</a-tag>
+          </div>
         </template>
         <template v-else-if="column.key === 'alert'">
           <a-tag v-if="record.alertLevel === 'RED'" color="red">红</a-tag>
@@ -198,13 +228,16 @@ const crossColumns = [
       </template>
     </a-table>
   </a-card>
+  </div>
 
   <KittingNodeModal :open="editOpen" :node="editing" :work-order-number="filter.workOrderNumber" @close="editOpen = false" @done="saved" />
 </template>
 
 <style scoped>
-.stats { margin-bottom: 8px; }
-.stat { color: inherit; }
+.avg { display: inline-flex; align-items: center; gap: 10px; }
+.avg :deep(.txt) { font-size: 12px; }
+.reasons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.reason { margin: 0; font-size: 11px; line-height: 18px; }
 .muted { color: #999; font-size: 12px; }
 .warn { color: var(--ft-late); }
 .small { font-size: 12px; }

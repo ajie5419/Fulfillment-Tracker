@@ -383,24 +383,54 @@ async function partNames(partIds: string[]) {
 export interface ReleaseFilter {
   workOrderNumber?: string
   type?: ReleaseType
-  /** PENDING = 有人未签收；REJECTED = 有人拒收；VOID = 已作废 */
-  progress?: 'PENDING' | 'REJECTED' | 'VOID'
+  /** PENDING = 有人未签收；REJECTED = 有人拒收；VOID = 已作废；MINE_PENDING = 待我签收（前端改版第二轮统计卡） */
+  progress?: ReleaseProgress
   /** issued = 我发出的；received = 发给我的 */
   mine?: 'issued' | 'received'
   /** 可见工单（undefined = 全部）。发给我的发放单不受可见范围限制 */
   visibleWorkOrders?: string[]
 }
 
-export async function listReleases(filter: ReleaseFilter, viewerId: string) {
+export type ReleaseProgress = 'PENDING' | 'REJECTED' | 'VOID' | 'MINE_PENDING'
+
+/** 签收进度筛选条件（列表筛选和统计卡共用，同一口径） */
+function progressWhere(progress: ReleaseProgress, viewerId: string): Prisma.ReleaseWhereInput {
+  if (progress === 'VOID') return { status: 'VOID' }
+  if (progress === 'PENDING') return { status: 'ACTIVE', receipts: { some: { status: 'PENDING' } } }
+  if (progress === 'REJECTED') return { status: 'ACTIVE', receipts: { some: { status: 'REJECTED' } } }
+  return { status: 'ACTIVE', receipts: { some: { userId: viewerId, status: 'PENDING' } } }
+}
+
+/** 工单、类型、我发出的 / 发给我的、可见范围（不含签收进度） */
+function releaseScope(filter: Omit<ReleaseFilter, 'progress'>, viewerId: string): Prisma.ReleaseWhereInput[] {
   const and: Prisma.ReleaseWhereInput[] = []
   if (filter.workOrderNumber) and.push({ workOrderNumber: filter.workOrderNumber })
   if (filter.type) and.push({ type: filter.type })
-  if (filter.progress === 'VOID') and.push({ status: 'VOID' })
-  if (filter.progress === 'PENDING') and.push({ status: 'ACTIVE', receipts: { some: { status: 'PENDING' } } })
-  if (filter.progress === 'REJECTED') and.push({ status: 'ACTIVE', receipts: { some: { status: 'REJECTED' } } })
   if (filter.mine === 'issued') and.push({ issuerId: viewerId })
   if (filter.mine === 'received') and.push({ receipts: { some: { userId: viewerId } } })
   if (filter.visibleWorkOrders) and.push({ OR: [{ workOrderNumber: { in: filter.visibleWorkOrders } }, { issuerId: viewerId }, { receipts: { some: { userId: viewerId } } }] })
+  return and
+}
+
+/**
+ * 发放签收页顶部统计卡（前端改版第二轮）：按工单、类型、我发出的 / 发给我的、可见范围（与列表同一范围，不受签收进度筛选影响），
+ * 用 count，不受列表 200 条截断影响。每个数字与列表"签收进度"筛选同一口径。
+ */
+export async function releaseStats(filter: Omit<ReleaseFilter, 'progress'>, viewerId: string) {
+  const scope = releaseScope(filter, viewerId)
+  const count = (w?: Prisma.ReleaseWhereInput) => prisma.release.count({ where: { AND: w ? [...scope, w] : scope } })
+  const [all, pending, rejected, minePending] = await Promise.all([
+    count(),
+    count(progressWhere('PENDING', viewerId)),
+    count(progressWhere('REJECTED', viewerId)),
+    count(progressWhere('MINE_PENDING', viewerId)),
+  ])
+  return { all, pending, rejected, minePending }
+}
+
+export async function listReleases(filter: ReleaseFilter, viewerId: string) {
+  const and = releaseScope(filter, viewerId)
+  if (filter.progress) and.push(progressWhere(filter.progress, viewerId))
   const rows = await prisma.release.findMany({
     where: { AND: and },
     orderBy: { createdAt: 'desc' },

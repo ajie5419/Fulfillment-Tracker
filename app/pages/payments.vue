@@ -4,15 +4,26 @@
  * 财务（设置页"人员与角色"里的 财务）或管理员标记 已付 / 暂缓 / 待付，可写一句处理意见；不做审批。
  * 金额只给财务、采购部、领导、项目部负责人、管理员、该工单项目经理看（接口里其他人的金额是 null，显示"—"）。
  * 申请付款：采购部、该工单项目经理、管理员。
+ * 前端改版第二轮：顶部统计卡（待付 / 暂缓 / 卡交期未付 / 已付，点了套用状态筛选；数字来自 GET /api/payments/stats，与列表同一范围、
+ * 同一口径，不受状态筛选影响）；列表默认按工单分组（?layout=group|table），组标题带本组已付完成度。
  */
+import { factoryDateTimeText, groupByWorkOrder, groupProgress } from '#shared/workbench'
+
 const route = useRoute()
+const router = useRouter()
 const { data: workOrders } = await useWorkOrders()
 const { data: me } = await useMe()
 
 const filter = reactive({
   status: (route.query.status as string) || 'UNPAID',
   workOrderNumber: (route.query.wo as string) || undefined,
+  /** 只看卡交期的（统计卡"卡交期未付"） */
+  blocking: route.query.blocking === '1' ? '1' : undefined,
 })
+watch(
+  () => [filter.status, filter.workOrderNumber, filter.blocking],
+  () => router.replace({ query: { ...route.query, status: filter.status, wo: filter.workOrderNumber || undefined, blocking: filter.blocking } }),
+)
 type PaymentRow = {
   id: string
   workOrderNumber: string
@@ -32,10 +43,30 @@ type PaymentRow = {
   permissions: { setStatus: boolean; delete: boolean }
 }
 const { data, pending, refresh } = await useFetch('/api/payments', {
-  query: computed(() => ({ ...filter })),
+  query: computed(() => ({ status: filter.status, workOrderNumber: filter.workOrderNumber, blocking: filter.blocking })),
   default: () => [],
 })
 const rows = computed(() => data.value as unknown as PaymentRow[])
+const { data: stats, refresh: refreshStats } = await useFetch('/api/payments/stats', {
+  query: computed(() => ({ workOrderNumber: filter.workOrderNumber })),
+  default: () => null,
+})
+async function refreshAll() {
+  await Promise.all([refresh(), refreshStats()])
+}
+
+// ───── 统计卡、按工单分组 ─────
+/** 点统计卡：套用状态筛选（卡交期未付 = 未付 + 只看卡交期）；再点一次回到"未付" */
+function applyStatus(status: string, blocking?: '1') {
+  const same = filter.status === status && filter.blocking === blocking
+  filter.status = same ? 'UNPAID' : status
+  filter.blocking = same ? undefined : blocking
+}
+const layout = useListLayout()
+const tables = computed(() =>
+  layout.value === 'group' ? groupByWorkOrder(rows.value).map((g) => ({ key: g.workOrderNumber, ...g })) : [{ key: '__all', workOrderNumber: '', rows: rows.value }],
+)
+const paidOf = (g: { rows: PaymentRow[] }) => groupProgress(g.rows, (r) => r.status === 'PAID')
 const canSetStatus = computed(() => !!me.value?.isAdmin || !!me.value?.roles.includes('FINANCE'))
 const totals = computed(() => {
   const unpaid = rows.value.filter((r) => r.status !== 'PAID')
@@ -66,7 +97,7 @@ async function submitStatus() {
     await purchaseSend(`/api/payments/${a.row.id}/status`, 'POST', { status: a.status, note: financeNote.value.trim() || null })
     message.success(`已标记为${PAYMENT_STATUS_TEXT[a.status]}`)
     acting.value = null
-    await refresh()
+    await refreshAll()
   } catch (e) {
     message.error(apiError(e))
   } finally {
@@ -83,7 +114,7 @@ function remove(row: PaymentRow) {
       try {
         await purchaseSend(`/api/payments/${row.id}`, 'DELETE')
         message.success('已删除')
-        await refresh()
+        await refreshAll()
       } catch (e) {
         message.error(apiError(e))
       }
@@ -109,13 +140,22 @@ const columns = [
   { title: '状态', key: 'status', width: 170 },
   { title: '', key: 'actions', width: 200 },
 ]
+const groupColumns = columns.filter((c) => c.key !== 'wo')
 </script>
 
 <template>
+  <div class="ft-page">
+  <div v-if="stats" class="ft-stats">
+    <UiStatCard label="待付" :value="stats.pending" unit="笔" tone="primary" accent icon="dot" clickable :active="filter.status === 'PENDING' && !filter.blocking" sub="财务还没处理的" @click="applyStatus('PENDING')" />
+    <UiStatCard label="卡交期未付" :value="stats.blockingUnpaid" unit="笔" tone="late" accent icon="alert" clickable :active="filter.status === 'UNPAID' && filter.blocking === '1'" sub="待付 + 暂缓里卡交期的" @click="applyStatus('UNPAID', '1')" />
+    <UiStatCard label="暂缓" :value="stats.onHold" unit="笔" tone="risk" accent icon="warn" clickable :active="filter.status === 'ON_HOLD' && !filter.blocking" @click="applyStatus('ON_HOLD')" />
+    <UiStatCard label="已付" :value="stats.paid" unit="笔" tone="done" accent icon="check" clickable :active="filter.status === 'PAID' && !filter.blocking" @click="applyStatus('PAID')" />
+  </div>
   <a-card title="付款申请">
     <template #extra>
       <a-space wrap>
         <a-select v-model:value="filter.status" style="width: 170px" :options="statusOptions" />
+        <a-tag v-if="filter.blocking" color="red" closable @close="filter.blocking = undefined">只看卡交期</a-tag>
         <a-select
           v-model:value="filter.workOrderNumber"
           allow-clear
@@ -124,7 +164,7 @@ const columns = [
           style="width: 170px"
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
-        <a-button @click="refresh()">刷新</a-button>
+        <a-button @click="refreshAll()">刷新</a-button>
         <a-button v-if="canDoAny(me, 'payment')" type="primary" @click="creating = true">申请付款</a-button>
       </a-space>
     </template>
@@ -136,7 +176,24 @@ const columns = [
     <p class="muted">
       排序：卡交期的在前，再按关联物料里离需求日最近的。不做审批：{{ canSetStatus ? '你可以直接标记 已付 / 暂缓。' : '财务标记 已付 / 暂缓（财务在设置页"人员与角色"里配置）。' }}
     </p>
-    <a-table :columns="columns" :data-source="rows" :loading="pending" row-key="id" size="small" :pagination="{ pageSize: 50, hideOnSinglePage: true }">
+    <div class="layout-switch">
+      <a-radio-group v-model:value="layout" size="small">
+        <a-radio-button value="group">按工单分组</a-radio-button>
+        <a-radio-button value="table">表格</a-radio-button>
+      </a-radio-group>
+    </div>
+    <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty description="没有付款申请" /></a-spin>
+    <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
+    <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" v-bind="paidOf(t)" label="已付" :count="t.rows.length" unit="笔" />
+    <a-table
+      :columns="layout === 'group' ? groupColumns : columns"
+      :data-source="t.rows"
+      :loading="pending"
+      row-key="id"
+      size="small"
+      :scroll="{ x: 1000 }"
+      :pagination="layout === 'group' ? false : { pageSize: 50, hideOnSinglePage: true }"
+    >
       <template #emptyText><a-empty description="没有付款申请" /></template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'blocks'">
@@ -163,7 +220,7 @@ const columns = [
         </template>
         <template v-else-if="column.key === 'status'">
           <a-tag :color="PAYMENT_STATUS_COLOR[record.status as PaymentStatusKey]">{{ record.statusText }}</a-tag>
-          <div v-if="record.statusByName" class="muted">{{ record.statusByName }} {{ timeText(record.statusAt) }}</div>
+          <div v-if="record.statusByName" class="muted">{{ record.statusByName }} {{ factoryDateTimeText(record.statusAt) }}</div>
           <div v-if="record.financeNote" class="muted">{{ record.financeNote }}</div>
         </template>
         <template v-else-if="column.key === 'actions'">
@@ -178,9 +235,11 @@ const columns = [
         </template>
       </template>
     </a-table>
+    </div>
   </a-card>
+  </div>
 
-  <PaymentCreateModal :open="creating" @close="creating = false" @done="creating = false; refresh()" />
+  <PaymentCreateModal :open="creating" @close="creating = false" @done="creating = false; refreshAll()" />
 
   <a-modal :open="!!acting" :title="acting ? `标记为${PAYMENT_STATUS_TEXT[acting.status]}` : ''" ok-text="确定" :confirm-loading="busy" @ok="submitStatus" @cancel="acting = null">
     <p v-if="acting">{{ acting.row.workOrderNumber }} · {{ acting.row.lines.map((l) => l.materialName).join('、') }} · {{ moneyWithUnit(acting.row.amount) }}</p>
@@ -190,6 +249,7 @@ const columns = [
 
 <style scoped>
 .totals { margin-bottom: 8px; }
+.layout-switch { margin-bottom: 8px; }
 .muted { color: #999; font-size: 12px; }
 .warn { color: var(--ft-late); }
 .line { line-height: 22px; }
