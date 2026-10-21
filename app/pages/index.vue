@@ -212,6 +212,9 @@ function onCardClick(c: Card) {
       </ol>
     </div>
 
+    <!-- 项目日历（zhao 10-21）：本周 / 下周 / 本月计划与实际完成台数，所有人都显示 -->
+    <WorkbenchCalendarCard />
+
     <UiSectionCard title="待办与提醒" :sub="active ? `只看：${FILTER_TEXT[active]}` : '按截止日分组；提醒点开即标为已读并跳到对应页面'">
       <template #extra>
         <NuxtLink v-if="active" :to="{ query: { ...route.query, f: undefined } }" class="clear">清除筛选</NuxtLink>

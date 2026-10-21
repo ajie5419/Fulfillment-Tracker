@@ -16,6 +16,8 @@ const groups = computed(() => {
   return [
     { title: '我的工作', items: show([
       { key: '/', label: '工作台' },
+      // 项目日历（zhao 10-21）：所有人都能看，不分权限
+      { key: '/calendar', label: '项目日历' },
       // 前端改版第二轮：预警列表、异常列表合并为"风险"（旧地址 /alerts、/issues 重定向到 /risks 对应页签）
       { key: '/risks', label: '风险' },
     ]) },

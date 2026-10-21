@@ -7,6 +7,7 @@
 defineProps<{ name: string; size?: number }>()
 const PATHS: Record<string, string[]> = {
   '/': ['M3 10.5 12 3l9 7.5', 'M5 9v11h14V9', 'M10 20v-6h4v6'],
+  '/calendar': ['M4 5h16v15H4z', 'M4 9h16', 'M8 3v4', 'M16 3v4', 'M8 13h.01', 'M12 13h.01', 'M16 13h.01', 'M8 17h.01', 'M12 17h.01'],
   '/risks': ['M12 3 2 20h20L12 3Z', 'M12 10v4', 'M12 17h.01'],
   '/board': ['M4 4h7v7H4z', 'M13 4h7v7h-7z', 'M4 13h7v7H4z', 'M13 13h7v7h-7z'],
   '/wo': ['M6 3h9l4 4v14H6z', 'M14 3v5h5', 'M9 12h7', 'M9 16h7'],
