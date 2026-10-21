@@ -33,6 +33,11 @@ export interface KitCount {
   total: number
   /** 已就绪项 */
   ready: number
+  /**
+   * 齐套日：全部就绪时最后一项就绪的那天（工件 = 置为完成的时刻 statusSince 按工厂时区，物料 = 到货日）。
+   * 没齐套、清单为空、或调用方没给日期字段时为 null。都是落了库的日期，不随"今天"变（项目日历按它统计实际完成）。
+   */
+  readyDay?: string | null
 }
 
 /** 齐套率（0–100 的整数，向下取整：差一项时不会显示成 100%）；清单为空为 null */
@@ -45,12 +50,19 @@ export function kitPercent(c: KitCount): number | null {
 export const isIncomplete = (c: KitCount) => c.total > 0 && c.ready < c.total
 
 /** 节点清单计数 */
-export function countKit(parts: { status: PartStatus }[], purchases: { status: PurchaseStatus }[]): KitCount {
+export function countKit(
+  parts: { status: PartStatus; statusSince?: Date }[],
+  purchases: { status: PurchaseStatus; arrivedDate?: Date | null }[],
+): KitCount {
   const counted = purchases.filter(isPurchaseCounted)
-  return {
-    total: parts.length + counted.length,
-    ready: parts.filter(isPartReady).length + counted.filter(isPurchaseReady).length,
+  const total = parts.length + counted.length
+  const ready = parts.filter(isPartReady).length + counted.filter(isPurchaseReady).length
+  let readyDay: string | null = null
+  if (total > 0 && ready === total) {
+    const days = [...parts.map((p) => (p.statusSince ? shanghaiDay(p.statusSince) : null)), ...counted.map((l) => (l.arrivedDate ? dateFieldDay(l.arrivedDate) : null))]
+    if (days.every((d): d is string => !!d)) readyDay = days.reduce((a, b) => (a >= b ? a : b))
   }
+  return { total, ready, readyDay }
 }
 
 // ───────────── 缺件卡在哪一步 ─────────────

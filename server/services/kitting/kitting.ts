@@ -261,8 +261,8 @@ export async function loadKitCounts(nodes: NodeWithLinks[]): Promise<Map<string,
   const partIds = uniq(nodes.flatMap((n) => n.parts.map((p) => p.partId)))
   const lineIds = uniq(nodes.flatMap((n) => n.purchases.map((p) => p.purchaseLineId)))
   const [parts, lines] = await Promise.all([
-    partIds.length ? prisma.part.findMany({ where: { id: { in: partIds } }, select: { id: true, status: true } }) : [],
-    lineIds.length ? prisma.purchaseLine.findMany({ where: { id: { in: lineIds } }, select: { id: true, status: true } }) : [],
+    partIds.length ? prisma.part.findMany({ where: { id: { in: partIds } }, select: { id: true, status: true, statusSince: true } }) : [],
+    lineIds.length ? prisma.purchaseLine.findMany({ where: { id: { in: lineIds } }, select: { id: true, status: true, arrivedDate: true } }) : [],
   ])
   const partOf = new Map(parts.map((p) => [p.id, p]))
   const lineOf = new Map(lines.map((l) => [l.id, l]))

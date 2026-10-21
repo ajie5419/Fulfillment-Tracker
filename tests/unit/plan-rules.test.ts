@@ -75,9 +75,10 @@ describe('各类记录换算 *Facts', () => {
     expect(stepFacts({ ...base, mode: 'SELF', status: 'PENDING' }, () => 'x').planDay).toBe('2026-10-20')
     expect(stepFacts({ ...base, status: 'DONE', finishedAt: new Date('2026-10-18T20:00:00Z') }, () => '2026-10-19')).toMatchObject({ done: true, doneDay: '2026-10-19' })
   })
-  it('装配节点：齐套算完成，完成日取 需求日 与 今天 较早者；清单为空不算完成', () => {
-    expect(assemblyFacts({ id: 'A', needDate: d('2026-10-25') }, { total: 2, ready: 2 }, TODAY)).toMatchObject({ done: true, doneDay: TODAY })
-    expect(assemblyFacts({ id: 'A', needDate: d('2026-10-10') }, { total: 2, ready: 2 }, TODAY).doneDay).toBe('2026-10-10')
+  it('装配节点：齐套算完成，完成日取记录的齐套日（不随今天变，晚于需求日也照实）；没有齐套日为 null；清单为空不算完成', () => {
+    expect(assemblyFacts({ id: 'A', needDate: d('2026-10-25') }, { total: 2, ready: 2, readyDay: '2026-10-12' }, TODAY)).toMatchObject({ done: true, doneDay: '2026-10-12' })
+    expect(assemblyFacts({ id: 'A', needDate: d('2026-10-10') }, { total: 2, ready: 2, readyDay: '2026-10-15' }, TODAY).doneDay).toBe('2026-10-15')
+    expect(assemblyFacts({ id: 'A', needDate: d('2026-10-25') }, { total: 2, ready: 2 }, TODAY)).toMatchObject({ done: true, doneDay: null })
     expect(assemblyFacts({ id: 'A', needDate: d('2026-10-25') }, { total: 0, ready: 0 }, TODAY).done).toBe(false)
   })
 })

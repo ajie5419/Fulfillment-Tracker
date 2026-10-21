@@ -82,8 +82,9 @@ describe('stableDoneDay：实际完成日只认落库的日期', () => {
   it('自动完成：取任务记录的完成日里最晚的（已取消的不算）', () => {
     expect(stableDoneDay({ done: true, doneBy: 'AUTO', actualDay: '2026-10-21' }, [t('purchase', '2026-10-10'), t('step', '2026-10-12'), t('drawing', null, true)])).toBe('2026-10-12')
   })
-  it('自动完成但挂了装配节点、或有任务没记完成日 → null（不随日子挪）', () => {
-    expect(stableDoneDay({ done: true, doneBy: 'AUTO', actualDay: '2026-10-21' }, [t('purchase', '2026-10-10'), t('assembly', '2026-10-21')])).toBeNull()
+  it('装配节点（齐套）按记录的齐套日计；有任务没记完成日 → null（不随日子挪）', () => {
+    expect(stableDoneDay({ done: true, doneBy: 'AUTO', actualDay: '2026-10-21' }, [t('purchase', '2026-10-10'), t('assembly', '2026-10-14')])).toBe('2026-10-14')
+    expect(stableDoneDay({ done: true, doneBy: 'AUTO', actualDay: '2026-10-21' }, [t('purchase', '2026-10-10'), t('assembly', null)])).toBeNull()
     expect(stableDoneDay({ done: true, doneBy: 'AUTO', actualDay: '2026-10-21' }, [t('step', null)])).toBeNull()
   })
   it('已完成但没有完成日：不计实际、不算逾期', () => {
