@@ -59,6 +59,20 @@ describe('summarize：按发运节点统计台数', () => {
     expect(s.actual.orders).toBe(0)
   })
 
+  it('预计完成：没完成的按总计划推算日计入；没有推算日的按计划日；已晚的算今天；完成的不算', () => {
+    const items = [
+      c({ quantity: 2, planDay: '2026-10-25', expectedDay: '2026-11-03' }), // 推迟到 11 月
+      c({ quantity: 1, planDay: '2026-10-28' }), // 没有推算日 → 按计划日
+      c({ quantity: 3, planDay: '2026-09-20', expectedDay: '2026-09-20' }), // 9 月就该完成、还没完成 → 今天
+      c({ quantity: 5, source: 'DELIVERY', planDay: '2026-12-01', expectedDay: null }),
+      c({ quantity: 4, planDay: '2026-10-26', done: true, actualDay: '2026-10-20' }),
+    ]
+    expect(summarize(items, oct, today).expected).toEqual({ orders: 2, units: 4 })
+    expect(summarize(items, periodOf('month', '2026-11-01'), today).expected).toEqual({ orders: 1, units: 2 })
+    expect(summarize(items, periodOf('month', '2026-12-01'), today).expected).toEqual({ orders: 1, units: 5 })
+    expect(summarize(items, periodOf('month', '2026-09-01'), today).expected).toEqual({ orders: 0, units: 0 })
+  })
+
   it('QMS 数量为 0：计工单数、不计台数，并提示缺数量', () => {
     const s = summarize([c({ quantity: 0 }), c({ quantity: -1 })], oct, today)
     expect(s.planned).toEqual({ orders: 2, units: 0 })

@@ -13,7 +13,11 @@ const items = computed(() =>
       value: s.planned.units,
       tone: s.overdue.orders ? ('late' as const) : ('primary' as const),
       sub: `实际完成 ${s.actual.units} 台${s.overdue.orders ? ` · 逾期 ${s.overdue.units} 台` : ''}`,
-      to: { path: '/calendar', query: { view: i.key === 'thisMonth' ? 'month' : 'week', d: i.period.start } },
+      // 本周 / 下周 → 列表并滚到那一周；本月 → 日历。本周用今天（周一可能在上个月，会翻到上个月去）
+      to:
+        i.key === 'thisMonth'
+          ? { path: '/calendar', query: { mode: 'calendar', d: i.period.start } }
+          : { path: '/calendar', query: { mode: 'list', d: i.key === 'thisWeek' ? data.value!.today : i.period.start } },
     }
   }),
 )

@@ -1,15 +1,14 @@
 /**
- * 项目日历：按周 / 按月看计划完成台数、实际完成台数，以及这一期到期的总计划节点。口径见 shared/calendar.ts。
- * 可见范围：所有登录用户看全部工单（zhao 10-21 定"不分权限"）；日历只给工单号、项目、客户、台数、节点日期和状态，不含金额。
- * 日历上点工单 / 节点跳工单详情（/wo/:no#node-:id），详情页仍按原来的可见范围判断。
- * 节点状态与总计划页同源（loadPlans → forecast），只看已发布的总计划（草稿不算，和看板、领导总览一致）。
+ * 项目日历：按周 / 按月看计划完成台数、实际完成台数，以及每个工单的计划完成日。口径见 shared/calendar.ts。
+ * 可见范围：所有登录用户看全部工单（zhao 10-21 定"不分权限"）；日历只给工单号、项目、客户、台数、日期和状态，不含金额。
+ * 日历上点工单跳工单详情（/wo/:no），详情页仍按原来的可见范围判断。
+ * 完成情况与总计划页同源（loadPlans → forecast），只看已发布的总计划（草稿不算，和看板、领导总览一致）。
+ * 10-21 第三轮：页面不再显示中间节点，接口去掉 nodes。
  */
 import { prisma } from '../../utils/prisma'
 import { dateFieldDay, shanghaiDay } from '../alerts/rules'
-import { BUSINESS_DEPT_NAME } from '../auth/departments'
 import { loadPlans } from '../plan/plan'
 import { stableDoneDay } from './rules'
-import { type NodeState, nodeState } from '../../../shared/status'
 import {
   type CalendarView,
   type CompletionLike,
@@ -37,24 +36,7 @@ export interface Completion extends CompletionLike {
   state: CompletionState
 }
 
-export interface CalendarNode {
-  id: string
-  workOrderNumber: string
-  projectName: string | null
-  name: string
-  dept: keyof typeof BUSINESS_DEPT_NAME
-  deptText: string
-  planDay: string
-  actualDay: string | null
-  expectedDay: string
-  delayDays: number
-  state: NodeState
-  /** 是总计划最后一个节点（完成 = 工单完成，日历上显示台数） */
-  isLast: boolean
-  quantity: number
-}
-
-/** 全部有效工单（没删除、没取消）的完成情况 + 已发布总计划的节点 */
+/** 全部有效工单（没删除、没取消）的完成情况 */
 async function loadAll(now: Date) {
   const today = shanghaiDay(now)
   const [wos, plans] = await Promise.all([
@@ -66,7 +48,6 @@ async function loadAll(now: Date) {
     loadPlans({ publishedOnly: true }, now),
   ])
   const completions: Completion[] = []
-  const nodes: CalendarNode[] = []
   for (const w of wos) {
     const plan = plans.get(w.workOrderNumber)
     const deliveryDay = dateFieldDay(w.deliveryDate)
@@ -86,30 +67,12 @@ async function loadAll(now: Date) {
         nodeId: last.id,
       }
       completions.push({ ...c, state: completionState(c, today) })
-      plan.nodes.forEach((n, i) => {
-        const e = plan.forecast.nodes.find((x) => x.id === n.id)!
-        nodes.push({
-          id: n.id,
-          workOrderNumber: w.workOrderNumber,
-          projectName: w.projectName,
-          name: n.name,
-          dept: n.dept,
-          deptText: BUSINESS_DEPT_NAME[n.dept],
-          planDay: dateFieldDay(n.planDate),
-          actualDay: e.actualDay,
-          expectedDay: e.expectedDay,
-          delayDays: e.delayDays,
-          state: nodeState(e),
-          isLast: i === plan.nodes.length - 1,
-          quantity: w.quantity,
-        })
-      })
     } else {
       const c = { ...base, planDay: deliveryDay, source: 'DELIVERY' as const, done: false, actualDay: null, expectedDay: null, nodeName: null, nodeId: null }
       completions.push({ ...c, state: completionState(c, today) })
     }
   }
-  return { today, completions, nodes }
+  return { today, completions }
 }
 
 /** 前后几期的趋势：本期往前 2 期、往后 3 期 */
@@ -123,12 +86,10 @@ export interface CalendarData {
   trend: { period: Period; summary: PeriodSummary }[]
   /** 计划或实际完成在本期的工单（按计划完成日排） */
   completions: Completion[]
-  /** 计划日在本期的总计划节点（按日期、工单号、顺序排） */
-  nodes: CalendarNode[]
 }
 
 export async function getCalendar(view: CalendarView, day: string | null, now = new Date()): Promise<CalendarData> {
-  const { today, completions, nodes } = await loadAll(now)
+  const { today, completions } = await loadAll(now)
   const period = periodOf(view, day ?? today)
   const trend = Array.from({ length: TREND_BEFORE + TREND_AFTER + 1 }, (_, i) => {
     const p = shiftPeriod(period, i - TREND_BEFORE)
@@ -140,7 +101,6 @@ export async function getCalendar(view: CalendarView, day: string | null, now = 
     summary: summarize(completions, period, today),
     trend,
     completions: completions.filter((c) => inPeriod(period, c.planDay) || (c.done && inPeriod(period, c.actualDay))).sort((a, b) => (a.planDay < b.planDay ? -1 : a.planDay > b.planDay ? 1 : 0)),
-    nodes: nodes.filter((n) => inPeriod(period, n.planDay)).sort((a, b) => (a.planDay < b.planDay ? -1 : a.planDay > b.planDay ? 1 : a.workOrderNumber < b.workOrderNumber ? -1 : a.workOrderNumber > b.workOrderNumber ? 1 : 0)),
   }
 }
 
