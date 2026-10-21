@@ -6,7 +6,7 @@
  *   上面 6 张月度卡片：过去的月份看完成台数，当前和后面的看预计完成台数。
  * 口径见 shared/calendar.ts：完成 = 总计划最后一个节点（发运）完成；台数 = QMS 工单数量；没有已发布总计划的按 QMS 交期计入计划。
  * 所有登录用户都能看全部工单（不分权限，不含金额）；点工单进工单详情，详情页仍按原来的可见范围。
- * 地址栏 ?mode=calendar|list&d=YYYY-MM-DD；显示方式另外记在本机（localStorage），下次打开沿用。旧链接 ?view=week 转成列表。
+ * 地址栏 ?mode=calendar|list&d=YYYY-MM-DD&wk=周一（列表滚到哪周，只有工作台点进来带）；显示方式另外记在本机（localStorage），下次打开沿用。旧链接 ?view=week 转成列表。
  */
 import { gridDays, shiftPeriod } from '#shared/calendar'
 import type { CalendarEntry } from '~/components/CalendarGrid.vue'
@@ -56,7 +56,7 @@ const { data, pending, error, refresh } = await useFetch('/api/calendar', { key:
 
 const period = computed(() => data.value?.period ?? null)
 function go(day: string | undefined) {
-  router.replace({ query: { ...route.query, d: day } })
+  router.replace({ query: { ...route.query, d: day, wk: undefined } })
 }
 function step(n: number) {
   if (period.value) go(shiftPeriod(period.value, n).start)
@@ -111,8 +111,12 @@ const selected = computed(() => {
 })
 watch(() => period.value?.start, () => (picked.value = null))
 
-// 列表滚动到哪一周：地址栏的日期（工作台"本周 / 下周"点进来），没有就今天
-const focus = computed(() => d.value ?? data.value?.today ?? null)
+// 列表滚动到哪一周：只认地址栏的 wk（工作台"本周 / 下周"点进来带的那周周一）。
+// 翻月、点月度卡片、切换显示方式都不带 wk，不滚动，工具栏和月度卡片留在原位
+const focus = computed(() => {
+  const v = qs('wk')
+  return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null
+})
 </script>
 
 <template>
