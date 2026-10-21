@@ -138,7 +138,7 @@ onBeforeUnmount(() => clearInterval(timer))
     <a-layout-sider v-model:collapsed="collapsed" :trigger="null" :width="188" breakpoint="lg" :collapsed-width="0" class="sider" @breakpoint="onBreakpoint">
       <div class="sider-inner">
         <NuxtLink to="/" class="brand">
-          <span class="logo" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>
+          <img class="logo" src="/brand/tolian-mark.png" width="32" height="32" alt="" aria-hidden="true">
           <span class="brand-text"><span class="brand-name">项目履约</span><span class="brand-sub">项目履约与异常管理</span></span>
         </NuxtLink>
         <nav class="sider-scroll" aria-label="主菜单" :inert="collapsed || undefined">
@@ -188,7 +188,8 @@ onBeforeUnmount(() => clearInterval(timer))
 .sider-inner { height: 100%; display: flex; flex-direction: column; background: var(--ft-fill); border-radius: 16px; overflow: hidden; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 16px 14px 12px; color: var(--ft-text); white-space: nowrap; }
 .brand:hover { color: var(--ft-text); }
-.logo { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 9px; background: var(--ft-primary); }
+/* 公司标志（通联 TOLIAN 圆形图标，去掉了下方英文字样，32px 下字样看不清），透明底直接放在浅灰侧栏上 */
+.logo { flex: none; display: block; width: 32px; height: 32px; object-fit: contain; }
 .brand-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
 .brand-name { font-weight: 600; font-size: 16px; }
 .brand-sub { font-size: 12px; color: var(--ft-text-2); }
