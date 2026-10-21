@@ -96,6 +96,14 @@ describe.skipIf(!DB)('项目日历', () => {
     expect(r.trend[3]!.summary.planned).toEqual({ orders: 1, units: 5 }) // 11 月：D
   })
 
+  it('月视图的工单含首尾跨月的整周（列表按整周分组），统计仍只算本月', async () => {
+    const r = await cal.getCalendar('month', '2026-11-05', NOW)
+    expect(r.period).toMatchObject({ start: '2026-11-01', end: '2026-11-30' })
+    // 11 月第一周是 10-26 ~ 11-01：B（计划 10-28）、C（交期 10-30）也带上
+    expect(r.completions.map((c) => c.workOrderNumber)).toEqual(['C-B', 'C-C', 'C-D'])
+    expect(r.summary.planned).toEqual({ orders: 1, units: 5 }) // 只算 11 月的 D
+  })
+
   it('周视图：按周一到周日', async () => {
     const r = await cal.getCalendar('week', null, NOW)
     expect(r.period).toMatchObject({ start: '2026-10-19', end: '2026-10-25' })

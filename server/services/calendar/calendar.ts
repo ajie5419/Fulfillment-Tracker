@@ -84,13 +84,14 @@ export interface CalendarData {
   period: Period
   summary: PeriodSummary
   trend: { period: Period; summary: PeriodSummary }[]
-  /** 计划或实际完成在本期的工单（按计划完成日排） */
+  /** 计划完成日在本期涉及的整周里（月视图含首尾跨月的几天，列表按整周分组要用）、或实际完成在本期的工单（按计划完成日排） */
   completions: Completion[]
 }
 
 export async function getCalendar(view: CalendarView, day: string | null, now = new Date()): Promise<CalendarData> {
   const { today, completions } = await loadAll(now)
   const period = periodOf(view, day ?? today)
+  const grid = { start: periodOf('week', period.start).start, end: periodOf('week', period.end).end }
   const trend = Array.from({ length: TREND_BEFORE + TREND_AFTER + 1 }, (_, i) => {
     const p = shiftPeriod(period, i - TREND_BEFORE)
     return { period: p, summary: summarize(completions, p, today) }
@@ -100,7 +101,7 @@ export async function getCalendar(view: CalendarView, day: string | null, now = 
     period,
     summary: summarize(completions, period, today),
     trend,
-    completions: completions.filter((c) => inPeriod(period, c.planDay) || (c.done && inPeriod(period, c.actualDay))).sort((a, b) => (a.planDay < b.planDay ? -1 : a.planDay > b.planDay ? 1 : 0)),
+    completions: completions.filter((c) => inPeriod(grid, c.planDay) || (c.done && inPeriod(period, c.actualDay))).sort((a, b) => (a.planDay < b.planDay ? -1 : a.planDay > b.planDay ? 1 : 0)),
   }
 }
 

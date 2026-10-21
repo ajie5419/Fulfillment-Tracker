@@ -82,13 +82,13 @@ const monthCards = computed(() =>
   }),
 )
 
-// ───── 本月的工单（排在计划完成日） ─────
+// ───── 本月涉及的整周（含跨月的几天）的工单（排在计划完成日）；日历格里本月以外的日子不显示，列表里跨月的周列满 7 天 ─────
 const days = computed(() => (period.value ? gridDays(period.value) : []))
 const entries = computed<CalendarEntry[]>(() => {
-  const p = period.value
-  if (!p || !data.value) return []
+  const g = days.value
+  if (!g.length || !data.value) return []
   return data.value.completions
-    .filter((c) => c.planDay >= p.start && c.planDay <= p.end)
+    .filter((c) => c.planDay >= g[0]! && c.planDay <= g.at(-1)!)
     .map((c) => ({
       key: c.workOrderNumber,
       day: c.planDay,
@@ -107,7 +107,7 @@ const selected = computed(() => {
   if (!p || !data.value) return ''
   if (picked.value && picked.value >= p.start && picked.value <= p.end) return picked.value
   if (isCurrent.value) return data.value.today
-  return entries.value.map((e) => e.day).sort()[0] ?? p.start
+  return entries.value.map((e) => e.day).filter((x) => x >= p.start && x <= p.end).sort()[0] ?? p.start
 })
 watch(() => period.value?.start, () => (picked.value = null))
 

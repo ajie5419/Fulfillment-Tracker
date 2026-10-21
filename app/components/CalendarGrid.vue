@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * 项目日历 · 日历显示（zhao 10-21 第三轮选的方案 A）：左边月格，右边是选中那天的工单。
- * 每格是一个按钮，只放日期和当天合计（大号台数 + "台 · N 单"）；有逾期的合计标红。点格子在右边卡片里列出当天的工单。
+ * 每格是一个按钮，只放日期和当天合计（大号台数 + "台 · N 单"）；有逾期的合计标红并加红色"!"图标（形状区分，不只靠颜色）。
+ * 点格子在右边卡片里列出当天的工单，逾期的工单带"逾期"标签。
  * 窄屏（< 992px）右边卡片挪到月格下面。颜色只用 --ft-* 变量。
  */
 import type { CompletionState } from '#shared/calendar'
@@ -66,7 +67,7 @@ const selUnits = computed(() => selItems.value.reduce((n, e) => n + qtyOf(e), 0)
           >
             <span class="num">{{ dayNum(d) }}</span>
             <span v-if="byDay.has(d)" class="tot">
-              <b :class="{ late: total(d).late }">{{ total(d).units }}</b><small>台 · {{ total(d).orders }} 单</small>
+              <b :class="{ late: total(d).late }">{{ total(d).units }}</b><UiStatusIcon v-if="total(d).late" kind="alert" tone="late" :size="14" class="late-icon" /><small>台 · {{ total(d).orders }} 单</small>
             </span>
           </button>
           <div v-else class="cell out" aria-hidden="true"><span class="num">{{ dayNum(d) }}</span></div>
@@ -82,7 +83,8 @@ const selUnits = computed(() => selItems.value.reduce((n, e) => n + qtyOf(e), 0)
           <NuxtLink :to="e.to" class="no">{{ e.no }}</NuxtLink>
           <span class="product">{{ e.product || '—' }}</span>
         </span>
-        <b class="qty" :class="{ late: late(e) }" :title="late(e) ? '逾期未完成' : undefined">{{ e.qty > 0 ? e.qty : '?' }}<small>台</small></b>
+        <UiStatusTag v-if="late(e)" tone="late">逾期</UiStatusTag>
+        <b class="qty" :class="{ late: late(e) }">{{ e.qty > 0 ? e.qty : '?' }}<small>台</small></b>
       </div>
       <div v-if="!selItems.length" class="empty">这天没有计划完成的工单</div>
     </UiSectionCard>
@@ -108,6 +110,7 @@ const selUnits = computed(() => selItems.value.reduce((n, e) => n + qtyOf(e), 0)
 .tot b { font-size: 22px; line-height: 26px; font-weight: 700; color: var(--ft-text); font-variant-numeric: tabular-nums; }
 .tot small { font-size: 12px; color: var(--ft-text-2); overflow: hidden; text-overflow: ellipsis; }
 .tot b.late, .qty.late { color: var(--ft-late-text); }
+.late-icon { align-self: center; margin-left: -2px; }
 
 .sel-total { font-size: 13px; color: var(--ft-text-2); }
 .sel-total b { font-size: 18px; color: var(--ft-text); }
