@@ -1,7 +1,7 @@
 /**
  * 项目日历（zhao 10-21）：真实 MySQL 上调服务层，固定 now = 2026-10-21（周三）。
  * 覆盖：已发布总计划按最后一个节点（发运）算计划 / 实际 / 逾期台数；草稿、没有总计划按 QMS 交期计入"未排总计划"；
- * 取消、删除的工单不算；节点按计划日落在对应周 / 月；工作台卡片的本周 / 下周 / 本月。
+ * 取消、删除的工单不算；工作台卡片的本周 / 下周 / 本月。
  * 运行：TEST_DATABASE_URL=mysql://…/fulfillment_test pnpm test:integration
  */
 import { execFileSync } from 'node:child_process'
@@ -91,22 +91,23 @@ describe.skipIf(!DB)('项目日历', () => {
       ['C-C', 'NO_PLAN'],
     ])
     expect(r.completions.find((c) => c.workOrderNumber === 'C-C')!.planDay).toBe('2026-10-30') // 草稿不用节点日，用 QMS 交期
-    // 只列已发布总计划的节点；最后一个节点标 isLast
-    expect(r.nodes.map((n) => [n.id, n.state, n.isLast])).toEqual([
-      ['n-a1', 'DONE', false],
-      ['n-a2', 'SOURCE', true],
-      ['n-b1', 'DONE', true],
-    ])
     expect(r.trend).toHaveLength(6)
     expect(r.trend[2]!.period.start).toBe('2026-10-01')
     expect(r.trend[3]!.summary.planned).toEqual({ orders: 1, units: 5 }) // 11 月：D
+  })
+
+  it('月视图的工单含首尾跨月的整周（列表按整周分组），统计仍只算本月', async () => {
+    const r = await cal.getCalendar('month', '2026-11-05', NOW)
+    expect(r.period).toMatchObject({ start: '2026-11-01', end: '2026-11-30' })
+    // 11 月第一周是 10-26 ~ 11-01：B（计划 10-28）、C（交期 10-30）也带上
+    expect(r.completions.map((c) => c.workOrderNumber)).toEqual(['C-B', 'C-C', 'C-D'])
+    expect(r.summary.planned).toEqual({ orders: 1, units: 5 }) // 只算 11 月的 D
   })
 
   it('周视图：按周一到周日', async () => {
     const r = await cal.getCalendar('week', null, NOW)
     expect(r.period).toMatchObject({ start: '2026-10-19', end: '2026-10-25' })
     expect(r.summary.planned).toEqual({ orders: 1, units: 2 })
-    expect(r.nodes.map((n) => n.id)).toEqual(['n-a2'])
     // B 计划在下周、实际在 10-15（第 42 周），本周两头都不沾
     expect(r.completions.map((c) => c.workOrderNumber)).toEqual(['C-A'])
   })

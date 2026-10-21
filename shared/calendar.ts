@@ -8,6 +8,8 @@
  *   实际完成日：最后一个节点落了库的完成日（手动标记的完成日，或挂靠任务各自记录的完成日；规则见 server/services/calendar/rules.ts）。
  *     自动完成但有任务没记完成日的算已完成、不计入实际；没有已发布总计划的工单系统里没有完成日，也不计入实际。
  *   逾期未完成：计划完成日在本期、已过（早于今天）、还没完成；没有总计划的判断不了，单列"未排总计划"。
+ *   预计完成（zhao 10-21 第二轮）：还没完成的工单，按预计完成日计入那一期；预计完成日取总计划推算的日期（没有的取计划完成日），
+ *     早于今天的按今天算（已经晚了的，最早也是今天完成），所以过去的期没有"预计"，只有实际完成。
  */
 
 export type CalendarView = 'week' | 'month'
@@ -75,6 +77,8 @@ export interface CompletionLike {
   done: boolean
   /** 实际完成日（只有 source = PLAN 且已完成、完成日落了库时有） */
   actualDay: string | null
+  /** 预计完成日（有总计划、没完成时按总计划推算）；没有时按计划完成日 */
+  expectedDay?: string | null
 }
 
 export interface Tally {
@@ -93,15 +97,23 @@ export interface PeriodSummary {
   overdue: Tally
   /** 计划在本期、没有已发布总计划（按 QMS 交期计入计划，实际完成判断不了） */
   noPlan: Tally
+  /** 还没完成、预计在本期完成（预计完成日早于今天的按今天算） */
+  expected: Tally
   /** 计划在本期、QMS 数量为 0 的工单数（台数没法算，提醒去 QMS 补） */
   missingQuantity: number
 }
 
 const units = (q: number) => Math.max(0, q)
 
+/** 没完成的工单预计哪天完成：总计划推算的预计日（没有取计划完成日），早于今天的按今天 */
+export function expectedDayOf(c: Pick<CompletionLike, 'planDay' | 'expectedDay'>, today: string): string {
+  const d = c.expectedDay ?? c.planDay
+  return d < today ? today : d
+}
+
 export function summarize(items: readonly CompletionLike[], p: Pick<Period, 'start' | 'end'>, today: string): PeriodSummary {
   const t = (): Tally => ({ orders: 0, units: 0 })
-  const s: PeriodSummary = { planned: t(), actual: t(), overdue: t(), noPlan: t(), missingQuantity: 0 }
+  const s: PeriodSummary = { planned: t(), actual: t(), overdue: t(), noPlan: t(), expected: t(), missingQuantity: 0 }
   const add = (x: Tally, q: number) => {
     x.orders++
     x.units += units(q)
@@ -114,6 +126,7 @@ export function summarize(items: readonly CompletionLike[], p: Pick<Period, 'sta
       else if (!c.done && c.planDay < today) add(s.overdue, c.quantity)
     }
     if (c.done && inPeriod(p, c.actualDay)) add(s.actual, c.quantity)
+    if (!c.done && inPeriod(p, expectedDayOf(c, today))) add(s.expected, c.quantity)
   }
   return s
 }
