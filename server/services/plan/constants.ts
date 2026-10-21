@@ -38,7 +38,6 @@ export const w9ConfirmKey = (nodeId: string) => alertKey('W9', 'planConfirm', no
 export const w9PlanKey = (workOrderNumber: string) => alertKey('W9', 'plan', workOrderNumber)
 
 const maxDay = (a: string, b: string) => (a >= b ? a : b)
-const minDay = (a: string, b: string) => (a <= b ? a : b)
 
 /** 'YYYY-MM-DD' 往后 n 天 */
 export function addDays(day: string, n: number): string {
@@ -127,13 +126,15 @@ export function stepFacts(
 }
 
 /**
- * 装配节点（齐套）：完成 = 清单不为空且全部就绪（齐套）。齐套的时刻不落库，完成日取 需求日 和 今天 里较早的那个
- * （提前齐套的不会把节点完成日推到未来；过了需求日才齐的按需求日算——齐套本身不会让节点晚于需求日）。
+ * 装配节点（齐套）：完成 = 清单不为空且全部就绪（齐套）。
+ * 完成日 = 齐套日（最后一项就绪的那天：工件置为完成的时刻、物料到货日，见 kitting/constants.ts countKit），都是落了库的日期。
+ * 以前齐套时刻没取，完成日按"需求日和今天较早的那个"现算，提前齐套的节点完成日会每天往后挪（项目日历的实际完成会跟着变），10-21 改为取记录日期。
+ * 缺日期（老数据工件没有 statusSince 一般不会发生）时为 null，按"不知道完成日"处理（autoDone 按今天算，项目日历不计入实际完成）。
  */
-export function assemblyFacts(n: { id: string; needDate: Date }, kit: { total: number; ready: number }, today: string): TaskFacts {
+export function assemblyFacts(n: { id: string; needDate: Date }, kit: { total: number; ready: number; readyDay?: string | null }, _today: string): TaskFacts {
   const need = day(n.needDate)!
   const done = kit.total > 0 && kit.ready >= kit.total
-  return { kind: 'assembly', id: n.id, excluded: false, done, doneDay: done ? minDay(need, today) : null, planDay: need }
+  return { kind: 'assembly', id: n.id, excluded: false, done, doneDay: done ? (kit.readyDay ?? null) : null, planDay: need }
 }
 
 // ───────────── 节点与主线 ─────────────

@@ -20,13 +20,13 @@ const NOW = new Date('2026-10-17T02:00:00.000Z')
 describe('齐套率', () => {
   it('已就绪 ÷ 应有；已取消的物料不计入应有项', () => {
     const c = countKit([{ status: 'DONE' }, { status: 'ACTIVE' }], [{ status: 'ARRIVED' }, { status: 'OPEN' }, { status: 'CANCELLED' }])
-    expect(c).toEqual({ total: 4, ready: 2 })
+    expect(c).toEqual({ total: 4, ready: 2, readyDay: null })
     expect(kitPercent(c)).toBe(50)
     expect(isIncomplete(c)).toBe(true)
   })
   it('全部就绪 = 100%；只剩已取消的物料没到也算齐', () => {
     const c = countKit([{ status: 'DONE' }], [{ status: 'ARRIVED' }, { status: 'CANCELLED' }])
-    expect(c).toEqual({ total: 2, ready: 2 })
+    expect(c).toEqual({ total: 2, ready: 2, readyDay: null }) // 没给日期字段
     expect(kitPercent(c)).toBe(100)
     expect(isIncomplete(c)).toBe(false)
   })
@@ -36,7 +36,16 @@ describe('齐套率', () => {
     expect(kitPercent({ total: 0, ready: 0 })).toBeNull()
     expect(isIncomplete({ total: 0, ready: 0 })).toBe(false)
     // 只挂了已取消的物料 = 清单为空
-    expect(countKit([], [{ status: 'CANCELLED' }])).toEqual({ total: 0, ready: 0 })
+    expect(countKit([], [{ status: 'CANCELLED' }])).toEqual({ total: 0, ready: 0, readyDay: null })
+  })
+  it('齐套日：全部就绪时取最后一项就绪的那天（工件完成时刻按工厂时区、物料到货日；已取消的不算）；缺日期或没齐为 null', () => {
+    const part = (since: string) => ({ status: 'DONE' as const, statusSince: new Date(since) })
+    // 工件 10-14 23:30 北京时间 = 10-14 15:30Z；物料 10-12 到货
+    expect(countKit([part('2026-10-14T15:30:00Z')], [{ status: 'ARRIVED', arrivedDate: d('2026-10-12') }, { status: 'CANCELLED', arrivedDate: null }]).readyDay).toBe('2026-10-14')
+    // 工件 10-14 17:00Z = 北京时间 10-15 01:00
+    expect(countKit([part('2026-10-14T17:00:00Z')], []).readyDay).toBe('2026-10-15')
+    expect(countKit([part('2026-10-14T15:30:00Z')], [{ status: 'ARRIVED', arrivedDate: null }]).readyDay).toBeNull()
+    expect(countKit([part('2026-10-14T15:30:00Z')], [{ status: 'OPEN', arrivedDate: null }]).readyDay).toBeNull()
   })
 })
 
