@@ -56,7 +56,7 @@ describe('部门任务预计日 estimateTask', () => {
 })
 
 describe('各类记录换算 *Facts', () => {
-  it('出图：已出图等客户确认的看客户确认计划日；完成日取客户确认日', () => {
+  it('设计：设计完成等客户确认的看客户确认计划日；完成日取客户确认日', () => {
     const base = { id: 'D', status: 'CUSTOMER_PENDING' as const, planDate: d('2026-10-10'), drawnDate: d('2026-10-09'), needsCustomerConfirm: true, customerPlanDate: d('2026-10-20'), customerConfirmedDate: null }
     expect(drawingFacts(base)).toMatchObject({ done: false, planDay: '2026-10-20' })
     expect(drawingFacts({ ...base, status: 'DONE', customerConfirmedDate: d('2026-10-18') })).toMatchObject({ done: true, doneDay: '2026-10-18' })

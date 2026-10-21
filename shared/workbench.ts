@@ -16,7 +16,7 @@ const DAY_MS = 86_400_000
 const dayMs = (day: string) => Date.parse(`${day}T00:00:00Z`)
 const fmt = (ms: number) => new Date(ms).toISOString().slice(0, 10)
 
-/** 本周日（周一到周日算一周，与出图任务"本周到期"一致）；today 是周日时就是 today */
+/** 本周日（周一到周日算一周，与设计任务"本周到期"一致）；today 是周日时就是 today */
 export function weekEndDay(today: string): string {
   const ms = dayMs(today)
   const dow = (new Date(ms).getUTCDay() + 6) % 7 // 周一 0 … 周日 6

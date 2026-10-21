@@ -379,8 +379,8 @@ async function collectW6(now: Date, t: Thresholds, offDays: string[]): Promise<T
 }
 
 /**
- * W7 出图逾期（R11）：未完成、未取消的出图任务，判定见 drawings/constants.ts judgeW7
- * （计划完成日前 N 天仍未出图黄、已过计划完成日红；已出图、需要客户确认的，超客户确认计划日黄 → 红）。
+ * W7 设计逾期（R11）：未完成、未取消的设计任务，判定见 drawings/constants.ts judgeW7
+ * （计划完成日前 N 天仍未完成设计黄、已过计划完成日红；设计完成、需要客户确认的，超客户确认计划日黄 → 红）。
  * 责任人：设计负责人，没指定时是技术部负责人；责任部门是技术部（黄色起通知技术部负责人、工单项目经理，红色再加项目部负责人、分管领导）。
  * 只看 QMS 里还在（未删除）的工单。红色不转异常。
  */
@@ -410,7 +410,7 @@ async function collectW7(now: Date, t: Thresholds, offDays: string[]): Promise<T
       deptNames: [TECH_DEPT],
       startAt: r.trigger === 'CONFIRM_OVERDUE' ? d.customerPlanDate! : d.planDate,
       level: r.level,
-      subject: `出图 ${d.componentName}（${DRAWING_STATUS_TEXT[d.status]}）`,
+      subject: `设计 ${d.componentName}（${DRAWING_STATUS_TEXT[d.status]}）`,
       summary: w7Summary(r, d, owner),
     })
   }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 项目部总计划（R14）：一个工单一份主线计划，部门记录（出图 / 采购 / 工序 / 装配节点）挂到节点上。
+ * 项目部总计划（R14）：一个工单一份主线计划，部门记录（设计 / 采购 / 工序 / 装配节点）挂到节点上。
  *   选工单 → 节点表：基线 / 当前计划 / 预计 / 实际日期、责任部门、确认状态、挂靠任务数、逾期数；展开看挂靠任务（可跳到各自页面）。
  *   顶部：合同交期、预计交期、拖期天数、未挂节点的部门记录条数。
  *   项目经理、项目部、管理员可按模板生成、增删改节点、发布（发布后改日期 / 加删节点要写原因，记调整记录）；
@@ -315,8 +315,8 @@ const logColumns = [
         </a-descriptions-item>
         <a-descriptions-item label="未挂节点的部门记录">
           <span v-if="!data.unlinked.total" class="muted">0</span>
-          <span v-else :class="{ warn: published }" :title="`出图 ${data.unlinked.drawing}，采购 ${data.unlinked.purchase}，工序 ${data.unlinked.step}，装配 ${data.unlinked.assembly}`">
-            {{ data.unlinked.total }} 条（出图 {{ data.unlinked.drawing }} / 采购 {{ data.unlinked.purchase }} / 工序 {{ data.unlinked.step }} / 装配 {{ data.unlinked.assembly }}）
+          <span v-else :class="{ warn: published }" :title="`设计 ${data.unlinked.drawing}，采购 ${data.unlinked.purchase}，工序 ${data.unlinked.step}，装配 ${data.unlinked.assembly}`">
+            {{ data.unlinked.total }} 条（设计 {{ data.unlinked.drawing }} / 采购 {{ data.unlinked.purchase }} / 工序 {{ data.unlinked.step }} / 装配 {{ data.unlinked.assembly }}）
           </span>
         </a-descriptions-item>
         <a-descriptions-item label="合同交期">{{ data.workOrder.deliveryDate ?? '—' }}</a-descriptions-item>
@@ -416,7 +416,7 @@ const logColumns = [
           </template>
         </template>
         <template #expandedRowRender="{ record }">
-          <a-empty v-if="!record.tasks.length" description="还没有部门记录挂在这个节点上（在出图任务、采购行、工序、装配节点里选“所属总计划节点”）" />
+          <a-empty v-if="!record.tasks.length" description="还没有部门记录挂在这个节点上（在设计任务、采购行、工序、装配节点里选“所属总计划节点”）" />
           <a-table v-else :columns="taskColumns" :data-source="record.tasks" :row-key="(t: PlanTask) => `${t.kind}:${t.id}`" size="small" :pagination="false">
             <template #bodyCell="{ column: c, record: t }">
               <template v-if="c.key === 'name'"><NuxtLink :to="t.link">{{ t.name }}</NuxtLink></template>

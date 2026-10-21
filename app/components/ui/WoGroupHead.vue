@@ -9,7 +9,7 @@ const props = withDefaults(
     nodes?: { id: string; seq: number; name: string }[]
     done: number
     total: number
-    /** 完成度的说法：到货、出图完成、已签收、已付 */
+    /** 完成度的说法：到货、设计完成、已签收、已付 */
     label: string
     count: number
     unit?: string

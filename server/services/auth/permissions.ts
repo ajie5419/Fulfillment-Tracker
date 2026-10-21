@@ -38,7 +38,7 @@ const isPM = (ctx: RoleContext, wo: string | null | undefined) => !!wo && ctx.pm
 // ───────────── 操作（第三节 ★ 行）─────────────
 
 /**
- * drawing：建/改/删出图任务、录/撤客户确认 —— 技术部、管理员
+ * drawing：建/改/删设计任务、录/撤客户确认 —— 技术部、管理员
  * release：建发放单 —— 技术部、管理员（作废仍限发放人或管理员，在发放服务里判断）
  * purchase：建/改/删采购行、Excel 导入、手工标到货/撤销 —— 采购部、该工单项目经理、管理员
  * payment：提付款申请 —— 采购部、该工单项目经理、管理员
@@ -65,7 +65,7 @@ export interface OperationTarget {
 }
 
 export const OPERATION_DENIED: Record<Operation, string> = {
-  drawing: '只有技术部或管理员可以编辑出图任务',
+  drawing: '只有技术部或管理员可以编辑设计任务',
   release: '只有技术部或管理员可以新建发放单',
   purchase: '只有采购部、该工单项目经理或管理员可以修改采购行或登记到货',
   payment: '只有采购部、该工单项目经理或管理员可以提付款申请',
@@ -131,7 +131,7 @@ export const canSeeOverview = isLeaderLike
 
 /**
  * 菜单分区（"每日"组人人都有，不在这里）：
- *   tech = 出图任务 + 发放签收；purchase = 采购到货 + 付款申请；production = 齐套 + 工件与工序链 + 路线模板 + 待确认匹配；
+ *   tech = 设计任务 + 发放签收；purchase = 采购到货 + 付款申请；production = 齐套 + 工件与工序链 + 路线模板 + 待确认匹配；
  *   kitting = 齐套；releases = 发放签收；payments = 付款申请；overview = 领导总览。
  * 页面本身不拦，只是不在菜单里显示（从提醒链接点进去仍能只读查看）。
  */

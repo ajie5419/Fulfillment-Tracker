@@ -1,6 +1,6 @@
 /**
- * 设计出图任务（R11）：真实 MySQL 上直接调用服务层，用 now 注入"快进时钟"。
- * 覆盖：新建 → 标记出图（只有负责人 / 管理员）→ 一键发放（发放单关联任务）→ "可以开工"门槛（物料齐了也要等图纸）、
+ * 设计任务（R11）：真实 MySQL 上直接调用服务层，用 now 注入"快进时钟"。
+ * 覆盖：新建 → 标记设计完成（只有负责人 / 管理员）→ 一键发放（发放单关联任务）→ "可以开工"门槛（物料齐了也要等图纸）、
  * 发放单作废回退、客户确认节点、取消 / 改关联工件、W7 判定与升级阶梯（不转异常）、列表筛选与截断前排序、设计负荷、看板。
  * 运行：TEST_DATABASE_URL=mysql://…/fulfillment_test pnpm test:integration
  */
@@ -23,7 +23,7 @@ type Services = {
   todos: typeof import('../../server/services/flow/todos')
 }
 
-describe.skipIf(!DB)('设计出图任务（R11）', () => {
+describe.skipIf(!DB)('设计任务（R11）', () => {
   let db: PrismaClient
   let s: Services
   const WO = 'T-WO-R11'
@@ -121,7 +121,7 @@ describe.skipIf(!DB)('设计出图任务（R11）', () => {
   const readyTodos = (partId: string) => db.todo.findMany({ where: { refType: 'part', refId: partId, action: 'READY_TO_START' }, orderBy: { createdAt: 'asc' } })
   const statusOf = async (id: string) => (await db.drawingTask.findUniqueOrThrow({ where: { id } })).status
 
-  it('创建 → 出图 → 发放 → 可以开工：物料齐了也要等图纸；发放单作废回退、再发放再发', async () => {
+  it('创建 → 设计完成 → 发放 → 可以开工：物料齐了也要等图纸；发放单作废回退、再发放再发', async () => {
     const part = await makePart()
     const line = await s.pur.createLine({ workOrderNumber: WO, partId: part.id, materialName: '回转支承', quantity: 1, needDate: dayOff(20) }, 'u-pm')
     const t = await task({ partIds: [part.id] })
@@ -134,14 +134,14 @@ describe.skipIf(!DB)('设计出图任务（R11）', () => {
     expect((await s.pur.confirmArrival(line.id, { source: 'PC' }, 'u-worker')).readySent).toBe(false)
     expect(await readyTodos(part.id)).toHaveLength(0)
 
-    // 还没出图不能发放
-    await expect(release(t.id)).rejects.toThrow('还没有出图')
-    // 只有负责人本人或管理员能标记出图；出图日不能晚于今天
+    // 还没完成设计不能发放
+    await expect(release(t.id)).rejects.toThrow('还没有完成设计')
+    // 只有负责人本人或管理员能标记设计完成；设计完成日不能晚于今天
     await expect(s.dr.markDrawn(t.id, null, STRANGER)).rejects.toThrow('只有设计负责人本人或管理员')
     await expect(s.dr.markDrawn(t.id, dayOff(1), DESIGNER)).rejects.toThrow('不能晚于今天')
     expect(await s.dr.markDrawn(t.id, null, DESIGNER)).toMatchObject({ status: 'DRAWN', readySent: 0 })
     expect(await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).toMatchObject({ drawnDate: today(), drawnBy: 'u-des' })
-    await expect(s.dr.markDrawn(t.id, null, ADMIN)).rejects.toThrow('已经标记过出图')
+    await expect(s.dr.markDrawn(t.id, null, ADMIN)).rejects.toThrow('已经标记过设计完成')
     expect(await readyTodos(part.id)).toHaveLength(0)
 
     // 发放：工单要一致、类型只能图纸 / 设计变更
@@ -154,12 +154,12 @@ describe.skipIf(!DB)('设计出图任务（R11）', () => {
     expect(todos).toHaveLength(1)
     expect(todos[0]).toMatchObject({ ownerId: 'u-worker', status: 'OPEN' })
     const mine = await s.todos.listMyTodos('u-worker')
-    expect(mine.find((x) => x.action === 'READY_TO_START')?.suggestion).toContain('图纸已发放（1 个出图任务）')
+    expect(mine.find((x) => x.action === 'READY_TO_START')?.suggestion).toContain('图纸已发放（1 个设计任务）')
 
-    // 已发放的不能撤销出图
+    // 已发放的不能撤销设计完成
     await expect(s.dr.undoDrawn(t.id, DESIGNER)).rejects.toThrow('请先作废发放单')
 
-    // 发放单作废 → 任务回到已出图，没处理的"可以开工"作废
+    // 发放单作废 → 任务回到设计完成，没处理的"可以开工"作废
     await s.rel.voidRelease(r1.id, { userId: 'u-des', isAdmin: false })
     expect(await statusOf(t.id)).toBe('DRAWN')
     todos = await readyTodos(part.id)
@@ -170,7 +170,7 @@ describe.skipIf(!DB)('设计出图任务（R11）', () => {
     expect(r2.drawing).toMatchObject({ status: 'DONE', readySent: 1 })
     expect((await readyTodos(part.id)).filter((x) => x.status === 'OPEN')).toHaveLength(1)
 
-    // 再挂一个待出图任务 → 没处理的待办作废
+    // 再挂一个设计中的任务 → 没处理的待办作废
     const t2 = await task({ partIds: [part.id], componentName: '主梁零件图' })
     expect((await readyTodos(part.id)).filter((x) => x.status === 'OPEN')).toHaveLength(0)
     // 取消它 → 挡着的没了，重新发
@@ -182,10 +182,10 @@ describe.skipIf(!DB)('设计出图任务（R11）', () => {
     expect(await s.dr.updateTask(t2.id, { partIds: [] })).toMatchObject({ status: 'PENDING', readySent: 1 })
   })
 
-  it('客户确认是独立节点：发放后待客户确认，确认后才算完成；只挂出图任务的工件也会发"可以开工"', async () => {
+  it('客户确认是独立节点：发放后待客户确认，确认后才算完成；只挂设计任务的工件也会发"可以开工"', async () => {
     const part = await makePart()
     const t = await task({ partIds: [part.id], needsCustomerConfirm: true, customerPlanDate: dayOff(5), componentName: '液压系统' })
-    await expect(s.dr.confirmCustomer(t.id, null, 'u-pm')).rejects.toThrow('还没有出图')
+    await expect(s.dr.confirmCustomer(t.id, null, 'u-pm')).rejects.toThrow('还没有完成设计')
     await s.dr.markDrawn(t.id, dayOff(-1), ADMIN)
     expect((await release(t.id)).drawing).toMatchObject({ status: 'CUSTOMER_PENDING', readySent: 0 })
     expect(await readyTodos(part.id)).toHaveLength(0)
@@ -205,7 +205,7 @@ describe.skipIf(!DB)('设计出图任务（R11）', () => {
     const t4 = await task({ componentName: '不需要确认' })
     await s.dr.markDrawn(t4.id, null, DESIGNER)
     await expect(s.dr.confirmCustomer(t4.id, null, 'u-pm')).rejects.toThrow('不需要客户确认')
-    // 撤销出图（未发放）：回到待出图
+    // 撤销设计完成（未发放）：回到设计中
     expect(await s.dr.undoDrawn(t4.id, DESIGNER)).toMatchObject({ status: 'PENDING' })
     await expect(s.dr.undoDrawn(t4.id, STRANGER)).rejects.toThrow('只有设计负责人本人或管理员')
   })
@@ -247,7 +247,7 @@ describe.skipIf(!DB)('设计出图任务（R11）', () => {
     expect((await db.alert.findFirstOrThrow({ where: { refId: confirm.id, rule: 'W7' } })).level).toBe('RED')
     expect(await w7Issues()).toBe(0)
 
-    // 出图后预警立即消除；取消的下一轮扫描消除
+    // 设计完成后预警立即消除；取消的下一轮扫描消除
     await s.dr.markDrawn(due.id, null, DESIGNER)
     expect((await db.alert.findFirstOrThrow({ where: { refId: due.id, rule: 'W7' } })).status).toBe('CLEARED')
     await s.dr.updateTask(noOwner.id, { cancelled: true })
@@ -259,7 +259,7 @@ describe.skipIf(!DB)('设计出图任务（R11）', () => {
     expect(again.find((x) => x.refId === far.id)).toMatchObject({ level: 'YELLOW' })
     await db.threshold.deleteMany()
 
-    // 提醒跳转：电脑端出图任务页，手机端我的出图任务
+    // 提醒跳转：电脑端设计任务页，手机端我的设计任务
     const alerts = await (await import('../../server/services/alerts/reminders')).listReminders('u-des')
     const w7 = alerts.items.find((i) => i.rule === 'W7')
     expect(w7?.link).toMatch(/^\/drawings\?id=/)
@@ -292,7 +292,7 @@ describe.skipIf(!DB)('设计出图任务（R11）', () => {
     const des = await s.dr.listTasks({ view: 'open', ownerId: 'u-des' }, DESIGNER)
     expect(des.rows.every((r) => r.ownerId === 'u-des')).toBe(true)
     expect(des.rows.find((r) => r.id === late.id)?.permissions.markDrawn).toBe(true)
-    // 待出图在前（按计划日从近到远），已出图在后
+    // 设计中在前（按计划日从近到远），设计完成在后
     expect(des.rows.map((r) => r.status)).toEqual(['PENDING', 'PENDING', 'DRAWN'])
     expect(des.total).toBe(3)
 
@@ -307,6 +307,6 @@ describe.skipIf(!DB)('设计出图任务（R11）', () => {
     await db.reminder.deleteMany({ where: { kind: 'DIGEST' } })
     await s.digest.generateDailyDigest({ force: true })
     const digest = await db.reminder.findFirstOrThrow({ where: { kind: 'DIGEST', userId: 'u-pm' } })
-    expect(digest.title).toContain('出图逾期 2 项')
+    expect(digest.title).toContain('设计逾期 2 项')
   })
 })

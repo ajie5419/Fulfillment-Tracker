@@ -1,4 +1,4 @@
-/** 设计出图任务（R11）接口的 zod 片段。日期一律用 schemas/flow.ts 的 day（拒绝 2026-02-30 这类不存在的日期） */
+/** 设计任务（R11）接口的 zod 片段。日期一律用 schemas/flow.ts 的 day（拒绝 2026-02-30 这类不存在的日期） */
 import { z } from 'zod'
 import { day } from './flow'
 
@@ -37,7 +37,7 @@ export const patchTaskBody = z
   .partial()
   .strict()
 
-/** 标记出图 / 录客户确认：日期默认今天 */
+/** 标记设计完成 / 录客户确认：日期默认今天 */
 export const dateBody = z.object({ date: day.nullish() }).strict()
 
 export const listQuery = z.object({
@@ -45,7 +45,7 @@ export const listQuery = z.object({
   ownerId: z.string().max(64).optional(),
   view: z.enum(['open', 'pending', 'overdue', 'week', 'drawn', 'done', 'cancelled', 'all']).optional(),
   q: z.string().max(100).optional(),
-  /** 1 = 我的出图任务（我是设计负责人的，不受工单可见范围限制） */
+  /** 1 = 我的设计任务（我是设计负责人的，不受工单可见范围限制） */
   mine: z.enum(['0', '1']).optional(),
 })
 

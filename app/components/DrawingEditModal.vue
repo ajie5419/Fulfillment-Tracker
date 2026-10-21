@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * 新建 / 编辑出图任务（R11）：工单、关联工件（可多选，可不选只写部件名称）、部件名称、设计负责人（不选 = 技术部负责人）、
- * 计划完成日、所属总计划节点（R14，工单总计划已发布时必选）、是否需要客户确认 + 客户确认计划日、备注；编辑时还能取消 / 重新启用。出图、客户确认在列表上操作。
+ * 新建 / 编辑设计任务（R11）：工单、关联工件（可多选，可不选只写部件名称）、部件名称、设计负责人（不选 = 技术部负责人）、
+ * 计划完成日、所属总计划节点（R14，工单总计划已发布时必选）、是否需要客户确认 + 客户确认计划日、备注；编辑时还能取消 / 重新启用。设计完成、客户确认在列表上操作。
  */
 const props = defineProps<{ open: boolean; task: DrawingRow | null; workOrderNumber?: string }>()
 const emit = defineEmits<{ close: []; done: [id: string] }>()
@@ -111,7 +111,7 @@ async function submit() {
       emit('done', props.task.id)
     } else {
       const r = await drawingSend<{ id: string; planWarning?: string | null }>('/api/drawings', 'POST', { ...body, workOrderNumber: form.workOrderNumber })
-      message.success('已新建出图任务')
+      message.success('已新建设计任务')
       if (r.planWarning) message.warning(r.planWarning)
       emit('done', r.id)
     }
@@ -124,7 +124,7 @@ async function submit() {
 </script>
 
 <template>
-  <a-modal :open="open" :title="editing ? '编辑出图任务' : '新建出图任务'" ok-text="保存" :confirm-loading="saving" width="720px" @ok="submit" @cancel="emit('close')">
+  <a-modal :open="open" :title="editing ? '编辑设计任务' : '新建设计任务'" ok-text="保存" :confirm-loading="saving" width="720px" @ok="submit" @cancel="emit('close')">
     <a-form layout="horizontal" :label-col="{ span: 5 }" :wrapper-col="{ span: 18 }">
       <a-form-item label="工单" required>
         <a-select
@@ -138,7 +138,7 @@ async function submit() {
       </a-form-item>
       <a-form-item label="关联工件">
         <a-select v-model:value="form.partIds" mode="multiple" allow-clear option-filter-prop="label" :placeholder="form.workOrderNumber ? '可多选，可不选（只写部件名称）' : '先选工单'" :options="partOptions" />
-        <div class="muted">关联的工件在出图完成并发放前不发"可以开工"</div>
+        <div class="muted">关联的工件在设计完成并发放前不发"可以开工"</div>
       </a-form-item>
       <a-form-item label="部件名称" required><a-input v-model:value="form.componentName" :maxlength="191" placeholder="如 主梁总图、液压系统原理图" /></a-form-item>
       <a-form-item label="设计负责人">
@@ -146,7 +146,7 @@ async function submit() {
       </a-form-item>
       <a-form-item label="计划完成日" required>
         <a-date-picker v-model:value="form.planDate" value-format="YYYY-MM-DD" />
-        <div class="muted">计划完成日前 2 天（可在设置里改）还没出图黄色预警，过了计划完成日红色</div>
+        <div class="muted">计划完成日前 2 天（可在设置里改）还没完成设计黄色预警，过了计划完成日红色</div>
       </a-form-item>
       <a-form-item label="所属总计划节点">
         <PlanNodeSelect v-model:value="form.planNodeId" :work-order-number="form.workOrderNumber" :record-date="form.planDate" @pick="(d) => (form.planDate ||= d)" />
@@ -154,7 +154,7 @@ async function submit() {
       <a-form-item label="客户确认">
         <a-checkbox v-model:checked="form.needsCustomerConfirm">需要客户确认</a-checkbox>
         <a-date-picker v-if="form.needsCustomerConfirm" v-model:value="form.customerPlanDate" value-format="YYYY-MM-DD" placeholder="客户确认计划日" style="margin-left: 8px" />
-        <div v-if="form.needsCustomerConfirm" class="muted">出图后超过客户确认计划日还没确认会预警；客户确认后任务才算完成</div>
+        <div v-if="form.needsCustomerConfirm" class="muted">设计完成后超过客户确认计划日还没确认会预警；客户确认后任务才算完成</div>
       </a-form-item>
       <a-form-item label="备注"><a-input v-model:value="form.note" :maxlength="500" /></a-form-item>
       <a-form-item v-if="editing" label="不再跟踪">

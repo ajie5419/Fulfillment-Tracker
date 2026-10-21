@@ -106,7 +106,7 @@ describe('操作权限 canOperate', () => {
     expect(inDept(prod, 'PRODUCTION')).toBe(true)
   })
 
-  it('出图任务、发放单：技术部、管理员', () => {
+  it('设计任务、发放单：技术部、管理员', () => {
     for (const op of ['drawing', 'release'] as const) {
       expect(canOperate(tech, op)).toBe(true)
       expect(canOperate(techHead, op)).toBe(true)

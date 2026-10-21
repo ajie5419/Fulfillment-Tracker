@@ -175,7 +175,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       'u-008': { name: '测试设计员', active: true }, // R9 发放签收的发放人（演示数据写入；QMS 模拟数据里没有）
       'u-009': { name: '测试采购员', active: true }, // R10 采购部负责人兼采购员（演示数据写入）
       'u-010': { name: '测试财务', active: true }, // R10 财务：付款申请标记已付（演示数据写入）
-      'u-011': { name: '测试技术负责人', active: true }, // R11 技术部负责人：出图逾期 W7 黄色起收到（演示数据写入）
+      'u-011': { name: '测试技术负责人', active: true }, // R11 技术部负责人：设计逾期 W7 黄色起收到（演示数据写入）
       'u-012': { name: '测试焊工', active: true }, // R13 组焊班（部门对照算生产部）：开工/完工，菜单 每日+生产+发放签收
       'u-013': { name: '测试检验员', active: true }, // R13 检验科（算质量部）：菜单 每日+生产，只读
       'u-014': { name: '测试行政', active: true }, // R13 行政部（其他部门）：菜单只有 每日

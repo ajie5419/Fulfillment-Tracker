@@ -1,16 +1,16 @@
 /**
- * 设计出图任务（R11）的常量与纯函数：文案、状态推导、W7 判定、逾期口径。不碰数据库，便于单测。
+ * 设计任务（R11）的常量与纯函数：文案、状态推导、W7 判定、逾期口径。不碰数据库，便于单测。
  */
 import type { AlertLevel, DrawingTaskStatus } from '@prisma/client'
 import { DAY_MS, type RuleThreshold, dateFieldDay, dayDiff, overdueDaysExcludingOffDays, shanghaiDay } from '../alerts/rules'
 import { BUSINESS_DEPT_NAME } from '../../../shared/business-depts'
 
-/** 默认责任部门：出图任务没指定设计负责人时派给这个部门的负责人（notify_role DEPT_HEAD + 部门名称）；W7 黄色起通知它的负责人 */
+/** 默认责任部门：设计任务没指定设计负责人时派给这个部门的负责人（notify_role DEPT_HEAD + 部门名称）；W7 黄色起通知它的负责人 */
 export const TECH_DEPT = BUSINESS_DEPT_NAME.TECH
 
 export const DRAWING_STATUS_TEXT: Record<DrawingTaskStatus, string> = {
-  PENDING: '待出图',
-  DRAWN: '已出图',
+  PENDING: '设计中',
+  DRAWN: '设计完成',
   CUSTOMER_PENDING: '待客户确认',
   DONE: '已完成',
   CANCELLED: '已取消',
@@ -36,7 +36,7 @@ export interface DrawingFacts {
 
 /**
  * 状态由事实推出（不单独维护，免得几个动作各改各的对不上）：
- *   已取消；没出图 = 待出图；出图了但图纸还没发放 = 已出图；已发放、需要客户确认但还没确认 = 待客户确认；否则 已完成。
+ *   已取消；没完成设计 = 设计中；设计完成了但图纸还没发放 = 设计完成；已发放、需要客户确认但还没确认 = 待客户确认；否则 已完成。
  * 客户确认可以在发放之前录（先给客户看、确认后再发车间），这时发放后直接 已完成。
  */
 export function deriveStatus(f: DrawingFacts): DrawingTaskStatus {
@@ -47,7 +47,7 @@ export function deriveStatus(f: DrawingFacts): DrawingTaskStatus {
   return 'DONE'
 }
 
-/** 能从这个任务一键发放（已出图之后，含已完成的再发一版） */
+/** 能从这个任务一键发放（设计完成之后，含已完成的再发一版） */
 export const canReleaseFrom = (status: DrawingTaskStatus) => status === 'DRAWN' || status === 'CUSTOMER_PENDING' || status === 'DONE'
 
 // ───────────── W7 ─────────────
@@ -66,11 +66,11 @@ export interface W7Input {
 export interface W7Result {
   level: AlertLevel | null
   /**
-   * DRAW_DUE = 计划完成日前 N 天内仍未出图；DRAW_OVERDUE = 已过计划完成日仍未出图；
-   * CONFIRM_OVERDUE = 已出图、需要客户确认，超过客户确认计划日仍未确认；null = 不在关注范围
+   * DRAW_DUE = 计划完成日前 N 天内仍未完成设计；DRAW_OVERDUE = 已过计划完成日仍未完成设计；
+   * CONFIRM_OVERDUE = 设计完成、需要客户确认，超过客户确认计划日仍未确认；null = 不在关注范围
    */
   trigger: 'DRAW_DUE' | 'DRAW_OVERDUE' | 'CONFIRM_OVERDUE' | null
-  /** 超出计划日（出图或客户确认）的天数，不含停工日 */
+  /** 超出计划日（设计或客户确认）的天数，不含停工日 */
   overdueDays: number
   /** 距计划完成日还有几天（自然日，已过为负）；客户确认时是距客户确认计划日 */
   daysLeft: number
@@ -79,10 +79,10 @@ export interface W7Result {
 const NONE = (daysLeft = 0): W7Result => ({ level: null, trigger: null, overdueDays: 0, daysLeft })
 
 /**
- * W7 出图逾期（只看未完成、未取消的任务）：
- *   没出图：距计划完成日 ≤ N 天（remindHours / 24，自然日，当天也算）→ 黄；已过计划完成日 → 红
+ * W7 设计逾期（只看未完成、未取消的任务）：
+ *   没完成设计：距计划完成日 ≤ N 天（remindHours / 24，自然日，当天也算）→ 黄；已过计划完成日 → 红
  *     （与 W6 一致，超期天数不含停工日；已过但中间全是停工日时还不计超期，先保持黄）。
- *   已出图、需要客户确认、还没确认、有客户确认计划日：超过计划日（不含停工日）≥ 黄阈值 → 黄，≥ 红阈值 → 红。
+ *   设计完成、需要客户确认、还没确认、有客户确认计划日：超过计划日（不含停工日）≥ 黄阈值 → 黄，≥ 红阈值 → 红。
  * 不转异常。
  */
 export function judgeW7(input: W7Input, t: RuleThreshold): W7Result {
@@ -108,8 +108,8 @@ export function judgeW7(input: W7Input, t: RuleThreshold): W7Result {
 /** W7 提醒标题里冒号后面的部分 */
 export function w7Summary(r: W7Result, task: { planDate: Date; customerPlanDate: Date | null }, ownerName: string): string {
   const plan = dateFieldDay(task.planDate)
-  if (r.trigger === 'DRAW_OVERDUE') return `计划 ${plan} 完成，${r.overdueDays > 0 ? `已超 ${r.overdueDays} 天` : '已过计划日'}仍未出图（${ownerName}）`
-  if (r.trigger === 'DRAW_DUE') return `计划 ${plan} 完成，${r.daysLeft > 0 ? `还剩 ${r.daysLeft} 天` : '就是今天'}，仍未出图（${ownerName}）`
+  if (r.trigger === 'DRAW_OVERDUE') return `计划 ${plan} 完成，${r.overdueDays > 0 ? `已超 ${r.overdueDays} 天` : '已过计划日'}仍未完成设计（${ownerName}）`
+  if (r.trigger === 'DRAW_DUE') return `计划 ${plan} 完成，${r.daysLeft > 0 ? `还剩 ${r.daysLeft} 天` : '就是今天'}，仍未完成设计（${ownerName}）`
   if (r.trigger === 'CONFIRM_OVERDUE') return `客户确认计划 ${dateFieldDay(task.customerPlanDate!)}，已超 ${r.overdueDays} 天仍未确认（${ownerName}）`
   return ''
 }
@@ -125,7 +125,7 @@ export interface OverdueFacts {
 }
 
 /**
- * 出图逾期：待出图且已过计划完成日；或已出图、需要客户确认、还没确认且已过客户确认计划日（自然日，当天到期不算）。
+ * 设计逾期：设计中且已过计划完成日；或设计完成、需要客户确认、还没确认且已过客户确认计划日（自然日，当天到期不算）。
  * 与数据库筛选 services/drawings/drawings.ts overdueWhere 一致。
  */
 export function isOverdue(t: OverdueFacts, now: Date): boolean {

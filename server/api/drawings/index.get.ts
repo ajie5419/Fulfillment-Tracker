@@ -2,8 +2,8 @@ import { listTasks } from '../../services/drawings/drawings'
 import { listQuery } from '../../schemas/drawings'
 
 /**
- * 出图任务列表 + 统计（待出图、已出图、待客户确认、逾期、本周到期）。只列可见工单上的；
- * mine=1 时是"我的出图任务"：我是设计负责人的，不受工单可见范围限制。
+ * 设计任务列表 + 统计（设计中、设计完成、待客户确认、逾期、本周到期）。只列可见工单上的；
+ * mine=1 时是"我的设计任务"：我是设计负责人的，不受工单可见范围限制。
  */
 export default defineFlowHandler(async (event, user) => {
   const q = parseQuery(event, listQuery)

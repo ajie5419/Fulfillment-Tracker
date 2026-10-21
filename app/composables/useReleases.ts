@@ -19,14 +19,14 @@ export const RECIPIENT_ROLE_OPTIONS = [
 
 export type ReleaseTypeKey = keyof typeof RELEASE_TYPE_TEXT
 
-/** 新建发放单弹窗的预填（R11 出图任务一键发放） */
+/** 新建发放单弹窗的预填（R11 设计任务一键发放） */
 export interface ReleasePrefill {
   type?: ReleaseTypeKey
   workOrderNumber: string
   partIds?: string[]
   description?: string
   drawingTaskId?: string
-  /** 弹窗标题里的说明，如"出图任务：主梁总图" */
+  /** 弹窗标题里的说明，如"设计任务：主梁总图" */
   label?: string
 }
 
