@@ -232,7 +232,6 @@ function onCardClick(c: Card) {
               :class="[`tone-${c.tone}`, { unread: c.unread, read: c.kind === 'reminder' && !c.unread, clickable: !!c.reminder }]"
               @click="onCardClick(c)"
             >
-              <span class="bar" aria-hidden="true" />
               <UiStatusIcon :kind="toneIcon(c.tone)" :tone="c.tone === 'normal' ? 'primary' : c.tone" :size="16" class="icon" />
               <div class="main">
                 <div class="title-row">
@@ -300,9 +299,8 @@ function onCardClick(c: Card) {
 .clear { font-size: 13px; }
 
 /* 置顶：每日汇总、同步故障 */
-.digest { cursor: pointer; background: var(--ft-card-bg); border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); border-left: 4px solid var(--ft-primary); padding: 12px 16px; }
-.digest.lv-RED { border-left-color: var(--ft-late); }
-.digest.lv-YELLOW { border-left-color: var(--ft-risk); }
+/* 设计改版：去掉左侧色条（用户意见），级别由标题前的图标和标签表达 */
+.digest { cursor: pointer; background: var(--ft-card-bg); border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); border: 1px solid var(--ft-border); padding: 12px 16px; }
 .digest-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .digest-title b { color: var(--ft-text); }
 .digest:not(.unread) .digest-title b { font-weight: normal; color: var(--ft-text-2); }
@@ -316,18 +314,15 @@ function onCardClick(c: Card) {
 .b-OVERDUE .dot { background: var(--ft-late); }
 .b-TODAY .dot { background: var(--ft-risk); }
 .b-WEEK .dot { background: var(--ft-primary); }
-.b-LATER .dot { background: #8fb4e3; }
+.b-LATER .dot { background: color-mix(in srgb, var(--ft-primary) 50%, var(--ft-card-bg)); }
 .cnt { padding: 0 8px; border-radius: 10px; background: var(--ft-fill); color: var(--ft-text-2); font-size: 12px; font-weight: normal; line-height: 20px; }
 .hint { font-size: 12px; font-weight: normal; color: var(--ft-text-3); }
 .cards { display: flex; flex-direction: column; gap: 8px; }
 
-/* 卡片：左侧状态色条 + 图标 */
-.wcard { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px 12px 18px; border: 1px solid var(--ft-border); border-radius: 10px; background: var(--ft-card-bg); overflow: hidden; }
+/* 卡片：状态由图标 + 级别标签表达（设计改版去掉了左侧色条） */
+.wcard { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid var(--ft-border); border-radius: 10px; background: var(--ft-card-bg); overflow: hidden; }
 .wcard.clickable { cursor: pointer; }
-.wcard.clickable:hover { border-color: #c9d3e0; background: #fbfcfe; }
-.bar { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--ft-primary); }
-.tone-late .bar { background: var(--ft-late); }
-.tone-risk .bar { background: var(--ft-risk); }
+.wcard.clickable:hover { border-color: var(--ft-text-3); background: var(--ft-fill); }
 .icon { margin-top: 3px; }
 .main { flex: 1; min-width: 0; }
 /* 标题一行：标签、标题、未读、附加标签都是行内的，长标题自然折行，不把标签挤到单独一行 */
@@ -335,7 +330,7 @@ function onCardClick(c: Card) {
 .title-row > * { vertical-align: middle; }
 .title-row > * + * { margin-left: 8px; }
 .kind { display: inline-block; font-size: 12px; line-height: 20px; padding: 0 6px; border-radius: 4px; background: var(--ft-fill); color: var(--ft-text-2); }
-.kind.todo { background: #e8f1fc; color: #1f5fa8; }
+.kind.todo { background: var(--ft-primary-bg); color: var(--ft-primary-text); }
 .tone-late .kind.reminder { background: var(--ft-late-bg); color: var(--ft-late-text); }
 .tone-risk .kind.reminder { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
 .title { color: var(--ft-text); font-size: 14px; line-height: 22px; word-break: break-word; }

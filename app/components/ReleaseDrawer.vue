@@ -193,9 +193,9 @@ const receiptColumns = [
 
 <style scoped>
 .block { margin-bottom: 16px; }
-.muted { color: #999; font-size: 12px; }
+.muted { color: var(--ft-text-2); font-size: 12px; }
 .pre { white-space: pre-wrap; }
-.thumb { width: 96px; height: 96px; object-fit: cover; border-radius: 4px; border: 1px solid #f0f0f0; }
+.thumb { width: 96px; height: 96px; object-fit: cover; border-radius: 4px; border: 1px solid var(--ft-border); }
 .part-steps { margin-bottom: 8px; }
 .step { margin-right: 12px; white-space: nowrap; }
 .footer { margin-top: 24px; }

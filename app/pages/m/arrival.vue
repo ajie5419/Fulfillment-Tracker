@@ -150,7 +150,7 @@ const sourceText = { MOBILE: '手机确认', PC: '电脑确认', QMS_INSPECTION:
 </template>
 
 <style scoped>
-.summary { margin: 12px 12px 0; padding: 14px 16px; background: #fff; border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); }
+.summary { margin: 12px 12px 0; padding: 14px 16px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); }
 .summary-name { margin-top: 6px; font-size: 17px; }
 .late { font-size: 12px; font-weight: 600; }
 .pad { padding: 8px 16px; }

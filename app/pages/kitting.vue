@@ -111,15 +111,16 @@ function showWorkOrder(wo: string, id?: string) {
   focusId.value = id ?? null
 }
 
+/** 列宽按内容收紧（设计规范）：合计约 1100px，1440 宽屏幕不用横向滚动 */
 const crossColumns = [
-  { title: '需求日', key: 'needDate', width: 130 },
-  { title: '工单', key: 'wo', width: 140 },
+  { title: '需求日', key: 'needDate', width: 110 },
+  { title: '工单', key: 'wo', width: 130 },
   { title: '装配节点', key: 'name' },
-  { title: '总计划节点', key: 'planNode', width: 150 },
-  { title: '负责人', key: 'owner', width: 140 },
-  { title: '齐套率', key: 'percent', width: 200 },
+  { title: '总计划节点', key: 'planNode', width: 110 },
+  { title: '负责人', key: 'owner', width: 100 },
+  { title: '齐套率', key: 'percent', width: 180 },
   { title: '缺件', key: 'short', width: 190 },
-  { title: '预警', key: 'alert', width: 70 },
+  { title: '预警', key: 'alert', width: 64 },
 ]
 </script>
 
@@ -138,7 +139,13 @@ const crossColumns = [
       </template>
     </UiStatCard>
   </div>
-  <a-card title="齐套">
+  <a-card>
+    <template #title>
+      <span class="ft-title">齐套
+        <UiHelpTip label="齐套说明">齐套率 = 已就绪项 ÷ 应有项：工件完成（最后一道工序完成）算就绪，关键物料到货算就绪，已取消的物料不计入。同一工件 / 物料可以挂在多个节点上。
+      <template v-if="stats">需求日前 {{ stats.yellowDays }} 天内仍未齐套黄色预警，{{ stats.redDays ? `前 ${stats.redDays} 天内（含当天）` : '当天' }}或已过红色（阈值在设置里改）；</template>新建、编辑节点限生产经理、该工单项目经理、管理员。</UiHelpTip>
+      </span>
+    </template>
     <template #extra>
       <a-space wrap>
         <a-select
@@ -151,15 +158,11 @@ const crossColumns = [
         />
         <a-checkbox v-model:checked="filter.incomplete">只看未齐套</a-checkbox>
         <a-tag v-if="filter.dueSoon" color="red" closable @close="filter.dueSoon = false">需求日临近</a-tag>
-        <a-button @click="refresh()">刷新</a-button>
+        <UiRefreshButton @click="refresh()" />
         <a-button v-if="data.canCreate" type="primary" @click="openEdit(null)">新建装配节点</a-button>
       </a-space>
     </template>
 
-    <p class="muted">
-      齐套率 = 已就绪项 ÷ 应有项：工件完成（最后一道工序完成）算就绪，关键物料到货算就绪，已取消的物料不计入。同一工件 / 物料可以挂在多个节点上。
-      <template v-if="stats">需求日前 {{ stats.yellowDays }} 天内仍未齐套黄色预警，{{ stats.redDays ? `前 ${stats.redDays} 天内（含当天）` : '当天' }}或已过红色（阈值在设置里改）；</template>新建、编辑节点限生产经理、该工单项目经理、管理员。
-    </p>
     <template v-if="standalone">
       <div class="section muted">提醒的节点（你是负责人；该工单不在你的可见范围，只能看这个节点）<a @click="standalone = null">收起</a></div>
       <KittingNodeCard :node="standalone" focus :linkable="false" :window-days="stats?.windowDays ?? 5" @edit="openEdit" @remove="remove" />
@@ -192,7 +195,7 @@ const crossColumns = [
       size="small"
       :pagination="{ pageSize: 50, hideOnSinglePage: true }"
       :expand-row-by-click="false"
-      :scroll="{ x: 1170 }"
+      :scroll="{ x: 1100 }"
     >
       <template #emptyText><a-empty :description="filter.incomplete ? '没有未齐套的装配节点' : '还没有装配节点'" /></template>
       <template #expandedRowRender="{ record }">
@@ -238,7 +241,7 @@ const crossColumns = [
 .avg :deep(.txt) { font-size: 12px; }
 .reasons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .reason { margin: 0; font-size: 11px; line-height: 18px; }
-.muted { color: #999; font-size: 12px; }
+.muted { color: var(--ft-text-2); font-size: 12px; }
 .warn { color: var(--ft-late); }
 .small { font-size: 12px; }
 .ready { margin-top: 6px; }

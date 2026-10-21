@@ -155,7 +155,7 @@ const logText = (l: Detail['logs'][number]) =>
 .detail { padding: 16px 4px; background: var(--ft-page-bg); min-height: 100%; box-sizing: border-box; }
 .detail-head { display: flex; align-items: center; gap: 8px; padding: 0 44px 0 12px; flex-wrap: wrap; }
 .detail-no { font-size: 18px; font-weight: 600; }
-.desc-full { margin: 10px 12px 12px; padding: 12px 14px; background: #fff; border-radius: var(--ft-card-radius); font-size: 15px; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: var(--ft-card-shadow); }
+.desc-full { margin: 10px 12px 12px; padding: 12px 14px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); font-size: 15px; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .photos { display: flex; gap: 8px; padding: 12px; flex-wrap: wrap; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px; }
 .actions .van-button { min-width: 72px; }

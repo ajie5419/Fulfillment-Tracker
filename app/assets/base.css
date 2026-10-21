@@ -5,10 +5,11 @@
  */
 :root {
   --ft-primary: #2a78d6;
-  --ft-page-bg: #eef1f5;
+  /* 设计规范定稿：中性浅灰底、卡片不用阴影（电脑端和手机端共用） */
+  --ft-page-bg: #eceef1;
   --ft-card-bg: #fff;
   --ft-card-radius: 14px;
-  --ft-card-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 2px 8px rgba(16, 24, 40, 0.05);
+  --ft-card-shadow: none;
   --ft-text: #1b2430;
   --ft-text-2: #5b6575;
   --ft-text-3: #8a93a3;
@@ -34,21 +35,24 @@
   --ft-done-text: #0a7a0a;
   --ft-upstream-text: #a8481f;
   --ft-late-text: #b42828;
+  /* 主色浅底与主色文字（设计改版试点：把页面里重复出现的这两个值提升为变量） */
+  --ft-primary-bg: #e7f0fb;
+  --ft-primary-text: #1d5fae;
 }
 
-html, body { margin: 0; background: #f5f6f8; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+html, body { margin: 0; background: var(--ft-page-bg); font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
 
 /* ───── 电脑端通用 ───── */
 .ft-app { background: var(--ft-page-bg); color: var(--ft-text); }
 /* 页面里原有的 a-card 统一成圆角卡片 */
-.ft-app .ant-layout-content > .ant-card,
-.ft-app .ant-layout-content > .ant-space > .ant-space-item > .ant-card { border-radius: var(--ft-card-radius); border: none; box-shadow: var(--ft-card-shadow); }
-.ft-app .ant-layout-content > .ant-card > .ant-card-head { border-bottom-color: var(--ft-border); }
-.ft-app .ant-layout-content > .ant-card > .ant-card-head .ant-card-head-title { font-size: 17px; font-weight: 600; color: var(--ft-text); flex: none; margin-right: 16px; }
+.ft-app .ft-content > .ant-card,
+.ft-app .ft-content > .ant-space > .ant-space-item > .ant-card { border-radius: var(--ft-card-radius); border: 1px solid var(--ft-border); box-shadow: var(--ft-card-shadow); }
+.ft-app .ft-content > .ant-card > .ant-card-head { border-bottom-color: var(--ft-border); }
+.ft-app .ft-content > .ant-card > .ant-card-head .ant-card-head-title { font-size: 17px; font-weight: 600; color: var(--ft-text); flex: none; margin-right: 16px; }
 /* 右上角筛选多时换行，不把标题挤成省略号 */
-.ft-app .ant-layout-content > .ant-card > .ant-card-head { padding-block: 8px; }
-.ft-app .ant-layout-content > .ant-card > .ant-card-head .ant-card-head-wrapper { flex-wrap: wrap; row-gap: 8px; }
-.ft-app .ant-layout-content > .ant-card > .ant-card-head .ant-card-extra { margin-inline-start: auto; }
+.ft-app .ft-content > .ant-card > .ant-card-head { padding-block: 8px; }
+.ft-app .ft-content > .ant-card > .ant-card-head .ant-card-head-wrapper { flex-wrap: wrap; row-gap: 8px; }
+.ft-app .ft-content > .ant-card > .ant-card-head .ant-card-extra { margin-inline-start: auto; }
 
 /* 状态文字（永远带文字，颜色只是辅助） */
 .ft-text-done { color: var(--ft-done-text); }
@@ -58,9 +62,9 @@ html, body { margin: 0; background: #f5f6f8; font-family: -apple-system, BlinkMa
 .ft-text-none, .ft-muted { color: var(--ft-text-3); }
 
 /* ───── 前端改版第二轮 ───── */
-/* 部门工作台：统计卡一行 + 原来的卡片；卡片样式与上面 .ant-layout-content > .ant-card 一致 */
+/* 部门工作台：统计卡一行 + 原来的卡片；卡片样式与上面 .ft-content > .ant-card 一致 */
 .ft-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.ft-app .ft-page > .ant-card { border-radius: var(--ft-card-radius); border: none; box-shadow: var(--ft-card-shadow); }
+.ft-app .ft-page > .ant-card { border-radius: var(--ft-card-radius); border: 1px solid var(--ft-border); box-shadow: var(--ft-card-shadow); }
 .ft-app .ft-page > .ant-card > .ant-card-head { border-bottom-color: var(--ft-border); padding-block: 8px; }
 .ft-app .ft-page > .ant-card > .ant-card-head .ant-card-head-title { font-size: 17px; font-weight: 600; color: var(--ft-text); flex: none; margin-right: 16px; }
 .ft-app .ft-page > .ant-card > .ant-card-head .ant-card-head-wrapper { flex-wrap: wrap; row-gap: 8px; }
@@ -72,3 +76,45 @@ html, body { margin: 0; background: #f5f6f8; font-family: -apple-system, BlinkMa
 .ft-wo-group + .ft-wo-group { margin-top: 18px; }
 /* 表格右侧固定的操作列（第一轮遗留）：横向还能滚时左侧加明显的分隔阴影，看得出下面还有列 */
 .ft-app .ant-table-ping-right .ant-table-cell-fix-right-first { box-shadow: -8px 0 10px -8px rgba(16, 24, 40, 0.28); }
+
+/* ───── 设计改版试点 ───── */
+/* 卡片里的表格：只对加了 class="ft-table" 的表格生效，不改全站其他表格。
+   表头不再铺灰底（卡片标题已经是一层表头，灰底会看成两条标题栏），只用小号灰字 + 底线；
+   首尾列留 20px，与卡片标题左右对齐，文字不贴边 */
+.ft-table .ant-table-thead > tr > th { background: transparent; color: var(--ft-text-2); font-weight: 500; font-size: 13px; border-bottom: 1px solid var(--ft-border); }
+.ft-table .ant-table-thead > tr > th::before { display: none; }
+.ft-table .ant-table-tbody > tr:hover > td { background: var(--ft-fill); }
+/* Ant 的 size=middle 内边距选择器较长，这里同样写全才能盖过 */
+.ft-table.ant-table-wrapper .ant-table .ant-table-thead > tr > th:first-child, .ft-table.ant-table-wrapper .ant-table .ant-table-tbody > tr > td:first-child { padding-left: 20px; }
+.ft-table.ant-table-wrapper .ant-table .ant-table-thead > tr > th:last-child, .ft-table.ant-table-wrapper .ant-table .ant-table-tbody > tr > td:last-child { padding-right: 20px; }
+.ft-table .ant-table-tbody > tr:last-child > td { border-bottom: none; }
+
+/* ───── 设计改版试点 v2 ───── */
+/* 全站表格表头：浅灰底、灰字、去掉列分隔竖线（总览页卡片里的表格另有 .ft-table） */
+.ft-app .ant-table-wrapper .ant-table-thead > tr > th { color: var(--ft-text-2); font-weight: 500; }
+.ft-app .ant-table-wrapper .ant-table-thead > tr > th:not(:last-child):not(.ant-table-selection-column):not(.ant-table-row-expand-icon-cell):not([colspan])::before { display: none; }
+
+/* ───── 设计规范通用类（docs/前端设计规范.md） ───── */
+/* 卡片里的浅灰区域：图表、列表都放在里面 */
+.ft-well { background: var(--ft-fill); border-radius: 12px; padding: 16px; }
+.ft-well.list { display: flex; flex-direction: column; padding: 4px 16px; }
+.ft-well.list > .ant-empty { margin: 24px 0; }
+/* 筛选面板里的一行：左边条件名，右边控件 */
+.ft-filter-row { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: center; gap: 8px; font-size: 13px; color: var(--ft-text-2); }
+.ft-filter-group { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--ft-text-2); }
+
+/* Ant 标签统一成状态色胶囊（设计规范）：页面里 a-tag 用的 Ant 具名色（red / orange / green / blue …）按状态归到 --ft-* 颜色，
+   外观和 UiStatusTag 一致（带色点的胶囊）。不带颜色的 a-tag 是中性灰标签（工序名、分类等），不加色点。
+   :root 前缀只为盖过 Ant 自带样式（同样一层类名，加载先后不确定）。弹窗、抽屉挂在 body 下，所以不限定在 .ft-app 里；手机端用的是 vant 标签，不受影响 */
+:root .ant-tag { display: inline-flex; align-items: center; gap: 6px; height: 22px; margin-inline-end: 6px; padding: 0 9px; border: none; border-radius: 999px; background: var(--ft-none-bg); color: var(--ft-text-2); font-size: 12px; font-weight: 500; line-height: 22px; }
+:root .ant-tag .anticon-close { color: inherit; opacity: 0.7; }
+:root .ant-tag:is(.ant-tag-red, .ant-tag-error, .ant-tag-volcano, .ant-tag-magenta, .ant-tag-orange, .ant-tag-warning, .ant-tag-gold, .ant-tag-yellow, .ant-tag-green, .ant-tag-success, .ant-tag-lime, .ant-tag-blue, .ant-tag-processing, .ant-tag-geekblue, .ant-tag-cyan, .ant-tag-purple)::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tag-dot); }
+:root .ant-tag:is(.ant-tag-red, .ant-tag-error, .ant-tag-volcano, .ant-tag-magenta) { --tag-dot: var(--ft-late); background: var(--ft-late-bg); color: var(--ft-late-text); }
+:root .ant-tag:is(.ant-tag-orange, .ant-tag-warning, .ant-tag-gold, .ant-tag-yellow) { --tag-dot: var(--ft-risk); background: var(--ft-risk-bg); color: var(--ft-risk-text); }
+:root .ant-tag:is(.ant-tag-green, .ant-tag-success, .ant-tag-lime) { --tag-dot: var(--ft-done); background: var(--ft-done-bg); color: var(--ft-done-text); }
+:root .ant-tag:is(.ant-tag-blue, .ant-tag-processing, .ant-tag-geekblue, .ant-tag-cyan, .ant-tag-purple) { --tag-dot: var(--ft-primary); background: var(--ft-primary-bg); color: var(--ft-primary-text); }
+/* 卡片标题 + 说明问号 */
+.ft-title { display: inline-flex; align-items: center; gap: 6px; }
+/* 卡片内的工具栏：左边状态切换，右边搜索 / 次要筛选 / 显示方式，一行放不下时自动换行 */
+.ft-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 14px; }
+.ft-toolbar-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

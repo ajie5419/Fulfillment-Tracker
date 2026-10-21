@@ -380,7 +380,7 @@ const columns = [
 
 <style scoped>
 .part { margin-top: 16px; }
-.muted { color: #999; font-size: 12px; font-weight: normal; }
+.muted { color: var(--ft-text-2); font-size: 12px; font-weight: normal; }
 .add { margin-top: 12px; }
 .issue-link { color: var(--ft-late); font-size: 12px; margin-right: 6px; }
 .late-node { color: var(--ft-upstream); font-size: 12px; }

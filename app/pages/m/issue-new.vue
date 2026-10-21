@@ -154,8 +154,8 @@ async function submit() {
 
 <style scoped>
 .page { padding-bottom: 8px; }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; background: #fff; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; background: var(--ft-card-bg); }
 .chips :deep(.van-tag) { cursor: pointer; }
-.uploader { padding: 12px 16px 4px; background: #fff; }
+.uploader { padding: 12px 16px 4px; background: var(--ft-card-bg); }
 .muted { color: var(--ft-text-3); font-size: 12px; padding-bottom: 8px; }
 </style>

@@ -249,34 +249,35 @@ const entries = computed(() =>
 </template>
 
 <style scoped>
-.hello { display: flex; align-items: center; gap: 12px; margin: 12px 12px 0; padding: 14px 16px; background: linear-gradient(135deg, #2a78d6, #1d5fae); border-radius: var(--ft-card-radius); color: #fff; box-shadow: var(--ft-card-shadow); }
+/* 问候卡：白底细边框（设计规范：不用渐变色块） */
+.hello { display: flex; align-items: center; gap: 12px; margin: 12px 12px 0; padding: 14px 16px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); color: var(--ft-text); }
 .hello-main { flex: 1; min-width: 0; }
 .hello-name { font-size: 18px; font-weight: 600; line-height: 26px; }
-.hello-dept { font-size: 13px; opacity: 0.9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hello-unread { flex: none; font-size: 13px; padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.18); }
+.hello-dept { font-size: 13px; color: var(--ft-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hello-unread { flex: none; font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--ft-fill); color: var(--ft-text); }
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 10px 12px 0; }
-.stat { background: #fff; border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); padding: 12px 10px 10px; text-align: center; }
+.stat { background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); padding: 12px 10px 10px; text-align: center; }
 .stat.hot { background: var(--ft-late-bg); }
 .stat.warm { background: var(--ft-risk-bg); }
-.stat-num { font-size: 26px; font-weight: 700; line-height: 32px; color: var(--ft-text); font-variant-numeric: tabular-nums; }
+.stat-num { font-size: 24px; font-weight: 600; line-height: 32px; color: var(--ft-text); font-variant-numeric: tabular-nums; }
 .stat-label { margin-top: 2px; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 12px; color: var(--ft-text-2); white-space: nowrap; }
-.entries { margin: 10px 12px 0; background: #fff; border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); overflow: hidden; padding: 4px 0; }
+.entries { margin: 10px 12px 0; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); overflow: hidden; padding: 4px 0; }
 .entries :deep(.van-grid-item__content) { background: transparent; }
 .entries :deep(.van-grid-item__text) { margin-top: 6px; white-space: nowrap; }
 .entry-icon { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 12px; font-size: 22px; }
-.entry-icon.tone-primary { background: #e7f0fb; color: var(--ft-primary); }
+.entry-icon.tone-primary { background: var(--ft-primary-bg); color: var(--ft-primary); }
 .entry-icon.tone-late { background: var(--ft-late-bg); color: var(--ft-late); }
 .entry-icon.tone-done { background: var(--ft-done-bg); color: var(--ft-done-text); }
 .entry-icon.tone-risk { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
 .entry-icon.tone-upstream { background: var(--ft-upstream-bg); color: var(--ft-upstream-text); }
-.digest { margin: 12px 12px 0; padding: 12px 14px; border-radius: var(--ft-card-radius); background: #e7f0fb; font-size: 14px; box-shadow: var(--ft-card-shadow); }
+.digest { margin: 12px 12px 0; padding: 12px 14px; border-radius: var(--ft-card-radius); background: var(--ft-primary-bg); font-size: 14px; }
 .digest.lv-RED { background: var(--ft-late-bg); }
 .digest.lv-YELLOW { background: var(--ft-risk-bg); }
 .digest:not(.unread) .digest-title { color: var(--ft-text-2); }
 .digest.unread .digest-title { font-weight: 600; }
 .digest-lines { margin: 6px 0 0 20px; padding: 0; color: var(--ft-text-2); font-size: 13px; line-height: 20px; }
 .group-title { display: flex; align-items: center; gap: 6px; padding: 10px 16px 0; font-size: 13px; font-weight: 600; }
-.group-count { color: var(--ft-text-3); font-weight: 400; }
+.group-count { color: var(--ft-text-2); font-weight: 400; }
 .wo { font-size: 13px; color: var(--ft-text-2); font-weight: 500; }
 .todo-title { margin-top: 6px; }
 .sugg { color: var(--ft-text-2); }

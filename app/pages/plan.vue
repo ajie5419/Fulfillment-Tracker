@@ -487,15 +487,15 @@ const logColumns = [
 </template>
 
 <style scoped>
-.muted { color: #999; font-size: 12px; }
+.muted { color: var(--ft-text-2); font-size: 12px; }
 .small { font-size: 12px; }
 .late { color: var(--ft-late); }
 .warn { color: var(--ft-upstream); }
-.ok { color: #389e0d; }
-.changed { text-decoration: line-through; color: #999; }
+.ok { color: var(--ft-done-text); }
+.changed { text-decoration: line-through; color: var(--ft-text-3); }
 .summary { margin-bottom: 12px; }
 .tip { margin-bottom: 12px; }
 .section { margin: 20px 0 8px; }
 :deep(.late-row) td:first-child { box-shadow: inset 3px 0 0 var(--ft-late); }
-:deep(.focus-row) td { background: #fffbe6 !important; }
+:deep(.focus-row) td { background: var(--ft-risk-bg) !important; }
 </style>

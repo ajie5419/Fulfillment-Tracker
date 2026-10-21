@@ -326,7 +326,7 @@ const woColumns = [
 </template>
 
 <style scoped>
-.muted { color: #999; font-size: 12px; }
+.muted { color: var(--ft-text-2); font-size: 12px; }
 .off-days { margin-top: 16px; }
 .off-day { margin-bottom: 8px; font-size: 14px; padding: 2px 8px; }
 .role-users { margin-bottom: 8px; }

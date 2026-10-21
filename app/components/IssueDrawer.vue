@@ -179,6 +179,6 @@ const actions: IssueAction[] = ['accept', 'resolve', 'close', 'reject', 'reassig
 .photos { margin-top: 12px; display: flex; gap: 8px; }
 .photos :deep(.ant-image) { margin-right: 8px; }
 .actions { margin-top: 16px; }
-.muted { color: #999; }
-.note { color: #555; white-space: pre-wrap; }
+.muted { color: var(--ft-text-2); }
+.note { color: var(--ft-text-2); white-space: pre-wrap; }
 </style>

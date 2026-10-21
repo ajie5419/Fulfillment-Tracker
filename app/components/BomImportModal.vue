@@ -134,6 +134,6 @@ const columns = [
 </template>
 
 <style scoped>
-.muted { color: #999; font-size: 12px; }
-.skip { text-decoration: line-through; color: #999; }
+.muted { color: var(--ft-text-2); font-size: 12px; }
+.skip { text-decoration: line-through; color: var(--ft-text-3); }
 </style>

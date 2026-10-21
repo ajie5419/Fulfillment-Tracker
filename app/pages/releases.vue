@@ -95,16 +95,14 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
     <UiStatCard label="有拒收" :value="stats.rejected" unit="张" tone="late" accent icon="alert" clickable :active="filter.progress === 'REJECTED'" sub="接收人拒收，需发放人处理" @click="applyProgress('REJECTED')" />
     <UiStatCard label="待我签收" :value="stats.minePending" unit="张" tone="upstream" accent icon="warn" clickable :active="filter.progress === 'MINE_PENDING'" sub="发给我、我还没签收的" @click="applyProgress('MINE_PENDING')" />
   </div>
-  <a-card title="发放签收">
+  <a-card>
+    <template #title>
+      <span class="ft-title">发放签收
+        <UiHelpTip label="发放签收说明">纸质图纸照旧下发，这里登记发给谁，接收人在手机或电脑上签收；超时没签收按 W5 预警。设计变更会提醒确认在加工工序的影响，未开工工序标"等变更"。</UiHelpTip>
+      </span>
+    </template>
     <template #extra>
       <a-space wrap>
-        <a-radio-group v-model:value="filter.mine" button-style="solid" size="small">
-          <a-radio-button value="">全部</a-radio-button>
-          <a-radio-button value="received">发给我的</a-radio-button>
-          <a-radio-button value="issued">我发出的</a-radio-button>
-        </a-radio-group>
-        <a-select v-model:value="filter.type" allow-clear placeholder="全部类型" style="width: 120px" :options="typeOptions" />
-        <a-select v-model:value="filter.progress" allow-clear placeholder="全部进度" style="width: 130px" :options="progressOptions" />
         <a-select
           v-model:value="filter.workOrderNumber"
           allow-clear
@@ -113,16 +111,17 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
           style="width: 180px"
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
-        <a-button @click="refresh()">刷新</a-button>
+        <UiRefreshButton @click="refresh()" />
         <a-button v-if="canDo(me, 'release')" type="primary" @click="creating = true">新建发放</a-button>
       </a-space>
     </template>
-    <p class="muted">纸质图纸照旧下发，这里登记发给谁，接收人在手机或电脑上签收；超时没签收按 W5 预警。设计变更会提醒确认在加工工序的影响，未开工工序标"等变更"。</p>
-    <div class="layout-switch">
-      <a-radio-group v-model:value="layout" size="small">
-        <a-radio-button value="group">按工单分组</a-radio-button>
-        <a-radio-button value="table">表格</a-radio-button>
-      </a-radio-group>
+    <div class="ft-toolbar">
+      <a-segmented v-model:value="filter.mine" :options="[{ value: '', label: '全部' }, { value: 'received', label: '发给我的' }, { value: 'issued', label: '我发出的' }]" />
+      <div class="ft-toolbar-right">
+        <a-select v-model:value="filter.type" allow-clear placeholder="全部类型" style="width: 120px" :options="typeOptions" />
+        <a-select v-model:value="filter.progress" allow-clear placeholder="全部进度" style="width: 130px" :options="progressOptions" />
+        <a-segmented v-model:value="layout" :options="LAYOUT_OPTIONS" />
+      </div>
     </div>
     <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty :description="filter.progress ? '没有符合条件的发放单' : '还没有发放单'" /></a-spin>
     <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
@@ -169,7 +168,6 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
 </template>
 
 <style scoped>
-.muted { color: #999; font-size: 12px; }
-.layout-switch { margin-bottom: 8px; }
+.muted { color: var(--ft-text-2); font-size: 12px; }
 .desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 </style>

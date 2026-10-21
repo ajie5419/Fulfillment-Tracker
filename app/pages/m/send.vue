@@ -181,6 +181,6 @@ async function submit() {
 
 <style scoped>
 .page { padding-bottom: 8px; }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; background: #fff; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; background: var(--ft-card-bg); }
 .chips :deep(.van-tag) { cursor: pointer; }
 </style>

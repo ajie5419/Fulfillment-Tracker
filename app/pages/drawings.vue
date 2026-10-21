@@ -167,19 +167,23 @@ async function released() {
   await reload()
 }
 
+/** 列宽按内容收紧（设计改版）：按工单分组时合计约 1120px，1440 宽的屏幕不用横向滚动；更窄的屏幕仍可横向滚动，操作列固定在右边 */
 const columns = [
-  { title: '工单', key: 'wo', width: 130 },
-  { title: '总计划节点', key: 'planNode', width: 150 },
-  { title: '部件 / 关联工件', key: 'component', width: 230 },
-  { title: '设计负责人', key: 'owner', width: 120 },
-  { title: '计划完成', key: 'planDate', width: 100 },
-  { title: '出图', key: 'drawn', width: 110 },
-  { title: '客户确认', key: 'customer', width: 150 },
-  { title: '状态', key: 'status', width: 130 },
-  { title: '发放单', key: 'releases', width: 140 },
-  { title: '', key: 'actions', width: 260, fixed: 'right' as const },
+  { title: '工单', key: 'wo', width: 120 },
+  { title: '总计划节点', key: 'planNode', width: 104 },
+  { title: '部件 / 关联工件', key: 'component', width: 172 },
+  { title: '设计负责人', key: 'owner', width: 96 },
+  { title: '计划完成', key: 'planDate', width: 104 },
+  { title: '出图', key: 'drawn', width: 94 },
+  { title: '客户确认', key: 'customer', width: 128 },
+  { title: '状态', key: 'status', width: 100 },
+  { title: '发放单', key: 'releases', width: 98 },
+  { title: '', key: 'actions', width: 222, fixed: 'right' as const },
 ]
+const sumWidth = (cols: { width: number }[]) => cols.reduce((n, c) => n + c.width, 0)
 const groupColumns = columns.filter((c) => c.key !== 'wo')
+const tableWidth = sumWidth(columns)
+const groupWidth = sumWidth(groupColumns)
 const partNames = (r: DrawingRow) => r.parts.map((p) => p.name).join('、')
 const loadKey = (r: { ownerId: string | null }) => r.ownerId ?? '-'
 const loadColumns = [
@@ -202,9 +206,15 @@ const loadColumns = [
       <template #sub>待发放 {{ stats.drawn }} · 待客户确认 {{ stats.customerPending }}</template>
     </UiStatCard>
   </div>
-  <a-card title="设计出图任务">
+  <a-card>
+    <template #title>
+      <span class="ft-title">设计出图任务
+        <UiHelpTip label="出图任务说明">出图后点"一键发放"生成图纸发放单（R9）。关联工件的出图任务全部完成（已出图、已发放、需要时客户已确认）后，物料也齐了才给第一道工序发"可以开工"。没指定设计负责人的派给技术部负责人。</UiHelpTip>
+      </span>
+    </template>
     <template #extra>
       <a-space wrap>
+        <a-segmented v-model:value="tab" :options="[{ value: 'list', label: '出图任务' }, { value: 'load', label: '设计负荷' }]" />
         <a-select
           v-model:value="filter.workOrderNumber"
           allow-clear
@@ -213,25 +223,23 @@ const loadColumns = [
           style="width: 170px"
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
-        <a-button @click="reload()">刷新</a-button>
+        <UiRefreshButton @click="reload()" />
         <a-button v-if="canEditTask" type="primary" @click="openEdit(null)">新建出图任务</a-button>
       </a-space>
     </template>
 
-    <a-tabs v-model:active-key="tab">
+    <!-- 页签切换已挪到右上角的分段按钮，这里隐藏页签栏 -->
+    <a-tabs v-model:active-key="tab" class="no-nav">
       <a-tab-pane key="list" tab="出图任务">
-        <a-space wrap class="filters">
-          <a-radio-group v-model:value="filter.view" button-style="solid" size="small">
-            <a-radio-button v-for="v in VIEWS" :key="v.value" :value="v.value">{{ v.label }}</a-radio-button>
-          </a-radio-group>
-          <a-select v-model:value="filter.ownerId" allow-clear show-search option-filter-prop="label" placeholder="全部负责人" style="width: 200px" :options="ownerOptions" />
-          <a-input-search v-model:value="keyword" allow-clear placeholder="部件 / 工单 / 备注" style="width: 180px" />
-          <a-radio-group v-model:value="layout" size="small">
-            <a-radio-button value="group">按工单分组</a-radio-button>
-            <a-radio-button value="table">表格</a-radio-button>
-          </a-radio-group>
-        </a-space>
-        <p class="muted">出图后点"一键发放"生成图纸发放单（R9）。关联工件的出图任务全部完成（已出图、已发放、需要时客户已确认）后，物料也齐了才给第一道工序发"可以开工"。没指定设计负责人的派给技术部负责人。</p>
+        <!-- 左边按状态切换，右边是负责人、搜索和显示方式 -->
+        <div class="ft-toolbar">
+          <a-segmented v-model:value="filter.view" :options="VIEWS.map((v) => ({ value: v.value, label: v.label }))" />
+          <div class="ft-toolbar-right">
+            <a-select v-model:value="filter.ownerId" allow-clear show-search option-filter-prop="label" placeholder="全部负责人" style="width: 160px" :options="ownerOptions" />
+            <a-input-search v-model:value="keyword" allow-clear placeholder="部件 / 工单 / 备注" style="width: 180px" />
+            <a-segmented v-model:value="layout" :options="LAYOUT_OPTIONS" />
+          </div>
+        </div>
         <p v-if="data.total > rows.length" class="warn">共 {{ data.total }} 项，只显示前 {{ rows.length }} 项，请按工单或负责人筛选</p>
 
         <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty :description="filter.view === 'open' ? '没有未完成的出图任务' : '没有记录'" /></a-spin>
@@ -243,7 +251,7 @@ const loadColumns = [
           :loading="pending"
           row-key="id"
           size="small"
-          :scroll="{ x: layout === 'group' ? 1390 : 1520 }"
+          :scroll="{ x: layout === 'group' ? groupWidth : tableWidth }"
           :pagination="layout === 'group' ? false : { pageSize: 50, hideOnSinglePage: true }"
         >
           <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未完成的出图任务' : '没有记录'" /></template>
@@ -347,9 +355,9 @@ const loadColumns = [
 </template>
 
 <style scoped>
-.filters { margin-bottom: 8px; }
-.muted { color: #999; font-size: 12px; }
+.no-nav :deep(.ant-tabs-nav) { display: none; }
+.muted { color: var(--ft-text-2); font-size: 12px; }
 .warn { color: var(--ft-late); }
 .small { font-size: 12px; }
-.void { text-decoration: line-through; color: #999; }
+.void { text-decoration: line-through; color: var(--ft-text-3); }
 </style>
