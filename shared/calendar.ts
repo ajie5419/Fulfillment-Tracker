@@ -70,7 +70,7 @@ export interface CompletionLike {
   quantity: number
   /** 计划完成日 */
   planDay: string
-  /** 计划完成日从哪来：PLAN = 已发布总计划的最后一个节点；DELIVERY = QMS 交期（没有已发布总计划） */
+  /** 计划完成日从哪来：PLAN = 已发布总计划的最后一个节点；DELIVERY = QMS 交期（没有已发布总计划；已发布但一个节点都没有的也算这类，按"没排"处理） */
   source: 'PLAN' | 'DELIVERY'
   done: boolean
   /** 实际完成日（只有 source = PLAN 且已完成、完成日落了库时有） */

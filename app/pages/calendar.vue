@@ -108,7 +108,7 @@ const entries = computed<CalendarEntry[]>(() => {
 const STATE_TONE: Record<CompletionState, 'done' | 'late' | 'primary' | 'none'> = { DONE: 'done', OVERDUE: 'late', PENDING: 'primary', NO_PLAN: 'none' }
 type Completion = NonNullable<typeof data.value>['completions'][number]
 function completionDesc(c: Completion) {
-  if (c.source === 'DELIVERY') return `QMS 交期 ${c.planDay}（没有已发布的总计划）`
+  if (c.source === 'DELIVERY') return `QMS 交期 ${c.planDay}（没有已发布的总计划，或已发布但节点被删光了）`
   const plan = `${c.nodeName ?? '发运'}计划 ${c.planDay}`
   if (c.done) return c.actualDay ? `${plan} · 实际 ${c.actualDay}` : `${plan} · 已自动完成，完成日没记录（请在总计划里手动标记发运完成）`
   return c.expectedDay && c.expectedDay !== c.planDay ? `${plan} · 预计 ${c.expectedDay}` : plan
