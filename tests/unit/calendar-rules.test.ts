@@ -1,5 +1,6 @@
 /** 项目日历（zhao 10-21）：周 / 月的起止、翻页、格子天数；按发运节点统计计划 / 实际 / 逾期台数；没有总计划的按 QMS 交期计入 */
 import { describe, expect, it } from 'vitest'
+import { stableDoneDay } from '../../server/services/calendar/rules'
 import { type CompletionLike, completionState, gridDays, periodOf, shiftPeriod, summarize } from '../../shared/calendar'
 
 describe('periodOf / shiftPeriod', () => {
@@ -69,5 +70,26 @@ describe('summarize：按发运节点统计台数', () => {
     expect(completionState({ source: 'PLAN', done: true, planDay: '2026-10-01' }, today)).toBe('DONE')
     expect(completionState({ source: 'PLAN', done: false, planDay: '2026-10-20' }, today)).toBe('OVERDUE')
     expect(completionState({ source: 'PLAN', done: false, planDay: today }, today)).toBe('PENDING')
+  })
+})
+
+describe('stableDoneDay：实际完成日只认落库的日期', () => {
+  const t = (kind: 'drawing' | 'purchase' | 'step' | 'assembly', doneDay: string | null, excluded = false) => ({ kind, doneDay, excluded })
+  it('没完成 → null；手动标记 → 手动填的日期', () => {
+    expect(stableDoneDay({ done: false, doneBy: null, actualDay: null }, [])).toBeNull()
+    expect(stableDoneDay({ done: true, doneBy: 'MANUAL', actualDay: '2026-10-15' }, [t('assembly', '2026-10-21')])).toBe('2026-10-15')
+  })
+  it('自动完成：取任务记录的完成日里最晚的（已取消的不算）', () => {
+    expect(stableDoneDay({ done: true, doneBy: 'AUTO', actualDay: '2026-10-21' }, [t('purchase', '2026-10-10'), t('step', '2026-10-12'), t('drawing', null, true)])).toBe('2026-10-12')
+  })
+  it('自动完成但挂了装配节点、或有任务没记完成日 → null（不随日子挪）', () => {
+    expect(stableDoneDay({ done: true, doneBy: 'AUTO', actualDay: '2026-10-21' }, [t('purchase', '2026-10-10'), t('assembly', '2026-10-21')])).toBeNull()
+    expect(stableDoneDay({ done: true, doneBy: 'AUTO', actualDay: '2026-10-21' }, [t('step', null)])).toBeNull()
+  })
+  it('已完成但没有完成日：不计实际、不算逾期', () => {
+    const s = summarize([{ quantity: 2, planDay: '2026-10-10', source: 'PLAN', done: true, actualDay: null }], periodOf('month', '2026-10-21'), '2026-10-21')
+    expect(s.actual.orders).toBe(0)
+    expect(s.overdue.orders).toBe(0)
+    expect(completionState({ source: 'PLAN', done: true, planDay: '2026-10-10' }, '2026-10-21')).toBe('DONE')
   })
 })

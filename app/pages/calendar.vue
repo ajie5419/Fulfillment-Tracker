@@ -110,7 +110,7 @@ type Completion = NonNullable<typeof data.value>['completions'][number]
 function completionDesc(c: Completion) {
   if (c.source === 'DELIVERY') return `QMS 交期 ${c.planDay}（没有已发布的总计划）`
   const plan = `${c.nodeName ?? '发运'}计划 ${c.planDay}`
-  if (c.done) return `${plan} · 实际 ${c.actualDay}`
+  if (c.done) return c.actualDay ? `${plan} · 实际 ${c.actualDay}` : `${plan} · 已自动完成，完成日没记录（请在总计划里手动标记发运完成）`
   return c.expectedDay && c.expectedDay !== c.planDay ? `${plan} · 预计 ${c.expectedDay}` : plan
 }
 </script>
@@ -119,7 +119,7 @@ function completionDesc(c: Completion) {
   <div class="ft-page cal-page">
     <header class="toolbar">
       <div class="left">
-        <a-segmented :value="view" :options="viewOptions" @change="(v: string | number) => go({ view: v as CalendarView, d: period?.start })" />
+        <a-segmented :value="view" :options="viewOptions" @change="(v: string | number) => go({ view: v as CalendarView, d: d ?? data?.today })" />
         <div class="nav">
           <a-button size="small" aria-label="上一期" @click="step(-1)">‹</a-button>
           <span class="period">{{ periodTitle }}</span>
@@ -131,7 +131,7 @@ function completionDesc(c: Completion) {
         <a-select v-model:value="dept" allow-clear placeholder="全部部门" style="width: 130px" :options="BUSINESS_DEPT_OPTIONS" />
         <UiHelpTip label="项目日历说明">
           "完成"指总计划的发运节点（最后一个节点）完成，台数取 QMS 工单数量。计划完成日取已发布总计划里发运节点的当前计划日；没有已发布总计划的工单按 QMS 交期计入计划，系统里看不到它的完成情况。
-          实际完成看发运节点的完成日（手动标记，或挂靠任务全部完成）。日历里的其他节点按计划日排，状态和总计划页一致。部门筛选只影响日历格子。所有人都能看全部工单。
+          实际完成看发运节点的完成日（手动标记的日期，或挂靠任务记录的完成日；挂了装配节点自动完成的没有固定完成日，不计入实际，请手动标记发运完成）。日历里的其他节点按计划日排，状态和总计划页一致。部门筛选只影响日历格子。所有人都能看全部工单。
         </UiHelpTip>
         <UiRefreshButton @click="refresh()" />
       </div>

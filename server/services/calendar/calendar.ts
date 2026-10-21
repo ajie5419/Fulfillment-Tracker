@@ -8,6 +8,7 @@ import { prisma } from '../../utils/prisma'
 import { dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { BUSINESS_DEPT_NAME } from '../auth/departments'
 import { loadPlans } from '../plan/plan'
+import { stableDoneDay } from './rules'
 import { type NodeState, nodeState } from '../../../shared/status'
 import {
   type CalendarView,
@@ -78,7 +79,8 @@ async function loadAll(now: Date) {
         planDay: dateFieldDay(last.planDate),
         source: 'PLAN' as const,
         done: lastEst.done,
-        actualDay: lastEst.actualDay,
+        // 只认落库的完成日（见 rules.ts）；自动完成但日期会变的算已完成、不计入实际完成台数
+        actualDay: stableDoneDay(lastEst, plan.tasks.filter((t) => t.nodeId === last.id).map((t) => t.facts)),
         expectedDay: lastEst.expectedDay,
         nodeName: last.name,
         nodeId: last.id,
