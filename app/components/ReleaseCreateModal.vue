@@ -123,7 +123,7 @@ async function submit() {
   <a-modal :open="open" :title="prefill?.label ? `新建发放单（${prefill.label}）` : '新建发放单'" ok-text="发放" :confirm-loading="submitting" width="720px" @ok="submit" @cancel="emit('close')">
     <a-form layout="horizontal" :label-col="{ span: 4 }" :wrapper-col="{ span: 19 }">
       <a-form-item label="类型" required>
-        <a-radio-group v-model:value="form.type" button-style="solid">
+        <a-radio-group v-model:value="form.type">
           <a-radio-button v-for="(label, key) in RELEASE_TYPE_TEXT" :key="key" :value="key">{{ label }}</a-radio-button>
         </a-radio-group>
         <div v-if="form.type === 'CHANGE'" class="muted">关联工件已在加工/在外协的，会通知生产经理和外协专员确认变更影响；还没开工的工序标"等变更"，暂停转序/逾期预警计时。</div>
@@ -168,6 +168,6 @@ async function submit() {
 </template>
 
 <style scoped>
-.muted { color: #999; font-size: 12px; }
+.muted { color: var(--ft-text-2); font-size: 12px; }
 .group-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 </style>

@@ -187,21 +187,26 @@ function rowSelectionFor(list: PurchaseRow[]) {
   }
 }
 
+/**
+ * 列宽按内容收紧（设计规范）：需求日和承诺到货合成一列上下两行；按工单分组时合计约 1090px（另有勾选列），1440 宽屏幕不用横向滚动。
+ * 更窄的屏幕仍可横向滚动，操作列固定在右边。
+ */
 const columns = [
-  { title: '工单', key: 'wo', width: 130 },
-  { title: '总计划节点', key: 'planNode', width: 150 },
-  { title: '物料', key: 'material', width: 210 },
-  { title: '数量', key: 'qty', width: 80 },
-  { title: '供应商', key: 'supplier', width: 150 },
-  { title: '需求日', key: 'needDate', width: 100 },
-  { title: '承诺到货', key: 'promisedDate', width: 100 },
-  { title: '到货', key: 'arrived', width: 130 },
-  { title: '进度', key: 'progress', width: 150 },
-  { title: '延误原因', key: 'delay', width: 120 },
-  { title: '负责人', key: 'owner', width: 120 },
+  { title: '工单', key: 'wo', width: 120 },
+  { title: '总计划节点', key: 'planNode', width: 104 },
+  { title: '物料', key: 'material', width: 154 },
+  { title: '数量', key: 'qty', width: 64 },
+  { title: '供应商', key: 'supplier', width: 120 },
+  { title: '需求 / 承诺', key: 'dates', width: 108 },
+  { title: '到货', key: 'arrived', width: 104 },
+  { title: '进度', key: 'progress', width: 112 },
+  { title: '延误原因', key: 'delay', width: 92 },
+  { title: '负责人', key: 'owner', width: 80 },
   { title: '', key: 'actions', width: 150, fixed: 'right' as const },
 ]
 const groupColumns = columns.filter((c) => c.key !== 'wo')
+const tableWidth = columns.reduce((n, c) => n + c.width, 0)
+const groupWidth = groupColumns.reduce((n, c) => n + c.width, 0)
 const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货检验' } as const
 </script>
 
@@ -217,12 +222,14 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
     </UiStatCard>
     <UiStatCard label="卡付款" :value="stats.blockedByPayment" unit="项" tone="upstream" accent icon="warn" clickable :active="filter.view === 'blocked'" sub="未到货，有没付的卡交期付款申请" @click="applyView('blocked')" />
   </div>
-  <a-card title="采购到货（关键物料）">
+  <a-card>
+    <template #title>
+      <span class="ft-title">采购到货（关键物料）
+        <UiHelpTip label="采购到货说明">只跟踪关键物料（长周期、进口、大件）。QMS 进货检验按"工单 + 物料名称（+ 供应商）"自动确认到货；也可以在这里或手机上手工确认。没指定采购负责人的派给采购部负责人。</UiHelpTip>
+      </span>
+    </template>
     <template #extra>
       <a-space wrap>
-        <a-radio-group v-model:value="filter.view" button-style="solid" size="small">
-          <a-radio-button v-for="v in VIEWS" :key="v.value" :value="v.value">{{ v.label }}</a-radio-button>
-        </a-radio-group>
         <a-select
           v-model:value="filter.workOrderNumber"
           allow-clear
@@ -231,25 +238,24 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
           style="width: 170px"
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
-        <a-input-search v-model:value="keyword" allow-clear placeholder="物料 / 规格 / 供应商" style="width: 180px" />
-        <a-button @click="refresh()">刷新</a-button>
+        <UiRefreshButton @click="refresh()" />
         <a-button v-if="canDoAny(me, 'purchase')" @click="importing = true">Excel 导入</a-button>
         <a-button v-if="canDoAny(me, 'payment')" :disabled="!selectedKeys.length" @click="openPay">申请付款{{ selectedKeys.length ? `（${selectedKeys.length}）` : '' }}</a-button>
         <a-button v-if="canDoAny(me, 'purchase')" type="primary" @click="openEdit(null)">登记关键物料</a-button>
       </a-space>
     </template>
 
+    <!-- 左边按状态切换，右边是搜索和显示方式（设计规范：工具栏一行） -->
+    <div class="ft-toolbar">
+      <a-segmented v-model:value="filter.view" :options="VIEWS.map((v) => ({ value: v.value, label: v.label }))" />
+      <div class="ft-toolbar-right">
+        <a-input-search v-model:value="keyword" allow-clear placeholder="物料 / 规格 / 供应商" style="width: 180px" />
+        <a-segmented v-model:value="layout" :options="LAYOUT_OPTIONS" />
+      </div>
+    </div>
     <p v-if="stats?.delay.late" class="muted">
       延误 {{ stats.delay.late }} 项：付款原因 <b>{{ stats.delay.payment }}</b> · 管理原因 <b>{{ stats.delay.management }}</b>（供应商 {{ stats.delay.byReason.SUPPLIER }}、我方需求变化 {{ stats.delay.byReason.DEMAND_CHANGE }}、其他 {{ stats.delay.byReason.OTHER }}）；已到货 {{ stats.arrived }} 项
     </p>
-    <p class="muted">只跟踪关键物料（长周期、进口、大件）。QMS 进货检验按"工单 + 物料名称（+ 供应商）"自动确认到货；也可以在这里或手机上手工确认。没指定采购负责人的派给采购部负责人。</p>
-
-    <div class="layout-switch">
-      <a-radio-group v-model:value="layout" size="small">
-        <a-radio-button value="group">按工单分组</a-radio-button>
-        <a-radio-button value="table">表格</a-radio-button>
-      </a-radio-group>
-    </div>
     <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty :description="filter.view === 'open' ? '没有未到货的关键物料' : '没有记录'" /></a-spin>
     <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
     <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" :nodes="distinctPlanNodes(t.rows)" v-bind="arrivedOf(t)" label="到货" :count="t.rows.length" />
@@ -260,7 +266,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
       row-key="id"
       size="small"
       :row-selection="rowSelectionFor(t.rows)"
-      :scroll="{ x: layout === 'group' ? 1420 : 1550 }"
+      :scroll="{ x: layout === 'group' ? groupWidth : tableWidth }"
       :pagination="layout === 'group' ? false : { pageSize: 50, hideOnSinglePage: true }"
     >
       <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未到货的关键物料' : '没有记录'" /></template>
@@ -277,10 +283,9 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
           {{ record.supplierName ?? '—' }}
           <div v-if="record.supplierName && !record.supplierId" class="muted">手填</div>
         </template>
-        <template v-else-if="column.key === 'needDate'">{{ dayText(record.needDate) }}</template>
-        <template v-else-if="column.key === 'promisedDate'">
-          <span v-if="record.promisedDate">{{ dayText(record.promisedDate) }}</span>
-          <span v-else class="muted">未承诺</span>
+        <template v-else-if="column.key === 'dates'">
+          {{ dayText(record.needDate) }}
+          <div class="muted">{{ record.promisedDate ? `承诺 ${dayText(record.promisedDate)}` : '未承诺' }}</div>
         </template>
         <template v-else-if="column.key === 'arrived'">
           <template v-if="record.arrivedDate">
@@ -348,8 +353,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
 </template>
 
 <style scoped>
-.layout-switch { margin-bottom: 8px; }
-.muted { color: #999; font-size: 12px; }
+.muted { color: var(--ft-text-2); font-size: 12px; }
 .warn { color: var(--ft-late); }
 .ellipsis { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

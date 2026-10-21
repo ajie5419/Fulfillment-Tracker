@@ -170,6 +170,36 @@ const ownerText = (owners: { name: string }[]) => owners.map((o) => o.name).join
 const iconOf = (t: Tone) => (t === 'late' ? 'alert' : t === 'risk' || t === 'upstream' ? 'warn' : t === 'none' ? 'ring' : 'dot')
 const showAlertFilters = computed(() => tab.value !== 'issues')
 const showIssueFilters = computed(() => tab.value !== 'alerts')
+
+// ───── 筛选区简化（设计改版）：常用的工单留在工具栏，其余收进"筛选"面板；生效的条件在下方显示成可关闭的标签 ─────
+const tabOptions = computed(() => [
+  { value: 'all', label: `全部 ${alerts.value.length + issues.value.length}` },
+  { value: 'alerts', label: `预警 ${alerts.value.length}` },
+  { value: 'issues', label: `异常 ${issues.value.length}` },
+])
+/** 各条件的默认值：和上面 filter 初始化时的默认一致（状态默认"未关闭"，部门负责人默认看本部门） */
+const deptDefault = computed(() => (me.value?.deptHeadOf.length ? '1' : '0'))
+const labelOf = (opts: { value: string; label: string }[], v?: string) => opts.find((o) => o.value === v)?.label ?? v
+/** 已生效（和默认不同）的条件；切到只看预警 / 只看异常时，另一类的条件不显示（它们本来也不参与筛选） */
+const activeChips = computed(() => {
+  const out: { key: string; text: string; clear: () => void }[] = []
+  if (showAlertFilters.value) {
+    if (filter.rule) out.push({ key: 'rule', text: `规则：${labelOf(ruleOptions, filter.rule)}`, clear: () => (filter.rule = undefined) })
+    if (filter.level) out.push({ key: 'level', text: `级别：${labelOf(levelOptions, filter.level)}`, clear: () => (filter.level = undefined) })
+  }
+  if (showIssueFilters.value) {
+    if (filter.dept !== deptDefault.value) out.push({ key: 'dept', text: `异常范围：${filter.dept === '1' ? '本部门' : '全部'}`, clear: () => (filter.dept = deptDefault.value) })
+    if (filter.mine) out.push({ key: 'mine', text: labelOf(mineOptions, filter.mine)!, clear: () => (filter.mine = undefined) })
+    if (filter.status !== 'UNCLOSED') out.push({ key: 'status', text: `状态：${filter.status ? labelOf(statusOptions, filter.status) : '全部'}`, clear: () => (filter.status = 'UNCLOSED') })
+    if (filter.category) out.push({ key: 'category', text: `分类：${labelOf(categoryOptions, filter.category)}`, clear: () => (filter.category = undefined) })
+    if (filter.overdue) out.push({ key: 'overdue', text: '只看超期', clear: () => (filter.overdue = undefined) })
+  }
+  return out
+})
+const overdueOnly = computed({ get: () => !!filter.overdue, set: (v: boolean) => (filter.overdue = v ? '1' : undefined) })
+function clearFilters() {
+  for (const c of activeChips.value) c.clear()
+}
 </script>
 
 <template>
@@ -185,42 +215,37 @@ const showIssueFilters = computed(() => tab.value !== 'alerts')
 
     <UiSectionCard>
       <template #title>
-        <span class="title-row">
+        <span class="ft-title">
           风险
-          <a-radio-group v-model:value="tab" button-style="solid" size="small" class="tabs">
-            <a-radio-button value="all">全部 {{ alerts.length + issues.length }}</a-radio-button>
-            <a-radio-button value="alerts">预警 {{ alerts.length }}</a-radio-button>
-            <a-radio-button value="issues">异常 {{ issues.length }}</a-radio-button>
-          </a-radio-group>
+          <UiHelpTip label="风险页说明">预警由扫描任务每 15 分钟更新，对象状态变化后自动消除；红色预警（W1–W3）会自动转成异常。电脑上点右上角"上报异常"；手机上打开手机端"异常"→"上报异常"。系统会把 QMS 检验不合格和红色预警自动转成异常。</UiHelpTip>
         </span>
       </template>
       <template #extra>
-        <a-button @click="refresh()">刷新</a-button>
+        <a-segmented v-model:value="tab" :options="tabOptions" class="tabs" />
+        <a-select v-model:value="filter.workOrderNumber" allow-clear show-search placeholder="全部工单" style="width: 170px" :options="woOptions" />
+        <UiFilterButton :count="activeChips.length" @clear="clearFilters">
+          <template v-if="showAlertFilters">
+            <div class="ft-filter-group">预警</div>
+            <label class="ft-filter-row"><span>规则</span><a-select v-model:value="filter.rule" allow-clear placeholder="全部规则" :options="ruleOptions" /></label>
+            <label class="ft-filter-row"><span>级别</span><a-select v-model:value="filter.level" allow-clear placeholder="全部级别" :options="levelOptions" /></label>
+          </template>
+          <template v-if="showIssueFilters">
+            <div class="ft-filter-group">异常</div>
+            <div class="ft-filter-row"><span>范围</span>
+              <a-segmented v-model:value="filter.dept" :options="[{ value: '1', label: '本部门' }, { value: '0', label: '全部' }]" block />
+            </div>
+            <label class="ft-filter-row"><span>与我</span><a-select v-model:value="filter.mine" allow-clear placeholder="全部人" :options="mineOptions" /></label>
+            <label class="ft-filter-row"><span>状态</span><a-select v-model:value="filter.status" allow-clear placeholder="全部状态" :options="statusOptions" /></label>
+            <label class="ft-filter-row"><span>分类</span><a-select v-model:value="filter.category" allow-clear placeholder="全部分类" :options="categoryOptions" /></label>
+            <a-checkbox v-model:checked="overdueOnly">只看超期</a-checkbox>
+          </template>
+        </UiFilterButton>
+        <UiRefreshButton @click="refresh()" />
         <a-button type="primary" danger @click="reporting = true">上报异常</a-button>
       </template>
 
-      <div class="filters">
-        <a-select v-model:value="filter.workOrderNumber" allow-clear show-search placeholder="全部工单" style="width: 180px" :options="woOptions" />
-        <template v-if="showAlertFilters">
-          <span class="sep">预警</span>
-          <a-select v-model:value="filter.rule" allow-clear placeholder="全部规则" style="width: 170px" :options="ruleOptions" />
-          <a-select v-model:value="filter.level" allow-clear placeholder="全部级别" style="width: 110px" :options="levelOptions" />
-        </template>
-        <template v-if="showIssueFilters">
-          <span class="sep">异常</span>
-          <a-radio-group v-model:value="filter.dept" button-style="solid" size="small">
-            <a-radio-button value="1">本部门</a-radio-button>
-            <a-radio-button value="0">全部</a-radio-button>
-          </a-radio-group>
-          <a-select v-model:value="filter.mine" allow-clear placeholder="全部人" style="width: 110px" :options="mineOptions" />
-          <a-select v-model:value="filter.status" allow-clear placeholder="全部状态" style="width: 100px" :options="statusOptions" />
-          <a-select v-model:value="filter.category" allow-clear placeholder="全部分类" style="width: 130px" :options="categoryOptions" />
-          <a-tag v-if="filter.overdue" color="red" closable @close="filter.overdue = undefined">只看超期</a-tag>
-        </template>
-      </div>
-      <p class="muted note">
-        预警由扫描任务每 15 分钟更新，对象状态变化后自动消除；红色预警（W1–W3）会自动转成异常。电脑上点右上角"上报异常"；手机上打开手机端"异常"→"上报异常"。系统会把 QMS 检验不合格和红色预警自动转成异常。
-      </p>
+      <!-- 已生效的筛选条件：点 × 单独去掉，"清空"恢复默认 -->
+      <UiFilterChips :items="activeChips" @clear-all="clearFilters" />
 
       <a-spin :spinning="alertsPending || issuesPending">
         <a-empty v-if="!items.length" :description="tab === 'alerts' ? '没有活动中的预警' : tab === 'issues' ? '没有符合条件的异常' : '没有符合条件的预警和异常'" />
@@ -228,7 +253,6 @@ const showIssueFilters = computed(() => tab.value !== 'alerts')
           <template v-for="it in items.slice(0, shown)" :key="it.key">
             <!-- 预警 -->
             <article v-if="it.kind === 'alert'" class="rcard" :class="`tone-${it.tone}`">
-              <span class="bar" aria-hidden="true" />
               <UiStatusIcon :kind="iconOf(it.tone)" :tone="it.tone" :size="16" class="icon" />
               <div class="main">
                 <div class="head">
@@ -253,7 +277,6 @@ const showIssueFilters = computed(() => tab.value !== 'alerts')
             </article>
             <!-- 异常：点开处理抽屉 -->
             <article v-else class="rcard clickable" :class="`tone-${it.tone}`" role="button" tabindex="0" @click="selected = it.i.id" @keydown.enter="selected = it.i.id">
-              <span class="bar" aria-hidden="true" />
               <UiStatusIcon :kind="iconOf(it.tone)" :tone="it.tone" :size="16" class="icon" />
               <div class="main">
                 <div class="head">
@@ -292,22 +315,15 @@ const showIssueFilters = computed(() => tab.value !== 'alerts')
 .risks { display: flex; flex-direction: column; gap: 16px; }
 .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .muted { color: var(--ft-text-3); font-size: 12px; }
-.title-row { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .tabs { font-weight: normal; }
-.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
-.sep { margin-left: 8px; font-size: 12px; color: var(--ft-text-3); }
-.note { margin: 0 0 12px; }
 .list { display: flex; flex-direction: column; gap: 8px; }
 .more { margin-top: 12px; text-align: center; }
 
-.rcard { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px 12px 18px; border: 1px solid var(--ft-border); border-radius: 10px; background: var(--ft-card-bg); overflow: hidden; }
+.rcard { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid var(--ft-border); border-radius: 10px; background: var(--ft-card-bg); overflow: hidden; }
 .rcard.clickable { cursor: pointer; }
-.rcard.clickable:hover { border-color: #c9d3e0; background: #fbfcfe; }
+.rcard.clickable:hover { border-color: var(--ft-text-3); background: var(--ft-fill); }
 .rcard:focus-visible { outline: 2px solid var(--ft-primary); }
-.bar { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--ft-primary); }
-.tone-late .bar { background: var(--ft-late); }
-.tone-risk .bar { background: var(--ft-risk); }
-.tone-upstream .bar { background: var(--ft-upstream); }
+/* 设计改版：去掉左侧色条（用户意见），状态由图标 + 标签表达 */
 .tone-none .bar { background: var(--ft-none); }
 .icon { margin-top: 3px; }
 .main { flex: 1; min-width: 0; }
@@ -317,7 +333,7 @@ const showIssueFilters = computed(() => tab.value !== 'alerts')
 .kind { display: inline-block; font-size: 12px; line-height: 20px; padding: 0 6px; border-radius: 4px; background: var(--ft-fill); color: var(--ft-text-2); }
 .k-RED { background: var(--ft-late-bg); color: var(--ft-late-text); }
 .k-YELLOW { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
-.k-REMIND { background: #e8f1fc; color: #1f5fa8; }
+.k-REMIND { background: var(--ft-primary-bg); color: var(--ft-primary-text); }
 .k-ISSUE { background: var(--ft-upstream-bg); color: var(--ft-upstream-text); }
 .subject { font-size: 14px; line-height: 22px; word-break: break-word; }
 span.subject { color: var(--ft-text); }
@@ -329,7 +345,7 @@ span.subject { color: var(--ft-text); }
 .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; font-size: 12px; color: var(--ft-text-2); }
 .meta .late { color: var(--ft-late-text); }
 .ops { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; max-width: 260px; }
-.issue-btn { color: #6b3fa0; border-color: #d3c2ea; }
+.issue-btn { color: var(--ft-primary-text); border-color: var(--ft-primary-bg); }
 .go { font-size: 13px; white-space: nowrap; }
 
 @media (max-width: 991px) {

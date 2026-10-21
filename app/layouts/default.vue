@@ -50,10 +50,15 @@ function onBreakpoint(b: boolean) {
   broken.value = b
   collapsed.value = b
 }
+/** 内容区是独立滚动的（整页大白框固定在视口里），换页时手动回到顶部 */
+const contentEl = ref<HTMLElement | null>(null)
 watch(() => route.path, () => {
   if (broken.value) collapsed.value = true
+  contentEl.value?.scrollTo({ top: 0 })
 })
 const selected = computed(() => [menu.value.find((m) => m.key !== '/' && route.path.startsWith(m.key))?.key ?? '/'])
+/** 页头左侧显示当前所在菜单（图标 + 名称），和参考图一致 */
+const current = computed(() => menu.value.find((m) => m.key === selected.value[0]))
 
 // ───── 菜单"工作台"未读角标（前端改版第二轮）：独立的 key（不和首页 reminders 冲突），随下面的 60 秒轮询一起刷新 ─────
 const { data: unread, refresh: refreshUnread } = useUnreadCount()
@@ -126,17 +131,19 @@ onBeforeUnmount(() => clearInterval(timer))
 </script>
 
 <template>
-  <a-layout class="ft-app" style="min-height: 100vh">
-    <a-layout-sider v-model:collapsed="collapsed" :trigger="null" :width="200" breakpoint="lg" :collapsed-width="0" class="sider" @breakpoint="onBreakpoint">
+  <a-layout class="ft-app">
+    <a-layout class="frame" has-sider>
+    <a-layout-sider v-model:collapsed="collapsed" :trigger="null" :width="188" breakpoint="lg" :collapsed-width="0" class="sider" @breakpoint="onBreakpoint">
       <div class="sider-inner">
         <NuxtLink to="/" class="brand">
           <span class="logo" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>
-          项目履约
+          <span class="brand-text"><span class="brand-name">项目履约</span><span class="brand-sub">项目履约与异常管理</span></span>
         </NuxtLink>
         <nav class="sider-scroll" aria-label="主菜单" :inert="collapsed || undefined">
           <div v-for="g in groups" :key="g.title" class="group">
             <div class="group-title">{{ g.title }}</div>
             <NuxtLink v-for="m in g.items" :key="m.key" :to="m.key" class="item" :class="{ active: selected[0] === m.key }" :aria-current="selected[0] === m.key ? 'page' : undefined">
+              <UiNavIcon :name="m.key" />
               <span class="item-label">{{ m.label }}</span>
               <span v-if="m.key === '/' && unreadText" class="badge" :aria-label="`未读提醒 ${unreadText} 条`">{{ unreadText }}</span>
             </NuxtLink>
@@ -155,44 +162,63 @@ onBeforeUnmount(() => clearInterval(timer))
             class="nav-toggle"
             @click="collapsed = !collapsed"
           >菜单</a-button>
-          <span v-if="broken" class="brand-mini">项目履约</span>
+          <span v-if="current" class="page-name"><UiNavIcon :name="current.key" /><span>{{ current.label }}</span></span>
         </span>
         <span v-if="me" class="user">
           {{ me.name }}<template v-if="me.department"> · {{ me.department }}</template><template v-if="me.businessDeptName && me.businessDeptName !== me.department">（{{ me.businessDeptName }}）</template>
           <a-button type="link" size="small" @click="logout">退出 / 切换账号</a-button>
         </span>
       </a-layout-header>
-      <a-layout-content class="content">
+      <div ref="contentEl" class="content ft-content">
         <slot />
-      </a-layout-content>
+      </div>
+    </a-layout>
     </a-layout>
   </a-layout>
 </template>
 
 <style scoped>
-.sider { position: sticky; top: 0; height: 100vh; z-index: 11; background: var(--ft-sider-bg) !important; }
-.sider-inner { height: 100%; display: flex; flex-direction: column; }
-.brand { display: flex; align-items: center; gap: 10px; padding: 20px 22px 12px; color: #fff; font-weight: 600; font-size: 16px; white-space: nowrap; }
-.brand:hover { color: #fff; }
-.logo { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: var(--ft-primary); }
-.sider-scroll { flex: 1; overflow-y: auto; padding: 4px 12px 24px; }
-.group-title { padding: 14px 10px 6px; font-size: 12px; color: #8a96a8; }
-/* 菜单项：圆角，选中项浅色高亮；14 项在 800 高的屏幕上也能一屏放下 */
-.item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; margin: 2px 0; border-radius: 8px; color: #d5dbe5; font-size: 14px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 设计改版（参考图）：整页是一个固定在视口里的大白框，左边灰色侧栏面板，右边带细边框的内容面板；
+   内容面板里页头固定、下面内容独立滚动，所以滚动时内容不会从页头上下露出来，四角也天然是圆的 */
+.ft-app { height: 100vh; padding: 10px; overflow: hidden; }
+.frame { height: 100%; gap: 8px; padding: 8px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: 22px; overflow: hidden; }
+.sider { height: 100%; background: transparent !important; }
+.sider-inner { height: 100%; display: flex; flex-direction: column; background: var(--ft-fill); border-radius: 16px; overflow: hidden; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 16px 14px 12px; color: var(--ft-text); white-space: nowrap; }
+.brand:hover { color: var(--ft-text); }
+.logo { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 9px; background: var(--ft-primary); }
+.brand-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.brand-name { font-weight: 600; font-size: 16px; }
+.brand-sub { font-size: 12px; color: var(--ft-text-2); }
+.sider-scroll { flex: 1; overflow-y: auto; padding: 2px 8px 16px; }
+/* 参考图的分组标题更浅，但 --ft-text-3 在浅灰底上达不到 4.5:1，这里用 --ft-text-2 */
+.group-title { padding: 12px 10px 4px; font-size: 12px; color: var(--ft-text-2); }
+/* 菜单项高 36px（含间距 38px），15 项在 900 高的屏幕上一屏放下 */
+.item { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; margin: 2px 0; border-radius: 10px; color: var(--ft-text-2); font-size: 14px; white-space: nowrap; overflow: hidden; }
 .item-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* 未读角标：红底白字，数字多时变宽 */
-.badge { flex: none; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--ft-late); color: #fff; font-size: 12px; line-height: 18px; text-align: center; font-weight: 500; }
-.item:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
-.item.active { color: #fff; background: #2b3a50; font-weight: 500; }
-.item:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 1px; }
-.main { min-width: 0; background: var(--ft-page-bg); }
-.header { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 52px; line-height: 52px; padding: 0 24px; position: sticky; top: 0; z-index: 10; background: rgba(238, 241, 245, 0.92); backdrop-filter: blur(6px); }
-.left { display: flex; align-items: center; gap: 12px; }
-.brand-mini { font-weight: 600; color: var(--ft-text); white-space: nowrap; }
+/* 未读角标：白底胶囊，数字多时变宽 */
+.badge { flex: none; min-width: 22px; height: 20px; padding: 0 7px; border-radius: 10px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); color: var(--ft-text); font-size: 12px; line-height: 18px; text-align: center; font-weight: 600; }
+.item:hover { color: var(--ft-text); background: var(--ft-border); }
+/* 选中项：黑底白字（参考图） */
+.item.active { color: var(--ft-card-bg); background: var(--ft-text); font-weight: 500; }
+.item.active .badge { border-color: transparent; }
+.item:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: -2px; }
+.main { min-width: 0; height: 100%; display: flex; flex-direction: column; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: 16px; overflow: hidden; }
+.header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 56px; line-height: 56px; margin: 0 16px; padding: 0; background: transparent; border-bottom: 1px solid var(--ft-border); }
+.left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.page-name { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; color: var(--ft-text); white-space: nowrap; }
 .user { color: var(--ft-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.content { padding: 4px 24px 24px; min-width: 0; }
+/* 框架四周留白控制在原来的宽度附近（侧栏 188 + 留白），各页面表格可用宽度基本不变 */
+.content { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+@media (max-width: 991px) {
+  /* 窄屏侧栏收起时不留空隙 */
+  .frame { gap: 0; }
+}
 @media (max-width: 575px) {
-  .header { padding: 0 12px; }
-  .content { padding: 4px 12px 16px; }
+  .ft-app { padding: 0; }
+  .frame { padding: 0; border: none; border-radius: 0; }
+  .main { border: none; border-radius: 0; }
+  .header { margin: 0 12px; }
+  .content { padding: 12px; }
 }
 </style>

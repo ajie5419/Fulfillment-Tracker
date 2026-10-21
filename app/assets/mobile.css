@@ -48,7 +48,7 @@
   --van-tag-padding: 1px 6px;
   --van-tag-line-height: 18px;
   --van-progress-height: 6px;
-  --van-progress-background: #e6e9ef;
+  --van-progress-background: var(--ft-border);
   --van-progress-color: var(--ft-primary);
   --van-dialog-radius: 16px;
   --van-popup-round-radius: 16px;
@@ -56,8 +56,8 @@
   --van-grid-item-text-color: var(--ft-text);
   --van-grid-item-text-font-size: 12px;
   --van-search-background: transparent;
-  --van-search-content-background: #fff;
-  --van-dropdown-menu-background: #fff;
+  --van-search-content-background: var(--ft-card-bg);
+  --van-dropdown-menu-background: var(--ft-card-bg);
   --van-dropdown-menu-shadow: none;
   --van-dropdown-menu-title-active-text-color: var(--ft-primary);
   --van-dropdown-menu-option-active-color: var(--ft-primary);
@@ -70,26 +70,36 @@
  * 状态标签：实心标签改成"浅底 + 深色字"（与电脑端状态标签一致，白字配黄底、绿底对比度不够）；
  * 描边标签用深色字。文字本身就是状态，颜色只是辅助。
  */
-:root .van-tag--primary:not(.van-tag--plain) { background: #e7f0fb; color: #1d5fae; }
+:root .van-tag--primary:not(.van-tag--plain) { background: var(--ft-primary-bg); color: var(--ft-primary-text); }
 :root .van-tag--success:not(.van-tag--plain) { background: var(--ft-done-bg); color: var(--ft-done-text); }
 :root .van-tag--warning:not(.van-tag--plain) { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
 :root .van-tag--danger:not(.van-tag--plain) { background: var(--ft-late-bg); color: var(--ft-late-text); }
 :root .van-tag--default:not(.van-tag--plain) { background: var(--ft-none-bg); color: var(--ft-text-2); }
-:root .van-tag--primary.van-tag--plain { color: #1d5fae; }
+:root .van-tag--primary.van-tag--plain { color: var(--ft-primary-text); }
 :root .van-tag--success.van-tag--plain { color: var(--ft-done-text); }
 :root .van-tag--warning.van-tag--plain { color: var(--ft-risk-text); }
 :root .van-tag--danger.van-tag--plain { color: var(--ft-late-text); }
 :root .van-tag--default.van-tag--plain { color: var(--ft-text-2); }
+/* 设计规范：状态标签带色点的胶囊（和电脑端 UiStatusTag 一样）；大号可点的选择标签不加色点 */
+:root .van-tag:not(.van-tag--large):not(.van-tag--plain) { border-radius: 999px; padding: 0 9px; line-height: 22px; font-weight: 500; gap: 6px; }
+:root .van-tag:is(.van-tag--primary, .van-tag--success, .van-tag--warning, .van-tag--danger):not(.van-tag--large):not(.van-tag--plain)::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tag-dot); }
+:root .van-tag--primary { --tag-dot: var(--ft-primary); }
+:root .van-tag--success { --tag-dot: var(--ft-done); }
+:root .van-tag--warning { --tag-dot: var(--ft-risk); }
+:root .van-tag--danger { --tag-dot: var(--ft-late); }
 /* 大号可点的选择标签（发出登记、上报异常的选项）：选中为实心主色 */
 :root .van-tag--large { border-radius: 999px; padding: 6px 14px; }
-:root .van-tag--large.van-tag--primary:not(.van-tag--plain) { background: var(--ft-primary); color: #fff; }
+:root .van-tag--large.van-tag--primary:not(.van-tag--plain) { background: var(--ft-primary); color: var(--ft-card-bg); }
 
 /* ───── 手机布局 ───── */
+/* 顶部导航栏：白底 + 细底线（设计规范：中性灰白，不用渐变和阴影） */
+.ft-m .van-nav-bar { background: var(--ft-card-bg); }
+.ft-m .van-hairline--bottom::after { border-color: var(--ft-border); }
 .ft-m { min-height: 100vh; max-width: 640px; margin: 0 auto; background: var(--ft-page-bg); color: var(--ft-text); overflow-x: clip; }
 .ft-m .van-nav-bar__title { font-weight: 600; }
-.ft-m .van-cell-group--inset { box-shadow: var(--ft-card-shadow); }
+.ft-m .van-cell-group--inset { border: 1px solid var(--ft-border); box-shadow: none; }
 .ft-m .van-cell-group__title--inset { padding: 16px 16px 8px; font-size: 13px; font-weight: 600; }
-.ft-m .van-tabs__nav { background: #fff; }
+.ft-m .van-tabs__nav { background: var(--ft-card-bg); }
 .ft-m .van-tab--active { font-weight: 600; }
 .ft-m .van-empty__description { color: var(--ft-text-3); }
 .ft-m .van-button { font-weight: 500; }
@@ -104,11 +114,11 @@
 .m-hint { margin: 10px 12px 0; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; display: flex; gap: 6px; align-items: flex-start; }
 .m-hint.late { background: var(--ft-late-bg); color: var(--ft-late-text); }
 .m-hint.risk { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
-.m-hint.info { background: #e7f0fb; color: #1d5fae; }
+.m-hint.info { background: var(--ft-primary-bg); color: var(--ft-primary-text); }
 .m-hint.done { background: var(--ft-done-bg); color: var(--ft-done-text); }
 .m-hint.none { background: var(--ft-none-bg); color: var(--ft-text-2); }
 .m-hint .ft-icon { margin-top: 2px; }
-.m-foot { padding: 14px 16px 20px; color: var(--ft-text-3); font-size: 12px; text-align: center; }
+.m-foot { padding: 14px 16px 20px; color: var(--ft-text-2); font-size: 12px; text-align: center; }
 .m-center { display: flex; justify-content: center; padding: 32px; }
 .m-actions { display: flex; flex-direction: column; gap: 12px; padding: 20px 12px 24px; }
 .m-actions .van-button { height: 46px; font-size: 16px; }
@@ -134,8 +144,9 @@
 .m-text-risk { color: var(--ft-risk-text); }
 .m-text-upstream { color: var(--ft-upstream-text); }
 .m-text-done { color: var(--ft-done-text); }
-.m-text-none, .m-muted { color: var(--ft-text-3); }
-.m-text-primary { color: #1d5fae; }
+/* 次要文字用 --ft-text-2：--ft-text-3 在白底上对比度不到 4.5:1 */
+.m-text-none, .m-muted { color: var(--ft-text-2); }
+.m-text-primary { color: var(--ft-primary-text); }
 
 /* 进度条颜色按状态 */
 .m-progress-late { --van-progress-color: var(--ft-late); }

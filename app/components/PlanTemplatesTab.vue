@@ -125,8 +125,8 @@ const columns = [
 </template>
 
 <style scoped>
-.muted { color: #999; font-size: 12px; }
+.muted { color: var(--ft-text-2); font-size: 12px; }
 .node-tag { margin-bottom: 4px; }
 .node-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
-.seq { width: 20px; text-align: right; color: #999; }
+.seq { width: 20px; text-align: right; color: var(--ft-text-3); }
 </style>

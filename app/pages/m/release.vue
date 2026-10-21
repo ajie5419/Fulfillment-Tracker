@@ -152,7 +152,7 @@ const pdfs = computed(() => (detail.value?.attachments ?? []).filter((a) => !isI
 </template>
 
 <style scoped>
-.body { margin: 12px 12px 0; padding: 14px 16px; background: #fff; border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); }
+.body { margin: 12px 12px 0; padding: 14px 16px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); }
 .no { font-size: 16px; font-weight: 600; }
 .desc { font-size: 15px; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; }
 .rejected { margin-top: 6px; font-size: 12px; font-weight: 600; }

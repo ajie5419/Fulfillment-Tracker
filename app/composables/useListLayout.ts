@@ -10,3 +10,9 @@ export function useListLayout() {
   watch(layout, (v) => router.replace({ query: { ...route.query, layout: v } }))
   return layout
 }
+
+/** "按工单 / 表格"切换的选项（设计规范：用 a-segmented，各页统一文字） */
+export const LAYOUT_OPTIONS = [
+  { value: 'group', label: '按工单' },
+  { value: 'table', label: '表格' },
+]

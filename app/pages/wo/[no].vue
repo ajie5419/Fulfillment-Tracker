@@ -396,8 +396,8 @@ const enc = encodeURIComponent
 .tick.end::before { left: auto; right: 0; }
 .tick::before { content: ''; position: absolute; left: 0; top: 18px; height: 6px; border-left: 1px solid var(--ft-border); }
 .node-row { min-height: 54px; border-bottom: 1px solid var(--ft-border); cursor: pointer; outline: none; }
-.node-row:hover, .node-row:focus-visible { background: #f8fafc; }
-.node-row.open { background: #f8fafc; }
+.node-row:hover, .node-row:focus-visible { background: var(--ft-fill); }
+.node-row.open { background: var(--ft-fill); }
 .g-label { padding: 8px 10px 8px 2px; min-width: 0; }
 .n-name { display: flex; align-items: center; font-weight: 600; color: var(--ft-text); min-width: 0; }
 .n-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -406,10 +406,10 @@ const enc = encodeURIComponent
 .n-sub { font-size: 12px; padding-left: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g-track { position: relative; height: 40px; }
 .today-line { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid var(--ft-text); opacity: 0.85; z-index: 2; }
-.plan-box { position: absolute; top: 9px; height: 14px; min-width: 8px; border: 1px dashed #98a2b3; border-radius: 4px; }
+.plan-box { position: absolute; top: 9px; height: 14px; min-width: 8px; border: 1px dashed var(--ft-text-3); border-radius: 4px; }
 .real-bar { position: absolute; top: 14px; height: 12px; min-width: 8px; border-radius: 6px; z-index: 1; }
 .tasks { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; margin: 6px 0 10px; background: var(--ft-fill); border-radius: 10px; }
-.task { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 6px 10px; background: #fff; border: 1px solid var(--ft-border); border-radius: 8px; color: var(--ft-text); font-size: 13px; }
+.task { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 6px 10px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: 8px; color: var(--ft-text); font-size: 13px; }
 .task:hover { border-color: var(--ft-primary); color: var(--ft-text); }
 .kind { flex: none; font-size: 12px; padding: 0 6px; border-radius: 4px; background: var(--ft-fill); color: var(--ft-text-2); }
 .t-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }

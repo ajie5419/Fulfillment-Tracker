@@ -150,7 +150,7 @@ function close() {
         <a-select v-model:value="form.partId" allow-clear :disabled="!form.workOrderNumber" placeholder="不选工件" :options="partOptions" />
       </a-form-item>
       <a-form-item label="分类" required :extra="cat ? `默认责任部门：${cat.deptName}` : undefined">
-        <a-radio-group v-model:value="form.category" button-style="solid" size="small">
+        <a-radio-group v-model:value="form.category" size="small">
           <a-radio-button v-for="c in options.categories" :key="c.value" :value="c.value" style="margin-bottom: 6px">{{ c.label }}</a-radio-button>
         </a-radio-group>
       </a-form-item>

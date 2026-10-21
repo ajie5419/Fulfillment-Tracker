@@ -40,7 +40,7 @@ const pct = computed(() => (props.total ? Math.round((props.done / props.total) 
 .wo { font-size: 14px; font-weight: 600; }
 .nodes { min-width: 0; }
 .prog { display: inline-flex; align-items: center; gap: 8px; }
-.track { width: 96px; height: 6px; border-radius: 3px; background: #dfe4eb; overflow: hidden; }
+.track { width: 96px; height: 6px; border-radius: 3px; background: var(--ft-border); overflow: hidden; }
 .fill { display: block; height: 100%; background: var(--ft-primary); border-radius: 3px; }
 .fill.full { background: var(--ft-done); }
 .txt { white-space: nowrap; color: var(--ft-text); font-variant-numeric: tabular-nums; }

@@ -53,7 +53,7 @@ const ringColor = computed(() => {
 </template>
 
 <style scoped>
-.muted { color: #999; font-size: 12px; }
+.muted { color: var(--ft-text-2); font-size: 12px; }
 .warn { color: var(--ft-late-text); }
 .node { margin-bottom: 12px; }
 .node.focus { border-color: var(--ft-primary); box-shadow: 0 0 0 2px rgba(42, 120, 214, 0.2); }

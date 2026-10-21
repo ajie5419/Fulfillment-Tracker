@@ -64,13 +64,9 @@ const product = computed(() => r.value.projectName ?? r.value.customerName)
 </template>
 
 <style scoped>
-.card { display: block; position: relative; padding: 14px 16px 12px 20px; background: var(--ft-card-bg); border-radius: 12px; box-shadow: var(--ft-card-shadow); color: var(--ft-text); min-width: 0; overflow: hidden; transition: box-shadow 0.15s; }
-.card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--ft-none); }
-.card.g-LATE::before { background: var(--ft-late); }
-.card.g-RISK::before { background: var(--ft-risk); }
-.card.g-OK::before { background: var(--ft-done); }
+.card { display: block; position: relative; padding: 14px 16px 12px; border: 1px solid var(--ft-border); background: var(--ft-card-bg); border-radius: 12px; box-shadow: var(--ft-card-shadow); color: var(--ft-text); min-width: 0; overflow: hidden; transition: box-shadow 0.15s; }
+/* 设计改版：去掉左侧色条（用户意见）；卡片已按状态分组（组标题带图标），卡内有拖期天数和预警标签 */
 a.card:hover { color: var(--ft-text); box-shadow: 0 2px 4px rgba(16, 24, 40, 0.06), 0 6px 16px rgba(16, 24, 40, 0.1); }
-.noplan::before { background: repeating-linear-gradient(180deg, var(--ft-none) 0 6px, transparent 6px 10px); }
 .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .title { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .right { flex: none; font-size: 13px; font-weight: 600; }

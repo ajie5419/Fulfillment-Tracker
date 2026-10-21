@@ -210,7 +210,7 @@ const enc = encodeURIComponent
 .empty { padding: 48px 0; }
 .table-legend { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 14px 20px; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
-.light { display: inline-block; width: 28px; height: 28px; line-height: 28px; border-radius: 50%; color: #fff; text-align: center; font-weight: 600; }
+.light { display: inline-block; width: 28px; height: 28px; line-height: 28px; border-radius: 50%; color: var(--ft-card-bg); text-align: center; font-weight: 600; }
 .warn { color: var(--ft-late); font-weight: 600; }
 .small { font-size: 12px; }
 @media (max-width: 1279px) {

@@ -20,7 +20,8 @@ withDefaults(defineProps<{ title?: string; sub?: string; padding?: 'normal' | 't
 </template>
 
 <style scoped>
-.ft-section { background: var(--ft-card-bg); border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); min-width: 0; }
+/* 设计改版：内容面板是白底，卡片靠细边框区分（不再靠阴影） */
+.ft-section { background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); min-width: 0; }
 .pad-normal { padding: 20px 24px; }
 .pad-tight { padding: 14px 16px; }
 .pad-none { padding: 0; overflow: hidden; }

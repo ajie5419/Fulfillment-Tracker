@@ -33,15 +33,15 @@ const tip = (n: (typeof props.nodes)[number]) =>
 <style scoped>
 .dots { display: grid; margin: 12px 0 4px; }
 .cell { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 0; }
-.line { position: absolute; top: 6px; right: 50%; width: 100%; height: 2px; background: #d7dce4; }
+.line { position: absolute; top: 6px; right: 50%; width: 100%; height: 2px; background: var(--ft-border); }
 .first .line { display: none; }
 .s-DONE .line { background: var(--ft-done); }
 .s-SOURCE .line { background: var(--ft-late); }
-.dot { position: relative; z-index: 1; width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box; background: #fff; border: 2px solid var(--ft-none); }
+.dot { position: relative; z-index: 1; width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box; background: var(--ft-card-bg); border: 2px solid var(--ft-none); }
 .s-DONE .dot { background: var(--ft-done); border-color: var(--ft-done); }
 .s-SOURCE .dot { background: var(--ft-late); border-color: var(--ft-late); }
 .s-UPSTREAM .dot { border-color: var(--ft-upstream); }
-.ellipsis { position: relative; z-index: 1; height: 14px; line-height: 10px; padding: 0 2px; background: #fff; color: var(--ft-text-3); font-size: 12px; }
+.ellipsis { position: relative; z-index: 1; height: 14px; line-height: 10px; padding: 0 2px; background: var(--ft-card-bg); color: var(--ft-text-3); font-size: 12px; }
 .name { margin-top: 4px; max-width: 100%; font-size: 11px; color: var(--ft-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .s-SOURCE .name { color: var(--ft-late-text); }
 </style>

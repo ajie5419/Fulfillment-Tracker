@@ -123,7 +123,7 @@ function remove(row: PaymentRow) {
 }
 
 const statusOptions = [
-  { value: 'UNPAID', label: '未付（待付 + 暂缓）' },
+  { value: 'UNPAID', label: '未付' },
   { value: 'PENDING', label: '待付' },
   { value: 'ON_HOLD', label: '暂缓' },
   { value: 'PAID', label: '已付' },
@@ -151,11 +151,14 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
     <UiStatCard label="暂缓" :value="stats.onHold" unit="笔" tone="risk" accent icon="warn" clickable :active="filter.status === 'ON_HOLD' && !filter.blocking" @click="applyStatus('ON_HOLD')" />
     <UiStatCard label="已付" :value="stats.paid" unit="笔" tone="done" accent icon="check" clickable :active="filter.status === 'PAID' && !filter.blocking" @click="applyStatus('PAID')" />
   </div>
-  <a-card title="付款申请">
+  <a-card>
+    <template #title>
+      <span class="ft-title">付款申请
+        <UiHelpTip label="付款申请说明">"未付"包括待付和暂缓。排序：卡交期的在前，再按关联物料里离需求日最近的。不做审批：{{ canSetStatus ? '你可以直接标记 已付 / 暂缓。' : '财务标记 已付 / 暂缓（财务在设置页"人员与角色"里配置）。' }}</UiHelpTip>
+      </span>
+    </template>
     <template #extra>
       <a-space wrap>
-        <a-select v-model:value="filter.status" style="width: 170px" :options="statusOptions" />
-        <a-tag v-if="filter.blocking" color="red" closable @close="filter.blocking = undefined">只看卡交期</a-tag>
         <a-select
           v-model:value="filter.workOrderNumber"
           allow-clear
@@ -164,24 +167,22 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
           style="width: 170px"
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
-        <a-button @click="refreshAll()">刷新</a-button>
+        <UiRefreshButton @click="refreshAll()" />
         <a-button v-if="canDoAny(me, 'payment')" type="primary" @click="creating = true">申请付款</a-button>
       </a-space>
     </template>
+    <div class="ft-toolbar">
+      <a-segmented v-model:value="filter.status" :options="statusOptions" />
+      <div class="ft-toolbar-right">
+        <a-tag v-if="filter.blocking" color="red" closable @close="filter.blocking = undefined">只看卡交期</a-tag>
+        <a-segmented v-model:value="layout" :options="LAYOUT_OPTIONS" />
+      </div>
+    </div>
     <a-space size="large" class="totals">
       <span>未付 <b>{{ totals.count }}</b> 笔</span>
       <span :class="{ warn: totals.blocking }">其中卡交期 <b>{{ totals.blocking }}</b> 笔</span>
       <span v-if="!totals.amountHidden">未付金额 <b>{{ moneyText(totals.amount) }}</b> 元</span>
     </a-space>
-    <p class="muted">
-      排序：卡交期的在前，再按关联物料里离需求日最近的。不做审批：{{ canSetStatus ? '你可以直接标记 已付 / 暂缓。' : '财务标记 已付 / 暂缓（财务在设置页"人员与角色"里配置）。' }}
-    </p>
-    <div class="layout-switch">
-      <a-radio-group v-model:value="layout" size="small">
-        <a-radio-button value="group">按工单分组</a-radio-button>
-        <a-radio-button value="table">表格</a-radio-button>
-      </a-radio-group>
-    </div>
     <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty description="没有付款申请" /></a-spin>
     <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
     <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" v-bind="paidOf(t)" label="已付" :count="t.rows.length" unit="笔" />
@@ -249,8 +250,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
 
 <style scoped>
 .totals { margin-bottom: 8px; }
-.layout-switch { margin-bottom: 8px; }
-.muted { color: #999; font-size: 12px; }
+.muted { color: var(--ft-text-2); font-size: 12px; }
 .warn { color: var(--ft-late); }
 .line { line-height: 22px; }
 .small-tag { margin-left: 6px; font-size: 11px; line-height: 16px; }

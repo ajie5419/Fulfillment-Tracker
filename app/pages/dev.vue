@@ -298,5 +298,5 @@ async function submit() {
 </template>
 
 <style scoped>
-.muted { color: #999; }
+.muted { color: var(--ft-text-2); }
 </style>
