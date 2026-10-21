@@ -138,8 +138,8 @@ onBeforeUnmount(() => clearInterval(timer))
     <a-layout-sider v-model:collapsed="collapsed" :trigger="null" :width="188" breakpoint="lg" :collapsed-width="0" class="sider" @breakpoint="onBreakpoint">
       <div class="sider-inner">
         <NuxtLink to="/" class="brand">
-          <img class="logo" src="/brand/tolian-mark.png" width="32" height="32" alt="" aria-hidden="true">
-          <span class="brand-text"><span class="brand-name">项目履约</span><span class="brand-sub">项目履约与异常管理</span></span>
+          <img class="logo" src="/brand/tolian-lockup.png" width="138" height="29" alt="通联 TOLIAN">
+          <span class="brand-name">项目履约</span>
         </NuxtLink>
         <nav class="sider-scroll" aria-label="主菜单" :inert="collapsed || undefined">
           <div v-for="g in groups" :key="g.title" class="group">
@@ -186,13 +186,11 @@ onBeforeUnmount(() => clearInterval(timer))
 .frame { height: 100%; gap: 8px; padding: 8px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: 22px; overflow: hidden; }
 .sider { height: 100%; background: transparent !important; }
 .sider-inner { height: 100%; display: flex; flex-direction: column; background: var(--ft-fill); border-radius: 16px; overflow: hidden; }
-.brand { display: flex; align-items: center; gap: 10px; padding: 16px 14px 12px; color: var(--ft-text); white-space: nowrap; }
+.brand { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 18px 18px 10px; color: var(--ft-text); white-space: nowrap; }
 .brand:hover { color: var(--ft-text); }
-/* 公司标志（通联 TOLIAN 圆形图标，去掉了下方英文字样，32px 下字样看不清），透明底直接放在浅灰侧栏上 */
-.logo { flex: none; display: block; width: 32px; height: 32px; object-fit: contain; }
-.brand-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
-.brand-name { font-weight: 600; font-size: 16px; }
-.brand-sub { font-size: 12px; color: var(--ft-text-2); }
+/* 公司标志（通联 TOLIAN 原图的图标 + 英文字样改成横排，透明底，保留原色），下面一行系统名；左边和菜单图标对齐 */
+.logo { flex: none; display: block; width: 138px; height: 29px; object-fit: contain; }
+.brand-name { font-weight: 600; font-size: 15px; line-height: 1.3; }
 .sider-scroll { flex: 1; overflow-y: auto; padding: 2px 8px 16px; }
 /* 参考图的分组标题更浅，但 --ft-text-3 在浅灰底上达不到 4.5:1，这里用 --ft-text-2 */
 .group-title { padding: 12px 10px 4px; font-size: 12px; color: var(--ft-text-2); }
