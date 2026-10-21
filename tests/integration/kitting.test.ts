@@ -207,7 +207,7 @@ describe.skipIf(!DB)('齐套（R12）', () => {
     expect(v.shortages.find((x) => x.id === l1.id)).toMatchObject({ stage: '超承诺日', overdue: true, lateForNode: false })
     expect(v.shortages.find((x) => x.id === l2.id)).toMatchObject({ overdue: false, lateForNode: true })
 
-    // 出图任务取消 → 卡在"待料"（挂在工件上的钢板还没到）
+    // 设计任务取消 → 卡在"待料"（挂在工件上的钢板还没到）
     await s.dr.updateTask(draw.id, { cancelled: true })
     v = await view(n.id)
     expect(partRow()).toMatchObject({ reason: '待料', detail: '钢板' })

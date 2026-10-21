@@ -26,7 +26,7 @@ const groups = computed(() => {
       { key: '/plan', label: '总计划' },
     ]) },
     { title: '部门工作台', items: show([
-      { key: '/drawings', label: '出图任务', sections: ['tech'] },
+      { key: '/drawings', label: '设计任务', sections: ['tech'] },
       { key: '/releases', label: '发放签收', sections: ['tech', 'releases'] },
       { key: '/purchases', label: '采购到货', sections: ['purchase'] },
       { key: '/payments', label: '付款申请', sections: ['purchase', 'payments'] },

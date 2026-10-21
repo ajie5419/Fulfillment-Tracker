@@ -23,7 +23,7 @@ const DAY = 86_400_000
 
 /**
  * 演示数据里的日期一律在 seedDemo 执行时按上海日历现算（相对"工厂时区今天"偏移 offset 天，存当天 UTC 零点）。
- * 不在模块加载时算、也不按 UTC 日期算：上海时间 0–8 点 UTC 还是前一天，会差一天（如出图任务从黄变红、需求日提前一天）。
+ * 不在模块加载时算、也不按 UTC 日期算：上海时间 0–8 点 UTC 还是前一天，会差一天（如设计任务从黄变红、需求日提前一天）。
  */
 const dayFn = (now: Date) => {
   const today = todayDate(now).getTime()
@@ -97,7 +97,7 @@ const USERS = [
   // R10：采购部负责人兼采购员；财务
   { id: 'u-009', username: `${P}u-009`, realName: '测试采购员', departmentId: `${P}DEPT-PUR`, roleId: `${P}ROLE-BUYER`, roleName: '采购员' },
   { id: 'u-010', username: `${P}u-010`, realName: '测试财务', departmentId: `${P}DEPT-FIN`, roleId: `${P}ROLE-FIN`, roleName: '财务' },
-  // R11：技术部负责人（出图任务没指定设计负责人时的责任人；W7 黄色起收到）
+  // R11：技术部负责人（设计任务没指定设计负责人时的责任人；W7 黄色起收到）
   { id: 'u-011', username: `${P}u-011`, realName: '测试技术负责人', departmentId: `${P}DEPT-TECH`, roleId: `${P}ROLE-TECH-HEAD`, roleName: '部门负责人' },
   // R13 各部门视角：组焊班（经部门对照算生产部）、检验科（算质量部）、行政部（其他部门，只看"每日"）
   { id: 'u-012', username: `${P}u-012`, realName: '测试焊工', departmentId: `${P}DEPT-WELD`, roleId: `${P}ROLE-WORKER`, roleName: '操作工' },
@@ -159,11 +159,11 @@ const payments = (day: (offset: number) => Date) => [
 ] as const
 
 /**
- * R11 演示出图任务（设计负责人 u-008 测试设计员；技术部负责人 u-011）：
- *   主梁结构件总图：计划完成日已过 2 天还没出图 → W7 红；它挡着主梁结构件的"可以开工"（物料齐了也不发），
- *     标记出图 → 一键发放后才发；
+ * R11 演示设计任务（设计负责人 u-008 测试设计员；技术部负责人 u-011）：
+ *   主梁结构件总图：计划完成日已过 2 天还没完成设计 → W7 红；它挡着主梁结构件的"可以开工"（物料齐了也不发），
+ *     标记设计完成 → 一键发放后才发；
  *   支腿零件图：明天到计划完成日 → W7 黄；
- *   液压系统原理图（不关联工件）：6 天前已出图、需要客户确认，客户确认计划日已过 3 天 → W7 黄（再过 1 天红），还没发放；
+ *   液压系统原理图（不关联工件）：6 天前设计完成、需要客户确认，客户确认计划日已过 3 天 → W7 黄（再过 1 天红），还没发放；
  *   模具加热系统布置图（DEMO-WO-002，负责人 u-011）：8 天后到期，不预警。
  */
 const drawingTasks = (day: (offset: number) => Date) => {
@@ -249,7 +249,7 @@ export async function demoBom(workOrderNumber: string): Promise<QmsBomItem[]> {
 }
 
 /**
- * R14 总计划演示（DEMO-WO-001，交期 35 天后），已发布，挂上了上面的出图 / 采购 / 工序 / 装配记录：
+ * R14 总计划演示（DEMO-WO-001，交期 35 天后），已发布，挂上了上面的设计 / 采购 / 工序 / 装配记录：
  *   合同评审（项目部）：已手动完成；
  *   设计出图（技术部，计划昨天）：主梁总图逾期、液压原理图客户确认逾期（按今天算），支腿零件图计划明天（晚于节点日，标红）→ 自身晚 2 天，源头节点，W9 黄；
  *   关键物料到货（采购部，计划 4 天后）：回转支承承诺 8 天后到、液压马达需求 5 天后（都晚于节点日，标红）→ 自身晚 4 天，源头节点，W9 红；
@@ -426,7 +426,7 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
         data: { ...pay, requesterId: 'u-009', ...(pay.status === 'PAID' ? { statusBy: 'u-010', statusAt: now } : {}), lines: { create: lines.map((purchaseLineId) => ({ purchaseLineId })) } },
       })
     }
-    // R11 出图任务（登记人 u-003）
+    // R11 设计任务（登记人 u-003）
     for (const { partIds, drawnDate, ...d } of drawingTasks(day)) {
       if (await tx.drawingTask.findUnique({ where: { id: d.id }, select: { id: true } })) continue
       await tx.drawingTask.create({
@@ -567,7 +567,7 @@ export async function resetDemo(uploadDir?: string) {
     const payments = await tx.paymentRequest.deleteMany({ where: { OR: [{ workOrderNumber: { startsWith: P } }, { lines: { some: { purchaseLineId: { in: purchaseIds } } } }] } })
     await tx.todo.deleteMany({ where: { refType: 'part', refId: { in: partIds } } })
     await tx.incomingCheck.deleteMany({ where: { OR: [{ qmsInspectionId: { in: insIds } }, { purchaseLineId: { in: purchaseIds } }] } })
-    // R11：演示工单上的出图任务（关联工件随任务级联删除）
+    // R11：演示工单上的设计任务（关联工件随任务级联删除）
     const drawingIds = (await tx.drawingTask.findMany({ where: { OR: [{ workOrderNumber: { startsWith: P } }, { parts: { some: { partId: { in: partIds } } } }] }, select: { id: true } })).map((d) => d.id)
     // R12：演示工单上的装配节点（清单随节点级联删除）
     const nodeIds = (await tx.assemblyNode.findMany({ where: { workOrderNumber: { startsWith: P } }, select: { id: true } })).map((n) => n.id)

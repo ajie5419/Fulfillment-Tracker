@@ -17,16 +17,16 @@ import { userDeptNames } from '../auth/departments'
 import { workBucket } from '../../../shared/workbench'
 
 interface Link {
-  /** 电脑端：步骤 → 工件页对应工单；待确认 → 待确认匹配页；异常 → 异常列表并打开该条；签收记录（W5）→ 发放单详情；采购行（W6）→ 采购到货页并打开该行；出图任务（W7）→ 出图任务页并打开该任务；装配节点（W8）→ 齐套页并定位该节点 */
+  /** 电脑端：步骤 → 工件页对应工单；待确认 → 待确认匹配页；异常 → 异常列表并打开该条；签收记录（W5）→ 发放单详情；采购行（W6）→ 采购到货页并打开该行；设计任务（W7）→ 设计任务页并打开该任务；装配节点（W8）→ 齐套页并定位该节点 */
   pc: string | null
-  /** 手机端：W2 厂外步骤 → 发出登记；在外步骤 → 外协在途；异常 → 我的异常；签收记录 → 手机签收页；采购行 → 到货确认页；出图任务 → 我的出图任务；装配节点 → 手机齐套页；待确认没有手机页面 */
+  /** 手机端：W2 厂外步骤 → 发出登记；在外步骤 → 外协在途；异常 → 我的异常；签收记录 → 手机签收页；采购行 → 到货确认页；设计任务 → 我的设计任务；装配节点 → 手机齐套页；待确认没有手机页面 */
   mobile: string | null
 }
 
 interface LinkInfo extends Link {
   /** 所属工单（工作台卡片用）；对象删了或不属于某个工单为 null */
   workOrderNumber: string | null
-  /** 对象的截止日 'YYYY-MM-DD'（工作台按它分组）：出图计划完成日（已出图等客户确认时为客户确认计划日）、物料需求日、装配节点需求日、
+  /** 对象的截止日 'YYYY-MM-DD'（工作台按它分组）：设计计划完成日（设计完成等客户确认时为客户确认计划日）、物料需求日、装配节点需求日、
    *  总计划节点计划日、异常要求解决日、外协承诺返回日 / 工序要求完成日；节点超时未确认、发放签收等没有截止日的为 null */
   dueDay: string | null
   rule: AlertRule
@@ -62,7 +62,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
   /** 对象 → 所属工单、截止日 */
   const facts = new Map<string, { workOrderNumber: string | null; dueDay: string | null }>()
   for (const r of purchases) facts.set(`purchase:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: day(r.needDate) })
-  // 出图：待出图看计划完成日；已出图等客户确认看客户确认计划日
+  // 设计：设计中看计划完成日；设计完成等客户确认看客户确认计划日
   for (const r of drawings) facts.set(`drawing:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: day(r.status === 'PENDING' ? r.planDate : (r.customerPlanDate ?? r.planDate)) })
   for (const r of nodes) facts.set(`node:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: day(r.needDate) })
   for (const r of refIssues) facts.set(`issue:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: day(r.dueDate) })

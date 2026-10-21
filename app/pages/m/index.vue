@@ -104,7 +104,7 @@ const entries = computed(() =>
     { text: '上报异常', icon: 'warning-o', to: '/m/issue-new', tone: 'late' },
     { text: '我的异常', icon: 'todo-list-o', to: '/m/issues', tone: 'primary' },
     { text: '到货确认', icon: 'completed-o', to: '/m/arrivals', tone: 'done' },
-    { text: '出图任务', icon: 'description', to: '/m/drawings', tone: 'primary' },
+    { text: '设计任务', icon: 'description', to: '/m/drawings', tone: 'primary' },
     { text: '齐套 / 缺件', icon: 'cluster-o', to: '/m/kitting', tone: 'upstream' },
     { text: '我的签收', icon: 'certificate', to: '/m/releases', tone: 'primary' },
     { text: '外协在途', icon: 'logistics', to: '/m/transit', tone: 'risk' },

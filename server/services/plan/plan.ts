@@ -176,7 +176,7 @@ async function myConfirmTodos(userId: string, nodeIds: string[]) {
   return new Set(todos.map((t) => t.refId))
 }
 
-/** 没挂节点的部门记录条数（老数据；已取消的出图任务、采购行不算） */
+/** 没挂节点的部门记录条数（老数据；已取消的设计任务、采购行不算） */
 async function unlinkedCounts(wo: string) {
   const [drawing, purchase, step, assembly] = await Promise.all([
     prisma.drawingTask.count({ where: { workOrderNumber: wo, planNodeId: null, status: { not: 'CANCELLED' } } }),

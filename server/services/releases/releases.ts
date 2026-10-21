@@ -10,8 +10,8 @@
  * 不做审批、不做会签：发放人发出即生效；发错了由发放人或管理员作废（未签收的一并作废）。
  * 状态变化都在一个事务里，先锁发放单行（FOR UPDATE），同一发放单上的签收、作废、确认串行执行。
  *
- * 从出图任务一键发放（R11，drawingTaskId）：建单和作废都改用 READ COMMITTED，并按出图任务的顺序加锁
- * （先工件 → 出图任务 → 发放单），然后重算任务状态、重新评估"可以开工"（drawings.ts settleTask）。
+ * 从设计任务一键发放（R11，drawingTaskId）：建单和作废都改用 READ COMMITTED，并按设计任务的顺序加锁
+ * （先工件 → 设计任务 → 发放单），然后重算任务状态、重新评估"可以开工"（drawings.ts settleTask）。
  */
 import { Prisma, type ReceiptStatus, type Release, type ReleaseType } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
@@ -132,7 +132,7 @@ export interface NewReleaseInput {
   attachmentIds?: string[]
   userIds?: string[]
   groups?: RecipientGroup[]
-  /** 从出图任务一键发放（R11） */
+  /** 从设计任务一键发放（R11） */
   drawingTaskId?: string | null
 }
 
@@ -182,7 +182,7 @@ export async function createRelease(input: NewReleaseInput, issuerId: string) {
 
   const taskId = input.drawingTaskId || null
   return releaseTransaction(async (tx) => {
-    // 出图任务：先锁它的工件和任务行（与出图任务、采购同一加锁顺序）
+    // 设计任务：先锁它的工件和任务行（与设计任务、采购同一加锁顺序）
     const task = taskId ? await lockTask(tx, taskId) : null
     const wo = await tx.qmsWorkOrder.findFirst({ where: { workOrderNumber: input.workOrderNumber, isDeleted: false }, select: { workOrderNumber: true } })
     if (!wo) throw new FlowError('工单不存在或已删除')
@@ -310,7 +310,7 @@ async function olderHolds(tx: Tx, rel: Release) {
 
 /** 作废（发错了）：发放人或管理员。未签收的签收记录、签收待办、确认待办一并作废，"等变更"解除（更早的有效变更单覆盖的工序还给它） */
 export async function voidRelease(id: string, actor: Actor) {
-  // 关联了出图任务的：先锁任务（及其工件）再锁发放单，作废后任务回到"已出图"，重新评估"可以开工"
+  // 关联了设计任务的：先锁任务（及其工件）再锁发放单，作废后任务回到"设计完成"，重新评估"可以开工"
   const taskId = (await prisma.release.findUnique({ where: { id }, select: { drawingTaskId: true } }))?.drawingTaskId ?? null
   return prisma.$transaction(async (tx) => {
     const task = taskId ? await lockTask(tx, taskId).catch(() => null) : null

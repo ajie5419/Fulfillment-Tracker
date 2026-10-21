@@ -1,6 +1,6 @@
 /**
  * 每日汇总（方案 6.3）：每天早上给部门负责人、项目部负责人、分管领导、各工单项目经理在"我的提醒"顶部生成一条，
- * 内容是其可见范围内红/黄活动预警数量 + 未关闭异常数量（+ 有人未签收的发放单份数，R9；+ 缺料项数，R10；+ 出图逾期数，R11；+ 临近需求日仍未齐套的装配节点数，R12；
+ * 内容是其可见范围内红/黄活动预警数量 + 未关闭异常数量（+ 有人未签收的发放单份数，R9；+ 缺料项数，R10；+ 设计逾期数，R11；+ 临近需求日仍未齐套的装配节点数，R12；
  * + 总计划延误节点数（已发布总计划里没完成、预计晚于计划日的节点），R14；有才显示）+ 前 5 项（红优先）。
  *
  * 不依赖服务器时区：15 分钟一轮的定时任务里判断"工厂时区 ≥ 07:30 且今天还没生成"才生成；
@@ -69,7 +69,7 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
     prisma.release.findMany({ where: { status: 'ACTIVE', receipts: { some: { status: 'PENDING' } } }, select: { workOrderNumber: true } }),
     // 缺料：未到货且已到需求日的关键物料（只算 QMS 里还在的工单）
     prisma.purchaseLine.groupBy({ by: ['workOrderNumber'], where: { status: 'OPEN', needDate: { lte: todayDate(now) } }, _count: { _all: true } }),
-    // 出图逾期（R11）：待出图已过计划完成日，或客户确认已过计划日
+    // 设计逾期（R11）：设计中已过计划完成日，或客户确认已过计划日
     prisma.drawingTask.groupBy({ by: ['workOrderNumber'], where: overdueWhere(todayDate(now)), _count: { _all: true } }),
     // 未齐套节点（R12）：已进入 W8 预警窗口（需求日前 N 天内，含已过）仍未齐套，与看板同一口径
     prisma.assemblyNode.groupBy({ by: ['workOrderNumber'], where: { AND: [incompleteWhere(), dueWindowWhere(now, thresholds.W8)] }, _count: { _all: true } }),
@@ -122,7 +122,7 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
       kind: 'DIGEST',
       level,
       dedupeKey: digestKey(day, userId),
-      title: `【每日汇总】${mmdd}：红色预警 ${red} 条、黄色预警 ${yellow} 条，未关闭异常 ${myIssues.length} 条${unsignedCount ? `，未签收发放 ${unsignedCount} 份` : ''}${shortageCount ? `，缺料 ${shortageCount} 项` : ''}${drawingCount ? `，出图逾期 ${drawingCount} 项` : ''}${nodeCount ? `，未齐套节点 ${nodeCount} 个` : ''}${planCount ? `，总计划延误节点 ${planCount} 个` : ''}${lateText}`,
+      title: `【每日汇总】${mmdd}：红色预警 ${red} 条、黄色预警 ${yellow} 条，未关闭异常 ${myIssues.length} 条${unsignedCount ? `，未签收发放 ${unsignedCount} 份` : ''}${shortageCount ? `，缺料 ${shortageCount} 项` : ''}${drawingCount ? `，设计逾期 ${drawingCount} 项` : ''}${nodeCount ? `，未齐套节点 ${nodeCount} 个` : ''}${planCount ? `，总计划延误节点 ${planCount} 个` : ''}${lateText}`,
       body: lines.length ? lines.join('\n') : '今天没有红黄预警和未关闭异常',
     })
   }

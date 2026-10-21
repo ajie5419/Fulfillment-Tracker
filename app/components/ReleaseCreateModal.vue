@@ -2,7 +2,7 @@
 /**
  * 新建发放单（R9）：类型、工单、关联工件（可多选，可不选）、版本号、说明、附件（PDF/照片，可选），
  * 接收人按人选，或按"部门 + 角色"选（提交时展开成人）。纸质图纸照旧下发，这里登记并要求签收。
- * prefill（R11 出图任务一键发放）：预填类型、工单、关联工件、说明，并记下 drawingTaskId；打开时装入的工单不清掉预填的工件。
+ * prefill（R11 设计任务一键发放）：预填类型、工单、关联工件、说明，并记下 drawingTaskId；打开时装入的工单不清掉预填的工件。
  */
 import type { UploadFile } from 'ant-design-vue'
 
@@ -108,7 +108,7 @@ async function submit() {
       form.type === 'CHANGE' && (r.impact.started || r.impact.held)
         ? `；${r.impact.started ? `${r.impact.started} 道工序已在加工/在外，已通知确认变更影响` : ''}${r.impact.started && r.impact.held ? '，' : ''}${r.impact.held ? `${r.impact.held} 道未开工工序标"等变更"` : ''}`
         : ''
-    const drawing = r.drawing ? `；出图任务${r.drawing.status === 'DONE' ? '已完成' : r.drawing.status === 'CUSTOMER_PENDING' ? '待客户确认' : '已更新'}${r.drawing.readySent ? `，${r.drawing.readySent} 个工件已通知"可以开工"` : ''}` : ''
+    const drawing = r.drawing ? `；设计任务${r.drawing.status === 'DONE' ? '已完成' : r.drawing.status === 'CUSTOMER_PENDING' ? '待客户确认' : '已更新'}${r.drawing.readySent ? `，${r.drawing.readySent} 个工件已通知"可以开工"` : ''}` : ''
     message.success(`已发放 ${r.releaseNo}，${r.recipients} 人待签收${extra}${drawing}`, 6)
     emit('done', r.id)
   } catch (e) {

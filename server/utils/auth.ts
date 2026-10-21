@@ -127,7 +127,7 @@ export async function assertCanSeePayment(event: H3Event, id: string) {
 }
 
 /**
- * 出图任务（R11）：按所属工单判断；给了 user 时，设计负责人本人不受工单范围限制（"我的出图任务"）。
+ * 设计任务（R11）：按所属工单判断；给了 user 时，设计负责人本人不受工单范围限制（"我的设计任务"）。
  * 修改类接口不传 user：负责人本人也要能看到该工单才能改。
  */
 export async function assertCanSeeDrawing(event: H3Event, id: string, user?: AuthUser) {
@@ -211,7 +211,7 @@ export async function assertCanOperatePurchase(event: H3Event, id: string) {
   if (line) await assertCanOperate(event, 'purchase', { workOrderNumber: line.workOrderNumber })
 }
 
-/** 出图任务上的编辑 */
+/** 设计任务上的编辑 */
 export async function assertCanOperateDrawing(event: H3Event, id: string) {
   const task = await prisma.drawingTask.findUnique({ where: { id }, select: { workOrderNumber: true } })
   if (task) await assertCanOperate(event, 'drawing', { workOrderNumber: task.workOrderNumber })

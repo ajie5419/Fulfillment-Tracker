@@ -3,7 +3,7 @@
  * 工单详情（前端改版第一轮，以工单为中心的页面）：
  *   头部：工单号 · 产品、项目经理 · 客户、总计划状态、交期对比条（开始 → 今天 → 合同交期，预计超出部分标红）；
  *   指标卡：总计划节点完成、总装齐套率 + 缺件原因、活动预警红 / 黄、未关闭异常 + 超期；
- *   总计划时间线：每个节点一行（虚线框 = 计划区间，实心条 = 预计 / 实际，颜色按状态，竖线 = 今天），点节点展开挂在上面的出图、采购、工序、装配记录；
+ *   总计划时间线：每个节点一行（虚线框 = 计划区间，实心条 = 预计 / 实际，颜色按状态，竖线 = 今天），点节点展开挂在上面的设计、采购、工序、装配记录；
  *   右侧：要处理的事（活动预警 + 未关闭异常，按严重度排）、谁在拖（源头延误天数按责任部门）、还没挂到节点的记录。
  * 地址 #node-<id> 定位并展开该节点（列表"总计划节点"列点过来）。日期全部用服务端给的 'YYYY-MM-DD'。
  */
@@ -121,7 +121,7 @@ const unlinkedItems = computed(() => {
   const wo = encodeURIComponent(no.value)
   return u
     ? [
-        { key: 'drawing', label: '出图', n: u.drawing, to: `/drawings?wo=${wo}&view=all` },
+        { key: 'drawing', label: '设计', n: u.drawing, to: `/drawings?wo=${wo}&view=all` },
         { key: 'purchase', label: '采购', n: u.purchase, to: `/purchases?wo=${wo}&view=all` },
         { key: 'step', label: '工序', n: u.step, to: `/parts?wo=${wo}` },
         { key: 'assembly', label: '装配', n: u.assembly, to: `/kitting?wo=${wo}` },
@@ -282,7 +282,7 @@ const enc = encodeURIComponent
                     </div>
                   </div>
                   <div v-if="expanded.has(n.id)" class="tasks">
-                    <div v-if="!n.tasks.length" class="ft-muted no-task">这个节点上还没有挂出图、采购、工序或装配记录（挂上才计入预计交期）</div>
+                    <div v-if="!n.tasks.length" class="ft-muted no-task">这个节点上还没有挂设计、采购、工序或装配记录（挂上才计入预计交期）</div>
                     <NuxtLink v-for="t in n.tasks" :key="`${t.kind}:${t.id}`" :to="t.link" class="task">
                       <span class="kind">{{ t.kindText }}</span>
                       <span class="t-name" :title="t.name">{{ t.name }}</span>
@@ -292,7 +292,7 @@ const enc = encodeURIComponent
                 </template>
               </div>
             </div>
-            <p v-if="d.nodes.length" class="foot ft-muted">竖线 = 今天（{{ d.today }}）。点节点名展开挂在上面的出图、采购、工序、装配记录，点记录跳到对应部门列表。</p>
+            <p v-if="d.nodes.length" class="foot ft-muted">竖线 = 今天（{{ d.today }}）。点节点名展开挂在上面的设计、采购、工序、装配记录，点记录跳到对应部门列表。</p>
           </UiSectionCard>
 
           <!-- 右侧 -->

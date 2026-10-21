@@ -1,5 +1,5 @@
 /**
- * 部门记录挂总计划节点（R14 总计划设计第 4 节）：出图任务、采购行、工序、装配节点的新建 / 编辑共用的校验和提示。
+ * 部门记录挂总计划节点（R14 总计划设计第 4 节）：设计任务、采购行、工序、装配节点的新建 / 编辑共用的校验和提示。
  *
  *   节点只能选同一工单的；
  *   工单已发布总计划时，新建必须选节点（系统自动生成的记录——BOM 导入、套模板、复制路线、Excel 导入——不走这里，不受影响）；
@@ -60,7 +60,7 @@ export function planWarning(what: string, recordDate: Date | null | undefined, n
 }
 
 /**
- * 列表"总计划节点"列（前端改版第一轮）：一批节点 ID → 序号、名称（出图任务、采购行、装配节点列表共用；一次查询）。
+ * 列表"总计划节点"列（前端改版第一轮）：一批节点 ID → 序号、名称（设计任务、采购行、装配节点列表共用；一次查询）。
  * 节点已删的不在结果里（外键置空，正常不会出现）。
  */
 export async function planNodeLabels(ids: (string | null | undefined)[]): Promise<Map<string, { id: string; seq: number; name: string }>> {

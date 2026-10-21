@@ -465,7 +465,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     // 已付的不能删
     expect((await send(pm, 'DELETE', `/api/payments/${payId}`)).status).toBe(400)
   })
-  it('出图任务（R11）：按工单可见范围增查改；只有设计负责人本人或管理员能标记出图；负责人本人不受工单范围限制；一键发放关联任务', async () => {
+  it('设计任务（R11）：按工单可见范围增查改；只有设计负责人本人或管理员能标记设计完成；负责人本人不受工单范围限制；一键发放关联任务', async () => {
     const pm = await login('h-pm')
     const lead = await login('h-lead')
     const worker = await login('h-worker')
@@ -474,12 +474,12 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       fetch(`${base}${path}`, { method, headers: { cookie: cookieHeader(sess), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
     const later = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10)
 
-    // 项目经理甲不能在别人的工单上建（看不到）；R13：自己的工单也不能建（出图任务只限技术部、管理员），领导也不行
+    // 项目经理甲不能在别人的工单上建（看不到）；R13：自己的工单也不能建（设计任务只限技术部、管理员），领导也不行
     expect((await send(pm, 'POST', '/api/drawings', { workOrderNumber: OTHER, componentName: 'x', planDate: later })).status).toBe(403)
     expect((await send(tech, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: 'x', planDate: '2026/1/1' })).status).toBe(400)
     const pmDenied = await send(pm, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: 'x', planDate: later })
     expect(pmDenied.status).toBe(403)
-    expect(((await pmDenied.json()) as { message: string }).message).toBe('只有技术部或管理员可以编辑出图任务')
+    expect(((await pmDenied.json()) as { message: string }).message).toBe('只有技术部或管理员可以编辑设计任务')
     expect((await send(lead, 'POST', '/api/drawings', { workOrderNumber: OTHER, componentName: 'x', planDate: later })).status).toBe(403)
     // 技术员在甲的工单上建（负责人是一线 h-worker）
     const mine = await send(tech, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: '主梁总图', ownerId: 'h-worker', planDate: later })
@@ -489,7 +489,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     const other = await send(tech, 'POST', '/api/drawings', { workOrderNumber: OTHER, componentName: '别人的图', ownerId: 'h-pm', planDate: later })
     const otherId = ((await other.json()) as { id: string }).id
 
-    // 列表只含可见工单；"我的出图任务"含负责人是自己的（不受范围限制）
+    // 列表只含可见工单；"我的设计任务"含负责人是自己的（不受范围限制）
     const list = (await (await get('/api/drawings?view=all', pm)).json()) as { rows: { id: string }[] }
     expect(list.rows.map((r) => r.id)).toContain(mineId)
     expect(list.rows.map((r) => r.id)).not.toContain(otherId)
@@ -501,7 +501,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     // 负责人本人也要看得到工单才能改任务本身
     expect((await send(pm, 'PATCH', `/api/drawings/${otherId}`, { note: 'x' })).status).toBe(403)
 
-    // 标记出图：不是负责人 → 403；负责人本人 → 200；看不到工单的负责人也能标
+    // 标记设计完成：不是负责人 → 403；负责人本人 → 200；看不到工单的负责人也能标
     expect((await send(pm, 'POST', `/api/drawings/${mineId}/drawn`, {})).status).toBe(403)
     expect((await send(lead, 'POST', `/api/drawings/${mineId}/drawn`, {})).status).toBe(403)
     const drawn = await send(worker, 'POST', `/api/drawings/${mineId}/drawn`, {})
@@ -723,7 +723,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(buyer, 'POST', `/api/plan/nodes/${design.id}/undo-complete`, {})).status).toBe(403)
     expect((await send(pm, 'POST', `/api/plan/nodes/${design.id}/undo-complete`, {})).status).toBe(200)
 
-    // 已发布：新建出图任务必须选节点（400）；选了别的工单的节点 400；选对了 200
+    // 已发布：新建设计任务必须选节点（400）；选了别的工单的节点 400；选对了 200
     const noNode = await send(tech, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: 'R14 图', planDate: later(15) })
     expect(noNode.status).toBe(400)
     expect(((await noNode.json()) as { message: string }).message).toContain('请选择所属总计划节点')
@@ -794,7 +794,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(board.rows.find((r) => r.workOrderNumber === MINE)).toMatchObject({ hasPlan: true })
     expect(board.rows.find((r) => r.workOrderNumber === MINE)!.planNodes).toHaveLength(11)
     expect(Array.isArray(board.sourceByDept)).toBe(true)
-    // 出图 / 采购列表的"总计划节点"列
+    // 设计 / 采购列表的"总计划节点"列
     const drawings = (await (await get(`/api/drawings?workOrderNumber=${MINE}&view=all`, tech)).json()) as { rows: { componentName: string; planNode: { id: string; seq: number; name: string } | null }[] }
     expect(drawings.rows.find((r) => r.componentName === 'R14 图')!.planNode).toMatchObject({ id: design.id, name: '设计出图' })
     const lines = (await (await get(`/api/purchases?workOrderNumber=${MINE}&view=all`, admin)).json()) as { rows: { materialName: string; planNode: unknown }[] }
@@ -866,7 +866,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await json<{ blockingUnpaid: number }>(`/api/payments/stats?workOrderNumber=${OTHER}`, lead)).blockingUnpaid).toBeGreaterThanOrEqual(1)
     expect((await get(`/api/payments/stats?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
 
-    // ── 出图"本周到期"、采购"卡付款"、齐套"需求日临近"：统计数字 = 对应筛选的条数 ──
+    // ── 设计"本周到期"、采购"卡付款"、齐套"需求日临近"：统计数字 = 对应筛选的条数 ──
     const d = await json<{ total: number; stats: { dueThisWeek: number } }>(`/api/drawings?view=week`, admin)
     expect(d.total).toBe(d.stats.dueThisWeek)
     const p = await json<{ total: number; stats: { blockedByPayment: number } }>(`/api/purchases?view=blocked`, admin)

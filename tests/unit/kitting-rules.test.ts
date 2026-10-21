@@ -62,7 +62,7 @@ describe('partBlocker：缺件卡在哪一步（只给一个主要原因）', ()
     })
     expect(partBlocker(facts({ steps: pending }))).toMatchObject({ code: 'PENDING', text: '待开工', stage: '组焊' })
   })
-  it('没有工序 = 未排工序（有出图任务时先报图纸）；工序都完成但工件没置完成 = 工序已完成', () => {
+  it('没有工序 = 未排工序（有设计任务时先报图纸）；工序都完成但工件没置完成 = 工序已完成', () => {
     expect(partBlocker(facts({}))).toMatchObject({ code: 'NO_ROUTE', stage: null })
     expect(partBlocker(facts({ openDrawings: ['总图'] }))).toMatchObject({ code: 'DRAWING' })
     expect(partBlocker(facts({ steps: [step(1, 'DONE', '组焊')] }))).toMatchObject({ code: 'STEPS_DONE' })

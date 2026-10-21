@@ -261,7 +261,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     const assy = nodes.find((n) => n.name === '装配')!
     const cut = nodes.find((n) => n.name === '下料组焊')!
     const NEED = '该工单已发布总计划，请选择所属总计划节点'
-    // 出图
+    // 设计
     await expect(s.dr.createTask({ workOrderNumber: WO, componentName: 'x', planDate: dayOff(40) }, 'u-pm')).rejects.toThrow(NEED)
     const t = await s.dr.createTask({ workOrderNumber: WO, componentName: '液压原理图', planDate: dayOff(40), planNodeId: design.id }, 'u-pm')
     expect(t.planWarning).toBeNull()
@@ -375,7 +375,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     const digest = await db.reminder.findFirst({ where: { userId: 'u-pm', kind: 'DIGEST' }, orderBy: { createdAt: 'desc' } })
     expect(digest?.title).toMatch(/总计划延误节点 \d+ 个，预计拖期工单 \d+ 个（最长 \d+ 天）/)
 
-    // 处理掉：交期改回、物料删掉、出图完成（节点自动完成）→ 节点级、工单级预警全部消除
+    // 处理掉：交期改回、物料删掉、设计完成（节点自动完成）→ 节点级、工单级预警全部消除
     await db.qmsWorkOrder.update({ where: { workOrderNumber: W9WO }, data: { deliveryDate: dayOff(60) } })
     await s.pur.deleteLine(l.id)
     await db.drawingTask.update({ where: { id: t.id }, data: { status: 'DONE', drawnDate: dayOff(0) } })

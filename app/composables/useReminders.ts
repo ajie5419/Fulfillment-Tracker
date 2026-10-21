@@ -29,7 +29,7 @@ export interface ReminderItem {
 export const LEVEL_TEXT = { RED: '红色', YELLOW: '黄色', REMIND: '提醒' } as const
 export const LEVEL_COLOR = { RED: 'red', YELLOW: 'orange', REMIND: 'blue' } as const
 export const LEVEL_ORDER: AlertLevelKey[] = ['RED', 'YELLOW', 'REMIND']
-export const RULE_TEXT = { W1: 'W1 待确认匹配超时', W2: 'W2 转序停滞', W3: 'W3 外协逾期未返', W4: 'W4 异常超期', W5: 'W5 发放未签收 / 变更未确认', W6: 'W6 关键物料未到货', W7: 'W7 出图逾期', W8: 'W8 装配节点未齐套', W9: 'W9 总计划节点延误 / 未确认' } as const
+export const RULE_TEXT = { W1: 'W1 待确认匹配超时', W2: 'W2 转序停滞', W3: 'W3 外协逾期未返', W4: 'W4 异常超期', W5: 'W5 发放未签收 / 变更未确认', W6: 'W6 关键物料未到货', W7: 'W7 设计逾期', W8: 'W8 装配节点未齐套', W9: 'W9 总计划节点延误 / 未确认' } as const
 
 /** 每日汇总（置顶） */
 export interface DigestItem {

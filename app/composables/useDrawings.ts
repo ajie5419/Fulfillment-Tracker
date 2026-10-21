@@ -1,13 +1,13 @@
-/** 设计出图任务（R11）页面共用：文案、颜色、接口调用。 */
+/** 设计任务（R11）页面共用：文案、颜色、接口调用。 */
 
-export const DRAWING_STATUS_TEXT = { PENDING: '待出图', DRAWN: '已出图', CUSTOMER_PENDING: '待客户确认', DONE: '已完成', CANCELLED: '已取消' } as const
+export const DRAWING_STATUS_TEXT = { PENDING: '设计中', DRAWN: '设计完成', CUSTOMER_PENDING: '待客户确认', DONE: '已完成', CANCELLED: '已取消' } as const
 export const DRAWING_STATUS_COLOR = { PENDING: 'blue', DRAWN: 'cyan', CUSTOMER_PENDING: 'purple', DONE: 'green', CANCELLED: 'default' } as const
 /** Vant 标签类型 */
 export const DRAWING_STATUS_TYPE = { PENDING: 'primary', DRAWN: 'success', CUSTOMER_PENDING: 'warning', DONE: 'success', CANCELLED: 'default' } as const
 
 export type DrawingStatusKey = keyof typeof DRAWING_STATUS_TEXT
 
-/** 出图任务（GET /api/drawings 的 rows、GET /api/drawings/:id） */
+/** 设计任务（GET /api/drawings 的 rows、GET /api/drawings/:id） */
 export interface DrawingRow {
   id: string
   workOrderNumber: string
@@ -74,8 +74,8 @@ export function releasePrefillOf(r: DrawingRow): ReleasePrefill {
     type: 'DRAWING',
     workOrderNumber: r.workOrderNumber,
     partIds: r.partIds,
-    description: `${r.componentName} 图纸发放${r.drawnDate ? `（${dayText(r.drawnDate)} 出图）` : ''}${r.parts.length ? `；工件：${r.parts.map((p) => p.name).join('、')}` : ''}`,
+    description: `${r.componentName} 图纸发放${r.drawnDate ? `（${dayText(r.drawnDate)} 设计完成）` : ''}${r.parts.length ? `；工件：${r.parts.map((p) => p.name).join('、')}` : ''}`,
     drawingTaskId: r.id,
-    label: `出图任务：${r.componentName}`,
+    label: `设计任务：${r.componentName}`,
   }
 }

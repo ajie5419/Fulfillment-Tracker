@@ -23,8 +23,8 @@ export function reasonCounts(shortages: { reason: string }[]): { reason: string;
 }
 
 /**
- * 挂靠记录跳到对应部门列表，带上工单筛选：出图、采购看该工单全部记录；工序到工件与工序链；装配节点定位到该节点。
- * （不带 ?id=：出图 / 采购的 ?id= 会直接弹编辑框，从详情页过去只是看）
+ * 挂靠记录跳到对应部门列表，带上工单筛选：设计、采购看该工单全部记录；工序到工件与工序链；装配节点定位到该节点。
+ * （不带 ?id=：设计 / 采购的 ?id= 会直接弹编辑框，从详情页过去只是看）
  */
 export function taskListLink(kind: TaskKind, workOrderNumber: string, id: string): string {
   const wo = encodeURIComponent(workOrderNumber)

@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
- * 出图任务（R11）：按部件拆的出图任务列表（筛选：工单 / 设计负责人 / 视图含"逾期"）、新建 / 编辑、标记出图、录客户确认、
+ * 设计任务（R11）：按部件拆的设计任务列表（筛选：工单 / 设计负责人 / 视图含"逾期"）、新建 / 编辑、标记设计完成、录客户确认、
  * 一键发放（打开 R9 新建发放单并预填）；"设计负荷"页签按设计负责人列在手、逾期、本周到期。
  * 地址栏 ?wo= 预选工单，?view= 选视图，?owner= 选负责人，?tab=load 打开设计负荷，?id= 打开某个任务（W7 提醒跳过来）。
- * 新建 / 编辑 / 客户确认：技术部、管理员；一键发放：技术部、管理员；标记出图仍限设计负责人或管理员（权限方案 R13）。
- * 前端改版第二轮：顶部统计卡（待出图 / 逾期 / 本周到期 / 已出图待发放·待确认，点了套用对应视图，数字是接口 stats，与视图同一口径）；
- * 列表默认按工单分组（?layout=group|table），组标题带本组出图完成度。
+ * 新建 / 编辑 / 客户确认：技术部、管理员；一键发放：技术部、管理员；标记设计完成仍限设计负责人或管理员（权限方案 R13）。
+ * 前端改版第二轮：顶部统计卡（设计中 / 逾期 / 本周到期 / 设计完成待发放·待确认，点了套用对应视图，数字是接口 stats，与视图同一口径）；
+ * 列表默认按工单分组（?layout=group|table），组标题带本组设计完成度。
  */
 import { distinctPlanNodes, groupByWorkOrder, groupProgress } from '#shared/workbench'
 
@@ -20,12 +20,12 @@ const canRelease = computed(() => canDo(me.value, 'release'))
 const VIEWS = [
   { value: 'open', label: '未完成' },
   { value: 'overdue', label: '逾期' },
-  { value: 'drawn', label: '已出图待发放 / 待确认' },
+  { value: 'drawn', label: '设计完成待发放 / 待确认' },
   { value: 'done', label: '已完成' },
   { value: 'cancelled', label: '已取消' },
   { value: 'all', label: '全部' },
 ] as const
-/** 只由统计卡套用的视图（不在上面的单选里）：待出图、本周到期 */
+/** 只由统计卡套用的视图（不在上面的单选里）：设计中、本周到期 */
 const CARD_VIEWS = ['pending', 'week']
 const tab = ref(route.query.tab === 'load' ? 'load' : 'list')
 const filter = reactive({
@@ -115,7 +115,7 @@ function closeEdit() {
   if (route.query.id) router.replace({ query: { ...route.query, id: undefined } })
 }
 
-// ───── 标记出图 / 客户确认（选日期，默认今天）─────
+// ───── 标记设计完成 / 客户确认（选日期，默认今天）─────
 const acting = ref<{ row: DrawingRow; kind: 'drawn' | 'confirm' } | null>(null)
 const actDate = ref(dayAfter(0))
 const busy = ref(false)
@@ -129,7 +129,7 @@ async function submitAct() {
   busy.value = true
   try {
     const r = await drawingSend(`/api/drawings/${a.row.id}/${a.kind === 'drawn' ? 'drawn' : 'confirm'}`, 'POST', { date: actDate.value })
-    message.success(drawingResultText(r, a.kind === 'drawn' ? '已标记出图' : '已录客户确认'), 5)
+    message.success(drawingResultText(r, a.kind === 'drawn' ? '已标记设计完成' : '已录客户确认'), 5)
     acting.value = null
     await reload()
   } catch (e) {
@@ -140,8 +140,8 @@ async function submitAct() {
 }
 function undo(row: DrawingRow, kind: 'drawn' | 'confirm') {
   Modal.confirm({
-    title: kind === 'drawn' ? `撤销出图：${row.componentName}？` : `撤销客户确认：${row.componentName}？`,
-    content: kind === 'drawn' ? '回到待出图（客户确认一并清掉），关联工件没处理的"可以开工"待办作废' : '回到未确认',
+    title: kind === 'drawn' ? `撤销设计完成：${row.componentName}？` : `撤销客户确认：${row.componentName}？`,
+    content: kind === 'drawn' ? '回到设计中（客户确认一并清掉），关联工件没处理的"可以开工"待办作废' : '回到未确认',
     okText: '撤销',
     async onOk() {
       try {
@@ -174,7 +174,7 @@ const columns = [
   { title: '部件 / 关联工件', key: 'component', width: 172 },
   { title: '设计负责人', key: 'owner', width: 96 },
   { title: '计划完成', key: 'planDate', width: 104 },
-  { title: '出图', key: 'drawn', width: 94 },
+  { title: '设计完成', key: 'drawn', width: 94 },
   { title: '客户确认', key: 'customer', width: 128 },
   { title: '状态', key: 'status', width: 100 },
   { title: '发放单', key: 'releases', width: 98 },
@@ -189,7 +189,7 @@ const loadKey = (r: { ownerId: string | null }) => r.ownerId ?? '-'
 const loadColumns = [
   { title: '设计负责人', key: 'owner' },
   { title: '在手（未完成）', dataIndex: 'open', width: 120, align: 'center' as const },
-  { title: '待出图', dataIndex: 'pendingDraw', width: 90, align: 'center' as const },
+  { title: '设计中', dataIndex: 'pendingDraw', width: 90, align: 'center' as const },
   { title: '逾期', key: 'overdue', width: 90, align: 'center' as const },
   { title: '本周到期', key: 'week', width: 100, align: 'center' as const },
   { title: '待客户确认', dataIndex: 'customerPending', width: 110, align: 'center' as const },
@@ -199,22 +199,22 @@ const loadColumns = [
 <template>
   <div class="ft-page">
   <div v-if="stats" class="ft-stats">
-    <UiStatCard label="待出图" :value="stats.pending" unit="项" tone="primary" accent icon="dot" clickable :active="filter.view === 'pending'" sub="还没出图的任务" @click="applyView('pending')" />
-    <UiStatCard label="逾期" :value="stats.overdue" unit="项" tone="late" accent icon="alert" clickable :active="filter.view === 'overdue'" sub="待出图过计划完成日，或客户确认过计划日" @click="applyView('overdue')" />
-    <UiStatCard label="本周到期" :value="stats.dueThisWeek" unit="项" tone="risk" accent icon="warn" clickable :active="filter.view === 'week'" sub="待出图且计划完成日在本周" @click="applyView('week')" />
-    <UiStatCard label="已出图待发放 / 待确认" :value="stats.drawn + stats.customerPending" unit="项" tone="done" accent icon="check" clickable :active="filter.view === 'drawn'" @click="applyView('drawn')">
+    <UiStatCard label="设计中" :value="stats.pending" unit="项" tone="primary" accent icon="dot" clickable :active="filter.view === 'pending'" sub="还没完成设计的任务" @click="applyView('pending')" />
+    <UiStatCard label="逾期" :value="stats.overdue" unit="项" tone="late" accent icon="alert" clickable :active="filter.view === 'overdue'" sub="设计中过计划完成日，或客户确认过计划日" @click="applyView('overdue')" />
+    <UiStatCard label="本周到期" :value="stats.dueThisWeek" unit="项" tone="risk" accent icon="warn" clickable :active="filter.view === 'week'" sub="设计中且计划完成日在本周" @click="applyView('week')" />
+    <UiStatCard label="设计完成待发放 / 待确认" :value="stats.drawn + stats.customerPending" unit="项" tone="done" accent icon="check" clickable :active="filter.view === 'drawn'" @click="applyView('drawn')">
       <template #sub>待发放 {{ stats.drawn }} · 待客户确认 {{ stats.customerPending }}</template>
     </UiStatCard>
   </div>
   <a-card>
     <template #title>
-      <span class="ft-title">设计出图任务
-        <UiHelpTip label="出图任务说明">出图后点"一键发放"生成图纸发放单（R9）。关联工件的出图任务全部完成（已出图、已发放、需要时客户已确认）后，物料也齐了才给第一道工序发"可以开工"。没指定设计负责人的派给技术部负责人。</UiHelpTip>
+      <span class="ft-title">设计任务
+        <UiHelpTip label="设计任务说明">设计完成后点"一键发放"生成图纸发放单（R9）。关联工件的设计任务全部完成（设计完成、已发放、需要时客户已确认）后，物料也齐了才给第一道工序发"可以开工"。没指定设计负责人的派给技术部负责人。</UiHelpTip>
       </span>
     </template>
     <template #extra>
       <a-space wrap>
-        <a-segmented v-model:value="tab" :options="[{ value: 'list', label: '出图任务' }, { value: 'load', label: '设计负荷' }]" />
+        <a-segmented v-model:value="tab" :options="[{ value: 'list', label: '设计任务' }, { value: 'load', label: '设计负荷' }]" />
         <a-select
           v-model:value="filter.workOrderNumber"
           allow-clear
@@ -224,13 +224,13 @@ const loadColumns = [
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
         <UiRefreshButton @click="reload()" />
-        <a-button v-if="canEditTask" type="primary" @click="openEdit(null)">新建出图任务</a-button>
+        <a-button v-if="canEditTask" type="primary" @click="openEdit(null)">新建设计任务</a-button>
       </a-space>
     </template>
 
     <!-- 页签切换已挪到右上角的分段按钮，这里隐藏页签栏 -->
     <a-tabs v-model:active-key="tab" class="no-nav">
-      <a-tab-pane key="list" tab="出图任务">
+      <a-tab-pane key="list" tab="设计任务">
         <!-- 左边按状态切换，右边是负责人、搜索和显示方式 -->
         <div class="ft-toolbar">
           <a-segmented v-model:value="filter.view" :options="VIEWS.map((v) => ({ value: v.value, label: v.label }))" />
@@ -242,9 +242,9 @@ const loadColumns = [
         </div>
         <p v-if="data.total > rows.length" class="warn">共 {{ data.total }} 项，只显示前 {{ rows.length }} 项，请按工单或负责人筛选</p>
 
-        <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty :description="filter.view === 'open' ? '没有未完成的出图任务' : '没有记录'" /></a-spin>
+        <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty :description="filter.view === 'open' ? '没有未完成的设计任务' : '没有记录'" /></a-spin>
         <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
-        <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" :nodes="distinctPlanNodes(t.rows)" v-bind="doneOf(t)" label="出图完成" :count="t.rows.length" />
+        <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" :nodes="distinctPlanNodes(t.rows)" v-bind="doneOf(t)" label="设计完成" :count="t.rows.length" />
         <a-table
           :columns="layout === 'group' ? groupColumns : columns"
           :data-source="t.rows"
@@ -254,7 +254,7 @@ const loadColumns = [
           :scroll="{ x: layout === 'group' ? groupWidth : tableWidth }"
           :pagination="layout === 'group' ? false : { pageSize: 50, hideOnSinglePage: true }"
         >
-          <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未完成的出图任务' : '没有记录'" /></template>
+          <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未完成的设计任务' : '没有记录'" /></template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'component'">
               <a v-if="canEditTask" @click="openEdit(record as DrawingRow)">{{ record.componentName }}</a>
@@ -293,7 +293,7 @@ const loadColumns = [
             </template>
             <template v-else-if="column.key === 'actions'">
               <a-space size="small">
-                <a-button v-if="record.permissions.markDrawn" type="primary" size="small" @click="openAct(record as DrawingRow, 'drawn')">标记出图</a-button>
+                <a-button v-if="record.permissions.markDrawn" type="primary" size="small" @click="openAct(record as DrawingRow, 'drawn')">标记设计完成</a-button>
                 <a-button v-if="record.status === 'DRAWN' && canRelease" type="primary" size="small" @click="openRelease(record as DrawingRow)">一键发放</a-button>
                 <a-button v-if="record.permissions.confirm && canEditTask" size="small" @click="openAct(record as DrawingRow, 'confirm')">客户确认</a-button>
                 <a-dropdown v-if="canEditTask || canRelease || record.permissions.undoDrawn">
@@ -302,7 +302,7 @@ const loadColumns = [
                     <a-menu>
                       <a-menu-item v-if="canEditTask" key="edit" @click="openEdit(record as DrawingRow)">编辑 / 取消</a-menu-item>
                       <a-menu-item v-if="record.permissions.release && record.status !== 'DRAWN' && canRelease" key="rel" @click="openRelease(record as DrawingRow)">再发一版</a-menu-item>
-                      <a-menu-item v-if="record.permissions.undoDrawn" key="undo" @click="undo(record as DrawingRow, 'drawn')">撤销出图</a-menu-item>
+                      <a-menu-item v-if="record.permissions.undoDrawn" key="undo" @click="undo(record as DrawingRow, 'drawn')">撤销设计完成</a-menu-item>
                       <a-menu-item v-if="record.customerConfirmedDate && canEditTask" key="undoc" @click="undo(record as DrawingRow, 'confirm')">撤销客户确认</a-menu-item>
                     </a-menu>
                   </template>
@@ -315,9 +315,9 @@ const loadColumns = [
       </a-tab-pane>
 
       <a-tab-pane key="load" tab="设计负荷">
-        <p class="muted">按设计负责人统计{{ filter.workOrderNumber ? `（工单 ${filter.workOrderNumber}）` : '' }}。逾期 = 待出图已过计划完成日，或客户确认已过计划日；本周到期 = 待出图且计划完成日在本周（{{ load.week.monday }} ~ {{ load.week.sunday }}）。点数字看明细。</p>
+        <p class="muted">按设计负责人统计{{ filter.workOrderNumber ? `（工单 ${filter.workOrderNumber}）` : '' }}。逾期 = 设计中已过计划完成日，或客户确认已过计划日；本周到期 = 设计中且计划完成日在本周（{{ load.week.monday }} ~ {{ load.week.sunday }}）。点数字看明细。</p>
         <a-table :columns="loadColumns" :data-source="load.rows" :loading="loadPending" :row-key="loadKey" size="middle" :pagination="false">
-          <template #emptyText><a-empty description="没有未完成的出图任务" /></template>
+          <template #emptyText><a-empty description="没有未完成的设计任务" /></template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'owner'"><a @click="showOwner(record.ownerId)">{{ record.ownerName }}</a></template>
             <template v-else-if="column.key === 'overdue'">
@@ -340,7 +340,7 @@ const loadColumns = [
 
   <a-modal
     :open="!!acting"
-    :title="acting ? `${acting.kind === 'drawn' ? '标记出图' : '录客户确认'}：${acting.row.componentName}` : ''"
+    :title="acting ? `${acting.kind === 'drawn' ? '标记设计完成' : '录客户确认'}：${acting.row.componentName}` : ''"
     ok-text="确定"
     :confirm-loading="busy"
     @ok="submitAct"
@@ -348,8 +348,8 @@ const loadColumns = [
   >
     <a-form v-if="acting" layout="vertical">
       <p class="muted">{{ acting.row.workOrderNumber }} · 计划完成 {{ dayText(acting.row.planDate) }}{{ acting.row.needsCustomerConfirm ? ` · 客户确认计划 ${acting.row.customerPlanDate ? dayText(acting.row.customerPlanDate) : '未定'}` : '' }}</p>
-      <a-form-item :label="acting.kind === 'drawn' ? '出图日期' : '客户确认日期'"><a-date-picker v-model:value="actDate" value-format="YYYY-MM-DD" :allow-clear="false" /></a-form-item>
-      <p v-if="acting.kind === 'drawn'" class="muted">出图后点"一键发放"生成图纸发放单；发放后{{ acting.row.needsCustomerConfirm ? '、客户确认后' : '' }}任务完成。</p>
+      <a-form-item :label="acting.kind === 'drawn' ? '设计完成日期' : '客户确认日期'"><a-date-picker v-model:value="actDate" value-format="YYYY-MM-DD" :allow-clear="false" /></a-form-item>
+      <p v-if="acting.kind === 'drawn'" class="muted">设计完成后点"一键发放"生成图纸发放单；发放后{{ acting.row.needsCustomerConfirm ? '、客户确认后' : '' }}任务完成。</p>
     </a-form>
   </a-modal>
 </template>

@@ -63,7 +63,7 @@ const columns = [
   { title: '活动预警', key: 'alerts', width: 120 },
   { title: '未签收发放', key: 'releases', width: 100, align: 'center' as const },
   { title: '缺料', key: 'shortage', width: 70, align: 'center' as const },
-  { title: '出图逾期', key: 'drawingOverdue', width: 90, align: 'center' as const },
+  { title: '设计逾期', key: 'drawingOverdue', width: 90, align: 'center' as const },
   { title: '未齐套节点', key: 'incompleteNodes', width: 100, align: 'center' as const },
   { title: '项目经理', key: 'pm', width: 110 },
   { title: '交期', key: 'delivery', width: 110 },

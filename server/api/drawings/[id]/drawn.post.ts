@@ -1,7 +1,7 @@
 import { markDrawn } from '../../../services/drawings/drawings'
 import { dateBody } from '../../../schemas/drawings'
 
-/** 标记出图：设计负责人本人或管理员（服务层判断）。出图日默认今天 */
+/** 标记设计完成：设计负责人本人或管理员（服务层判断）。设计完成日默认今天 */
 export default defineFlowHandler(async (event, user) => {
   const id = routeId(event)
   await assertCanSeeDrawing(event, id, user)

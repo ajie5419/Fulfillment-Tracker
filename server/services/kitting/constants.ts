@@ -81,7 +81,7 @@ export const BLOCKER_TEXT: Record<BlockerCode, string> = {
 export interface PartFacts {
   /** 工序链（任意顺序） */
   steps: { seq: number; status: StepStatus; processName: string; holdReleaseNo?: string | null; held: boolean }[]
-  /** 关联的未完成（未取消）出图任务的部件名称 */
+  /** 关联的未完成（未取消）设计任务的部件名称 */
   openDrawings: string[]
   /** 挂在这个工件上、还没到货（未取消）的关键物料名称 */
   openMaterials: string[]

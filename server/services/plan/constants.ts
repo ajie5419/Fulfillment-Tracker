@@ -3,9 +3,9 @@
  * 不碰数据库，便于单测。日期一律用 'YYYY-MM-DD' 字符串（日期字段存当天 UTC 零点，dateFieldDay 取出来），"今天"按工厂时区。
  *
  * 规则（总计划设计第 5 节）：
- *   部门任务的预计日：已完成取实际完成日；没完成的取它自己的日期（出图看计划完成日，已出图等客户确认的看客户确认计划日；
+ *   部门任务的预计日：已完成取实际完成日；没完成的取它自己的日期（设计看计划完成日，设计完成等客户确认的看客户确认计划日；
  *     采购有承诺到货日看承诺日、否则看需求日；工序：厂外外协有承诺返回日看承诺返回日、否则看要求完成日；装配节点看需求日），
- *     这个日期已经过了（还没完成）就按今天算。已取消的出图任务、采购行不计入。
+ *     这个日期已经过了（还没完成）就按今天算。已取消的设计任务、采购行不计入。
  *   节点预计完成日 = 取最晚：节点自己的计划日；挂靠任务里最晚的预计日；前一个节点顺延后的日期（前一节点预计日 + 原来两节点计划日的间隔）。
  *     没完成的节点预计日不早于今天（计划日已过还没完成，最早也只能今天完成）。
  *   节点完成：挂靠任务 ≥ 1 条（不算已取消的）且全部完成时自动完成，实际完成日 = 最晚的完成日；也可以手动标记（手动优先）。
@@ -48,13 +48,13 @@ export function addDays(day: string, n: number): string {
 // ───────────── 部门任务 ─────────────
 
 export type TaskKind = 'drawing' | 'purchase' | 'step' | 'assembly'
-export const TASK_KIND_TEXT: Record<TaskKind, string> = { drawing: '出图', purchase: '采购', step: '工序', assembly: '装配' }
+export const TASK_KIND_TEXT: Record<TaskKind, string> = { drawing: '设计', purchase: '采购', step: '工序', assembly: '装配' }
 
 /** 一条挂靠任务的事实（由各类记录换算，见下面的 *Facts） */
 export interface TaskFacts {
   kind: TaskKind
   id: string
-  /** 不计入（已取消的出图任务、采购行） */
+  /** 不计入（已取消的设计任务、采购行） */
   excluded: boolean
   done: boolean
   /** 完成日（done 时；不知道时为 null，按今天算） */
@@ -83,7 +83,7 @@ export function estimateTask(t: TaskFacts, nodePlanDay: string, today: string): 
 
 const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null)
 
-/** 出图任务：完成 = 已完成（已出图、已发放、需要时客户已确认）；已出图等客户确认的看客户确认计划日 */
+/** 设计任务：完成 = 已完成（设计完成、已发放、需要时客户已确认）；设计完成等客户确认的看客户确认计划日 */
 export function drawingFacts(
   d: { id: string; status: DrawingTaskStatus; planDate: Date; drawnDate: Date | null; needsCustomerConfirm: boolean; customerPlanDate: Date | null; customerConfirmedDate: Date | null },
 ): TaskFacts {
