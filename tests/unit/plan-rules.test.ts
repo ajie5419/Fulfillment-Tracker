@@ -10,15 +10,19 @@ import {
   estimateNodes,
   estimateTask,
   forecastPlan,
+  isCritical,
   isPlanNodeAlert,
   judgeSplit,
   judgeW9,
   judgeW9Plan,
   lateWarning,
+  linkFloat,
   planLink,
   planTaskFacts,
   purchaseFacts,
+  resolvePreds,
   stepFacts,
+  topoOrder,
   w9PlanSummary,
   w9Summary,
 } from '../../server/services/plan/constants'
@@ -239,5 +243,113 @@ describe('部门计划二次分解：其他任务 planTaskFacts / 未分解 judg
   it('以节点为对象的 W9 预警类型只有一份清单', () => {
     expect(['planNode', 'planConfirm', 'planSplit'].every(isPlanNodeAlert)).toBe(true)
     expect(isPlanNodeAlert('plan')).toBe(false)
+  })
+})
+
+// ───── 前置节点（10-22，按项目部在用的《机场行李车项目计划》：多条线并行）─────
+describe('前置节点 resolvePreds / topoOrder', () => {
+  it('不填 = 上一个节点；[] = 没有前置；去掉自己和不存在的 ID', () => {
+    const m = resolvePreds([
+      { id: 'A', preds: null },
+      { id: 'B', preds: null },
+      { id: 'C', preds: [] },
+      { id: 'D', preds: ['A', 'D', 'X', 'A'] },
+    ])
+    expect(Object.fromEntries(m)).toEqual({ A: [], B: ['A'], C: [], D: ['A'] })
+  })
+  it('拓扑顺序前置在前；成环返回 null（含默认的"上一个"）', () => {
+    const ids = ['A', 'B', 'C']
+    expect(topoOrder(ids, new Map([['A', ['C']], ['B', []], ['C', ['B']]]))).toEqual(['B', 'C', 'A'])
+    // A 自定前置 = C，B、C 默认等上一个 → A→B→C→A 成环
+    expect(topoOrder(ids, resolvePreds([{ id: 'A', preds: ['C'] }, { id: 'B' }, { id: 'C' }]))).toBeNull()
+  })
+  it('连接余量：有开始日时 = 前置计划完成日到开始日前一天之间的天数，没有开始日为 0', () => {
+    expect(linkFloat('2026-10-10', '2026-10-15')).toBe(4)
+    expect(linkFloat('2026-10-14', '2026-10-15')).toBe(0)
+    expect(linkFloat('2026-10-20', '2026-10-15')).toBe(0) // 计划本来就重叠
+    expect(linkFloat('2026-10-10', null)).toBe(0)
+  })
+})
+
+describe('机场行李车计划：只沿前置节点顺延、余量、关键节点', () => {
+  // 18 个节点（seq, 名称, 交期前天数, 工期, 前置），交期 2026-10-31，与迁移里内置的"特种车辆"模板一致
+  const PLAN: [string, number, number, number[]][] = [
+    ['开工通知', 99, 1, []], ['结构图纸', 46, 53, [1]], ['原材料采购计划', 54, 45, [1]], ['主要外购件采购计划', 81, 18, [1]],
+    ['其他外购件采购计划', 74, 25, [1]], ['电器件采购计划', 81, 18, [1]], ['液压件采购计划', 81, 18, [1]], ['原材料采购及复验', 31, 23, [3]],
+    ['车桥、轮辋、轮胎', 18, 63, [4]], ['油缸', 21, 60, [4]], ['标准件', 21, 53, [5]], ['电气件', 21, 60, [6]], ['液压件', 21, 60, [7]],
+    ['车架', 19, 27, [2, 8]], ['表面处理喷漆', 17, 2, [14]], ['装配', 9, 8, [9, 10, 11, 12, 13, 15]], ['调试', 1, 8, [16]], ['发货', 0, 1, [17]],
+  ]
+  const DELIVERY = '2026-10-31'
+  /** doneUpTo：前几个节点按计划完成；late：第 seq 个节点挂一条预计到某天的任务 */
+  const build = (doneUpTo: number, late: Record<number, string> = {}, linear = false): NodeFacts[] =>
+    PLAN.map(([, days, dur, preds], i) => {
+      const planDay = addDays(DELIVERY, -days)
+      return {
+        id: String(i + 1),
+        planDay,
+        startDay: linear ? null : addDays(planDay, -(dur - 1)),
+        preds: linear ? null : preds.map(String),
+        manualDoneDay: i < doneUpTo ? planDay : null,
+        tasks: late[i + 1] ? [task({ kind: 'task', id: `t${i + 1}`, planDay: late[i + 1] })] : [],
+      }
+    })
+  const late = (f: ReturnType<typeof forecastPlan>) => f.nodes.filter((n) => n.delayDays > 0 && !n.done).map((n) => n.id)
+
+  it('8/12 三份清单晚 1 天：旧的一条主线把后面 15 个节点全推晚、交期拖 1 天；按前置只影响对应的采购线，交期不变', () => {
+    // 8/12：开工通知完成；8/11 到期的三份清单（主要外购件、电器件、液压件）都还没完成
+    const old = forecastPlan(build(1, {}, true), DELIVERY, '2026-08-12')
+    expect(old.deliveryDelayDays).toBe(1)
+    expect(late(old)).toHaveLength(15)
+    const f = forecastPlan(build(1), DELIVERY, '2026-08-12')
+    expect(f.deliveryDelayDays).toBe(0)
+    // 只有三份清单自己和它们各自的采购线晚 1 天；车架、装配、发货不受影响
+    expect(late(f)).toEqual(['4', '6', '7', '9', '10', '12', '13'])
+    expect(f.sourceNodes).toBe(3)
+    const e = f.nodes.find((n) => n.id === '9')!
+    expect(e).toMatchObject({ driver: 'prev', pushedBy: '4', upstream: true, source: false })
+    // 车桥晚 1 天进装配前正好用掉 1 天空档：关键；油缸到装配还有 3 天余量
+    expect(e.slackDays).toBe(0)
+    expect(f.nodes.find((n) => n.id === '10')!.slackDays).toBe(3)
+  })
+
+  it('9/20 油缸预计晚 3 天：在到装配的 4 天空档内，不影响交期，余量剩 1 天', () => {
+    const f = forecastPlan(build(7, { 10: '2026-10-13' }), DELIVERY, '2026-09-20')
+    expect(f.deliveryDelayDays).toBe(0)
+    expect(late(f)).toEqual(['10'])
+    expect(f.nodes.find((n) => n.id === '10')!.slackDays).toBe(1)
+  })
+
+  it('9/20 油缸预计晚 6 天：超出空档 2 天，装配、调试、发货顺延 2 天，余量 -2', () => {
+    const f = forecastPlan(build(7, { 10: '2026-10-16' }), DELIVERY, '2026-09-20')
+    expect(f.deliveryDelayDays).toBe(2)
+    expect(late(f)).toEqual(['10', '16', '17', '18'])
+    expect(f.nodes.find((n) => n.id === '16')).toMatchObject({ pushedBy: '10', delayDays: 2 })
+    expect(isCritical(f.nodes.find((n) => n.id === '10')!)).toBe(true)
+    expect(f.nodes.find((n) => n.id === '10')!.slackDays).toBe(-2)
+  })
+
+  it('原材料复验晚 4 天：车架（前置 = 结构图纸 + 原材料）及后面全部顺延 4 天；并行的采购线不受影响', () => {
+    const f = forecastPlan(build(7, { 8: '2026-10-04' }), DELIVERY, '2026-09-20')
+    expect(f.deliveryDelayDays).toBe(4)
+    expect(late(f)).toEqual(['8', '14', '15', '16', '17', '18'])
+    expect(f.sourceNodes).toBe(1)
+  })
+
+  it('按时进行时：关键路径余量 0，不在关键路径上的有余量；已完成的不算余量', () => {
+    const f = forecastPlan(build(1), DELIVERY, '2026-07-25')
+    const slack = Object.fromEntries(f.nodes.map((n) => [n.id, n.slackDays]))
+    expect(slack['1']).toBeNull() // 已完成
+    expect(slack['18']).toBe(0)
+    expect(slack['14']).toBe(0) // 车架
+    expect(slack['10']).toBe(4) // 油缸 10-10 完成，装配 10-15 开始
+    expect(slack['13']).toBe(4)
+  })
+
+  it('不传交期时不算余量；没有后续节点的（漏连）余量为 null', () => {
+    expect(estimateNodes(build(0), '2026-07-20').every((n) => n.slackDays === null)).toBe(true)
+    const nodes = build(0)
+    nodes[15]!.preds = ['9', '10', '11', '12', '15'] // 装配漏连液压件（#13）
+    const est = estimateNodes(nodes, '2026-07-20', DELIVERY)
+    expect(est.find((n) => n.id === '13')!.slackDays).toBeNull()
   })
 })
