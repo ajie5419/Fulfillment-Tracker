@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 设置（仅管理员）：阈值、停工日、人员与角色（原"通知对象"）、部门对照（R13）、工单项目经理、QMS 同步状态、总计划模板（R14）。
+ * 设置（仅管理员）：阈值、停工日、人员与角色（原"通知对象"）、部门对照（R13）、工单项目经理、QMS 同步状态、总计划模板（R14）、工序路线模板（原独立页 /templates）。
  * 项目部负责人（can.planTemplate）也能进来，只看到"总计划模板"一页。
  * 接口也校验权限，这里只是不给没权限的人看
  */
@@ -299,6 +299,7 @@ const woColumns = [
       </a-tab-pane>
 
       <a-tab-pane key="plan-templates" tab="总计划模板"><PlanTemplatesTab /></a-tab-pane>
+      <a-tab-pane key="route-templates" tab="工序路线模板"><RouteTemplatesTab /></a-tab-pane>
 
       <a-tab-pane key="work-orders" tab="工单项目经理">
         <p class="muted">黄色预警起通知该工单的项目经理。</p>
