@@ -22,7 +22,7 @@ const groups = computed(() => {
       { key: '/risks', label: '风险' },
     ]) },
     // 功能重复梳理第一批：领导总览并入项目总览（有权限的人在项目总览汇总下方多看到一块），
-    // "工单详情"入口页去掉（项目总览顶部搜工单、卡片点进详情），旧地址 /overview、/wo 跳项目总览
+    // "工单详情"入口页去掉（项目总览顶部搜工单、卡片点进详情），旧地址 /overview、/wo 跳项目总览；/templates 不在菜单里但保留（非管理员只读查看）
     { title: '项目', items: show([
       { key: '/board', label: '项目总览' },
       { key: '/plan', label: '总计划' },
@@ -57,8 +57,8 @@ watch(() => route.path, () => {
   if (broken.value) collapsed.value = true
   contentEl.value?.scrollTo({ top: 0 })
 })
-/** 没有单独菜单项的页面算到哪一项下：工单详情 /wo/:no 属于项目总览 */
-const MENU_ALIAS: Record<string, string> = { '/wo': '/board' }
+/** 没有单独菜单项的页面算到哪一项下：工单详情 /wo/:no 属于项目总览；工序路线模板 /templates 属于工件与工序链 */
+const MENU_ALIAS: Record<string, string> = { '/wo': '/board', '/templates': '/parts' }
 const selected = computed(() => {
   const alias = Object.keys(MENU_ALIAS).find((k) => route.path === k || route.path.startsWith(`${k}/`))
   const path = alias ? MENU_ALIAS[alias]! : route.path

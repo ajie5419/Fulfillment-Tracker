@@ -80,7 +80,7 @@ async function submit() {
       </a-form-item>
     </a-form>
     <a-form v-else layout="vertical">
-      <p class="muted">保存工序、方式和外协厂；不保存负责人和日期。默认工期可到"设置 → 工序路线模板"补（管理员）。</p>
+      <p class="muted">保存工序、方式和外协厂；不保存负责人和日期。默认工期由管理员在"设置 → 工序路线模板"补。</p>
       <a-form-item label="模板名称" required><a-input v-model:value="form.name" /></a-form-item>
       <a-form-item label="说明"><a-textarea v-model:value="form.description" :rows="2" /></a-form-item>
     </a-form>
