@@ -2,11 +2,12 @@
 /**
  * 柱状图（设计改版，参考图风格）：放在浅灰区域里用。柱高按最大值等比例；数最大（且 > 0）的柱子用 highlight 色，
  * 其余用斜纹灰，提醒"该先看哪一项"；0 也留一截矮柱，横轴不空。给了 to 的柱子可点（键盘可聚焦）。
+ * height = 'fill'：撑满父容器高度（至少 200px），用在和旁边卡片等高的两栏里，避免下面留白。
  */
 import { NuxtLink } from '#components'
 import type { RouteLocationRaw } from 'vue-router'
 
-const props = withDefaults(defineProps<{ items: readonly { key: string; label: string; value: number; to?: RouteLocationRaw }[]; highlight?: 'late' | 'risk' | 'done' | 'primary'; height?: number }>(), { highlight: 'late', height: 260 })
+const props = withDefaults(defineProps<{ items: readonly { key: string; label: string; value: number; to?: RouteLocationRaw }[]; highlight?: 'late' | 'risk' | 'done' | 'primary'; height?: number | 'fill' }>(), { highlight: 'late', height: 260 })
 const max = computed(() => Math.max(1, ...props.items.map((i) => i.value)))
 const pct = (n: number) => `${Math.max(6, Math.round((n / max.value) * 100))}%`
 const isTop = (n: number) => n > 0 && n === max.value
@@ -14,7 +15,7 @@ const grid = computed(() => [max.value, Math.round((max.value * 2) / 3), Math.ro
 </script>
 
 <template>
-  <div class="ft-col-chart" :style="{ height: `${height}px`, '--hl': `var(--ft-${highlight})`, '--hl-text': `var(--ft-${highlight}-text, var(--ft-text))` }">
+  <div class="ft-col-chart" :class="{ fill: height === 'fill' }" :style="{ height: height === 'fill' ? undefined : `${height}px`, '--hl': `var(--ft-${highlight})`, '--hl-text': `var(--ft-${highlight}-text, var(--ft-text))` }">
     <div class="grid" aria-hidden="true"><div v-for="v in grid" :key="v" class="line"><span>{{ v }}</span></div></div>
     <div class="cols" :style="{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }">
       <component :is="it.to ? NuxtLink : 'div'" v-for="it in items" :key="it.key" :to="it.to" class="col" :class="{ link: !!it.to }" :aria-label="`${it.label} ${it.value}`">
@@ -26,7 +27,8 @@ const grid = computed(() => [max.value, Math.round((max.value * 2) / 3), Math.ro
 </template>
 
 <style scoped>
-.ft-col-chart { position: relative; padding: 16px 16px 12px 40px; background: var(--ft-fill); border-radius: 12px; }
+.ft-col-chart { position: relative; padding: 16px 16px 12px 40px; background: var(--ft-fill); border-radius: 12px; box-sizing: border-box; }
+.ft-col-chart.fill { height: 100%; min-height: 200px; }
 .grid { position: absolute; left: 40px; right: 16px; top: 16px; bottom: 40px; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
 .line { position: relative; border-top: 1px dashed var(--ft-border); }
 .line span { position: absolute; left: -28px; top: -9px; width: 20px; text-align: right; font-size: 12px; color: var(--ft-text-2); }

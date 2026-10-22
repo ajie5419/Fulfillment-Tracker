@@ -255,7 +255,8 @@ const enc = encodeURIComponent
 .col-empty { padding: 12px 4px; font-size: 13px; }
 .noplan-sec, .pm-group { margin-top: 24px; }
 .pm-group:first-child { margin-top: 0; }
-.noplan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 10px; }
+/* align-items: start：卡片按各自内容高度，不被同一行最高的卡片拉高（否则只有两行字的卡片里空一大块） */
+.noplan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 10px; align-items: start; }
 .empty { padding: 48px 0; }
 .table-legend { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 14px 20px; }
 .wo-search { width: 240px; }
