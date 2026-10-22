@@ -18,7 +18,7 @@ const showClosed = computed({
   get: () => route.query.closed === '1',
   set: (v: boolean) => void router.replace({ query: { ...route.query, closed: v ? '1' : undefined } }),
 })
-const { data, pending, refresh } = await useFetch('/api/plan/list', {
+const { data, pending, error, refresh } = await useFetch('/api/plan/list', {
   query: computed(() => (showClosed.value ? { closed: '1' } : {})),
   default: () => ({ rows: [], summary: { total: 0, published: 0, draft: 0, none: 0, late: 0, unsplit: 0 } }),
   immediate: !wo.value,
@@ -107,6 +107,11 @@ const enc = encodeURIComponent
         </div>
       </div>
 
+      <!-- 取不到数据时明确说加载失败，不把默认的空列表当成"没有工单" -->
+      <a-result v-if="error" status="error" title="项目计划加载失败" :sub-title="apiError(error)">
+        <template #extra><a-button type="primary" @click="refresh()">重试</a-button></template>
+      </a-result>
+      <template v-else>
       <div class="ft-stats summary">
         <UiStatCard label="已发布" :value="data.summary.published" unit="个工单" tone="done" icon="check" clickable :active="filter === 'PUBLISHED'" @click="toggle('PUBLISHED')" />
         <UiStatCard label="草稿" :value="data.summary.draft" unit="个工单" tone="primary" icon="dot" clickable :active="filter === 'DRAFT'" @click="toggle('DRAFT')" />
@@ -167,6 +172,7 @@ const enc = encodeURIComponent
           </template>
         </a-table>
       </UiSectionCard>
+      </template>
     </template>
   </div>
 </template>
