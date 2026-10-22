@@ -899,6 +899,8 @@ model PlanTemplateNode {
   durationDays       Int?
   /// 前置节点（本模板里的顺序号数组，如 [3, 8]）：null = 默认上一个节点；[] = 没有前置
   predSeqs           Json?
+  /// 上级节点的顺序号（子节点，只有一层；上级要排在前面）：null = 一级节点
+  parentSeq          Int?
   template           PlanTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
   @@unique([templateId, seq])
@@ -951,8 +953,12 @@ model PlanNode {
   startDate       DateTime?
   planDate        DateTime
   baselineDate    DateTime?
-  /// 前置节点是否自定：false = 默认上一个节点（按顺序号）；true = 用 plan_node_dep 里的（可以为空 = 没有前置）
+  /// 前置节点是否自定：false = 默认（一级节点等上一个一级节点，子节点等上级节点的前置）；true = 用 plan_node_dep 里的（可以为空 = 没有前置）
   customDeps      Boolean          @default(false)
+  /// 上级节点（10-22，子节点只有一层）：子节点都完成上级才算完成，子节点晚了上级跟着晚；子节点的阶段跟上级。上级删了子节点变回一级节点（服务层先拦）
+  parentId        String?
+  parent          PlanNode?        @relation("PlanNodeTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children        PlanNode[]       @relation("PlanNodeTree")
   /// 手动标记完成时的完成日（自动完成不写这里，现算）
   actualDate      DateTime?
   manualDoneBy    String?          @db.VarChar(64)
@@ -974,6 +980,7 @@ model PlanNode {
 
   @@index([workOrderNumber, seq])
   @@index([confirmStatus])
+  @@index([parentId])
   @@map("plan_node")
 }
 

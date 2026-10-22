@@ -238,6 +238,80 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     await db.workOrderPlan.deleteMany({ where: { workOrderNumber: { in: [DEP_WO, OTHER_WO] } } })
   })
 
+  it('子节点（10-22）：挂在上级下面，编号 2.1；上级等子节点、子节点默认和上级同时开始；日期、层级、成环校验；全完成上级自动完成；有子节点不能删；模板带上级', async () => {
+    const pm = 'u-pm'
+    const a = await s.plan.createNode(DEP_WO, { name: '原材料', dept: 'PURCHASE', planDate: dayOff(20), phase: '采购' }, pm)
+    const p = await s.plan.createNode(DEP_WO, { name: '下料组焊', dept: 'PRODUCTION', planDate: dayOff(40), phase: '生产制作' }, pm)
+    const b = await s.plan.createNode(DEP_WO, { name: '机加', dept: 'PRODUCTION', planDate: dayOff(50), phase: '生产制作' }, pm)
+    // 子节点：阶段跟上级（传了别的也不算）；计划日不能晚于上级
+    const c1 = await s.plan.createNode(DEP_WO, { name: '车架', dept: 'PRODUCTION', planDate: dayOff(35), parentId: p.id, phase: '乱填' }, pm)
+    await expect(s.plan.createNode(DEP_WO, { name: '悬挂', dept: 'PRODUCTION', planDate: dayOff(45), parentId: p.id }, pm)).rejects.toThrow('晚于上级')
+    const c2 = await s.plan.createNode(DEP_WO, { name: '悬挂', dept: 'PRODUCTION', planDate: dayOff(38), parentId: p.id }, pm)
+    expect((await db.planNode.findUnique({ where: { id: c1.id } }))!.phase).toBe('生产制作')
+    // 只有一层；子节点不能等上级；别的工单的节点不能当上级
+    await expect(s.plan.createNode(DEP_WO, { name: '孙', dept: 'PRODUCTION', planDate: dayOff(30), parentId: c1.id }, pm)).rejects.toThrow('本身是子节点')
+    await expect(s.plan.updateNode(c2.id, { preds: [p.id] }, pm)).rejects.toThrow('不能再等上级')
+    await expect(s.plan.updateNode(p.id, { parentId: a.id }, pm)).rejects.toThrow('下面有子节点')
+    await expect(s.plan.updateNode(c1.id, { parentId: c1.id }, pm)).rejects.toThrow('不能选自己')
+    // 上级的计划日不能早于子节点
+    await expect(s.plan.updateNode(p.id, { planDate: dayOff(36) }, pm)).rejects.toThrow('不能早于子节点')
+
+    let view = await s.plan.getPlan(DEP_WO, await ctxOf(pm))
+    expect(view.nodes.map((n) => `${n.code} ${n.name}`)).toEqual(['1 原材料', '2 下料组焊', '2.1 车架', '2.2 悬挂', '3 机加'])
+    const byName = (name: string) => view.nodes.find((n) => n.name === name)!
+    expect(byName('下料组焊')).toMatchObject({ childCount: 2, parentId: null })
+    expect(byName('车架')).toMatchObject({ parentId: p.id, preds: [{ id: a.id, code: '1' }] }) // 默认：和上级同时开始
+    expect(byName('机加').preds).toMatchObject([{ id: p.id, code: '2' }]) // 默认接上一个一级节点，不接到子节点上
+    expect(view.network).toBe(true)
+    expect(view.lastNodeId).toBe(b.id)
+    expect(view.dangling).toEqual([])
+    // 上级改阶段：子节点跟着改
+    await s.plan.updateNode(p.id, { phase: '下料组焊' }, pm)
+    expect((await db.planNode.findMany({ where: { parentId: p.id }, select: { phase: true } })).map((n) => n.phase)).toEqual(['下料组焊', '下料组焊'])
+
+    // 子节点晚了：上级受子节点影响，后续一级节点跟着晚
+    await db.planTask.create({ data: { workOrderNumber: DEP_WO, planNodeId: c2.id, name: '悬挂外协', ownerId: pm, planDate: dayOff(43) } })
+    view = await s.plan.getPlan(DEP_WO, await ctxOf(pm))
+    expect(byName('悬挂')).toMatchObject({ source: true, delayDays: 5 })
+    expect(byName('下料组焊')).toMatchObject({ source: false, upstream: true, delayDays: 3, pushedBy: { code: '2.2', name: '悬挂', child: true }, unsplit: false })
+    expect(byName('机加')).toMatchObject({ upstream: true, delayDays: 3 })
+
+    // 完成：子节点没完成不能标上级完成；子节点都完成后上级自动完成
+    await expect(s.plan.completeNode(p.id, null, pm)).rejects.toThrow('还有子节点没完成')
+    await s.plan.completeNode(c1.id, null, pm)
+    await s.plan.completeNode(c2.id, null, pm)
+    view = await s.plan.getPlan(DEP_WO, await ctxOf(pm))
+    expect(byName('下料组焊')).toMatchObject({ done: true, doneBy: 'AUTO' })
+
+    // 有子节点不能删；把子节点移出后可以
+    await expect(s.plan.deleteNode(p.id, null, pm)).rejects.toThrow('还有 2 个子节点')
+    await s.plan.updateNode(c1.id, { parentId: null }, pm)
+    await s.plan.updateNode(c2.id, { parentId: null }, pm)
+    await s.plan.deleteNode(p.id, null, pm)
+    await db.planNode.deleteMany({ where: { workOrderNumber: DEP_WO } })
+
+    // 模板：上级要排在前面、只一层、子节点前置不能是上级；生成时挂好、阶段跟上级
+    const n = (name: string, parent: number | null, preds: number[] | null = null, phase: string | null = null) => ({ name, dept: 'PRODUCTION' as const, daysBeforeDelivery: 5, parent, preds, phase })
+    await expect(s.tpl.createTemplate({ name: 'Y1', nodes: [n('a', 2), n('b', null)] }, 'u-pdh')).rejects.toThrow('排在它前面')
+    await expect(s.tpl.createTemplate({ name: 'Y2', nodes: [n('a', null), n('b', 1), n('c', 2)] }, 'u-pdh')).rejects.toThrow('本身是子节点')
+    await expect(s.tpl.createTemplate({ name: 'Y3', nodes: [n('a', null), n('b', 1, [1])] }, 'u-pdh')).rejects.toThrow('不能是自己的上级')
+    const y = await s.tpl.createTemplate({ name: 'Y4', nodes: [n('组焊', null, null, '生产'), n('车架', 1), n('悬挂', 1, null, '别的'), n('机加', null, null, '生产')] }, 'u-pdh')
+    expect((await s.tpl.listTemplates()).find((t) => t.id === y.id)!.nodes.map((m) => [m.name, m.parent, m.phase])).toEqual([
+      ['组焊', null, '生产'],
+      ['车架', 1, '生产'],
+      ['悬挂', 1, '生产'],
+      ['机加', null, '生产'],
+    ])
+    await s.plan.generateFromTemplate(DEP_WO, y.id, pm)
+    view = await s.plan.getPlan(DEP_WO, await ctxOf(pm))
+    expect(view.nodes.map((m) => `${m.code} ${m.name}`)).toEqual(['1 组焊', '1.1 车架', '1.2 悬挂', '2 机加'])
+    expect(view.nodes[3]!.preds.map((m) => m.name)).toEqual(['组焊'])
+    await s.tpl.deleteTemplate(y.id)
+    await db.planTask.deleteMany({ where: { workOrderNumber: DEP_WO } })
+    await db.planNode.deleteMany({ where: { workOrderNumber: DEP_WO } })
+    await db.workOrderPlan.deleteMany({ where: { workOrderNumber: DEP_WO } })
+  })
+
   it('发布前：部门记录可以不挂；不能挂别的工单的节点', async () => {
     const [, design] = await nodesOf(WO)
     const t = await s.dr.createTask({ workOrderNumber: WO, componentName: '老图纸（不挂）', ownerId: 'u-des', planDate: dayOff(40) }, 'u-pm')

@@ -3,11 +3,14 @@
  * 总计划甘特视图（只读，10-22）：按阶段分组，每个节点一行横道，和项目部 MS Project 打印的计划对得上。
  *   横道 = 计划开始日 ~ 计划完成日（没有开始日的画成菱形里程碑）；关键节点（余量 ≤ 0）实心，其余浅色；已完成为绿色；
  *   没完成且预计晚于计划的，在横道后面接一段红色斜纹到预计完成日；虚线 = 今天，实线 = 合同交期。
+ *   子节点（10-22）缩进显示在上级下面，编号 上级.1、.2。
  *   前置关系不画连线（节点多了线会乱），节点名右边写"前置 #3 #8"。改计划在"表格"视图里改。
  */
 interface GNode {
   id: string
   seq: number
+  code: string
+  parentId: string | null
   name: string
   deptText: string
   phase: string | null
@@ -21,7 +24,7 @@ interface GNode {
   critical: boolean
   slackDays: number | null
   customDeps: boolean
-  preds: { id: string; seq: number }[]
+  preds: { id: string; seq: number; code: string }[]
 }
 const props = defineProps<{ nodes: GNode[]; deliveryDate: string | null; today: string }>()
 const emit = defineEmits<{ select: [id: string] }>()
@@ -93,14 +96,14 @@ const baseStyle = (n: GNode) => {
   return { left: pct(l), width: pct(Math.max(0.5, pos(n.baselineDate!, true) - l)) }
 }
 function tip(n: GNode) {
-  const parts = [`#${n.seq} ${n.name}（${n.deptText}）`, `计划 ${n.startDate ? `${n.startDate} ~ ` : ''}${n.planDate}`]
+  const parts = [`#${n.code} ${n.name}（${n.deptText}）`, `计划 ${n.startDate ? `${n.startDate} ~ ` : ''}${n.planDate}`]
   if (n.baselineDate && n.baselineDate !== n.planDate) parts.push(`基线 ${n.baselineDate}`)
   if (n.done) parts.push(`已完成 ${n.actualDate}`)
   else {
     parts.push(`预计 ${n.expectedDate}${n.delayDays > 0 ? `（晚 ${n.delayDays} 天）` : ''}`)
     if (n.slackDays != null) parts.push(n.slackDays <= 0 ? '关键节点：再晚就拖交期' : `余量 ${n.slackDays} 天`)
   }
-  if (n.preds.length) parts.push(`前置 ${n.preds.map((p) => `#${p.seq}`).join(' ')}`)
+  if (n.preds.length) parts.push(`前置 ${n.preds.map((p) => `#${p.code}`).join(' ')}`)
   return parts.join('\n')
 }
 const todayLeft = computed(() => pct(pos(props.today)))
@@ -134,10 +137,10 @@ const deliveryLeft = computed(() => (props.deliveryDate ? pct(pos(props.delivery
           </div>
           <div v-else class="g-row" role="row" :aria-label="tip(r.n)">
             <button type="button" class="g-label node-label" role="cell" :title="tip(r.n)" @click="emit('select', r.n.id)">
-              <span class="seq">{{ r.n.seq }}</span>
+              <span class="seq" :class="{ child: r.n.parentId }">{{ r.n.code }}</span>
               <span class="name">{{ r.n.name }}</span>
               <span class="meta">
-                <template v-if="r.n.preds.length && r.n.customDeps">前置 {{ r.n.preds.map((p) => `#${p.seq}`).join(' ') }}</template>
+                <template v-if="r.n.preds.length && r.n.customDeps">前置 {{ r.n.preds.map((p) => `#${p.code}`).join(' ') }}</template>
                 <template v-else>{{ r.n.deptText }}</template>
               </span>
             </button>
@@ -173,7 +176,9 @@ const deliveryLeft = computed(() => (props.deliveryDate ? pct(pos(props.delivery
 .node-label { background: none; border: 0; text-align: left; cursor: pointer; font: inherit; color: var(--ft-text); height: 100%; width: 100%; }
 .node-label:hover .name { color: var(--ft-primary); }
 .node-label:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: -2px; }
-.seq { width: 20px; flex: none; text-align: right; color: var(--ft-text-3); }
+.seq { width: 22px; flex: none; text-align: right; color: var(--ft-text-3); }
+/* 子节点：编号往右缩进 */
+.seq.child { width: 40px; }
 .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meta { flex: none; color: var(--ft-text-2); font-size: 12px; }
 .g-track { position: relative; height: 100%; min-height: 28px; }

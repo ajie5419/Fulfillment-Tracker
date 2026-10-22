@@ -1,14 +1,14 @@
 <script setup lang="ts">
 /**
- * 设置 →"总计划模板"（R14）：节点名称、顺序、责任部门、交期前天数；10-22 加阶段、工期、前置节点（按真实 MS Project 计划，多条线并行）。项目部负责人、管理员可维护（接口也校验）。
+ * 设置 →"总计划模板"（R14）：节点名称、顺序、责任部门、交期前天数；10-22 加阶段、工期、前置节点（按真实 MS Project 计划，多条线并行）、上级节点（子节点只一层）。项目部负责人、管理员可维护（接口也校验）。
  * 改模板不影响已经生成的总计划（生成时复制）。
  */
 import { BUSINESS_DEPT_OPTIONS } from '#shared/business-depts'
 
-interface TplNode { name: string; dept: string; daysBeforeDelivery: number; phase: string | null; durationDays: number | null; preds: number[] | null }
+interface TplNode { name: string; dept: string; daysBeforeDelivery: number; phase: string | null; durationDays: number | null; preds: number[] | null; parent: number | null }
 interface Tpl { id: string; name: string; description: string | null; createdByName: string | null; updatedAt: string; nodes: (TplNode & { seq: number; deptText: string })[] }
-/** 编辑中的行：key 稳定（上下移动、删行时前置关系跟着行走，不按位置错位）；preds 存行 key，NONE = 没有前置 */
-interface EditRow { key: number; name: string; dept: string; daysBeforeDelivery: number; phase: string; durationDays: number | undefined; preds: number[] }
+/** 编辑中的行：key 稳定（上下移动、删行时前置关系、上级跟着行走，不按位置错位）；preds、parent 存行 key，NONE = 没有前置 */
+interface EditRow { key: number; name: string; dept: string; daysBeforeDelivery: number; phase: string; durationDays: number | undefined; preds: number[]; parent: number | undefined }
 const NONE = -1
 
 const DEPTS = BUSINESS_DEPT_OPTIONS
@@ -21,7 +21,7 @@ const saving = ref(false)
 const editingId = ref<string | null>(null)
 const form = reactive<{ name: string; description: string; nodes: EditRow[] }>({ name: '', description: '', nodes: [] })
 let nextKey = 1
-const blank = (from?: EditRow): EditRow => ({ key: nextKey++, name: '', dept: from?.dept ?? 'PROJECT', daysBeforeDelivery: from?.daysBeforeDelivery ?? 0, phase: from?.phase ?? '', durationDays: undefined, preds: [] })
+const blank = (from?: EditRow): EditRow => ({ key: nextKey++, name: '', dept: from?.dept ?? 'PROJECT', daysBeforeDelivery: from?.daysBeforeDelivery ?? 0, phase: from?.phase ?? '', durationDays: undefined, preds: [], parent: undefined })
 
 function edit(t: Tpl | null) {
   editingId.value = t?.id ?? null
@@ -38,6 +38,7 @@ function edit(t: Tpl | null) {
       phase: n.phase ?? '',
       durationDays: n.durationDays ?? undefined,
       preds: n.preds == null ? [] : n.preds.length ? n.preds.map((seq) => keys[seq - 1]!).filter((k) => k != null) : [NONE],
+      parent: n.parent != null ? keys[n.parent - 1] : undefined,
     }))
   }
   open.value = true
@@ -47,16 +48,34 @@ function removeRow(i: number) {
   const [gone] = form.nodes.splice(i, 1)
   // 只等被删那一行的：改成"无前置"，不能变成空（空 = 默认等上一个，会凭空多出前置关系）
   for (const n of form.nodes) {
+    // 上级被删了：变回一级节点
+    if (n.parent === gone!.key) n.parent = undefined
     if (!n.preds.includes(gone!.key)) continue
     const rest = n.preds.filter((k) => k !== gone!.key)
     n.preds = rest.length ? rest : [NONE]
   }
 }
-/** 前置下拉：其他行（按当前顺序号显示），外加"无前置" */
+/** 前置下拉：其他行（按当前顺序号显示，不含自己的上级：上级要等子节点做完），外加"无前置" */
 const predOptions = (row: EditRow) => [
   { value: NONE, label: '无前置' },
-  ...form.nodes.filter((n) => n.key !== row.key).map((n) => ({ value: n.key, label: `#${form.nodes.indexOf(n) + 1} ${n.name || '（未命名）'}` })),
+  ...form.nodes.filter((n) => n.key !== row.key && n.key !== row.parent).map((n) => ({ value: n.key, label: `#${form.nodes.indexOf(n) + 1} ${n.name || '（未命名）'}` })),
 ]
+/** 上级下拉：排在前面的一级节点（子节点只有一层；自己有子节点时不能再挂到别人下面） */
+const hasChildren = (row: EditRow) => form.nodes.some((n) => n.parent === row.key)
+const parentOptions = (row: EditRow) =>
+  form.nodes
+    .slice(0, form.nodes.indexOf(row))
+    .filter((n) => n.parent == null)
+    .map((n) => ({ value: n.key, label: `#${form.nodes.indexOf(n) + 1} ${n.name || '（未命名）'}` }))
+const parentRow = (row: EditRow) => (row.parent == null ? null : (form.nodes.find((n) => n.key === row.parent) ?? null))
+/** 选了上级：前置里去掉上级 */
+function onParent(row: EditRow, v: number | undefined) {
+  row.parent = v
+  if (v != null && row.preds.includes(v)) {
+    const rest = row.preds.filter((k) => k !== v)
+    row.preds = rest.length ? rest : [NONE]
+  }
+}
 /** 选了"无前置"就只留它；选了别的就去掉"无前置" */
 function onPreds(row: EditRow, v: number[]) {
   row.preds = v.at(-1) === NONE ? [NONE] : v.filter((k) => k !== NONE)
@@ -73,6 +92,9 @@ async function save() {
   if (!form.name.trim()) return message.warning('请填写模板名称')
   if (!form.nodes.length) return message.warning('模板至少要有一个节点')
   if (form.nodes.some((n) => !n.name.trim())) return message.warning('请填写每个节点的名称')
+  const pos0 = new Map(form.nodes.map((n, i) => [n.key, i]))
+  const misplaced = form.nodes.find((n, i) => n.parent != null && (pos0.get(n.parent) ?? i) >= i)
+  if (misplaced) return message.warning(`"${misplaced.name}"的上级要排在它前面，请调整顺序`)
   saving.value = true
   try {
     const pos = new Map(form.nodes.map((n, i) => [n.key, i + 1]))
@@ -84,6 +106,7 @@ async function save() {
       durationDays: n.durationDays || null,
       // 没选 = 默认上一个；"无前置" = []；其余换成当前顺序号
       preds: !n.preds.length ? null : n.preds[0] === NONE ? [] : n.preds.map((k) => pos.get(k)!).filter(Boolean),
+      parent: n.parent != null ? (pos.get(n.parent) ?? null) : null,
     }))
     const body = { name: form.name, description: form.description || null, nodes }
     if (editingId.value) await send(`/api/plan/templates/${editingId.value}`, { method: 'PUT', body })
@@ -138,8 +161,8 @@ const columns = [
         <template v-else-if="column.key === 'nodes'">
           <template v-for="(n, i) in record.nodes" :key="n.seq">
             <div v-if="n.phase && n.phase !== record.nodes[i - 1]?.phase" class="phase">{{ n.phase }}</div>
-            <a-tag class="node-tag">
-              {{ n.seq }}. {{ n.name }}（{{ n.deptText }}，交期前 {{ n.daysBeforeDelivery }} 天<template v-if="n.durationDays">，工期 {{ n.durationDays }} 天</template><template v-if="n.preds">，前置 {{ n.preds.length ? n.preds.map((p: number) => `#${p}`).join(' ') : '无' }}</template>）
+            <a-tag class="node-tag" :class="{ child: n.parent }">
+              <template v-if="n.parent">└ </template>{{ n.seq }}. {{ n.name }}（{{ n.deptText }}，交期前 {{ n.daysBeforeDelivery }} 天<template v-if="n.durationDays">，工期 {{ n.durationDays }} 天</template><template v-if="n.preds">，前置 {{ n.preds.length ? n.preds.map((p: number) => `#${p}`).join(' ') : '无' }}</template>）
             </a-tag>
           </template>
         </template>
@@ -152,20 +175,35 @@ const columns = [
       </template>
     </a-table>
 
-    <a-modal v-model:open="open" :title="editingId ? '编辑总计划模板' : '新建总计划模板'" width="1040px" :confirm-loading="saving" @ok="save">
+    <a-modal v-model:open="open" :title="editingId ? '编辑总计划模板' : '新建总计划模板'" width="1120px" :confirm-loading="saving" @ok="save">
       <a-form layout="vertical">
         <a-form-item label="模板名称" required><a-input v-model:value="form.name" :maxlength="191" /></a-form-item>
         <a-form-item label="说明"><a-input v-model:value="form.description" :maxlength="500" /></a-form-item>
         <a-form-item label="节点（按顺序）">
-          <p class="muted">完成日 = 交期 − 交期前天数（可以为负 = 交期后）；填了工期的，开始日 = 完成日 − 工期 + 1。前置不选 = 默认上一个节点。</p>
+          <p class="muted">
+            完成日 = 交期 − 交期前天数（可以为负 = 交期后）；填了工期的，开始日 = 完成日 − 工期 + 1。前置不选 = 默认上一个节点（子节点默认和上级同时开始）。
+            选了上级的是子节点：子节点都完成上级才算完成，阶段跟上级。
+          </p>
           <div class="node-row head muted">
-            <span class="seq">#</span><span style="width: 140px">阶段</span><span style="width: 170px">节点名称</span><span style="width: 100px">责任部门</span>
-            <span style="width: 84px">交期前天数</span><span style="width: 72px">工期</span><span style="width: 200px">前置节点</span>
+            <span class="seq">#</span><span style="width: 120px">阶段</span><span style="width: 130px">上级节点</span><span style="width: 150px">节点名称</span>
+            <span style="width: 100px">责任部门</span><span style="width: 84px">交期前天数</span><span style="width: 72px">工期</span><span style="width: 180px">前置节点</span>
           </div>
           <div v-for="(n, i) in form.nodes" :key="n.key" class="node-row">
             <span class="seq">{{ i + 1 }}</span>
-            <a-auto-complete v-model:value="n.phase" :options="phaseOptions" placeholder="阶段" style="width: 140px" :maxlength="64" />
-            <a-input v-model:value="n.name" placeholder="节点名称" style="width: 170px" :maxlength="191" />
+            <a-input v-if="parentRow(n)" :value="parentRow(n)!.phase" disabled title="子节点的阶段跟上级" style="width: 120px" aria-label="阶段（跟上级）" />
+            <a-auto-complete v-else v-model:value="n.phase" :options="phaseOptions" placeholder="阶段" style="width: 120px" :maxlength="64" />
+            <a-select
+              :value="n.parent"
+              :options="parentOptions(n)"
+              allow-clear
+              placeholder="一级节点"
+              :disabled="hasChildren(n)"
+              :title="hasChildren(n) ? '下面有子节点，不能再挂到别的节点下面' : ''"
+              style="width: 130px"
+              aria-label="上级节点"
+              @change="(v: unknown) => onParent(n, v as number | undefined)"
+            />
+            <a-input v-model:value="n.name" placeholder="节点名称" style="width: 150px" :maxlength="191" />
             <a-select v-model:value="n.dept" :options="DEPTS" style="width: 100px" />
             <a-input-number v-model:value="n.daysBeforeDelivery" :min="-365" :max="2000" :precision="0" style="width: 84px" aria-label="交期前天数" />
             <a-input-number v-model:value="n.durationDays" :min="1" :max="2000" :precision="0" placeholder="天" style="width: 72px" aria-label="工期（天）" />
@@ -175,8 +213,8 @@ const columns = [
               :options="predOptions(n)"
               option-filter-prop="label"
               :max-tag-count="2"
-              placeholder="上一个"
-              style="width: 200px"
+              :placeholder="n.parent != null ? '同上级' : '上一个'"
+              style="width: 180px"
               aria-label="前置节点"
               @change="(v: unknown) => onPreds(n, v as number[])"
             />
@@ -194,6 +232,7 @@ const columns = [
 <style scoped>
 .muted { color: var(--ft-text-2); font-size: 12px; }
 .node-tag { margin-bottom: 4px; }
+.node-tag.child { margin-left: 16px; }
 .phase { font-size: 12px; font-weight: 600; color: var(--ft-text-2); margin: 4px 0 2px; }
 .node-row.head { margin-bottom: 2px; flex-wrap: nowrap; }
 .node-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }

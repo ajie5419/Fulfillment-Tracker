@@ -161,8 +161,10 @@ export interface NodeFacts {
   planDay: string
   /** 计划开始日（可选）：有开始日时，前置节点晚到"开始日前一天"之前不推后（中间的空档是余量） */
   startDay?: string | null
-  /** 前置节点 ID：null / 不填 = 默认上一个节点（数组顺序）；[] = 没有前置 */
+  /** 前置节点 ID：null / 不填 = 默认（一级节点等上一个一级节点，子节点等上级节点的前置）；[] = 没有前置 */
   preds?: string[] | null
+  /** 上级节点 ID（子节点；只有一层）：子节点都完成上级才算完成，子节点晚了上级跟着晚 */
+  parent?: string | null
   /** 手动标记完成的完成日（没手动标记为 null） */
   manualDoneDay: string | null
   tasks: TaskFacts[]
@@ -171,7 +173,7 @@ export interface NodeFacts {
 export interface NodeEstimate {
   id: string
   done: boolean
-  /** 怎么完成的：MANUAL 手动标记，AUTO 挂靠任务全部完成 */
+  /** 怎么完成的：MANUAL 手动标记，AUTO 挂靠任务（和子节点）全部完成 */
   doneBy: 'MANUAL' | 'AUTO' | null
   actualDay: string | null
   expectedDay: string
@@ -191,8 +193,10 @@ export interface NodeEstimate {
   upstream: boolean
   /** 实际用的前置节点 ID（默认的"上一个节点"也解析出来） */
   preds: string[]
-  /** 推后是哪个前置节点造成的（driver = prev 时） */
+  /** 推后是哪个前置节点（或子节点）造成的（driver = prev 时） */
   pushedBy: string | null
+  /** 子节点 ID（按顺序） */
+  children: string[]
   /**
    * 余量：这个节点还能再晚几天而不推迟预计交期（按前置关系从最后一个节点往前推）。
    * ≤ 0 = 关键节点（再晚就拖交期；负数 = 已经让交期晚了这么多天）；null = 已完成，或者后面没有节点接着它（不影响交期）。
@@ -213,12 +217,66 @@ export function autoDone(tasks: TaskFacts[], today: string): { done: boolean; da
   return { done: true, day: counted.map((t) => t.doneDay ?? today).reduce(maxDay) }
 }
 
-/** 解析每个节点的前置节点：preds 为 null / 不填 = 上一个节点；不在本计划里的 ID、自己丢掉 */
-export function resolvePreds(nodes: Pick<NodeFacts, 'id' | 'preds'>[]): Map<string, string[]> {
+/**
+ * 按层级排顺序：一级节点按原顺序，每个一级节点后面紧跟它的子节点（子节点之间按原顺序）。
+ * 上级不在本计划里、或上级自己也是子节点的（只有一层，保存时就拦住了），当一级节点处理。
+ */
+export function treeOrder<T extends { id: string; parent?: string | null }>(nodes: T[]): T[] {
+  const parentOf = parentsOf(nodes)
+  const out: T[] = []
+  for (const n of nodes) {
+    if (parentOf.get(n.id)) continue
+    out.push(n, ...nodes.filter((c) => parentOf.get(c.id) === n.id))
+  }
+  return out
+}
+
+/** 每个节点实际的上级（只认一层：上级不在本计划里、是自己、或上级自己也有上级的，当没有上级） */
+export function parentsOf(nodes: { id: string; parent?: string | null }[]): Map<string, string | null> {
+  const raw = new Map(nodes.map((n) => [n.id, n.parent ?? null]))
+  const isTop = (id: string) => {
+    const p = raw.get(id)
+    return !p || p === id || !raw.has(p)
+  }
+  return new Map(nodes.map((n) => [n.id, !isTop(n.id) && isTop(n.parent!) ? n.parent! : null]))
+}
+
+/**
+ * 解析每个节点自己的前置节点（不含子节点；nodes 按 treeOrder 排好）：
+ *   preds 为 null / 不填 = 默认：一级节点等上一个一级节点；子节点等上级节点的前置（和上级同时开始）。
+ *   不在本计划里的 ID、自己、自己的上级丢掉（上级要等子节点，子节点再等上级就成环）。
+ */
+export function resolvePreds(nodes: Pick<NodeFacts, 'id' | 'preds' | 'parent'>[]): Map<string, string[]> {
   const ids = new Set(nodes.map((n) => n.id))
-  return new Map(
-    nodes.map((n, i) => [n.id, n.preds == null ? (i > 0 ? [nodes[i - 1]!.id] : []) : [...new Set(n.preds)].filter((p) => p !== n.id && ids.has(p))]),
-  )
+  const parentOf = parentsOf(nodes)
+  const out = new Map<string, string[]>()
+  let prevTop: string | null = null
+  for (const n of nodes) {
+    const parent = parentOf.get(n.id) ?? null
+    let mine: string[]
+    if (n.preds != null) mine = [...new Set(n.preds)].filter((p) => p !== n.id && p !== parent && ids.has(p))
+    else if (parent) mine = [...(out.get(parent) ?? [])]
+    else mine = prevTop ? [prevTop] : []
+    out.set(n.id, mine)
+    if (!parent) prevTop = n.id
+  }
+  return out
+}
+
+/** 子节点表（上级 ID → 子节点 ID，按顺序） */
+export function childrenOf(nodes: Pick<NodeFacts, 'id' | 'parent'>[]): Map<string, string[]> {
+  const parentOf = parentsOf(nodes)
+  const out = new Map<string, string[]>(nodes.map((n) => [n.id, []]))
+  for (const n of nodes) {
+    const p = parentOf.get(n.id)
+    if (p) out.get(p)!.push(n.id)
+  }
+  return out
+}
+
+/** 节点要等的全部节点：自己的前置 + 子节点（排拓扑顺序、查环用） */
+export function waitsOn(preds: Map<string, string[]>, children: Map<string, string[]>): Map<string, string[]> {
+  return new Map([...preds].map(([id, ps]) => [id, [...ps, ...(children.get(id) ?? [])]]))
 }
 
 /**
@@ -252,29 +310,50 @@ export function linkFloat(predPlanDay: string, startDay: string | null | undefin
   return Math.max(0, dayDiff(predPlanDay, addDays(startDay, -1)))
 }
 
+/** 最后一个一级节点（对应工单交期；子节点不算） */
+export function lastTopNode<T extends { id: string; parent?: string | null }>(nodes: T[]): T | undefined {
+  const parentOf = parentsOf(nodes)
+  return treeOrder(nodes).filter((n) => !parentOf.get(n.id)).at(-1)
+}
+
 /**
  * 算每个节点的预计日（nodes 按顺序号排好；输出顺序同输入）。
  * 只沿前置节点往后推：前置节点 p 晚了 d 天（预计 - 计划），扣掉连接余量后还晚的天数加到本节点计划日上；多个前置取最晚。
- * 没有自定前置的节点默认前置 = 上一个节点（和 R14 的一条主线一致）。
- * deliveryDay 给了时再从最后一个节点往前算余量（slackDays）。
+ * 没有自定前置的一级节点默认前置 = 上一个一级节点（和 R14 的一条主线一致）；子节点默认和上级同时开始（等上级的前置）。
+ * 有子节点的节点：不早于最晚的子节点预计日（子节点晚了上级跟着晚，算"受上游影响"）；挂靠任务和子节点都完成才自动完成。
+ * deliveryDay 给了时再从最后一个一级节点往前算余量（slackDays）。
  */
-export function estimateNodes(nodes: NodeFacts[], today: string, deliveryDay?: string): NodeEstimate[] {
-  const preds = resolvePreds(nodes)
+export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: string): NodeEstimate[] {
+  const nodes = treeOrder(input)
+  const ids = nodes.map((n) => n.id)
+  let preds = resolvePreds(nodes)
+  let kids = childrenOf(nodes)
   const byId = new Map(nodes.map((n) => [n.id, n]))
-  const order = topoOrder(
-    nodes.map((n) => n.id),
-    preds,
-  )
-  // 兜底：有环时退回一条主线
-  if (!order) for (const [i, n] of nodes.entries()) preds.set(n.id, i > 0 ? [nodes[i - 1]!.id] : [])
+  const order = topoOrder(ids, waitsOn(preds, kids))
+  // 兜底：有环时退回一条主线（不分上下级）
+  if (!order) {
+    preds = new Map(nodes.map((n, i) => [n.id, i > 0 ? [nodes[i - 1]!.id] : []]))
+    kids = new Map(ids.map((id) => [id, []]))
+  }
+  const parentOf = new Map<string, string>()
+  for (const [p, cs] of kids) for (const c of cs) parentOf.set(c, p)
   const est = new Map<string, NodeEstimate>()
-  /** 前置 p 把 n 推到哪天（扣掉连接余量；可能早于 n 的计划日 = 不推） */
-  const pushOf = (p: NodeEstimate, pPlan: string, n: NodeFacts) => addDays(n.planDay, dayDiff(pPlan, p.expectedDay) - linkFloat(pPlan, n.startDay))
-  for (const id of order ?? nodes.map((n) => n.id)) {
+  /** 前置 p 把 n 推到哪天（扣掉连接余量；可能早于 n 的计划日 = 不推）；p 是 n 的子节点时就是 p 的预计日 */
+  const pushOf = (p: NodeEstimate, n: NodeFacts) => {
+    if (parentOf.get(p.id) === n.id) return p.expectedDay
+    const pPlan = byId.get(p.id)!.planDay
+    return addDays(n.planDay, dayDiff(pPlan, p.expectedDay) - linkFloat(pPlan, n.startDay))
+  }
+  for (const id of order ?? ids) {
     const n = byId.get(id)!
     const tasks = n.tasks.map((t) => ({ ...t, ...estimateTask(t, n.planDay, today) }))
     const counted = tasks.filter((t) => !t.excluded)
-    const auto = autoDone(n.tasks, today)
+    const myKids = kids.get(id)!.map((c) => est.get(c)!)
+    // 子节点当作挂靠任务一起算自动完成（完成日 = 子节点实际完成日）
+    const auto = autoDone(
+      [...n.tasks, ...myKids.map((c): TaskFacts => ({ kind: 'task', id: c.id, excluded: false, done: c.done, doneDay: c.actualDay, planDay: null }))],
+      today,
+    )
     const doneBy = n.manualDoneDay ? 'MANUAL' : auto.done ? 'AUTO' : null
     const actualDay = n.manualDoneDay ?? auto.day
     const myPreds = preds.get(id)!
@@ -296,10 +375,10 @@ export function estimateNodes(nodes: NodeFacts[], today: string, deliveryDay?: s
         const m = taskMax.reduce(maxDay)
         if (m > selfExpectedDay) [selfExpectedDay, selfDriver] = [m, 'task']
       }
-      // 前置节点推到的最晚一天
+      // 前置节点（和子节点）推到的最晚一天
       let shifted: string | null = null
-      for (const p of myPreds) {
-        const d = pushOf(est.get(p)!, byId.get(p)!.planDay, n)
+      for (const p of [...myPreds, ...kids.get(id)!]) {
+        const d = pushOf(est.get(p)!, n)
         if (!shifted || d > shifted) [shifted, pushedBy] = [d, p]
       }
       // 计划日已过仍未完成：前置没把它推到计划日之后时算自身的（否则是在等前置）
@@ -328,6 +407,7 @@ export function estimateNodes(nodes: NodeFacts[], today: string, deliveryDay?: s
       upstream: !actualDay && upstream && dayDiff(n.planDay, expectedDay) > 0,
       preds: myPreds,
       pushedBy,
+      children: kids.get(id)!,
       slackDays: null,
       taskCount: counted.length,
       doneCount: counted.filter((t) => t.done).length,
@@ -336,29 +416,28 @@ export function estimateNodes(nodes: NodeFacts[], today: string, deliveryDay?: s
       tasks,
     })
   }
-  // 余量：最后一个节点 = 交期 - 预计日；往前每个节点取各后续节点"连接上还能晚的天数 + 后续节点的余量"里最小的
-  const last = nodes.at(-1)
+  // 余量：最后一个一级节点 = 交期 - 预计日；往前每个节点取各后续节点（含上级）"连接上还能晚的天数 + 后续节点的余量"里最小的
+  const last = order ? lastTopNode(nodes) : nodes.at(-1)
   if (deliveryDay && last) {
     const slack = new Map<string, number>()
     if (!est.get(last.id)!.done) slack.set(last.id, dayDiff(est.get(last.id)!.expectedDay, deliveryDay))
-    const succ = new Map<string, string[]>(nodes.map((n) => [n.id, []]))
-    for (const n of nodes) for (const p of preds.get(n.id)!) succ.get(p)!.push(n.id)
-    for (const id of [...(order ?? nodes.map((n) => n.id))].reverse()) {
+    const succ = new Map<string, string[]>(ids.map((id) => [id, []]))
+    for (const [id, ws] of waitsOn(preds, kids)) for (const p of ws) succ.get(p)!.push(id)
+    for (const id of [...(order ?? ids)].reverse()) {
       const me = est.get(id)!
       if (id === last.id || me.done) continue
       let best: number | null = null
       for (const s of succ.get(id)!) {
         const ss = slack.get(s)
         if (ss == null || est.get(s)!.done) continue
-        const room = dayDiff(pushOf(me, byId.get(id)!.planDay, byId.get(s)!), est.get(s)!.expectedDay)
-        const v = room + ss
+        const v = dayDiff(pushOf(me, byId.get(s)!), est.get(s)!.expectedDay) + ss
         if (best == null || v < best) best = v
       }
       if (best != null) slack.set(id, best)
     }
     for (const [id, v] of slack) est.get(id)!.slackDays = v
   }
-  return nodes.map((n) => est.get(n.id)!)
+  return input.map((n) => est.get(n.id)!)
 }
 
 /** 关键节点：没完成、余量 ≤ 0（再晚就拖交期） */
@@ -366,7 +445,9 @@ export const isCritical = (n: Pick<NodeEstimate, 'done' | 'slackDays'>) => !n.do
 
 export interface PlanForecast {
   nodes: NodeEstimate[]
-  /** 预计交期 = 最后一个节点的预计日；没有节点为 null */
+  /** 对应交期的节点 = 最后一个一级节点 */
+  lastNodeId: string | null
+  /** 预计交期 = 最后一个一级节点的预计日；没有节点为 null */
   expectedDelivery: string | null
   /** 预计交期 - QMS 交期（天，正数 = 拖期）；没有节点为 null */
   deliveryDelayDays: number | null
@@ -378,9 +459,11 @@ export interface PlanForecast {
 
 export function forecastPlan(nodes: NodeFacts[], deliveryDay: string, today: string): PlanForecast {
   const est = estimateNodes(nodes, today, deliveryDay)
-  const last = est.at(-1)
+  const lastId = lastTopNode(nodes)?.id ?? null
+  const last = est.find((e) => e.id === lastId)
   return {
     nodes: est,
+    lastNodeId: lastId,
     expectedDelivery: last?.expectedDay ?? null,
     deliveryDelayDays: last ? dayDiff(deliveryDay, last.expectedDay) : null,
     delayedNodes: est.filter(isDelayed).length,

@@ -20,9 +20,12 @@ import {
   planLink,
   planTaskFacts,
   purchaseFacts,
+  childrenOf,
+  lastTopNode,
   resolvePreds,
   stepFacts,
   topoOrder,
+  treeOrder,
   w9PlanSummary,
   w9Summary,
 } from '../../server/services/plan/constants'
@@ -351,5 +354,64 @@ describe('机场行李车计划：只沿前置节点顺延、余量、关键节�
     nodes[15]!.preds = ['9', '10', '11', '12', '15'] // 装配漏连液压件（#13）
     const est = estimateNodes(nodes, '2026-07-20', DELIVERY)
     expect(est.find((n) => n.id === '13')!.slackDays).toBeNull()
+  })
+})
+
+// ───── 子节点（10-22，zhao：悬挂要挂在下料组焊下面）─────
+describe('子节点：上级等子节点、子节点默认和上级同时开始', () => {
+  // A 原材料 → P 下料组焊（子节点 C1 车架、C2 悬挂）→ B 机加；子节点顺序号比 B 大（后加的）
+  const A: NodeFacts = node('A', '2026-11-01')
+  const P: NodeFacts = node('P', '2026-11-20')
+  const B: NodeFacts = node('B', '2026-11-30')
+  const C1: NodeFacts = { ...node('C1', '2026-11-15'), parent: 'P' }
+  const C2: NodeFacts = { ...node('C2', '2026-11-18'), parent: 'P' }
+  const input = [A, P, B, C1, C2]
+
+  it('按层级排：子节点紧跟上级；只认一层；最后一个一级节点', () => {
+    expect(treeOrder(input).map((n) => n.id)).toEqual(['A', 'P', 'C1', 'C2', 'B'])
+    expect(childrenOf(input).get('P')).toEqual(['C1', 'C2'])
+    // 孙节点当一级节点处理
+    const G = { ...node('G', '2026-11-10'), parent: 'C1' }
+    expect(childrenOf([...input, G]).get('C1')).toEqual([])
+    expect(lastTopNode(input)?.id).toBe('B')
+    expect(lastTopNode([A, P, C1])?.id).toBe('P')
+  })
+
+  it('默认前置：一级节点等上一个一级节点（不接到子节点上），子节点等上级的前置；子节点选上级当前置的丢掉', () => {
+    const preds = resolvePreds(treeOrder(input))
+    expect(preds.get('P')).toEqual(['A'])
+    expect(preds.get('C1')).toEqual(['A'])
+    expect(preds.get('C2')).toEqual(['A'])
+    expect(preds.get('B')).toEqual(['P'])
+    expect(resolvePreds(treeOrder([A, P, { ...C1, preds: ['P', 'A'] }])).get('C1')).toEqual(['A'])
+  })
+
+  it('子节点晚了：子节点是源头，上级被推后（受子节点影响，不算源头），后面的一级节点跟着晚', () => {
+    const late = { ...C2, tasks: [task({ planDay: '2026-11-25' })] }
+    const est = new Map(estimateNodes([A, P, B, C1, late], TODAY).map((e) => [e.id, e]))
+    expect(est.get('C2')).toMatchObject({ source: true, selfDelayDays: 7, expectedDay: '2026-11-25' })
+    expect(est.get('P')).toMatchObject({ source: false, upstream: true, pushedBy: 'C2', expectedDay: '2026-11-25', delayDays: 5, children: ['C1', 'C2'] })
+    expect(est.get('B')).toMatchObject({ upstream: true, pushedBy: 'P', expectedDay: '2026-12-05', delayDays: 5 })
+    expect(est.get('C1')).toMatchObject({ delayDays: 0, upstream: false })
+    // 输出顺序同输入
+    expect(estimateNodes([A, P, B, C1, late], TODAY).map((e) => e.id)).toEqual(['A', 'P', 'B', 'C1', 'C2'])
+  })
+
+  it('子节点都完成上级才自动完成（完成日取最晚），只完成一个不算', () => {
+    const one = estimateNodes([A, P, B, { ...C1, manualDoneDay: '2026-10-15' }, C2], TODAY).find((e) => e.id === 'P')!
+    expect(one.done).toBe(false)
+    const all = estimateNodes([A, P, B, { ...C1, manualDoneDay: '2026-10-15' }, { ...C2, manualDoneDay: '2026-10-17' }], TODAY).find((e) => e.id === 'P')!
+    expect(all).toMatchObject({ done: true, doneBy: 'AUTO', actualDay: '2026-10-17' })
+  })
+
+  it('预计交期看最后一个一级节点；余量沿子节点 → 上级 → 后续往回算', () => {
+    const f = forecastPlan(input, '2026-12-05', TODAY)
+    expect(f.lastNodeId).toBe('B')
+    expect(f.expectedDelivery).toBe('2026-11-30')
+    const slack = new Map(f.nodes.map((e) => [e.id, e.slackDays]))
+    expect(slack.get('B')).toBe(5)
+    expect(slack.get('P')).toBe(5)
+    expect(slack.get('C2')).toBe(7) // 晚到上级计划日 11-20 之前不影响上级
+    expect(slack.get('C1')).toBe(10)
   })
 })
