@@ -81,7 +81,7 @@ const columns = [
 <template>
   <div>
     <p class="muted">
-      总计划页"按模板生成"时，每个节点的计划日 = 工单交期 − 交期前天数；生成后可以逐个调整。改模板不影响已经生成的总计划。
+      工单详情的"总计划"页签"按模板生成"时，每个节点的计划日 = 工单交期 − 交期前天数；生成后可以逐个调整。改模板不影响已经生成的总计划。
     </p>
     <a-button type="primary" size="small" style="margin-bottom: 12px" @click="edit(null)">新建模板</a-button>
     <a-table :columns="columns" :data-source="data" :loading="pending" row-key="id" size="small" :pagination="false">

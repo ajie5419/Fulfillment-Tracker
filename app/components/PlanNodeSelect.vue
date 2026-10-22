@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 部门记录（设计任务 / 采购行 / 工序 / 装配节点）的"所属总计划节点"下拉（R14）：只列同一工单的节点。
- * 工单的总计划已发布时必选（后端校验，这里只提示）；记录日期晚于节点计划日时提示（照样能保存，总计划页标红）。
+ * 工单的总计划已发布时必选（后端校验，这里只提示）；记录日期晚于节点计划日时提示（照样能保存，总计划里标红）。
  * 选中节点时抛出 pick(planDate)，父组件可以拿来给空着的日期字段填默认值。
  */
 interface Opt { id: string; seq: number; name: string; deptText: string; planDate: string }
@@ -73,7 +73,7 @@ defineExpose({ published: computed(() => opts.value.published) })
       @change="onChange"
     />
     <template v-if="!bare">
-      <div v-if="late" class="warn">晚于节点计划日 {{ selected?.planDate }}，可以保存，总计划页会标红</div>
+      <div v-if="late" class="warn">晚于节点计划日 {{ selected?.planDate }}，可以保存，总计划里会标红</div>
       <div v-else-if="opts.published && !value" class="warn">该工单总计划已发布，新建记录必须选所属节点</div>
     </template>
   </div>

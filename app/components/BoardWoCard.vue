@@ -43,7 +43,7 @@ const product = computed(() => r.value.projectName ?? r.value.customerName)
       <span class="title"><WoLink :no="r.workOrderNumber" /><template v-if="product"> · {{ product }}</template></span>
     </div>
     <div class="sub">{{ r.projectManagerName ?? '未设置项目经理' }} · 交期 {{ dayText(r.deliveryDate) }}</div>
-    <div class="sub">还没建总计划 · <NuxtLink :to="`/plan?wo=${encodeURIComponent(r.workOrderNumber)}`">去生成</NuxtLink></div>
+    <div class="sub">还没建总计划 · <NuxtLink :to="`/wo/${encodeURIComponent(r.workOrderNumber)}?tab=plan`">去生成</NuxtLink></div>
   </div>
   <NuxtLink v-else :to="to" class="card" :class="`g-${group}`">
     <div class="top">

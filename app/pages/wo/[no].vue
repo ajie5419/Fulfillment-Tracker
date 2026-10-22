@@ -6,6 +6,8 @@
  *   总计划时间线：每个节点一行（虚线框 = 计划区间，实心条 = 预计 / 实际，颜色按状态，竖线 = 今天），点节点展开挂在上面的设计、采购、工序、装配记录；
  *   右侧：要处理的事（活动预警 + 未关闭异常，按严重度排）、谁在拖（源头延误天数按责任部门）、还没挂到节点的记录。
  * 地址 #node-<id> 定位并展开该节点（列表"总计划节点"列点过来）。日期全部用服务端给的 'YYYY-MM-DD'。
+ * 功能重复梳理第二批（zhao 10-22）：原"总计划"页并进来，成为第二个页签 ?tab=plan（编制、发布、调整、确认、标完成都在这里，?node= 定位节点）；
+ *   旧地址 /plan?wo=&node= 跳到这里。总计划页签不依赖详情接口：手里有确认待办、但看不到这个工单的部门负责人也能打开（/api/plan 的规则）。
  */
 import type { WorkOrderDetail } from '~~/server/services/workorder/detail'
 import { BOARD_GROUP_TEXT, NODE_STATE_COLOR, NODE_STATE_TEXT, type NodeState, boardGroup } from '#shared/status'
@@ -17,6 +19,15 @@ const { data, error, pending, refresh } = await useFetch<WorkOrderDetail>(() => 
   key: computed(() => `wo-detail:${no.value}`),
 })
 const d = computed(() => data.value)
+
+// ───── 页签：概览 / 总计划（?tab=plan）─────
+type Tab = 'overview' | 'plan'
+const tab = computed<Tab>(() => (route.query.tab === 'plan' ? 'plan' : 'overview'))
+function setTab(v: unknown) {
+  // 切回概览时去掉总计划的节点定位参数
+  navigateTo({ query: v === 'plan' ? { ...route.query, tab: 'plan' } : { ...route.query, tab: undefined, node: undefined } }, { replace: true })
+}
+const planLink = (nodeId?: string) => ({ query: { tab: 'plan', node: nodeId } })
 
 useHead({ title: computed(() => (d.value ? `${d.value.workOrder.workOrderNumber} · 工单详情` : '工单详情')) })
 
@@ -140,12 +151,19 @@ const enc = encodeURIComponent
 
 <template>
   <div class="page">
-    <div class="crumbs">
-      <NuxtLink to="/board">项目总览</NuxtLink><span class="sep">/</span><NuxtLink to="/wo">工单详情</NuxtLink><span class="sep">/</span><span>{{ no }}</span>
+    <div class="topbar">
+      <div class="crumbs">
+        <NuxtLink to="/board">项目总览</NuxtLink><span class="sep">/</span><span>{{ no }}</span>
+      </div>
+      <a-segmented :value="tab" :options="[{ value: 'overview', label: '概览' }, { value: 'plan', label: '总计划' }]" @change="setTab" />
     </div>
 
+    <PlanEditor v-if="tab === 'plan'" :wo="no" @changed="refresh()" />
+
+    <template v-else>
+
     <a-result v-if="error" :status="error.statusCode === 403 ? '403' : error.statusCode === 404 ? '404' : 'error'" :title="error.statusCode === 403 ? '没有权限' : error.statusCode === 404 ? '工单不存在' : '加载失败'" :sub-title="apiError(error)">
-      <template #extra><NuxtLink to="/wo"><a-button type="primary">选择其他工单</a-button></NuxtLink></template>
+      <template #extra><NuxtLink to="/board"><a-button type="primary">回项目总览</a-button></NuxtLink></template>
     </a-result>
 
     <a-spin v-else :spinning="pending && !d">
@@ -163,7 +181,7 @@ const enc = encodeURIComponent
                 <span>客户 {{ d.workOrder.customerName }}</span>
                 <span v-if="d.plan">总计划{{ d.published ? '已发布' : '草稿（未发布，预计交期不计算）' }}（{{ d.nodes.length }} 个节点）</span>
                 <span v-else>还没有总计划</span>
-                <span><NuxtLink :to="`/plan?wo=${enc(no)}`">打开总计划</NuxtLink></span>
+                <span><NuxtLink :to="planLink()">编辑总计划</NuxtLink></span>
                 <span><a @click="refresh()">刷新</a></span>
               </div>
               <div class="dates">
@@ -255,7 +273,7 @@ const enc = encodeURIComponent
 
             <div v-if="!d.nodes.length" class="empty">
               <a-empty description="这个工单还没有总计划">
-                <NuxtLink :to="`/plan?wo=${enc(no)}`"><a-button type="primary">去生成</a-button></NuxtLink>
+                <NuxtLink :to="planLink()"><a-button type="primary">去生成</a-button></NuxtLink>
               </a-empty>
             </div>
             <div v-else class="gantt-scroll">
@@ -330,12 +348,14 @@ const enc = encodeURIComponent
         </div>
       </template>
     </a-spin>
+    </template>
   </div>
 </template>
 
 <style scoped>
 .page { display: flex; flex-direction: column; gap: 16px; }
-.crumbs { font-size: 12px; color: var(--ft-text-3); margin-top: 4px; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.crumbs { font-size: 12px; color: var(--ft-text-3); }
 .crumbs .sep { margin: 0 6px; }
 .head-card { margin-bottom: 16px; }
 .head { display: flex; gap: 24px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }

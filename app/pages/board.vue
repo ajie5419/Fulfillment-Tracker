@@ -207,7 +207,7 @@ const enc = encodeURIComponent
             <template v-else-if="column.key === 'pm'">{{ record.projectManagerName ?? '—' }}</template>
             <template v-else-if="column.key === 'delivery'">{{ dayText(record.deliveryDate) }}</template>
             <template v-else-if="column.key === 'expectedDelivery'">
-              <NuxtLink v-if="record.expectedDelivery" :to="`/plan?wo=${enc(record.workOrderNumber)}`" :class="{ warn: (record.delayDays ?? 0) > 0 }" title="按总计划推算（已发布的总计划）">{{ record.expectedDelivery }}</NuxtLink>
+              <NuxtLink v-if="record.expectedDelivery" :to="`/wo/${enc(record.workOrderNumber)}?tab=plan`" :class="{ warn: (record.delayDays ?? 0) > 0 }" title="按总计划推算（已发布的总计划）">{{ record.expectedDelivery }}</NuxtLink>
               <span v-else class="ft-muted" title="还没有发布总计划">—</span>
             </template>
             <template v-else-if="column.key === 'delayDays'">
