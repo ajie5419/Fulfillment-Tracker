@@ -647,7 +647,8 @@ export async function updateNode(id: string, input: Partial<NodeInput>, actorId:
         : null
     if (parentChanged) data.parent = newParentId ? { connect: { id: newParentId } } : { disconnect: true }
     if (parent) data.phase = parent.phase
-    await treeDateCheck(tx, id, input.name?.trim() ?? old.name, input.planDate ?? old.planDate, parent)
+    // 只在改了计划日或上级时校验（只改名称、备注的不拦，免得被已有的不一致数据卡住）
+    if (dateChanged || parentChanged) await treeDateCheck(tx, id, input.name?.trim() ?? old.name, input.planDate ?? old.planDate, parent)
     const node = await tx.planNode.update({ where: { id }, data })
     if (!node.parentId && node.phase !== old.phase) await tx.planNode.updateMany({ where: { parentId: id }, data: { phase: node.phase } })
     // 前置节点：页面每次保存都会带上，只有真的变了才重写（避免无谓地清掉、重发延误预警）

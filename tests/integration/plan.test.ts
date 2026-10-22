@@ -255,6 +255,8 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     await expect(s.plan.updateNode(c1.id, { parentId: c1.id }, pm)).rejects.toThrow('不能选自己')
     // 上级的计划日不能早于子节点
     await expect(s.plan.updateNode(p.id, { planDate: dayOff(36) }, pm)).rejects.toThrow('不能早于子节点')
+    // 只改备注不校验日期
+    await s.plan.updateNode(p.id, { note: '组焊车间' }, pm)
 
     let view = await s.plan.getPlan(DEP_WO, await ctxOf(pm))
     expect(view.nodes.map((n) => `${n.code} ${n.name}`)).toEqual(['1 原材料', '2 下料组焊', '2.1 车架', '2.2 悬挂', '3 机加'])
@@ -295,6 +297,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     await expect(s.tpl.createTemplate({ name: 'Y1', nodes: [n('a', 2), n('b', null)] }, 'u-pdh')).rejects.toThrow('排在它前面')
     await expect(s.tpl.createTemplate({ name: 'Y2', nodes: [n('a', null), n('b', 1), n('c', 2)] }, 'u-pdh')).rejects.toThrow('本身是子节点')
     await expect(s.tpl.createTemplate({ name: 'Y3', nodes: [n('a', null), n('b', 1, [1])] }, 'u-pdh')).rejects.toThrow('不能是自己的上级')
+    await expect(s.tpl.createTemplate({ name: 'Y5', nodes: [n('a', null), { ...n('b', 1), daysBeforeDelivery: 3 }] }, 'u-pdh')).rejects.toThrow('不能比上级小')
     const y = await s.tpl.createTemplate({ name: 'Y4', nodes: [n('组焊', null, null, '生产'), n('车架', 1), n('悬挂', 1, null, '别的'), n('机加', null, null, '生产')] }, 'u-pdh')
     expect((await s.tpl.listTemplates()).find((t) => t.id === y.id)!.nodes.map((m) => [m.name, m.parent, m.phase])).toEqual([
       ['组焊', null, '生产'],
