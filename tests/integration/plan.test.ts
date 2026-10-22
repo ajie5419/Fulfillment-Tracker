@@ -218,6 +218,12 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     await s.plan.updateNode(id(16), { preds: [id(14), id(15)] }, 'u-pm')
     await s.plan.deleteNode(id(15), null, 'u-pm')
     expect(await db.planNodeDep.findMany({ where: { nodeId: id(16) }, select: { predId: true } })).toEqual([{ predId: id(14) }])
+    // 删节点后默认前置改变也可能成环：#5 等 #7、#6 不等任何节点、#7 默认等 #6；删 #6 后 #7 改等 #5 → #5↔#7，拦住并回滚
+    await s.plan.updateNode(id(5), { preds: [id(7)] }, 'u-pm')
+    await s.plan.updateNode(id(6), { preds: [] }, 'u-pm')
+    await s.plan.updateNode(id(7), { preds: null }, 'u-pm')
+    await expect(s.plan.deleteNode(id(6), null, 'u-pm')).rejects.toThrow('成环')
+    expect(await db.planNode.count({ where: { id: id(6) } })).toBe(1)
 
     // 模板校验：前置超范围、选自己、成环
     const n = (name: string, preds: number[] | null) => ({ name, dept: 'TECH' as const, daysBeforeDelivery: 1, preds })

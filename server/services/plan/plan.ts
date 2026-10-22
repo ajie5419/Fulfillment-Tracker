@@ -618,6 +618,8 @@ export async function deleteNode(id: string, reason: string | null | undefined, 
     await cancelTaskTodos(tx, (await tx.planTask.findMany({ where: { planNodeId: id }, select: { id: true } })).map((t) => t.id))
     await clearAlertKeys(tx, [w9Key(id), w9ConfirmKey(id), w9SplitKey(id)])
     await tx.planNode.delete({ where: { id } }) // 前置关系两头都级联删除
+    // 删掉后，紧跟着它、默认等"上一个节点"的节点改等更前面的节点，可能成环：成环就整笔回滚
+    await assertNoCycle(tx, node.workOrderNumber)
     await clearDelayAlerts(tx, node.workOrderNumber)
     return { ok: true }
   })
