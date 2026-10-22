@@ -56,7 +56,7 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[], 
   const byId = new Map(steps.map((s) => [s.id, s]))
   const releases = await describeReleaseTodos(todos)
   const plans = await describePlanTodos(todos.filter((t) => t.refType === PLAN_REF).map((t) => t.refId))
-  const planTasks = await describePlanTaskTodos(todos.filter((t) => t.refType === PLAN_TASK_REF).map((t) => t.refId))
+  const planTasks = await describePlanTaskTodos(todos.filter((t) => t.refType === PLAN_TASK_REF).map((t) => t.refId), visibleWorkOrders)
 
   const rows = todos.map((t) => {
     const actionText = ACTION_TEXT[t.action] ?? t.action

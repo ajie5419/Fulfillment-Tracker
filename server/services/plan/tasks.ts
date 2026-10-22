@@ -175,9 +175,13 @@ export async function stepOptions(workOrderNumber: string) {
   }))
 }
 
-/** "完成部门任务"待办的说明：任务、节点、工单、计划完成日；任务已删的返回不到 */
-export async function describePlanTaskTodos(ids: string[]) {
-  if (!ids.length) return new Map<string, { id: string; workOrderNumber: string; name: string; nodeName: string; deptText: string; planDate: string; link: string }>()
+/**
+ * "完成部门任务"待办的说明：任务、节点、工单、计划完成日；任务已删的返回不到。
+ * 负责人看不到该工单（visibleWorkOrders 不含）时不给"查看"链接（总计划页会 403），仍可直接标完成。
+ */
+export async function describePlanTaskTodos(ids: string[], visibleWorkOrders?: string[]) {
+  if (!ids.length) return new Map<string, { id: string; workOrderNumber: string; name: string; nodeName: string; deptText: string; planDate: string; link: string | null }>()
+  const visible = visibleWorkOrders ? new Set(visibleWorkOrders) : null
   const tasks = await prisma.planTask.findMany({ where: { id: { in: ids } }, include: { planNode: { select: { name: true, dept: true } } } })
   return new Map(
     tasks.map((t) => [
@@ -189,7 +193,7 @@ export async function describePlanTaskTodos(ids: string[]) {
         nodeName: t.planNode.name,
         deptText: BUSINESS_DEPT_NAME[t.planNode.dept],
         planDate: dateFieldDay(t.planDate),
-        link: planLink(t.workOrderNumber, t.planNodeId),
+        link: !visible || visible.has(t.workOrderNumber) ? planLink(t.workOrderNumber, t.planNodeId) : null,
       },
     ]),
   )

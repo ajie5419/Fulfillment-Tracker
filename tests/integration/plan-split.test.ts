@@ -154,6 +154,9 @@ describe.skipIf(!DB)('部门计划二次分解', () => {
     expect(mine.dueDay).toBe(dayStr(12))
     expect(mine.workOrderNumber).toBe(WO)
     expect(mine.planTask?.link).toBe(`/plan?wo=${WO}&node=${contract.id}`)
+    // 负责人看不到这张工单时：待办照常、可标完成，但不给"查看"链接（总计划页会 403）
+    const outOfScope = (await s.todos.listMyTodos('u-pdh', [OTHER_WO])).find((t) => t.refId === r.id)!
+    expect(outOfScope.planTask).toMatchObject({ id: r.id, link: null })
     // 其他类型的待办 planTask 为空
     const n = await nodeView('合同评审')
     expect(n.unsplit).toBe(false)
