@@ -6,14 +6,30 @@
  *   整张卡点进工单详情 /wo/:no。"按项目经理"按人分组；"表格视图"是原来的 14 列表格（工单号改链到详情）。
  * 顶部 QMS 最后同步时间（各类资源里最旧的那类），有资源同步报错时显示错误提示。
  * 红 = 有活动红色预警或超期 ≥3 天的异常；黄 = 有活动黄色预警或超期异常；否则绿。分组规则见 shared/status.ts boardGroup。
+ * 功能重复梳理第一批（zhao 10-22）：
+ *   原"领导总览"并入本页：领导、项目部负责人、管理员在汇总下方多看到一块（BoardLeaderPanel），旧地址 /overview 跳这里；
+ *   全站只用"预计拖期 / 有风险 / 正常 / 未建总计划"一套分组，表格视图第一列也改成这套（不再显示红 / 黄 / 绿）；
+ *   原菜单"工单详情"入口页去掉，改为工具栏里搜工单直接进详情。
  */
 import { BOARD_GROUP_TEXT, type BoardGroup, boardGroup } from '#shared/status'
 
 const route = useRoute()
 const router = useRouter()
+const { data: me } = await useMe()
+const { data: workOrders } = await useWorkOrders()
+const woOptions = computed(() =>
+  workOrders.value.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName ?? ''}` })),
+)
+function openWo(no: unknown) {
+  if (typeof no === 'string' && no) navigateTo(`/wo/${encodeURIComponent(no)}`)
+}
 const { data, pending, refresh } = await useFetch('/api/board', {
   default: () => ({ lastSyncAt: null, syncOldest: null, syncErrors: [], syncConfigured: false, summary: { red: 0, yellow: 0, green: 0 }, sourceByDept: [], rows: [] }),
 })
+/** 刷新：看板 + 领导那一块（BoardLeaderPanel 的数据 key 是 'overview'）一起刷新 */
+async function refreshAll() {
+  await Promise.all([refresh(), me.value?.can.overview ? refreshNuxtData('overview') : undefined])
+}
 type Row = (typeof data.value.rows)[number]
 
 type View = 'status' | 'pm' | 'table'
@@ -42,6 +58,8 @@ const COLUMNS: { key: Exclude<BoardGroup, 'NO_PLAN'>; icon: 'alert' | 'warn' | '
   { key: 'RISK', icon: 'warn', tone: 'risk' },
   { key: 'OK', icon: 'check', tone: 'done' },
 ]
+const GROUP_TONE: Record<BoardGroup, 'late' | 'risk' | 'done' | 'none'> = { LATE: 'late', RISK: 'risk', OK: 'done', NO_PLAN: 'none' }
+const GROUPS = (['LATE', 'RISK', 'OK', 'NO_PLAN'] as const).map((key) => ({ key, tone: GROUP_TONE[key] }))
 const deptItems = computed(() => data.value.sourceByDept.map((d) => ({ key: d.dept, label: d.deptText, value: d.nodes })))
 
 const byPm = computed(() => {
@@ -55,7 +73,7 @@ const byPm = computed(() => {
 
 // ───── 表格视图（原 14 列）─────
 const columns = [
-  { title: '', key: 'color', width: 56 },
+  { title: '状态', key: 'color', width: 110 },
   { title: '工单', key: 'wo', width: 260 },
   { title: '外协在途', dataIndex: 'outCount', width: 90, align: 'center' as const },
   { title: '超期', key: 'overdue', width: 120, align: 'center' as const },
@@ -79,7 +97,18 @@ const enc = encodeURIComponent
       <h1 class="page-title">项目总览</h1>
       <div class="tools">
         <span class="ft-muted sync-time" :title="data.syncOldest ? `最旧的是：${data.syncOldest}` : undefined">QMS 最后同步：{{ syncText }}</span>
-        <a-button size="small" :loading="pending" @click="refresh()">刷新</a-button>
+        <a-select
+          :value="undefined"
+          show-search
+          option-filter-prop="label"
+          placeholder="搜工单号 / 项目，进详情"
+          :options="woOptions"
+          class="wo-search"
+          aria-label="搜工单进详情"
+          :not-found-content="'没有可见的工单'"
+          @change="openWo"
+        />
+        <UiRefreshButton @click="refreshAll()" />
         <a-segmented v-model:value="view" :options="[{ value: 'status', label: '按状态分组' }, { value: 'pm', label: '按项目经理' }, { value: 'table', label: '表格视图' }]" />
       </div>
     </div>
@@ -94,6 +123,9 @@ const enc = encodeURIComponent
         <UiBarList :items="deptItems" compact empty="没有源头延误的节点" />
       </UiSectionCard>
     </div>
+
+    <!-- 原领导总览独有的内容（领导、项目部负责人、管理员） -->
+    <BoardLeaderPanel v-if="me?.can.overview" />
 
     <a-spin :spinning="pending">
       <!-- 按状态分组 -->
@@ -128,16 +160,14 @@ const enc = encodeURIComponent
       <!-- 表格视图（原看板） -->
       <UiSectionCard v-else padding="none">
         <div class="table-legend">
-          <span><span class="dot" :style="{ background: BOARD_COLOR.RED }" />红 {{ data.summary.red }}</span>
-          <span><span class="dot" :style="{ background: BOARD_COLOR.YELLOW }" />黄 {{ data.summary.yellow }}</span>
-          <span><span class="dot" :style="{ background: BOARD_COLOR.GREEN }" />绿 {{ data.summary.green }}</span>
-          <span class="ft-muted">红 = 有红色预警或超期 ≥3 天的异常；黄 = 有黄色预警或超期异常</span>
+          <span v-for="g in GROUPS" :key="g.key"><UiStatusTag :tone="g.tone">{{ BOARD_GROUP_TEXT[g.key] }} {{ grouped[g.key].length }}</UiStatusTag></span>
+          <span class="ft-muted">有风险 = 有源头延误节点、活动预警或超期异常</span>
         </div>
         <a-table :columns="columns" :data-source="data.rows" row-key="workOrderNumber" size="middle" :pagination="false" :scroll="{ x: 1500 }">
           <template #emptyText><a-empty description="没有可见的工单" /></template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'color'">
-              <span class="light" :style="{ background: BOARD_COLOR[record.color as keyof typeof BOARD_COLOR] }" :title="BOARD_TEXT[record.color as keyof typeof BOARD_TEXT]">{{ BOARD_TEXT[record.color as keyof typeof BOARD_TEXT] }}</span>
+              <UiStatusTag :tone="GROUP_TONE[groupOf(record as Row)]">{{ BOARD_GROUP_TEXT[groupOf(record as Row)] }}</UiStatusTag>
             </template>
             <template v-else-if="column.key === 'wo'">
               <WoLink :no="record.workOrderNumber" />
@@ -209,8 +239,7 @@ const enc = encodeURIComponent
 .noplan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 10px; }
 .empty { padding: 48px 0; }
 .table-legend { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 14px 20px; }
-.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
-.light { display: inline-block; width: 28px; height: 28px; line-height: 28px; border-radius: 50%; color: var(--ft-card-bg); text-align: center; font-weight: 600; }
+.wo-search { width: 240px; }
 .warn { color: var(--ft-late); font-weight: 600; }
 .small { font-size: 12px; }
 @media (max-width: 1279px) {

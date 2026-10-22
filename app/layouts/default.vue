@@ -21,10 +21,10 @@ const groups = computed(() => {
       // 前端改版第二轮：预警列表、异常列表合并为"风险"（旧地址 /alerts、/issues 重定向到 /risks 对应页签）
       { key: '/risks', label: '风险' },
     ]) },
+    // 功能重复梳理第一批：领导总览并入项目总览（有权限的人在项目总览汇总下方多看到一块），
+    // "工单详情"入口页去掉（项目总览顶部搜工单、卡片点进详情），旧地址 /overview、/wo 跳项目总览；/templates 不在菜单里但保留（非管理员只读查看）
     { title: '项目', items: show([
       { key: '/board', label: '项目总览' },
-      { key: '/wo', label: '工单详情' },
-      { key: '/overview', label: '领导总览', sections: ['overview'] },
       { key: '/plan', label: '总计划' },
     ]) },
     { title: '部门工作台', items: show([
@@ -34,7 +34,6 @@ const groups = computed(() => {
       { key: '/payments', label: '付款申请', sections: ['purchase', 'payments'] },
       { key: '/kitting', label: '齐套', sections: ['production', 'kitting'] },
       { key: '/parts', label: '工件与工序链', sections: ['production'] },
-      { key: '/templates', label: '路线模板', sections: ['production'] },
       { key: '/unmatched', label: '待确认匹配', sections: ['production'] },
     ]) },
     { title: '其他', items: [
@@ -58,7 +57,13 @@ watch(() => route.path, () => {
   if (broken.value) collapsed.value = true
   contentEl.value?.scrollTo({ top: 0 })
 })
-const selected = computed(() => [menu.value.find((m) => m.key !== '/' && route.path.startsWith(m.key))?.key ?? '/'])
+/** 没有单独菜单项的页面算到哪一项下：工单详情 /wo/:no 属于项目总览；工序路线模板 /templates 属于工件与工序链 */
+const MENU_ALIAS: Record<string, string> = { '/wo': '/board', '/templates': '/parts' }
+const selected = computed(() => {
+  const alias = Object.keys(MENU_ALIAS).find((k) => route.path === k || route.path.startsWith(`${k}/`))
+  const path = alias ? MENU_ALIAS[alias]! : route.path
+  return [menu.value.find((m) => m.key !== '/' && path.startsWith(m.key))?.key ?? '/']
+})
 /** 页头左侧显示当前所在菜单（图标 + 名称），和参考图一致 */
 const current = computed(() => menu.value.find((m) => m.key === selected.value[0]))
 
