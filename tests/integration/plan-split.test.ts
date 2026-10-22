@@ -140,6 +140,19 @@ describe.skipIf(!DB)('部门计划二次分解', () => {
     expect((await view('u-buyer')).nodes.find((n) => n.name === '组焊')!.canSplit).toBe(false)
   })
 
+  it('项目计划一览：已发布 / 未编制、节点数、待确认、未分解、能否编辑；只列可见工单', async () => {
+    const list = (await import('../../server/services/plan/list')).listPlans
+    const r = await list(undefined, await ctxOf('u-pm'))
+    const mine = r.rows.find((x) => x.workOrderNumber === WO)!
+    const pending = await db.planNode.count({ where: { workOrderNumber: WO, confirmStatus: 'PENDING' } })
+    expect(mine).toMatchObject({ status: 'PUBLISHED', nodeCount: 4, doneNodes: 0, unsplit: 4, pendingConfirm: pending, canEdit: true, deliveryDate: dayStr(60) })
+    expect(mine.publishedDay).toBe(s.rules.shanghaiDay(new Date()))
+    expect(r.rows.find((x) => x.workOrderNumber === OTHER_WO)).toMatchObject({ status: 'NONE', nodeCount: 0, unsplit: 0, expectedDelivery: null })
+    expect(r.summary).toMatchObject({ total: 2, published: 1, draft: 0, none: 1, unsplit: 1 })
+    expect((await list(undefined, await ctxOf('u-buyer'))).rows.find((x) => x.workOrderNumber === WO)!.canEdit).toBe(false)
+    expect((await list([OTHER_WO], await ctxOf('u-pm'))).rows.map((x) => x.workOrderNumber)).toEqual([OTHER_WO])
+  })
+
   it('其他任务：建好给负责人发待办（截止日 = 计划完成日），晚于节点只提示；计入节点预计日', async () => {
     const contract = await node('合同评审')
     const r = await s.tasks.createPlanTask(contract.id, { name: '合同技术条款评审', ownerId: 'u-pdh', planDate: dayOff(12), note: '附技术协议' }, 'u-pm')

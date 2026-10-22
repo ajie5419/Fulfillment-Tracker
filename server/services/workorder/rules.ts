@@ -39,7 +39,7 @@ export function taskListLink(kind: TaskKind, workOrderNumber: string, id: string
     case 'assembly':
       return `/kitting?wo=${wo}&id=${encodeURIComponent(id)}`
     case 'task':
-      return `/wo/${wo}?tab=plan${nodeId ? `&node=${encodeURIComponent(nodeId)}` : ''}`
+      return `/plan?wo=${wo}${nodeId ? `&node=${encodeURIComponent(nodeId)}` : ''}`
   }
 }
 

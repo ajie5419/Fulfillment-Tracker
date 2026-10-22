@@ -178,7 +178,7 @@ describe('工单详情小规则', () => {
     expect(taskListLink('step', 'W', 'x')).toBe('/parts?wo=W')
     expect(taskListLink('assembly', 'W', 'n1')).toBe('/kitting?wo=W&id=n1')
     // 其他任务（部门计划二次分解）没有单独页面：到工单详情总计划页签定位节点
-    expect(taskListLink('task', 'WO 1', 'k1', 'n1')).toBe('/wo/WO%201?tab=plan&node=n1')
+    expect(taskListLink('task', 'WO 1', 'k1', 'n1')).toBe('/plan?wo=WO%201&node=n1')
   })
   it('记录状态与付款文字（不含金额）', () => {
     expect(taskState({ done: true, excluded: false, overdue: true, lateForNode: true })).toBe('DONE')

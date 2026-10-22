@@ -751,6 +751,10 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(tech, 'DELETE', `/api/plan/tasks/${taskId}`)).status).toBe(200)
     expect((await get(`/api/plan/nodes/${cut.id}/steps`, pm)).status).toBe(200)
     expect((await get(`/api/plan/nodes/${cut.id}/steps`, buyer)).status).toBe(403)
+    // 项目计划一览：只列看得到的工单
+    const listed = (await (await get('/api/plan/list', pm)).json()) as { rows: { workOrderNumber: string }[] }
+    expect(listed.rows.map((x) => x.workOrderNumber)).toContain(MINE)
+    expect(listed.rows.map((x) => x.workOrderNumber)).not.toContain(OTHER)
     expect((await send(pm, 'POST', `/api/plan/nodes/${cut.id}/steps`, { stepIds: [] })).status).toBe(400)
     expect((await send(buyer, 'POST', `/api/plan/nodes/${cut.id}/steps`, { stepIds: ['x'] })).status).toBe(403)
   })
