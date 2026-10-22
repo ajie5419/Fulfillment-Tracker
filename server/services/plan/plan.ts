@@ -16,9 +16,10 @@ import { prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { BUSINESS_DEPT_NAME } from '../auth/departments'
-import { type RoleContext, canOperate } from '../auth/permissions'
+import { type RoleContext, canOperate, isDeptHead } from '../auth/permissions'
 import { DRAWING_STATUS_TEXT, drawingLink } from '../drawings/constants'
 import { FlowError } from '../flow/errors'
+import { cancelTaskTodos } from './tasks'
 import { MODE_TEXT, loadNames } from '../flow/names'
 import { kittingLink } from '../kitting/constants'
 import { NODE_LINKS, type NodeWithLinks, loadKitCounts } from '../kitting/kitting'
@@ -37,11 +38,13 @@ import {
   drawingFacts,
   forecastPlan,
   planLink,
+  planTaskFacts,
   purchaseFacts,
   stepFacts,
   w9ConfirmKey,
   w9Key,
   w9PlanKey,
+  w9SplitKey,
 } from './constants'
 
 type Tx = Prisma.TransactionClient
@@ -63,11 +66,16 @@ interface TaskRow {
   statusText: string
   link: string
   facts: TaskFacts
+  /** 其他任务：负责人、备注（其余类型没有） */
+  owner?: { id: string; name: string }
+  note?: string | null
 }
 
 export interface PlanData {
   workOrderNumber: string
   status: 'DRAFT' | 'PUBLISHED' | null
+  /** 发布时间（W9 未分解提醒从这里起计时） */
+  publishedAt: Date | null
   deliveryDay: string | null
   nodes: PlanNode[]
   tasks: TaskRow[]
@@ -87,15 +95,19 @@ export async function loadPlans(filter: { workOrderNumbers?: string[]; published
   const nodes = await prisma.planNode.findMany({ where: { workOrderNumber: { in: wos } }, orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] })
   const nodeIds = nodes.map((n) => n.id)
   const linked = { planNodeId: { in: nodeIds } }
-  const [workOrders, drawings, purchases, steps, assemblies] = await Promise.all([
+  const [workOrders, drawings, purchases, steps, assemblies, others] = await Promise.all([
     prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: wos } }, select: { workOrderNumber: true, deliveryDate: true } }),
     nodeIds.length ? prisma.drawingTask.findMany({ where: linked, orderBy: { planDate: 'asc' } }) : [],
     nodeIds.length ? prisma.purchaseLine.findMany({ where: linked, orderBy: { needDate: 'asc' } }) : [],
     nodeIds.length ? prisma.routeStep.findMany({ where: linked, include: { part: { select: { name: true } } }, orderBy: [{ partId: 'asc' }, { seq: 'asc' }] }) : [],
     nodeIds.length ? prisma.assemblyNode.findMany({ where: linked, include: NODE_LINKS, orderBy: { needDate: 'asc' } }) : [],
+    nodeIds.length ? prisma.planTask.findMany({ where: linked, orderBy: [{ planDate: 'asc' }, { createdAt: 'asc' }] }) : [],
   ])
   const today = shanghaiDay(now)
-  const [kits, names] = await Promise.all([loadKitCounts(assemblies as NodeWithLinks[]), loadNames({ process: steps.map((s) => s.processId) })])
+  const [kits, names] = await Promise.all([
+    loadKitCounts(assemblies as NodeWithLinks[]),
+    loadNames({ process: steps.map((s) => s.processId), user: others.map((t) => t.ownerId) }),
+  ])
   const tasks: TaskRow[] = [
     ...drawings.map((d) => ({
       kind: 'drawing' as const,
@@ -140,11 +152,24 @@ export async function loadPlans(filter: { workOrderNumbers?: string[]; published
         facts: assemblyFacts(a, kit, today),
       }
     }),
+    ...others.map((t) => ({
+      kind: 'task' as const,
+      id: t.id,
+      nodeId: t.planNodeId,
+      name: t.name,
+      dateLabel: '计划完成日',
+      statusText: t.doneDate ? '已完成' : `负责人 ${names.user.get(t.ownerId) ?? t.ownerId}`,
+      link: planLink(t.workOrderNumber, t.planNodeId),
+      facts: planTaskFacts(t),
+      owner: { id: t.ownerId, name: names.user.get(t.ownerId) ?? t.ownerId },
+      note: t.note,
+    })),
   ]
   const woOfNode = new Map(nodes.map((n) => [n.id, n.workOrderNumber]))
   for (const t of tasks) if (t.kind === 'step') t.link = `/parts?wo=${encodeURIComponent(woOfNode.get(t.nodeId) ?? '')}`
   const delivery = new Map(workOrders.map((w) => [w.workOrderNumber, day(w.deliveryDate)]))
   const statusOf = new Map(plans.map((p) => [p.workOrderNumber, p.status]))
+  const publishedAtOf = new Map(plans.map((p) => [p.workOrderNumber, p.publishedAt]))
   const out = new Map<string, PlanData>()
   for (const wo of wos) {
     const mine = nodes.filter((n) => n.workOrderNumber === wo)
@@ -159,6 +184,7 @@ export async function loadPlans(filter: { workOrderNumbers?: string[]; published
     out.set(wo, {
       workOrderNumber: wo,
       status: statusOf.get(wo) ?? null,
+      publishedAt: publishedAtOf.get(wo) ?? null,
       deliveryDay,
       nodes: mine,
       tasks: myTasks,
@@ -202,7 +228,10 @@ export async function getPlan(workOrderNumber: string, ctx: RoleContext, now = n
   const [names, mine, alerts] = await Promise.all([
     loadNames({ user: [ext?.projectManagerId ?? null, plan?.publishedBy ?? null, ...data.nodes.flatMap((n) => [n.confirmedBy, n.manualDoneBy]), ...logs.map((l) => l.actorId)] }),
     myConfirmTodos(ctx.userId, nodeIds),
-    prisma.alert.findMany({ where: { activeKey: { in: [w9PlanKey(workOrderNumber), ...nodeIds.map(w9Key), ...nodeIds.map(w9ConfirmKey)] } }, select: { activeKey: true, level: true } }),
+    prisma.alert.findMany({
+      where: { activeKey: { in: [w9PlanKey(workOrderNumber), ...nodeIds.map(w9Key), ...nodeIds.map(w9ConfirmKey), ...nodeIds.map(w9SplitKey)] } },
+      select: { activeKey: true, level: true },
+    }),
   ])
   const user = (id: string | null | undefined) => (id ? (names.user.get(id) ?? id) : null)
   const levelOf = new Map(alerts.map((a) => [a.activeKey!, a.level]))
@@ -227,9 +256,17 @@ export async function getPlan(workOrderNumber: string, ctx: RoleContext, now = n
     planAlertLevel: planAlert?.level ?? null,
     unlinked,
     canEdit: canOperate(ctx, 'plan', { workOrderNumber }),
+    /** 节点"分解"菜单里能新建哪几类部门记录（只决定显示，后端各自再校验） */
+    canCreate: {
+      drawing: canOperate(ctx, 'drawing', { workOrderNumber }),
+      purchase: canOperate(ctx, 'purchase', { workOrderNumber }),
+      route: canOperate(ctx, 'route', { workOrderNumber }),
+      kitting: ctx.isAdmin || isDeptHead(ctx, 'PRODUCTION') || ctx.pmOf.has(workOrderNumber),
+    },
     nodes: data.nodes.map((n) => {
       const e = est.get(n.id)!
       const tasks = data.tasks.filter((t) => t.nodeId === n.id)
+      const canSplit = canOperate(ctx, 'planTask', { workOrderNumber, dept: n.dept })
       return {
         id: n.id,
         seq: n.seq,
@@ -278,8 +315,19 @@ export async function getPlan(workOrderNumber: string, ctx: RoleContext, now = n
             lateForNode: te.lateForNode,
             statusText: t.statusText,
             link: t.link,
+            ownerId: t.owner?.id ?? null,
+            ownerName: t.owner?.name ?? null,
+            note: t.note ?? null,
+            /** 其他任务：能改 / 删（节点责任部门的人、项目经理、项目部、管理员）；能标完成 / 撤销（再加任务负责人） */
+            canEdit: t.kind === 'task' && canSplit,
+            canDone: t.kind === 'task' && (canSplit || t.owner?.id === ctx.userId),
           }
         }),
+        /** 未分解：节点下还没有任何部门任务（不算已取消的） */
+        unsplit: e.taskCount === 0,
+        splitAlertLevel: levelOf.get(w9SplitKey(n.id)) ?? null,
+        /** 能在这个节点下分解（加其他任务；4 类记录另看 canCreate） */
+        canSplit,
         canConfirm: published && n.confirmStatus !== null && (canOperate(ctx, 'planConfirm', { dept: n.dept }) || mine.has(n.id)),
         canComplete: canOperate(ctx, 'planNodeDone', { workOrderNumber, dept: n.dept }),
       }
@@ -367,6 +415,8 @@ export async function generateFromTemplate(workOrderNumber: string, templateId: 
     if (!tpl) throw new FlowError('模板不存在')
     if (!tpl.nodes.length) throw new FlowError('模板里还没有节点')
     const delivery = day(wo.deliveryDate)
+    // 草稿节点下已分解的其他任务随节点一起删，待办作废
+    await cancelTaskTodos(tx, (await tx.planTask.findMany({ where: { workOrderNumber }, select: { id: true } })).map((t) => t.id))
     const replaced = await tx.planNode.deleteMany({ where: { workOrderNumber } })
     await tx.planNode.createMany({
       data: tpl.nodes.map((n, i) => ({ workOrderNumber, seq: i + 1, name: n.name, dept: n.dept, planDate: parse(addDays(delivery, -n.daysBeforeDelivery)) })),
@@ -441,7 +491,7 @@ export async function updateNode(id: string, input: Partial<NodeInput>, actorId:
   })
 }
 
-/** 删节点：挂在上面的部门记录变成未挂（外键置空）。发布后删要写原因（记调整记录） */
+/** 删节点：挂在上面的部门记录变成未挂（外键置空），其他任务一起删。发布后删要写原因（记调整记录） */
 export async function deleteNode(id: string, reason: string | null | undefined, actorId: string) {
   return prisma.$transaction(async (tx) => {
     const cur = await tx.planNode.findUnique({ where: { id }, select: { workOrderNumber: true } })
@@ -455,7 +505,9 @@ export async function deleteNode(id: string, reason: string | null | undefined, 
       await tx.planChangeLog.create({ data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'DELETE', oldDate: node.planDate, reason: reason!.trim(), actorId } })
     }
     await tx.todo.updateMany({ where: { refType: PLAN_REF, refId: id, status: 'OPEN' }, data: { status: 'CANCELLED', doneAt: new Date() } })
-    await clearAlertKeys(tx, [w9Key(id), w9ConfirmKey(id)])
+    // 节点下的其他任务随节点一起删（外键级联），待办作废
+    await cancelTaskTodos(tx, (await tx.planTask.findMany({ where: { planNodeId: id }, select: { id: true } })).map((t) => t.id))
+    await clearAlertKeys(tx, [w9Key(id), w9ConfirmKey(id), w9SplitKey(id)])
     await tx.planNode.delete({ where: { id } })
     await clearDelayAlerts(tx, node.workOrderNumber, node.seq)
     return { ok: true }
@@ -551,7 +603,7 @@ export async function completeNode(id: string, date: Date | null | undefined, ac
     const { node } = await lockNode(tx, id)
     if (node.manualDoneAt) throw new FlowError('这个节点已经标记完成了，请刷新')
     await tx.planNode.update({ where: { id }, data: { actualDate: d, manualDoneBy: actorId, manualDoneAt: now } })
-    await clearAlertKeys(tx, [w9Key(id)])
+    await clearAlertKeys(tx, [w9Key(id), w9SplitKey(id)])
     return { id, actualDate: day(d) }
   })
 }

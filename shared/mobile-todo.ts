@@ -78,10 +78,12 @@ export function todoDueDay(t: { dueDay?: string | null; dueAt?: string | Date | 
 export function todoPrimaryLabel(t: {
   action: string
   plan?: unknown
+  planTask?: unknown
   release?: unknown
   step?: { status: string; mode: string } | null
 }): string | null {
   if (t.plan) return null
+  if (t.planTask) return '完成'
   if (t.release) return t.action === 'CONFIRM_CHANGE' ? '去确认' : '去签收'
   if (!t.step) return null
   const ready = t.action === 'READY_TO_START' && t.step.status === 'PENDING'

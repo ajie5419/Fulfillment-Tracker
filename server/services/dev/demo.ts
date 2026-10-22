@@ -15,7 +15,7 @@ import { todayDate } from '../purchases/constants'
 import { createRelease } from '../releases/releases'
 import { matchIncomingInspections } from '../purchases/incoming'
 import type { QmsBomItem } from '../bom/client'
-import { CONFIRM_PLAN_NODE, PLAN_REF, planLink } from '../plan/constants'
+import { CONFIRM_PLAN_NODE, PLAN_NODE_ALERT_REFS, PLAN_REF, PLAN_TASK_REF, planLink } from '../plan/constants'
 import { deptHeads } from '../plan/plan'
 
 const P = 'DEMO-'
@@ -574,13 +574,15 @@ export async function resetDemo(uploadDir?: string) {
     // R14：演示工单的总计划（节点、发布状态、调整记录）及其确认待办、W9 预警、退回通知
     const planNodeIds = (await tx.planNode.findMany({ where: { workOrderNumber: { startsWith: P } }, select: { id: true } })).map((n) => n.id)
     await tx.todo.deleteMany({ where: { refType: PLAN_REF, refId: { in: planNodeIds } } })
+    const planTaskIds = (await tx.planTask.findMany({ where: { workOrderNumber: { startsWith: P } }, select: { id: true } })).map((t) => t.id)
+    await tx.todo.deleteMany({ where: { refType: PLAN_TASK_REF, refId: { in: planTaskIds } } })
     await tx.planChangeLog.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
     await tx.reminder.deleteMany({ where: { kind: 'PLAN', link: { startsWith: '/plan?wo=DEMO-' } } })
     const alertRows = await tx.alert.findMany({
       where: {
         OR: [
           { refType: 'node', refId: { in: nodeIds } },
-          { refType: { in: ['planNode', 'planConfirm'] }, refId: { in: planNodeIds } },
+          { refType: { in: [...PLAN_NODE_ALERT_REFS] }, refId: { in: planNodeIds } },
           { refType: 'plan', refId: { startsWith: P } },
           { refType: 'drawing', refId: { in: drawingIds } },
           { refType: 'purchase', refId: { in: purchaseIds } },

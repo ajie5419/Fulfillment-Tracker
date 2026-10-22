@@ -258,7 +258,7 @@ export async function assertCanSeePlan(event: H3Event, workOrderNumber: string) 
  * 总计划节点上的操作：plan（改 / 删节点）—— 该工单项目经理、项目部、管理员；planNodeDone（手动完成 / 撤销）—— 该节点责任部门的人、该工单项目经理、管理员；
  * planConfirm（确认 / 退回）—— 该节点责任部门负责人、管理员，另外手里有这个节点"确认总计划节点"待办的人（转交来的）也可以。
  */
-export async function assertCanOperatePlanNode(event: H3Event, op: Extract<Operation, 'plan' | 'planNodeDone' | 'planConfirm'>, id: string) {
+export async function assertCanOperatePlanNode(event: H3Event, op: Extract<Operation, 'plan' | 'planNodeDone' | 'planConfirm' | 'planTask'>, id: string) {
   const node = await prisma.planNode.findUnique({ where: { id }, select: { workOrderNumber: true, dept: true } })
   if (!node) return
   const ctx = await getRoleContext(event)
@@ -268,6 +268,25 @@ export async function assertCanOperatePlanNode(event: H3Event, op: Extract<Opera
     if (todo) return
   }
   throw new FlowForbidden(OPERATION_DENIED[op])
+}
+
+/** 其他任务（部门计划二次分解）：按所属工单判断可见；任务负责人本人始终能看（工单不在可见范围也能处理自己的任务）。任务不存在时不拦 */
+export async function assertCanSeePlanTask(event: H3Event, id: string) {
+  const t = await prisma.planTask.findUnique({ where: { id }, select: { workOrderNumber: true, ownerId: true } })
+  if (!t) return
+  if (t.ownerId === requireUser(event).qmsUserId) return
+  if (canSee(await getScope(event), t.workOrderNumber)) return
+  throw forbidden()
+}
+
+/** 其他任务上的操作（planTask：节点责任部门的人、项目经理、项目部、管理员）；allowOwner = 任务负责人本人也可以（标完成 / 撤销） */
+export async function assertCanOperatePlanTask(event: H3Event, id: string, opts: { allowOwner?: boolean } = {}) {
+  const t = await prisma.planTask.findUnique({ where: { id }, select: { workOrderNumber: true, ownerId: true, planNode: { select: { dept: true } } } })
+  if (!t) return
+  const ctx = await getRoleContext(event)
+  if (opts.allowOwner && t.ownerId === ctx.userId) return
+  if (canOperate(ctx, 'planTask', { workOrderNumber: t.workOrderNumber, dept: t.planNode.dept })) return
+  throw new FlowForbidden(OPERATION_DENIED.planTask)
 }
 
 /** 管理员：NUXT_ADMIN_USER_IDS 里列出的 QMS 用户 ID（逗号分隔）。设置页的接口都用它校验 */

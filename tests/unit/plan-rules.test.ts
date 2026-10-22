@@ -10,10 +10,13 @@ import {
   estimateNodes,
   estimateTask,
   forecastPlan,
+  isPlanNodeAlert,
+  judgeSplit,
   judgeW9,
   judgeW9Plan,
   lateWarning,
   planLink,
+  planTaskFacts,
   purchaseFacts,
   stepFacts,
   w9PlanSummary,
@@ -207,5 +210,34 @@ describe('W9 judgeW9 / judgeW9Plan / 摘要 / lateWarning', () => {
     expect(lateWarning('需求日', '2026-10-25', { name: '装配', planDay: '2026-10-25' })).toBeNull()
     expect(lateWarning('需求日', '2026-10-27', null)).toBeNull()
     expect(lateWarning('需求日', null, { name: '装配', planDay: '2026-10-25' })).toBeNull()
+  })
+})
+
+describe('部门计划二次分解：其他任务 planTaskFacts / 未分解 judgeSplit', () => {
+  it('其他任务：填了完成日 = 完成；看计划完成日；不会被排除', () => {
+    expect(planTaskFacts({ id: 'K', planDate: d('2026-10-25'), doneDate: null })).toEqual({ kind: 'task', id: 'K', excluded: false, done: false, doneDay: null, planDay: '2026-10-25' })
+    expect(planTaskFacts({ id: 'K', planDate: d('2026-10-25'), doneDate: d('2026-10-20') })).toMatchObject({ done: true, doneDay: '2026-10-20' })
+  })
+
+  it('其他任务和其他记录一样计入节点预计日、自动完成', () => {
+    const late = planTaskFacts({ id: 'K', planDate: d('2026-10-28'), doneDate: null })
+    const [n] = estimateNodes([node('N', '2026-10-25', [late])], TODAY)
+    expect(n).toMatchObject({ expectedDay: '2026-10-28', driver: 'task', source: true, taskCount: 1 })
+    const done = planTaskFacts({ id: 'K', planDate: d('2026-10-28'), doneDate: d('2026-10-18') })
+    expect(estimateNodes([node('N', '2026-10-25', [done])], TODAY)[0]).toMatchObject({ done: true, doneBy: 'AUTO', actualDay: '2026-10-18' })
+  })
+
+  it('未分解：没完成、没有部门任务、发布后过了提醒小时数才提醒；提醒小时数为空不报', () => {
+    const H = 3_600_000
+    expect(judgeSplit({ done: false, taskCount: 0 }, 72 * H, 72)).toBe('REMIND')
+    expect(judgeSplit({ done: false, taskCount: 0 }, 71 * H, 72)).toBeNull()
+    expect(judgeSplit({ done: false, taskCount: 1 }, 100 * H, 72)).toBeNull()
+    expect(judgeSplit({ done: true, taskCount: 0 }, 100 * H, 72)).toBeNull()
+    expect(judgeSplit({ done: false, taskCount: 0 }, 100 * H, null)).toBeNull()
+  })
+
+  it('以节点为对象的 W9 预警类型只有一份清单', () => {
+    expect(['planNode', 'planConfirm', 'planSplit'].every(isPlanNodeAlert)).toBe(true)
+    expect(isPlanNodeAlert('plan')).toBe(false)
   })
 })

@@ -50,8 +50,10 @@ const isPM = (ctx: RoleContext, wo: string | null | undefined) => !!wo && ctx.pm
  * planTemplate：维护总计划模板 —— 项目部负责人、管理员
  * planConfirm：确认/退回节点 —— 该节点责任部门负责人、管理员（项目部的节点：项目部负责人也算）；手里有这条确认待办的人（转交来的）由服务层另外放行
  * planNodeDone：手动标记节点完成 / 撤销 —— 该节点责任部门的人、该工单项目经理、管理员
+ * planTask：在节点下分解"其他任务"（建 / 改 / 删 / 标完成）—— 该节点责任部门的人、该工单项目经理、项目部（含项目部负责人）、管理员；
+ *   任务负责人本人可以标完成 / 撤销（接口层另外放行）
  */
-export type Operation = 'drawing' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction' | 'plan' | 'planTemplate' | 'planConfirm' | 'planNodeDone'
+export type Operation = 'drawing' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction' | 'plan' | 'planTemplate' | 'planConfirm' | 'planNodeDone' | 'planTask'
 
 export interface OperationTarget {
   /** 所属工单（判断"该工单项目经理"） */
@@ -60,7 +62,7 @@ export interface OperationTarget {
   workOrderNumbers?: (string | null | undefined)[]
   /** 工序责任人（stepAction） */
   ownerId?: string | null
-  /** 总计划节点的责任部门（planConfirm、planNodeDone） */
+  /** 总计划节点的责任部门（planConfirm、planNodeDone、planTask） */
   dept?: BusinessDept | null
 }
 
@@ -75,6 +77,7 @@ export const OPERATION_DENIED: Record<Operation, string> = {
   planTemplate: '只有项目部负责人或管理员可以维护总计划模板',
   planConfirm: '只有该节点责任部门的负责人或管理员可以确认、退回总计划节点',
   planNodeDone: '只有该节点责任部门的人、该工单项目经理或管理员可以标记节点完成',
+  planTask: '只有该节点责任部门的人、该工单项目经理、项目部或管理员可以分解这个节点',
 }
 
 export function canOperate(ctx: RoleContext, op: Operation, target: OperationTarget = {}): boolean {
@@ -100,6 +103,8 @@ export function canOperate(ctx: RoleContext, op: Operation, target: OperationTar
       return !!target.dept && isDeptHead(ctx, target.dept)
     case 'planNodeDone':
       return pm || (!!target.dept && inDept(ctx, target.dept))
+    case 'planTask':
+      return pm || inDept(ctx, 'PROJECT') || has(ctx, 'PROJECT_DEPT_HEAD') || (!!target.dept && inDept(ctx, target.dept))
   }
 }
 

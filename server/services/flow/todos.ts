@@ -7,8 +7,9 @@ import { describeReleaseTodos } from '../releases/releases'
 import { FlowError } from './errors'
 import { ARRANGE_SEND, ARRANGE_START } from './flow'
 import { MODE_TEXT, loadNames } from './names'
-import { CONFIRM_PLAN_NODE, PLAN_REF } from '../plan/constants'
+import { CONFIRM_PLAN_NODE, DO_PLAN_TASK, PLAN_REF, PLAN_TASK_REF } from '../plan/constants'
 import { describePlanTodos } from '../plan/plan'
+import { describePlanTaskTodos, transferPlanTaskOwner } from '../plan/tasks'
 import { todayDay } from './dates'
 import { dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { workBucket } from '../../../shared/workbench'
@@ -20,6 +21,7 @@ const ACTION_TEXT: Record<string, string> = {
   [CONFIRM_CHANGE]: '确认变更影响',
   [READY_TO_START]: '可以开工',
   [CONFIRM_PLAN_NODE]: '确认总计划节点',
+  [DO_PLAN_TASK]: '完成部门任务',
 }
 
 /**
@@ -27,6 +29,7 @@ const ACTION_TEXT: Record<string, string> = {
  * 发放相关的待办（签收、确认变更影响）是发给本人的，不受可见范围限制（接收人看得到发给自己的发放单）。
  * "可以开工"（R10，refType = part）按工件所属工单判断可见；附上工件的第一道工序，页面按工序方式给"登记发出"或"开工"。
  * "确认总计划节点"（R14，refType = planNode）发给部门负责人本人，不受可见范围限制；附上总计划页的跳转地址（plan.link）。
+ * "完成部门任务"（部门计划二次分解，refType = planTask）发给任务负责人本人，不受可见范围限制；附上任务（planTask，可直接标完成）。
  */
 export async function listMyTodos(userId: string, visibleWorkOrders?: string[], now = new Date()) {
   let todos = await prisma.todo.findMany({ where: { ownerId: userId, status: 'OPEN' }, orderBy: { createdAt: 'asc' } })
@@ -53,9 +56,24 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[], 
   const byId = new Map(steps.map((s) => [s.id, s]))
   const releases = await describeReleaseTodos(todos)
   const plans = await describePlanTodos(todos.filter((t) => t.refType === PLAN_REF).map((t) => t.refId))
+  const planTasks = await describePlanTaskTodos(todos.filter((t) => t.refType === PLAN_TASK_REF).map((t) => t.refId))
 
   const rows = todos.map((t) => {
     const actionText = ACTION_TEXT[t.action] ?? t.action
+    if (t.refType === PLAN_TASK_REF) {
+      const p = planTasks.get(t.refId)
+      if (!p) return { ...t, actionText, title: actionText, suggestion: '关联的部门任务已删除', step: null, release: null, plan: null, planTask: null }
+      return {
+        ...t,
+        actionText,
+        title: `${actionText}：${p.workOrderNumber} · ${p.name}`,
+        suggestion: `总计划节点"${p.nodeName}"（${p.deptText}）下分解的任务，计划 ${p.planDate} 完成；做完点"完成"`,
+        step: null,
+        release: null,
+        plan: null,
+        planTask: p,
+      }
+    }
     if (t.refType === PLAN_REF) {
       const p = plans.get(t.refId)
       if (!p) return { ...t, actionText, title: actionText, suggestion: '关联的总计划节点已删除', step: null, release: null, plan: null }
@@ -137,12 +155,14 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[], 
   // 工作台卡片流（前端改版第二轮）：所属工单、截止日、按工厂时区的今天分组。电脑端工作台和手机端 /m 共用这里的 dueDay / bucket。
   // 截止日：总计划节点确认取节点计划日；否则待办自带的 dueAt（按工厂时区取日期）；再没有取工序的要求完成日（日期字段）
   const today = todayDay(now)
-  return rows.map((t) => {
+  return rows.map((row) => {
+    // 只有"完成部门任务"带 planTask，其余补 null，页面统一按 t.planTask 判断
+    const t = { planTask: null, ...row }
     const stepDue = t.refType === 'step' ? byId.get(t.refId)?.dueDate : null
-    const dueDay = t.plan?.planDate ?? (t.dueAt ? shanghaiDay(t.dueAt) : stepDue ? dateFieldDay(stepDue) : null)
+    const dueDay = t.plan?.planDate ?? t.planTask?.planDate ?? (t.dueAt ? shanghaiDay(t.dueAt) : stepDue ? dateFieldDay(stepDue) : null)
     return {
       ...t,
-      workOrderNumber: (t.refType === 'part' ? ready.get(t.refId)?.workOrderNumber : null) ?? t.release?.workOrderNumber ?? t.plan?.workOrderNumber ?? (t.refType === 'step' ? byId.get(t.refId)?.part.workOrderNumber : null) ?? null,
+      workOrderNumber: (t.refType === 'part' ? ready.get(t.refId)?.workOrderNumber : null) ?? t.release?.workOrderNumber ?? t.plan?.workOrderNumber ?? t.planTask?.workOrderNumber ?? (t.refType === 'step' ? byId.get(t.refId)?.part.workOrderNumber : null) ?? null,
       dueDay,
       bucket: workBucket({ kind: 'todo', dueDay }, today),
     }
@@ -162,6 +182,8 @@ export async function transferTodo(todoId: string, toUserId: string) {
     const user = await tx.qmsUser.findFirst({ where: { id: toUserId, isDeleted: false }, select: { id: true } })
     if (!user) throw new FlowError('转交对象不存在')
     await tx.todo.update({ where: { id: todoId }, data: { status: 'TRANSFERRED', doneAt: new Date() } })
+    // 部门任务转交 = 换负责人（总计划里显示新负责人）
+    if (todo.refType === PLAN_TASK_REF) await transferPlanTaskOwner(tx, todo.refId, toUserId)
     return tx.todo.create({
       data: { ownerId: toUserId, action: todo.action, refType: todo.refType, refId: todo.refId, dueAt: todo.dueAt },
     })

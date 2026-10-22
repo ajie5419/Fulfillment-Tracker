@@ -75,7 +75,7 @@ export async function getWorkOrderDetail(workOrderNumber: string, ctx: RoleConte
           /** 自己的日期已过几天（没完成时） */
           overdueDays: st === 'OVERDUE' && t.planDate ? dayDiff(t.planDate, today) : 0,
           payment: t.kind === 'purchase' ? (payOf.get(t.id) ?? null) : null,
-          link: taskListLink(t.kind, workOrderNumber, t.id),
+          link: taskListLink(t.kind, workOrderNumber, t.id, n.id),
         }
       }),
     }

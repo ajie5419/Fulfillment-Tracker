@@ -2,8 +2,9 @@
 /**
  * 新建 / 编辑设计任务（R11）：工单、关联工件（可多选，可不选只写部件名称）、部件名称、设计负责人（不选 = 技术部负责人）、
  * 计划完成日、所属总计划节点（R14，工单总计划已发布时必选）、是否需要客户确认 + 客户确认计划日、备注；编辑时还能取消 / 重新启用。设计完成、客户确认在列表上操作。
+ * presetNode：从工单详情"总计划"页签的节点"分解"打开时传入，新建时预选所属节点，日期默认取节点计划日。
  */
-const props = defineProps<{ open: boolean; task: DrawingRow | null; workOrderNumber?: string }>()
+const props = defineProps<{ open: boolean; task: DrawingRow | null; workOrderNumber?: string; presetNode?: { id: string; planDate: string } | null }>()
 const emit = defineEmits<{ close: []; done: [id: string] }>()
 
 const { data: workOrders } = await useWorkOrders()
@@ -47,7 +48,7 @@ watch(
             note: t.note ?? '',
             cancelled: t.status === 'CANCELLED',
           }
-        : { ...empty(), workOrderNumber: props.workOrderNumber },
+        : { ...empty(), workOrderNumber: props.workOrderNumber, planNodeId: props.presetNode?.id ?? null, planDate: props.presetNode?.planDate },
     )
     loadedWo = form.workOrderNumber
     if (form.workOrderNumber) refreshParts()

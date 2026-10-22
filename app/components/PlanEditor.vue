@@ -7,6 +7,8 @@
  *   顶部：合同交期、预计交期、拖期天数、未挂节点的部门记录条数。
  *   项目经理、项目部、管理员可按模板生成、增删改节点、发布（发布后改日期 / 加删节点要写原因，记调整记录）；
  *   责任部门负责人确认 / 退回；责任部门的人、项目经理可以手动标完成（挂靠任务全部完成也自动算完成）。
+ *   部门计划二次分解（zhao 10-22）：节点行"部门任务"列的"+ 分解"——按责任部门新建设计任务 / 采购行 / 装配节点、挂工序（原来的记录，弹窗预选本节点），
+ *     其他部门工作建"其他任务"（负责人收待办，截止日 = 计划完成日）；已发布但还没有任何部门任务的节点标"未分解"。
  * 地址栏 ?node= 定位节点（W9 提醒、确认待办跳过来）。所有人可见（看不到的工单接口会拒绝；手里有确认待办的部门负责人例外，见 server/utils/auth.ts）。
  */
 import dayjs, { type Dayjs } from 'dayjs'
@@ -27,6 +29,12 @@ interface PlanTask {
   lateForNode: boolean
   statusText: string
   link: string
+  /** 其他任务：负责人、备注、能否改 / 删、能否标完成（其余类型为空 / false） */
+  ownerId: string | null
+  ownerName: string | null
+  note: string | null
+  canEdit: boolean
+  canDone: boolean
 }
 interface PlanNodeRow {
   id: string
@@ -60,6 +68,10 @@ interface PlanNodeRow {
   alertLevel: 'YELLOW' | 'RED' | null
   confirmAlertLevel: 'REMIND' | 'YELLOW' | 'RED' | null
   tasks: PlanTask[]
+  /** 未分解：节点下还没有任何部门任务；splitAlertLevel = W9 未分解提醒 */
+  unsplit: boolean
+  splitAlertLevel: 'REMIND' | null
+  canSplit: boolean
   canConfirm: boolean
   canComplete: boolean
 }
@@ -73,6 +85,7 @@ interface PlanView {
   planAlertLevel: 'YELLOW' | 'RED' | null
   unlinked: { drawing: number; purchase: number; step: number; assembly: number; total: number }
   canEdit: boolean
+  canCreate: { drawing: boolean; purchase: boolean; route: boolean; kitting: boolean }
   nodes: PlanNodeRow[]
   changeLogs: { id: string; nodeName: string; kind: 'DATE' | 'ADD' | 'DELETE'; oldDate: string | null; newDate: string | null; reason: string; actorName: string | null; createdAt: string }[]
 }
@@ -229,37 +242,181 @@ const doneOpen = ref(false)
 const doneNode = ref<PlanNodeRow | null>(null)
 const doneDate = ref<Dayjs>(dayjs())
 function openDone(n: PlanNodeRow) {
+  taskDoing.value = null
   doneNode.value = n
   doneDate.value = dayjs()
   doneOpen.value = true
 }
 async function submitDone() {
   const n = doneNode.value
-  if (!n) return
-  const ok = await act(() => send(`/api/plan/nodes/${n.id}/complete`, { method: 'POST', body: { date: doneDate.value.format('YYYY-MM-DD') } }), '已标记完成')
+  const t = taskDoing.value
+  const body = { date: doneDate.value.format('YYYY-MM-DD') }
+  const ok = n
+    ? await act(() => send(`/api/plan/nodes/${n.id}/complete`, { method: 'POST', body }), '已标记完成')
+    : t
+      ? await act(() => send(`/api/plan/tasks/${t.id}/complete`, { method: 'POST', body }), '已完成')
+      : null
   if (ok) doneOpen.value = false
 }
 const undoDone = (n: PlanNodeRow) => act(() => send(`/api/plan/nodes/${n.id}/undo-complete`, { method: 'POST', body: {} }), '已撤销完成')
 
+// ───── 分解（部门计划二次分解）─────
+type SplitKey = 'drawing' | 'purchase' | 'assembly' | 'steps' | 'task'
+/** 按节点责任部门给出能新建的部门记录；其他任务所有部门都能建 */
+function splitItems(n: PlanNodeRow): { key: SplitKey; label: string }[] {
+  const c = data.value?.canCreate
+  if (!c) return []
+  const items: { key: SplitKey; label: string }[] = []
+  if (n.dept === 'TECH' && c.drawing) items.push({ key: 'drawing', label: '新建设计任务' })
+  if (n.dept === 'PURCHASE' && c.purchase) items.push({ key: 'purchase', label: '新建采购行' })
+  if (n.dept === 'PRODUCTION' && c.kitting) items.push({ key: 'assembly', label: '新建装配节点' })
+  if (n.dept === 'PRODUCTION' && c.route) items.push({ key: 'steps', label: '挂工序' })
+  if (n.canSplit) items.push({ key: 'task', label: '新建其他任务' })
+  return items
+}
+/** 新建设计任务 / 采购行 / 装配节点：用各自的弹窗，预选本节点 */
+const recordOpen = ref<'drawing' | 'purchase' | 'assembly' | null>(null)
+const presetNode = ref<{ id: string; planDate: string } | null>(null)
+function onSplit(n: PlanNodeRow, key: SplitKey) {
+  presetNode.value = { id: n.id, planDate: n.planDate }
+  if (key === 'task') return openTask(n, null)
+  if (key === 'steps') return openSteps(n)
+  recordOpen.value = key
+}
+async function recordSaved() {
+  recordOpen.value = null
+  if (presetNode.value) expanded.value = [...new Set([...expanded.value, presetNode.value.id])]
+  await load()
+  emit('changed')
+}
+
+// 其他任务：新建 / 编辑
+const { data: master } = await useMaster()
+const taskOpen = ref(false)
+const taskNode = ref<PlanNodeRow | null>(null)
+const taskEditing = ref<PlanTask | null>(null)
+const taskForm = reactive<{ name: string; ownerId: string | undefined; planDate: Dayjs | undefined; note: string }>({ name: '', ownerId: undefined, planDate: undefined, note: '' })
+function openTask(n: PlanNodeRow, t: PlanTask | null) {
+  taskNode.value = n
+  taskEditing.value = t
+  Object.assign(taskForm, {
+    name: t?.name ?? '',
+    ownerId: t?.ownerId ?? undefined,
+    planDate: dayjs(t?.planDate ?? n.planDate),
+    note: t?.note ?? '',
+  })
+  taskOpen.value = true
+}
+/** 负责人下拉：节点责任部门的人排前面 */
+const ownerOptions = computed(() =>
+  [...master.value.users]
+    .sort((a, b) => Number(b.businessDept === taskNode.value?.dept) - Number(a.businessDept === taskNode.value?.dept))
+    .map((u) => ({ value: u.id, label: `${u.name}（${u.department}）` })),
+)
+const taskLate = computed(() => !!taskNode.value && !!taskForm.planDate && taskForm.planDate.format('YYYY-MM-DD') > taskNode.value.planDate)
+async function saveTask() {
+  const n = taskNode.value
+  if (!n) return
+  if (!taskForm.name.trim()) return message.warning('请填写任务名称')
+  if (!taskForm.ownerId) return message.warning('请选择负责人')
+  if (!taskForm.planDate) return message.warning('请选择计划完成日')
+  const body = { name: taskForm.name, ownerId: taskForm.ownerId, planDate: taskForm.planDate.format('YYYY-MM-DD'), note: taskForm.note || null }
+  const t = taskEditing.value
+  const ok = await act(
+    () => (t ? send<{ planWarning: string | null }>(`/api/plan/tasks/${t.id}`, { method: 'PATCH', body }) : send<{ planWarning: string | null }>(`/api/plan/nodes/${n.id}/tasks`, { method: 'POST', body })),
+    t ? '已保存' : '已分解，负责人会收到待办',
+  )
+  if (ok?.planWarning) message.warning(ok.planWarning)
+  if (ok) {
+    taskOpen.value = false
+    expanded.value = [...new Set([...expanded.value, n.id])]
+  }
+}
+function deleteTask(t: PlanTask) {
+  Modal.confirm({
+    title: `删除任务"${t.name}"？`,
+    content: '负责人的待办会一起作废',
+    okType: 'danger',
+    onOk: () => act(() => send(`/api/plan/tasks/${t.id}`, { method: 'DELETE', body: {} }), '已删除'),
+  })
+}
+const undoTask = (t: PlanTask) => act(() => send(`/api/plan/tasks/${t.id}/undo-complete`, { method: 'POST', body: {} }), '已撤销完成，负责人会重新收到待办')
+
+// 挂工序：同一工单的工序，已挂本节点的勾上且不能取消（改挂、取消挂靠在"工件与工序链"里改）
+interface StepOpt { id: string; partName: string; processName: string; mode: string; status: string; dueDate: string | null; planNodeId: string | null; planNodeName: string | null }
+const stepsOpen = ref(false)
+const stepsNode = ref<PlanNodeRow | null>(null)
+const stepList = ref<StepOpt[]>([])
+const stepsLoading = ref(false)
+const stepPicked = ref<string[]>([])
+async function openSteps(n: PlanNodeRow) {
+  stepsNode.value = n
+  stepList.value = []
+  stepPicked.value = []
+  stepsOpen.value = true
+  stepsLoading.value = true
+  try {
+    stepList.value = await get<StepOpt[]>(`/api/plan/nodes/${n.id}/steps`)
+    stepPicked.value = stepList.value.filter((x) => x.planNodeId === n.id).map((x) => x.id)
+  } catch (e) {
+    message.error(apiError(e))
+  } finally {
+    stepsLoading.value = false
+  }
+}
+const stepNew = computed(() => stepPicked.value.filter((id) => stepList.value.find((x) => x.id === id)?.planNodeId !== stepsNode.value?.id))
+async function saveSteps() {
+  const n = stepsNode.value
+  if (!n) return
+  if (!stepNew.value.length) return message.warning('请勾选要挂到这个节点的工序')
+  const ok = await act(() => send<{ linked: number }>(`/api/plan/nodes/${n.id}/steps`, { method: 'POST', body: { stepIds: stepNew.value } }), (r) => `已挂 ${r.linked} 道工序`)
+  if (ok) {
+    stepsOpen.value = false
+    expanded.value = [...new Set([...expanded.value, n.id])]
+  }
+}
+const stepColumns = [
+  { title: '工件', dataIndex: 'partName' },
+  { title: '工序', dataIndex: 'processName', width: 140 },
+  { title: '要求完成日', key: 'due', width: 110 },
+  { title: '现在挂在', key: 'node', width: 150 },
+]
+const stepSelection = computed(() => ({
+  selectedRowKeys: stepPicked.value,
+  onChange: (keys: (string | number)[]) => (stepPicked.value = keys.map(String)),
+  getCheckboxProps: (r: StepOpt) => ({ disabled: r.planNodeId === stepsNode.value?.id }),
+}))
+
+// 节点完成 / 任务完成共用一个选日期的弹窗
+const taskDoing = ref<PlanTask | null>(null)
+function openTaskDone(t: PlanTask) {
+  doneNode.value = null
+  taskDoing.value = t
+  doneDate.value = dayjs()
+  doneOpen.value = true
+}
+
 // ───── 表格 ─────
+// 列宽按内容收紧，1440 宽屏幕不横向滚动（设计规范第 3 节）；操作列固定在右边，窄屏横向滚动时也看得到
 const columns = [
-  { title: '#', dataIndex: 'seq', width: 46 },
+  { title: '#', dataIndex: 'seq', width: 44 },
   { title: '节点', key: 'name' },
-  { title: '责任部门', dataIndex: 'deptText', width: 90 },
-  { title: '基线', key: 'baseline', width: 104 },
-  { title: '计划', key: 'plan', width: 104 },
-  { title: '预计', key: 'expected', width: 150 },
-  { title: '实际完成', key: 'actual', width: 130 },
-  { title: '部门确认', key: 'confirm', width: 150 },
-  { title: '挂靠任务', key: 'tasks', width: 120 },
-  { title: '', key: 'ops', width: 230 },
+  { title: '责任部门', dataIndex: 'deptText', width: 84 },
+  { title: '基线', key: 'baseline', width: 98 },
+  { title: '计划', key: 'plan', width: 98 },
+  { title: '预计', key: 'expected', width: 130 },
+  { title: '实际完成', key: 'actual', width: 116 },
+  { title: '部门确认', key: 'confirm', width: 124 },
+  { title: '部门任务', key: 'tasks', width: 104 },
+  { title: '', key: 'ops', width: 148, fixed: 'right' as const },
 ]
 const taskColumns = [
   { title: '类型', dataIndex: 'kindText', width: 80 },
   { title: '记录', key: 'name' },
   { title: '日期', key: 'date', width: 200 },
   { title: '预计完成', key: 'expected', width: 110 },
-  { title: '状态', key: 'status', width: 160 },
+  { title: '状态', key: 'status', width: 170 },
+  { title: '', key: 'ops', width: 120 },
 ]
 const rowClass = (n: PlanNodeRow) => [n.id === focusNode.value ? 'focus-row' : '', !n.done && n.delayDays > 0 ? 'late-row' : ''].join(' ')
 const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ? 'orange' : l === 'REMIND' ? 'blue' : undefined)
@@ -342,7 +499,7 @@ const logColumns = [
         size="small"
         :pagination="false"
         :row-class-name="(r: PlanNodeRow) => rowClass(r)"
-        :scroll="{ x: 1300 }"
+        :scroll="{ x: 1080 }"
       >
         <template #emptyText><a-empty :description="data.canEdit ? '还没有节点：选模板“按模板生成”，或“新增节点”' : '还没有编制总计划'" /></template>
         <template #bodyCell="{ column, record }">
@@ -382,12 +539,23 @@ const logColumns = [
             </template>
           </template>
           <template v-else-if="column.key === 'tasks'">
-            <span v-if="!record.taskCount" class="muted">0</span>
+            <template v-if="!record.taskCount">
+              <UiStatusTag v-if="published && !record.done" :tone="record.splitAlertLevel ? 'late' : 'risk'">未分解</UiStatusTag>
+              <span v-else class="muted">0</span>
+            </template>
             <template v-else>
               {{ record.doneCount }}/{{ record.taskCount }} 完成
               <div v-if="record.overdueCount" class="late small">逾期 {{ record.overdueCount }}</div>
               <div v-if="record.lateCount" class="late small">晚于节点 {{ record.lateCount }}</div>
             </template>
+            <a-dropdown v-if="splitItems(record as PlanNodeRow).length" :trigger="['click']">
+              <a-button type="link" size="small" class="split-btn">+ 分解</a-button>
+              <template #overlay>
+                <a-menu>
+                  <a-menu-item v-for="it in splitItems(record as PlanNodeRow)" :key="it.key" @click="onSplit(record as PlanNodeRow, it.key)">{{ it.label }}</a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
           </template>
           <template v-else-if="column.key === 'ops'">
             <a-space wrap size="small">
@@ -405,10 +573,16 @@ const logColumns = [
           </template>
         </template>
         <template #expandedRowRender="{ record }">
-          <a-empty v-if="!record.tasks.length" description="还没有部门记录挂在这个节点上（在设计任务、采购行、工序、装配节点里选“所属总计划节点”）" />
+          <a-empty v-if="!record.tasks.length" :description="splitItems(record as PlanNodeRow).length ? '还没有分解：点本行“部门任务”列的“+ 分解”新建' : '还没有分解：等责任部门在这里新建部门任务'" />
           <a-table v-else :columns="taskColumns" :data-source="record.tasks" :row-key="(t: PlanTask) => `${t.kind}:${t.id}`" size="small" :pagination="false">
             <template #bodyCell="{ column: c, record: t }">
-              <template v-if="c.key === 'name'"><NuxtLink :to="t.link">{{ t.name }}</NuxtLink></template>
+              <template v-if="c.key === 'name'">
+                <template v-if="t.kind === 'task'">
+                  {{ t.name }}
+                  <div v-if="t.note" class="muted">{{ t.note }}</div>
+                </template>
+                <NuxtLink v-else :to="t.link">{{ t.name }}</NuxtLink>
+              </template>
               <template v-else-if="c.key === 'date'">
                 <span :class="{ late: t.lateForNode && !t.done }">{{ t.dateLabel }} {{ t.planDate ?? '未填' }}</span>
                 <a-tag v-if="t.lateForNode && !t.done && !t.excluded" color="red">晚于节点</a-tag>
@@ -421,6 +595,14 @@ const logColumns = [
               <template v-else-if="c.key === 'status'">
                 {{ t.statusText }}
                 <a-tag v-if="t.overdue" color="red">逾期</a-tag>
+              </template>
+              <template v-else-if="c.key === 'ops'">
+                <a-space v-if="t.kind === 'task'" :size="0" wrap>
+                  <a-button v-if="t.canDone && !t.done" type="link" size="small" @click="openTaskDone(t as PlanTask)">完成</a-button>
+                  <a-button v-if="t.canDone && t.done" type="link" size="small" @click="undoTask(t as PlanTask)">撤销完成</a-button>
+                  <a-button v-if="t.canEdit" type="link" size="small" @click="openTask(record as PlanNodeRow, t as PlanTask)">修改</a-button>
+                  <a-button v-if="t.canEdit" type="link" size="small" danger @click="deleteTask(t as PlanTask)">删除</a-button>
+                </a-space>
               </template>
             </template>
           </a-table>
@@ -466,12 +648,58 @@ const logColumns = [
       <a-textarea v-model:value="reasonText" :rows="3" :maxlength="500" :placeholder="reasonFor?.kind === 'reject' ? '退回原因' : '删除原因'" />
     </a-modal>
 
-    <a-modal v-model:open="doneOpen" :title="`标记完成：${doneNode?.name}`" @ok="submitDone">
+    <a-modal v-model:open="doneOpen" :title="`标记完成：${doneNode?.name ?? taskDoing?.name}`" @ok="submitDone">
       <a-form layout="vertical">
         <a-form-item label="完成日期"><a-date-picker v-model:value="doneDate" :allow-clear="false" style="width: 100%" /></a-form-item>
       </a-form>
-      <p class="muted">挂靠任务全部完成时会自动算完成，不用手动标。</p>
+      <p class="muted">{{ doneNode ? '部门任务全部完成时节点会自动算完成，不用手动标。' : '完成后负责人的待办关闭；节点下的部门任务全部完成时节点自动完成。' }}</p>
     </a-modal>
+
+    <a-modal v-model:open="taskOpen" :title="taskEditing ? `改任务：${taskEditing.name}` : `分解节点：${taskNode?.name}`" @ok="saveTask">
+      <p v-if="!taskEditing" class="muted">设计任务、采购行、工序、装配节点请用“分解”里对应的选项；这里建它们覆盖不到的工作（如合同评审、BOM 编制、调试、出厂检验、发运准备）。</p>
+      <a-form layout="vertical">
+        <a-form-item label="任务名称" required><a-input v-model:value="taskForm.name" :maxlength="191" placeholder="如：BOM 编制" /></a-form-item>
+        <a-form-item label="负责人（会收到待办）" required>
+          <a-select v-model:value="taskForm.ownerId" show-search option-filter-prop="label" :options="ownerOptions" placeholder="选择负责人" />
+        </a-form-item>
+        <a-form-item label="计划完成日" required>
+          <a-date-picker v-model:value="taskForm.planDate" :allow-clear="false" style="width: 100%" />
+          <div v-if="taskLate" class="late small">晚于节点计划日 {{ taskNode?.planDate }}，可以保存，总计划里会标红</div>
+        </a-form-item>
+        <a-form-item label="备注"><a-input v-model:value="taskForm.note" :maxlength="500" /></a-form-item>
+      </a-form>
+    </a-modal>
+
+    <a-modal v-model:open="stepsOpen" :title="`挂工序到节点：${stepsNode?.name}`" :width="760" :ok-text="stepNew.length ? `挂 ${stepNew.length} 道` : '挂上'" @ok="saveSteps">
+      <p class="muted">勾选这个工单里要算在本节点下的工序；已挂在别的节点的会改挂过来。取消挂靠请到“工件与工序链”里改。</p>
+      <a-table
+        class="ft-table"
+        :columns="stepColumns"
+        :data-source="stepList"
+        :loading="stepsLoading"
+        :row-selection="stepSelection"
+        row-key="id"
+        size="small"
+        :pagination="false"
+        :scroll="{ y: 400 }"
+      >
+        <template #emptyText><a-empty description="这个工单还没有工序（先在“工件与工序链”里建工件和工序）" /></template>
+        <template #bodyCell="{ column: c, record: r }">
+          <template v-if="c.key === 'due'">
+            <span :class="{ late: !!r.dueDate && !!stepsNode && r.dueDate > stepsNode.planDate }">{{ r.dueDate ?? '未填' }}</span>
+          </template>
+          <template v-else-if="c.key === 'node'">
+            <span v-if="r.planNodeId === stepsNode?.id" class="ok">本节点</span>
+            <span v-else-if="r.planNodeName">{{ r.planNodeName }}</span>
+            <span v-else class="muted">未挂</span>
+          </template>
+        </template>
+      </a-table>
+    </a-modal>
+
+    <DrawingEditModal :open="recordOpen === 'drawing'" :task="null" :work-order-number="wo" :preset-node="presetNode" @close="recordOpen = null" @done="recordSaved" />
+    <PurchaseEditModal :open="recordOpen === 'purchase'" :line="null" :work-order-number="wo" :preset-node="presetNode" @close="recordOpen = null" @done="recordSaved" />
+    <KittingNodeModal :open="recordOpen === 'assembly'" :node="null" :work-order-number="wo" :preset-node="presetNode" @close="recordOpen = null" @done="recordSaved" />
   </UiSectionCard>
 </template>
 
@@ -485,6 +713,7 @@ const logColumns = [
 .summary { margin-bottom: 12px; }
 .tip { margin-bottom: 12px; }
 .section { margin: 20px 0 8px; }
+.split-btn { display: block; padding: 0; height: auto; margin-top: 2px; }
 :deep(.late-row) td:first-child { box-shadow: inset 3px 0 0 var(--ft-late); }
 :deep(.focus-row) td { background: var(--ft-risk-bg) !important; }
 </style>

@@ -52,6 +52,8 @@ describe('todoDueDay / todoPrimaryLabel', () => {
   })
   it('主操作与 open() 分支一致', () => {
     expect(todoPrimaryLabel({ action: 'CONFIRM_PLAN_NODE', plan: {} })).toBeNull()
+    // 完成部门任务（部门计划二次分解）：手机上直接点完成
+    expect(todoPrimaryLabel({ action: 'DO_PLAN_TASK', planTask: {} })).toBe('完成')
     expect(todoPrimaryLabel({ action: 'SIGN_RELEASE', release: {} })).toBe('去签收')
     expect(todoPrimaryLabel({ action: 'CONFIRM_CHANGE', release: {} })).toBe('去确认')
     expect(todoPrimaryLabel({ action: 'ARRANGE_SEND', step: { status: 'PENDING', mode: 'EXTERNAL_OUTSOURCE' } })).toBe('登记发出')

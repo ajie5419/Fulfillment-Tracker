@@ -11,7 +11,8 @@
  *   W8 装配节点未齐套（R12）：需求日前 5 天齐套率 < 100% 黄；前 1 天（含当天、已过）仍未齐套红（判定见 kitting/constants.ts judgeW8）
  *   W9 总计划（R14）：源头延误节点（不计上游顺延、自身就已延误）自身晚 1 天黄、3 天红（判定见 plan/constants.ts judgeW9；只因上游顺延的节点不报）；
  *      工单级（对象类型 plan）：预计交期晚于 QMS 交期红（judgeW9Plan）；
- *      同一规则下另管"节点超时未确认"（对象类型 planConfirm），按 W5 的阈值计时（发布后 4 小时提醒、1 天黄、2 天红）
+ *      同一规则下另管"节点超时未确认"（对象类型 planConfirm），按 W5 的阈值计时（发布后 4 小时提醒、1 天黄、2 天红）；
+ *      "节点未分解"（对象类型 planSplit，部门计划二次分解）：发布后 W9 提醒小时数（默认 72）仍没有部门任务 → 提醒，不升级
  *
  * 计时按自然日/小时，停工日（off_day）整天不计入；"哪一天"一律按工厂时区 Asia/Shanghai 判定。
  * 级别只升不降：阈值调大后，已经是黄的预警也不退回提醒。
@@ -27,7 +28,8 @@ export type ScanRule = 'W1' | 'W2' | 'W3' | 'W4' | 'W5' | 'W6' | 'W7' | 'W8' | '
 
 export interface RuleThreshold {
   /** W1、W5：提醒小时数；W3：承诺返回日前多少小时提醒（48 = 前 2 天）；W6：需求日前多少小时仍无承诺日就预警（168 = 前 7 天）；W7：计划完成日前多少小时仍未完成设计就黄（48 = 前 2 天），黄/红是客户确认超期天数；W2、W4、W8 为空（不提醒）。
-   * W8 的黄/红是"需求日前几天"（黄 ≥ 红：前 5 天黄、前 1 天红），不是超期天数；W9 的黄/红是节点预计晚于计划日的天数，不提醒 */
+   * W8 的黄/红是"需求日前几天"（黄 ≥ 红：前 5 天黄、前 1 天红），不是超期天数；W9 的黄/红是节点预计晚于计划日的天数，
+   * W9 的 remindHours 是"总计划发布后多少小时节点仍未分解就提醒" */
   remindHours: number | null
   yellowDays: number
   redDays: number
@@ -43,7 +45,7 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
   W6: { remindHours: 168, yellowDays: 1, redDays: 3 },
   W7: { remindHours: 48, yellowDays: 1, redDays: 4 },
   W8: { remindHours: null, yellowDays: 5, redDays: 1 },
-  W9: { remindHours: null, yellowDays: 1, redDays: 3 },
+  W9: { remindHours: 72, yellowDays: 1, redDays: 3 },
 }
 
 /** 红色时自动转为异常的规则（W4 本身就是异常，不再转；W5 未签收、W6 物料未到货、W7 设计逾期、W8 未齐套、W9 总计划延误只升级通知，不转异常） */
