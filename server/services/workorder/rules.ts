@@ -23,10 +23,11 @@ export function reasonCounts(shortages: { reason: string }[]): { reason: string;
 }
 
 /**
- * 挂靠记录跳到对应部门列表，带上工单筛选：设计、采购看该工单全部记录；工序到工件与工序链；装配节点定位到该节点。
+ * 挂靠记录跳到对应部门列表，带上工单筛选：设计、采购看该工单全部记录；工序到工件与工序链；装配节点定位到该节点；
+ * 其他任务（部门计划二次分解）没有单独页面，到工单详情"总计划"页签定位所属节点。
  * （不带 ?id=：设计 / 采购的 ?id= 会直接弹编辑框，从详情页过去只是看）
  */
-export function taskListLink(kind: TaskKind, workOrderNumber: string, id: string): string {
+export function taskListLink(kind: TaskKind, workOrderNumber: string, id: string, nodeId?: string): string {
   const wo = encodeURIComponent(workOrderNumber)
   switch (kind) {
     case 'drawing':
@@ -37,6 +38,8 @@ export function taskListLink(kind: TaskKind, workOrderNumber: string, id: string
       return `/parts?wo=${wo}`
     case 'assembly':
       return `/kitting?wo=${wo}&id=${encodeURIComponent(id)}`
+    case 'task':
+      return `/plan?wo=${wo}${nodeId ? `&node=${encodeURIComponent(nodeId)}` : ''}`
   }
 }
 

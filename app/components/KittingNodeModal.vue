@@ -2,8 +2,9 @@
 /**
  * 新建 / 编辑装配节点（R12）：工单、名称、需求日、所属总计划节点（R14，工单总计划已发布时必选）、负责人（不选 = 生产经理）、排序、备注，
  * 以及节点清单：需要的工件（可多选）和关键物料（同一工单，可多选）。同一工件 / 物料可以挂在多个节点上。
+ * presetNode：从工单详情"总计划"页签的节点"分解"打开时传入，新建时预选所属节点，日期默认取节点计划日。
  */
-const props = defineProps<{ open: boolean; node: KitNode | null; workOrderNumber?: string }>()
+const props = defineProps<{ open: boolean; node: KitNode | null; workOrderNumber?: string; presetNode?: { id: string; planDate: string } | null }>()
 const emit = defineEmits<{ close: []; done: [id: string] }>()
 
 const { data: workOrders } = await useWorkOrders()
@@ -64,7 +65,7 @@ watch(
             partIds: [...n.partIds],
             purchaseIds: [...n.purchaseIds],
           }
-        : { ...empty(), workOrderNumber: props.workOrderNumber },
+        : { ...empty(), workOrderNumber: props.workOrderNumber, planNodeId: props.presetNode?.id ?? null, needDate: props.presetNode?.planDate },
     )
     loadedWo = form.workOrderNumber
     loadOptions(form.workOrderNumber)

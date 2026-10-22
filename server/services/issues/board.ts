@@ -28,6 +28,7 @@ import { overdueDays } from '../flow/dates'
 import { loadNames } from '../flow/names'
 import { syncOverview } from '../sync/status'
 import { loadPlans } from '../plan/plan'
+import { PLAN_NODE_ALERT_REFS, isPlanNodeAlert } from '../plan/constants'
 import { BUSINESS_DEPT_NAME } from '../auth/departments'
 import { NODE_LINKS, loadKitCounts } from '../kitting/kitting'
 import { kitPercent } from '../kitting/constants'
@@ -42,7 +43,7 @@ export type BoardColor = 'RED' | 'YELLOW' | 'GREEN'
 /** 活动预警 → 所属工单 */
 async function alertWorkOrders(alerts: { id: string; refType: string; refId: string }[]) {
   const ids = (t: string) => alerts.filter((a) => a.refType === t).map((a) => a.refId)
-  const planIds = alerts.filter((a) => a.refType === 'planNode' || a.refType === 'planConfirm').map((a) => a.refId)
+  const planIds = alerts.filter((a) => isPlanNodeAlert(a.refType)).map((a) => a.refId)
   const [steps, inspections, issues, receipts, releases, purchases, drawings, nodes, planNodes] = await Promise.all([
     ids('step').length ? prisma.routeStep.findMany({ where: { id: { in: ids('step') } }, select: { id: true, part: { select: { workOrderNumber: true } } } }) : [],
     ids('unmatched').length ? prisma.qmsInspection.findMany({ where: { id: { in: ids('unmatched') } }, select: { id: true, workOrderNumber: true } }) : [],
@@ -65,10 +66,7 @@ async function alertWorkOrders(alerts: { id: string; refType: string; refId: str
   for (const p of purchases) wo.set(`purchase:${p.id}`, p.workOrderNumber)
   for (const d of drawings) wo.set(`drawing:${d.id}`, d.workOrderNumber)
   for (const n of nodes) wo.set(`node:${n.id}`, n.workOrderNumber)
-  for (const n of planNodes) {
-    wo.set(`planNode:${n.id}`, n.workOrderNumber)
-    wo.set(`planConfirm:${n.id}`, n.workOrderNumber)
-  }
+  for (const n of planNodes) for (const t of PLAN_NODE_ALERT_REFS) wo.set(`${t}:${n.id}`, n.workOrderNumber)
   // W9 工单级（交期风险）：refId 就是工单号
   return new Map(alerts.map((a) => [a.id, a.refType === 'plan' ? a.refId : (wo.get(`${a.refType}:${a.refId}`) ?? null)]))
 }

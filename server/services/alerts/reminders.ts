@@ -9,7 +9,7 @@ import { drawingLink, drawingMobileLink } from '../drawings/constants'
 import { kittingLink, kittingMobileLink } from '../kitting/constants'
 import { purchaseLink, purchaseMobileLink } from '../purchases/constants'
 import { releaseLink, releaseMobileLink } from '../releases/constants'
-import { planLink } from '../plan/constants'
+import { isPlanNodeAlert, planLink } from '../plan/constants'
 import { CONVERTIBLE_RULES, durationText, elapsedExcludingOffDays } from './rules'
 import { SCAN_RULES, type Target, collectTargets, loadOffDays, loadThresholds } from './scan'
 import { todayDay } from '../flow/dates'
@@ -42,7 +42,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
   const alerts = alertIds.length ? await prisma.alert.findMany({ where: { id: { in: alertIds } } }) : []
   const stepIds = alerts.filter((a) => a.refType === 'step').map((a) => a.refId)
   const receiptIds = alerts.filter((a) => a.refType === 'receipt').map((a) => a.refId)
-  const planNodeIds = alerts.filter((a) => a.refType === 'planNode' || a.refType === 'planConfirm').map((a) => a.refId)
+  const planNodeIds = alerts.filter((a) => isPlanNodeAlert(a.refType)).map((a) => a.refId)
   const converted = alerts.filter((a) => a.status === 'CONVERTED').map((a) => alertSourceKey(a.id))
   const idsOf = (refType: string) => alerts.filter((a) => a.refType === refType).map((a) => a.refId)
   const [purchaseIds, drawingIds, nodeIds, issueIds, releaseIds] = ['purchase', 'drawing', 'node', 'issue', 'release'].map(idsOf) as [string[], string[], string[], string[], string[]]
@@ -72,6 +72,8 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     facts.set(`planNode:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: day(r.planDate) })
     // 节点超时未确认：要做的是"确认"，没有截止日（归"未定截止日"），不用节点的计划日
     facts.set(`planConfirm:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: null })
+    // 节点未分解：要做的是"分解"，同样没有截止日
+    facts.set(`planSplit:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: null })
   }
   for (const r of steps) facts.set(`step:${r.id}`, { workOrderNumber: r.part.workOrderNumber, dueDay: day(r.promisedReturnDate ?? r.dueDate) })
   const planWoOf = new Map(planNodes.map((n) => [n.id, n.workOrderNumber]))
@@ -87,7 +89,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     if (a.refType === 'drawing') link = { pc: drawingLink(a.refId), mobile: drawingMobileLink(a.refId) }
     if (a.refType === 'node') link = { pc: kittingLink(a.refId), mobile: kittingMobileLink(a.refId) }
     // 总计划（W9）只有电脑端页面；节点删了就没有跳转
-    const planWo = a.refType === 'planNode' || a.refType === 'planConfirm' ? planWoOf.get(a.refId) : undefined
+    const planWo = isPlanNodeAlert(a.refType) ? planWoOf.get(a.refId) : undefined
     if (planWo) link = { pc: planLink(planWo, a.refId), mobile: null }
     if (a.refType === 'plan') link = { pc: planLink(a.refId), mobile: null }
     const releaseId = a.refType === 'receipt' ? releaseOf.get(a.refId) : a.refType === 'release' ? a.refId : undefined
@@ -241,7 +243,7 @@ function targetLink(t: Target): string | null {
   if (t.refType === 'purchase') return purchaseLink(t.refId)
   if (t.refType === 'drawing') return drawingLink(t.refId)
   if (t.refType === 'node') return kittingLink(t.refId)
-  if ((t.refType === 'planNode' || t.refType === 'planConfirm') && t.workOrderNumber) return planLink(t.workOrderNumber, t.refId)
+  if (isPlanNodeAlert(t.refType) && t.workOrderNumber) return planLink(t.workOrderNumber, t.refId)
   if (t.refType === 'plan') return planLink(t.refId)
   if (t.refType === 'unmatched') return '/unmatched'
   if (t.refType === 'issue') return `/issues?id=${encodeURIComponent(t.refId)}`
@@ -299,7 +301,7 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
         summary: t.summary,
         startAt: t.startAt,
         duration:
-          a.rule === 'W3' || a.rule === 'W4' || a.rule === 'W6' || a.rule === 'W7' || a.rule === 'W8' || (a.rule === 'W9' && a.refType !== 'planConfirm')
+          a.rule === 'W3' || a.rule === 'W4' || a.rule === 'W6' || a.rule === 'W7' || a.rule === 'W8' || (a.rule === 'W9' && a.refType !== 'planConfirm' && a.refType !== 'planSplit')
             ? null
             : durationText(elapsedExcludingOffDays(t.startAt, at, offDays)),
         owners: t.ownerIds.map((id) => ({ id, name: names.user.get(id) ?? id })),

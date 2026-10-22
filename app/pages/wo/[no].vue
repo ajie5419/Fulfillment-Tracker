@@ -6,12 +6,21 @@
  *   总计划时间线：每个节点一行（虚线框 = 计划区间，实心条 = 预计 / 实际，颜色按状态，竖线 = 今天），点节点展开挂在上面的设计、采购、工序、装配记录；
  *   右侧：要处理的事（活动预警 + 未关闭异常，按严重度排）、谁在拖（源头延误天数按责任部门）、还没挂到节点的记录。
  * 地址 #node-<id> 定位并展开该节点（列表"总计划节点"列点过来）。日期全部用服务端给的 'YYYY-MM-DD'。
- * 功能重复梳理第二批（zhao 10-22）：原"总计划"页并进来，成为第二个页签 ?tab=plan（编制、发布、调整、确认、标完成都在这里，?node= 定位节点）；
- *   旧地址 /plan?wo=&node= 跳到这里。总计划页签不依赖详情接口：手里有确认待办、但看不到这个工单的部门负责人也能打开（/api/plan 的规则）。
+ * 总计划的编制、发布、调整、确认、分解在"项目计划"页 /plan?wo=（zhao 10-22 测试后定：工单详情只放概览，项目计划单独成菜单页）；
+ *   旧地址 /wo/:no?tab=plan&node= 跳到 /plan?wo=&node=。
  */
 import type { WorkOrderDetail } from '~~/server/services/workorder/detail'
 import { BOARD_GROUP_TEXT, NODE_STATE_COLOR, NODE_STATE_TEXT, type NodeState, boardGroup, isClosedWorkOrder, woStatusText } from '#shared/status'
 import { deliveryBar, ganttRange, monthTicks, nodeBars, pct } from '#shared/gantt'
+
+// 旧地址 ?tab=plan（总计划页签）跳到项目计划页，节点定位不丢
+definePageMeta({
+  middleware: (to) => {
+    if (to.query.tab !== 'plan') return
+    const node = typeof to.query.node === 'string' ? to.query.node : undefined
+    return navigateTo({ path: '/plan', query: { wo: String(to.params.no ?? ''), node } }, { replace: true })
+  },
+})
 
 const route = useRoute()
 const no = computed(() => String(route.params.no ?? ''))
@@ -20,14 +29,8 @@ const { data, error, pending, refresh } = await useFetch<WorkOrderDetail>(() => 
 })
 const d = computed(() => data.value)
 
-// ───── 页签：概览 / 总计划（?tab=plan）─────
-type Tab = 'overview' | 'plan'
-const tab = computed<Tab>(() => (route.query.tab === 'plan' ? 'plan' : 'overview'))
-function setTab(v: unknown) {
-  // 切回概览时去掉总计划的节点定位参数
-  navigateTo({ query: v === 'plan' ? { ...route.query, tab: 'plan' } : { ...route.query, tab: undefined, node: undefined } }, { replace: true })
-}
-const planLink = (nodeId?: string) => ({ query: { tab: 'plan', node: nodeId } })
+// ───── 总计划在"项目计划"页 ─────
+const planLink = (nodeId?: string) => ({ path: '/plan', query: { wo: no.value, node: nodeId } })
 
 useHead({ title: computed(() => (d.value ? `${d.value.workOrder.workOrderNumber} · 工单详情` : '工单详情')) })
 
@@ -155,13 +158,9 @@ const enc = encodeURIComponent
       <div class="crumbs">
         <NuxtLink to="/board">项目总览</NuxtLink><span class="sep">/</span><span>{{ no }}</span>
       </div>
-      <a-segmented :value="tab" :options="[{ value: 'overview', label: '概览' }, { value: 'plan', label: '总计划' }]" @change="setTab" />
+      <NuxtLink :to="planLink()">项目计划 ›</NuxtLink>
     </div>
 
-    <!-- key：换工单时重建，避免上一个工单打开的编辑框（节点 ID）带到新工单里被保存 -->
-    <PlanEditor v-if="tab === 'plan'" :key="no" :wo="no" @changed="refresh()" />
-
-    <template v-else>
 
     <a-result v-if="error" :status="error.statusCode === 403 ? '403' : error.statusCode === 404 ? '404' : 'error'" :title="error.statusCode === 403 ? '没有权限' : error.statusCode === 404 ? '工单不存在' : '加载失败'" :sub-title="apiError(error)">
       <template #extra><NuxtLink to="/board"><a-button type="primary">回项目总览</a-button></NuxtLink></template>
@@ -350,7 +349,6 @@ const enc = encodeURIComponent
         </div>
       </template>
     </a-spin>
-    </template>
   </div>
 </template>
 

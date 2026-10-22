@@ -60,6 +60,25 @@ function start(t: Todo) {
   })
 }
 
+/** 完成部门任务（部门计划二次分解）：完成日记今天，关掉待办 */
+function finishPlanTask(t: Todo) {
+  const task = t.planTask
+  if (!task) return
+  Modal.confirm({
+    title: `完成"${task.name}"？`,
+    content: `总计划节点"${task.nodeName}"下的任务，完成日记为今天。`,
+    onOk: async () => {
+      try {
+        await $fetch(`/api/plan/tasks/${task.id}/complete`, { method: 'POST', body: {} })
+        message.success('已完成')
+        await afterTodo()
+      } catch (e) {
+        message.error(apiError(e))
+      }
+    },
+  })
+}
+
 /** 待办处理后：待办、提醒（处理后预警可能消除）和菜单角标一起刷新 */
 async function afterTodo() {
   await Promise.all([refreshTodos(), refreshReminders()])
@@ -168,6 +187,7 @@ const toneIcon = (t: Tone) => (t === 'late' ? 'alert' : t === 'risk' ? 'warn' : 
 /** 待办的"查看"跳转：工序 → 工件与工序链；发放 → 发放单；总计划 → 工单详情的总计划页签 */
 function todoLink(t: Todo): string | null {
   if (t.plan) return t.plan.link
+  if (t.planTask) return t.planTask.link
   if (t.release) return `/releases?id=${encodeURIComponent(t.release.id)}`
   if (t.workOrderNumber) return `/parts?wo=${encodeURIComponent(t.workOrderNumber)}`
   return null
@@ -264,6 +284,7 @@ function onCardClick(c: Card) {
                   <a-button v-else-if="c.todo.action === 'SIGN_RELEASE' && c.todo.release" type="primary" size="small" @click="releaseId = c.todo.release.id">查看并签收</a-button>
                   <a-button v-else-if="c.todo.action === 'CONFIRM_CHANGE' && c.todo.release" type="primary" size="small" @click="releaseId = c.todo.release.id">确认变更影响</a-button>
                   <a-button v-else-if="c.todo.action === 'CONFIRM_PLAN_NODE' && c.todo.plan" type="primary" size="small" @click="navigateTo(c.todo.plan.link)">去确认</a-button>
+                  <a-button v-else-if="c.todo.action === 'DO_PLAN_TASK' && c.todo.planTask" type="primary" size="small" @click="finishPlanTask(c.todo)">完成</a-button>
                   <a-button v-if="c.todo.action !== 'SIGN_RELEASE'" size="small" @click="transferring = c.todo">转交</a-button>
                   <NuxtLink v-if="todoLink(c.todo) && !c.todo.plan && !c.todo.release" :to="todoLink(c.todo)!" class="go">查看 ›</NuxtLink>
                 </template>

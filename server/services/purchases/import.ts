@@ -21,6 +21,8 @@ import { FlowError } from '../flow/errors'
 import { parseDay } from '../flow/dates'
 import { MAX_IMPORT_ROWS, normalizeName } from './constants'
 import { lockParts, purchaseTx, refreshPartReady } from './purchases'
+import { clearAlertKeys } from '../alerts/clear'
+import { w9SplitKey } from '../plan/constants'
 
 export const TEMPLATE_COLUMNS = [
   { key: 'workOrderNumber', header: '工单号', required: true, width: 18, hint: '必填，QMS 工单号' },
@@ -374,6 +376,8 @@ export async function importPurchases(
       ...(l.arrivedDate ? { status: 'ARRIVED' as const, arrivedDate: parseDay(l.arrivedDate), arrivalSource: 'PC' as const, arrivedBy: actorId, arrivedAt: now } : {}),
     }))
     await tx.purchaseLine.createMany({ data })
+    // 挂上节点的：节点已分解，清掉"未分解"提醒
+    await clearAlertKeys(tx, [...new Set(lines.map((l) => l.planNodeId).filter((x): x is string => !!x))].map(w9SplitKey))
     // 挂上了未到货物料的工件：作废没处理的"可以开工"
     for (const partId of new Set(lines.filter((l) => l.partId && !l.arrivedDate).map((l) => l.partId!))) await refreshPartReady(tx, partId, false)
   })

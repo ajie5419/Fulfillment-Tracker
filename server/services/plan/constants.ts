@@ -4,7 +4,7 @@
  *
  * 规则（总计划设计第 5 节）：
  *   部门任务的预计日：已完成取实际完成日；没完成的取它自己的日期（设计看计划完成日，设计完成等客户确认的看客户确认计划日；
- *     采购有承诺到货日看承诺日、否则看需求日；工序：厂外外协有承诺返回日看承诺返回日、否则看要求完成日；装配节点看需求日），
+ *     采购有承诺到货日看承诺日、否则看需求日；工序：厂外外协有承诺返回日看承诺返回日、否则看要求完成日；装配节点看需求日；其他任务看计划完成日），
  *     这个日期已经过了（还没完成）就按今天算。已取消的设计任务、采购行不计入。
  *   节点预计完成日 = 取最晚：节点自己的计划日；挂靠任务里最晚的预计日；前一个节点顺延后的日期（前一节点预计日 + 原来两节点计划日的间隔）。
  *     没完成的节点预计日不早于今天（计划日已过还没完成，最早也只能今天完成）。
@@ -46,8 +46,19 @@ export function addDays(day: string, n: number): string {
 
 // ───────────── 部门任务 ─────────────
 
-export type TaskKind = 'drawing' | 'purchase' | 'step' | 'assembly'
-export const TASK_KIND_TEXT: Record<TaskKind, string> = { drawing: '设计', purchase: '采购', step: '工序', assembly: '装配' }
+/** task = 其他任务（部门计划二次分解，plan_task）：4 类记录覆盖不到的部门工作 */
+export type TaskKind = 'drawing' | 'purchase' | 'step' | 'assembly' | 'task'
+export const TASK_KIND_TEXT: Record<TaskKind, string> = { drawing: '设计', purchase: '采购', step: '工序', assembly: '装配', task: '其他任务' }
+
+/** 待办："完成部门任务"（refType = planTask，refId = 其他任务 ID），发给任务负责人，截止日 = 计划完成日 */
+export const DO_PLAN_TASK = 'DO_PLAN_TASK'
+export const PLAN_TASK_REF = 'planTask'
+/** 以总计划节点为对象（refId = 节点 ID）的 W9 预警类型：节点延误、超时未确认、未分解。按节点找工单、跳转的地方都用这一份，加类型只改这里 */
+export const PLAN_NODE_ALERT_REFS = ['planNode', 'planConfirm', 'planSplit'] as const
+export const isPlanNodeAlert = (refType: string) => (PLAN_NODE_ALERT_REFS as readonly string[]).includes(refType)
+
+/** W9"节点未分解"提醒（对象类型 planSplit，refId = 节点 ID） */
+export const w9SplitKey = (nodeId: string) => alertKey('W9', 'planSplit', nodeId)
 
 /** 一条挂靠任务的事实（由各类记录换算，见下面的 *Facts） */
 export interface TaskFacts {
@@ -135,6 +146,11 @@ export function assemblyFacts(n: { id: string; needDate: Date }, kit: { total: n
   const need = day(n.needDate)!
   const done = kit.total > 0 && kit.ready >= kit.total
   return { kind: 'assembly', id: n.id, excluded: false, done, doneDay: done ? (kit.readyDay ?? null) : null, planDay: need }
+}
+
+/** 其他任务：完成 = 填了完成日；看计划完成日 */
+export function planTaskFacts(t: { id: string; planDate: Date; doneDate: Date | null }): TaskFacts {
+  return { kind: 'task', id: t.id, excluded: false, done: !!t.doneDate, doneDay: day(t.doneDate), planDay: day(t.planDate) }
 }
 
 // ───────────── 节点与主线 ─────────────
@@ -303,6 +319,16 @@ export function w9Summary(n: Pick<NodeEstimate, 'selfExpectedDay' | 'selfDelayDa
 export function w9PlanSummary(deliveryDay: string, f: Pick<PlanForecast, 'expectedDelivery' | 'deliveryDelayDays'>, sources: string[]): string {
   const src = sources.length ? `；源头延误节点：${sources.join('、')}` : ''
   return `合同交期 ${deliveryDay}，按总计划预计 ${f.expectedDelivery} 交付，拖期 ${f.deliveryDelayDays} 天${src}`
+}
+
+/**
+ * W9 节点未分解（部门计划二次分解，10-22）：总计划已发布、节点没完成、节点下没有任何部门任务（4 类记录 + 其他任务，不算已取消的），
+ * 从发布（发布后才加的节点从加的时候）起已过 W9 的提醒小时数（默认 72 小时，停工日不计）→ 提醒（REMIND），只提醒不升级、不转异常。
+ * 提醒小时数为空时不报。elapsedMs 由调用方按停工日算好。
+ */
+export function judgeSplit(n: { done: boolean; taskCount: number }, elapsedMs: number, remindHours: number | null): AlertLevel | null {
+  if (remindHours == null || n.done || n.taskCount > 0) return null
+  return elapsedMs >= remindHours * 3_600_000 ? 'REMIND' : null
 }
 
 /** 部门日期晚于节点日的提示（保存时返回给页面；只提示不拦截） */

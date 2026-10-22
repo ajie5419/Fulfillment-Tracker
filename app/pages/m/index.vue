@@ -34,6 +34,22 @@ type Todo = (typeof todos.value)[number]
 async function open(t: Todo) {
   // 确认总计划节点（R14）：总计划只有电脑端（工单详情的“总计划”页签）
   if (t.plan) return showToast('确认总计划节点请在电脑端工单详情的“总计划”页签处理')
+  // 完成部门任务（部门计划二次分解）：确认后标完成，完成日记今天
+  if (t.planTask) {
+    try {
+      await showConfirmDialog({ title: '完成部门任务', message: `${t.planTask.name}（总计划节点：${t.planTask.nodeName}）` })
+    } catch {
+      return // 取消
+    }
+    try {
+      await $fetch(`/api/plan/tasks/${t.planTask.id}/complete`, { method: 'POST', body: {} })
+      showSuccessToast('已完成')
+      await refreshTodos()
+    } catch (e) {
+      showFailToast(apiError(e))
+    }
+    return
+  }
   if (t.release) return navigateTo(`/m/release?id=${encodeURIComponent(t.release.id)}`)
   if (!t.step) return
   const ready = t.action === 'READY_TO_START' && t.step.status === 'PENDING'
@@ -77,7 +93,7 @@ const today = factoryDay(new Date())
 const dueOf = (t: Todo) => todoDueDay(t)
 const todoStats = computed(() => dueStats(todos.value, dueOf, today))
 const todoGroups = computed(() => groupByDue(todos.value, dueOf, today))
-const woOf = (t: Todo) => t.step?.workOrderNumber ?? t.release?.workOrderNumber ?? t.plan?.workOrderNumber ?? ''
+const woOf = (t: Todo) => t.step?.workOrderNumber ?? t.release?.workOrderNumber ?? t.plan?.workOrderNumber ?? t.planTask?.workOrderNumber ?? ''
 /** 标题去掉开头的"动作："和"工单号 · "（动作、工单号单独显示在上一行） */
 function titleOf(t: Todo) {
   let s = t.title.startsWith(`${t.actionText}：`) ? t.title.slice(t.actionText.length + 1) : t.title

@@ -2,8 +2,9 @@
 /**
  * 新建 / 编辑关键物料采购行（R10）：工单、工件（可空）、物料名称、规格、数量、单位、供应商（选 QMS 供应商或手填）、
  * 需求日、承诺到货日、所属总计划节点（R14，工单总计划已发布时必选）、采购负责人（不选 = 采购部负责人）、备注；编辑时还能填延误原因、取消 / 重新启用、改到货日。
+ * presetNode：从工单详情"总计划"页签的节点"分解"打开时传入，新建时预选所属节点，日期默认取节点计划日。
  */
-const props = defineProps<{ open: boolean; line: PurchaseRow | null; workOrderNumber?: string }>()
+const props = defineProps<{ open: boolean; line: PurchaseRow | null; workOrderNumber?: string; presetNode?: { id: string; planDate: string } | null }>()
 const emit = defineEmits<{ close: []; done: [id: string] }>()
 
 const { data: workOrders } = await useWorkOrders()
@@ -57,7 +58,7 @@ watch(
             delayNote: l.delayNote ?? '',
             cancelled: l.status === 'CANCELLED',
           }
-        : { ...empty(), workOrderNumber: props.workOrderNumber },
+        : { ...empty(), workOrderNumber: props.workOrderNumber, planNodeId: props.presetNode?.id ?? null, needDate: props.presetNode?.planDate },
     )
     if (form.workOrderNumber) refreshParts()
   },

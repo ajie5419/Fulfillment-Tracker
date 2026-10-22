@@ -24,7 +24,7 @@ import { CONFIRM_CHANGE, TYPE_TEXT } from '../releases/constants'
 import { KITTING_DEPT, judgeW8, w8Summary } from '../kitting/constants'
 import { NODE_LINKS, dueWindowWhere, incompleteWhere, loadKitCounts } from '../kitting/kitting'
 import { BUSINESS_DEPT_NAME } from '../auth/departments'
-import { CONFIRM_PLAN_NODE, PLAN_REF, judgeW9, judgeW9Plan, w9ConfirmKey, w9Key, w9PlanKey, w9PlanSummary, w9Summary } from '../plan/constants'
+import { CONFIRM_PLAN_NODE, PLAN_REF, judgeSplit, judgeW9, judgeW9Plan, w9ConfirmKey, w9Key, w9PlanKey, w9PlanSummary, w9SplitKey, w9Summary } from '../plan/constants'
 import { loadPlans } from '../plan/plan'
 import { SCAN_RULES, loadOffDays, loadThresholds } from './config'
 import { closedWorkOrders } from '../workorder/active'
@@ -49,7 +49,7 @@ export { SCAN_RULES, loadOffDays, loadThresholds }
 /** 一个处在规则关注状态的对象（不一定已到阈值） */
 export interface Target {
   rule: ScanRule
-  refType: 'step' | 'unmatched' | 'issue' | 'receipt' | 'release' | 'purchase' | 'drawing' | 'node' | 'plan' | 'planNode' | 'planConfirm'
+  refType: 'step' | 'unmatched' | 'issue' | 'receipt' | 'release' | 'purchase' | 'drawing' | 'node' | 'plan' | 'planNode' | 'planConfirm' | 'planSplit'
   refId: string
   key: string
   workOrderNumber: string | null
@@ -475,6 +475,8 @@ async function collectW8(now: Date, t: Thresholds): Promise<Target[]> {
  *   交期风险（plan，refId = 工单号）：预计交期晚于 QMS 交期 → 红，一个工单一条；责任人是项目经理（红色阶梯再加项目部负责人、分管领导）。
  *   节点超时未确认（planConfirm）：发布（或改期）后还有打开的"确认总计划节点"待办，按 W5 的阈值计时（从最早一条待办起，转交不重新计时；
  *     停工日不计）；责任人是待办人，黄色起通知项目经理和责任部门负责人，红色再加项目部负责人、分管领导。确认 / 退回后消失。
+ *   节点未分解（planSplit，部门计划二次分解）：发布（发布后加的节点从加的时候）起过了 W9 的提醒小时数（默认 72，停工日不计），
+ *     节点没完成、下面没有任何部门任务 → 只提醒（REMIND）责任部门负责人，不升级；分解了（挂上任何一条记录）或节点完成后消失。
  * 都不转异常。
  */
 async function collectW9(now: Date, t: Thresholds, offDays: string[]): Promise<Target[]> {
@@ -534,6 +536,25 @@ async function collectW9(now: Date, t: Thresholds, offDays: string[]): Promise<T
           level,
           subject,
           summary: w9Summary(e, dateFieldDay(n.planDate)),
+        })
+      }
+      // 节点未分解（部门计划二次分解）：发布（发布后加的节点从加的时候）起过了 W9 提醒小时数仍没有任何部门任务 → 提醒责任部门负责人
+      const splitFrom = new Date(Math.max(+(plan.publishedAt ?? n.createdAt), +n.createdAt))
+      const splitElapsed = elapsedExcludingOffDays(splitFrom, now, offDays)
+      const split = judgeSplit(e, splitElapsed, t.W9.remindHours)
+      if (split) {
+        out.push({
+          rule: 'W9',
+          refType: 'planSplit',
+          refId: n.id,
+          key: w9SplitKey(n.id),
+          workOrderNumber: plan.workOrderNumber,
+          ownerIds: headsOf(n.dept),
+          deptNames: [dept],
+          startAt: splitFrom,
+          level: split,
+          subject,
+          summary: `计划 ${dateFieldDay(n.planDate)}，总计划发布已 ${durationText(splitElapsed)}，还没有分解部门任务（设计任务、采购行、工序、装配节点或其他任务）`,
         })
       }
       if (n.confirmStatus !== 'PENDING') continue

@@ -202,6 +202,19 @@ describe('总计划权限（R14）', () => {
     expect(canOperate(admin, 'planNodeDone', { workOrderNumber: 'WO-2', dept: 'PURCHASE' })).toBe(true)
   })
 
+  it('分解节点 planTask：节点责任部门的人（含负责人）、该工单项目经理、项目部、项目部负责人、管理员；别的部门、领导不行', () => {
+    expect(canOperate(tech, 'planTask', { workOrderNumber: 'WO-1', dept: 'TECH' })).toBe(true)
+    expect(canOperate(techHead, 'planTask', { workOrderNumber: 'WO-1', dept: 'TECH' })).toBe(true)
+    expect(canOperate(tech, 'planTask', { workOrderNumber: 'WO-1', dept: 'PRODUCTION' })).toBe(false)
+    expect(canOperate(pm, 'planTask', { workOrderNumber: 'WO-1', dept: 'PRODUCTION' })).toBe(true)
+    expect(canOperate(pm, 'planTask', { workOrderNumber: 'WO-2', dept: 'PRODUCTION' })).toBe(false)
+    expect(canOperate(project, 'planTask', { workOrderNumber: 'WO-2', dept: 'PRODUCTION' })).toBe(true)
+    expect(canOperate(projectHead, 'planTask', { workOrderNumber: 'WO-2', dept: 'QUALITY' })).toBe(true)
+    expect(canOperate(projectDeptHead, 'planTask', { workOrderNumber: 'WO-2', dept: 'QUALITY' })).toBe(true)
+    expect(canOperate(leader, 'planTask', { workOrderNumber: 'WO-2', dept: 'QUALITY' })).toBe(false)
+    expect(canOperate(admin, 'planTask', { workOrderNumber: 'WO-2', dept: 'QUALITY' })).toBe(true)
+  })
+
   it('permissionFlags 带 plan / planTemplate（项目经理靠按工单判断，不在标志里）', () => {
     expect(permissionFlags(project)).toMatchObject({ plan: true, planTemplate: false })
     expect(permissionFlags(projectHead)).toMatchObject({ plan: true, planTemplate: true })

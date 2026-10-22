@@ -54,3 +54,19 @@ export const templateBody = z
       .max(60, '模板最多 60 个节点'),
   })
   .strict()
+
+// ───── 部门计划二次分解：其他任务、挂工序 ─────
+const taskFields = {
+  name: z.string().trim().min(1, '请填写任务名称').max(191, '任务名称最多 191 字'),
+  ownerId: z.string().min(1, '请选择负责人').max(64),
+  planDate: day,
+  note: z
+    .string()
+    .trim()
+    .max(500, '备注最多 500 字')
+    .nullish()
+    .transform((v) => (v === undefined ? undefined : v || null)),
+}
+export const newTaskBody = z.object(taskFields).strict()
+export const patchTaskBody = z.object(taskFields).partial().strict()
+export const linkStepsBody = z.object({ stepIds: z.array(z.string().min(1).max(191)).min(1, '请选择工序').max(500, '一次最多 500 道工序') }).strict()

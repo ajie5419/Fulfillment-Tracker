@@ -734,6 +734,29 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(opts.published).toBe(true)
     expect(opts.nodes).toHaveLength(11)
     expect((await get(`/api/plan/options?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
+
+    // 部门计划二次分解：其他任务建 / 改 / 删限责任部门的人、项目经理、项目部、管理员；负责人本人能标完成；挂工序按编辑工序的权限
+    expect((await send(buyer, 'POST', `/api/plan/nodes/${design.id}/tasks`, { name: '越权分解', ownerId: 'h-buyer', planDate: later(10) })).status).toBe(403)
+    expect((await send(tech, 'POST', `/api/plan/nodes/${design.id}/tasks`, { name: '', ownerId: 'h-buyer', planDate: later(10) })).status).toBe(400)
+    const made = await send(tech, 'POST', `/api/plan/nodes/${design.id}/tasks`, { name: '工艺文件', ownerId: 'h-buyer', planDate: later(10) })
+    expect(made.status).toBe(200)
+    const taskId = ((await made.json()) as { id: string }).id
+    expect((await send(buyer, 'PATCH', `/api/plan/tasks/${taskId}`, { name: '改名' })).status).toBe(403)
+    expect((await send(pm, 'PATCH', `/api/plan/tasks/${taskId}`, { name: '工艺文件编制' })).status).toBe(200)
+    const buyerTodos = (await (await get('/api/todos', buyer)).json()) as { action: string; planTask: { id: string } | null }[]
+    expect(buyerTodos.find((t) => t.action === 'DO_PLAN_TASK')?.planTask?.id).toBe(taskId)
+    expect((await send(buyer, 'POST', `/api/plan/tasks/${taskId}/complete`, {})).status).toBe(200)
+    expect((await send(buyer, 'POST', `/api/plan/tasks/${taskId}/undo-complete`, {})).status).toBe(200)
+    expect((await send(buyer, 'DELETE', `/api/plan/tasks/${taskId}`)).status).toBe(403)
+    expect((await send(tech, 'DELETE', `/api/plan/tasks/${taskId}`)).status).toBe(200)
+    expect((await get(`/api/plan/nodes/${cut.id}/steps`, pm)).status).toBe(200)
+    expect((await get(`/api/plan/nodes/${cut.id}/steps`, buyer)).status).toBe(403)
+    // 项目计划一览：只列看得到的工单
+    const listed = (await (await get('/api/plan/list', pm)).json()) as { rows: { workOrderNumber: string }[] }
+    expect(listed.rows.map((x) => x.workOrderNumber)).toContain(MINE)
+    expect(listed.rows.map((x) => x.workOrderNumber)).not.toContain(OTHER)
+    expect((await send(pm, 'POST', `/api/plan/nodes/${cut.id}/steps`, { stepIds: [] })).status).toBe(400)
+    expect((await send(buyer, 'POST', `/api/plan/nodes/${cut.id}/steps`, { stepIds: ['x'] })).status).toBe(403)
   })
   it('工单详情（前端改版第一轮）：可见工单返回总计划节点 + 挂节点记录 + 未挂计数，不含金额；项目经理看别人的工单 403；不存在 404；列表带总计划节点', async () => {
     const pm = await login('h-pm')

@@ -956,10 +956,38 @@ model PlanNode {
   purchaseLines   PurchaseLine[]
   routeSteps      RouteStep[]
   assemblyNodes   AssemblyNode[]
+  planTasks       PlanTask[]
 
   @@index([workOrderNumber, seq])
   @@index([confirmStatus])
   @@map("plan_node")
+}
+
+/**
+ * 部门计划二次分解（10-22）："其他任务"——总计划节点下、设计任务 / 采购行 / 工序 / 装配节点覆盖不到的部门工作
+ * （如合同评审、BOM 编制、工艺文件、调试、出厂检验、发运准备）。只分一级，必须挂节点；节点删了任务一起删。
+ * 完成 = doneDate 有值。建好后给负责人发"完成部门任务"待办（todo.refType = planTask，dueAt = 计划完成日），完成时关掉。
+ * 计划完成日、完成日：日期字段，存当天 UTC 零点。
+ */
+model PlanTask {
+  id              String    @id @default(cuid())
+  workOrderNumber String    @db.VarChar(64)
+  planNodeId      String
+  name            String    @db.VarChar(191)
+  ownerId         String    @db.VarChar(64)
+  planDate        DateTime
+  doneDate        DateTime?
+  doneBy          String?   @db.VarChar(64)
+  note            String?   @db.VarChar(500)
+  createdBy       String?   @db.VarChar(64)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  planNode        PlanNode  @relation(fields: [planNodeId], references: [id], onDelete: Cascade)
+
+  @@index([planNodeId])
+  @@index([workOrderNumber])
+  @@index([ownerId])
+  @@map("plan_task")
 }
 
 /**

@@ -5,14 +5,15 @@
  *   工单已发布总计划时，新建必须选节点（系统自动生成的记录——BOM 导入、套模板、复制路线、Excel 导入——不走这里，不受影响）；
  *   已挂了节点的记录在已发布的工单上不能改成"不挂"（可以改挂别的节点）；老数据（没挂）照旧可以不挂；
  *   部门日期晚于节点计划日：照样保存，返回提示（planWarning），总计划页标红。
- * 只读 plan_node / work_order_plan，不加锁（写记录时外键检查会给节点行加共享锁）。
+ * 只读 plan_node / work_order_plan（另清该节点"未分解"提醒），不加锁（写记录时外键检查会给节点行加共享锁）。
  */
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { FlowError } from '../flow/errors'
-import { lateWarning } from './constants'
+import { clearAlertKeys } from '../alerts/clear'
+import { lateWarning, w9SplitKey } from './constants'
 
-type Db = Pick<Prisma.TransactionClient, 'planNode' | 'workOrderPlan'>
+type Db = Pick<Prisma.TransactionClient, 'planNode' | 'workOrderPlan' | 'alert'>
 
 export interface LinkedNode {
   id: string
@@ -27,6 +28,7 @@ export interface LinkedNode {
  *   creating：新建（已发布的工单必须选）；
  *   oldNodeId：编辑时原来挂的节点。
  * 返回最终挂的节点（不挂为 null）和要写进记录的值（undefined = 不改）。
+ * 挂上节点即算节点已分解：同一事务里清掉该节点的"未分解"提醒（记录写失败会一起回滚）。
  */
 export async function resolvePlanNode(
   db: Db,
@@ -38,6 +40,7 @@ export async function resolvePlanNode(
   if (id) {
     const n = await db.planNode.findUnique({ where: { id }, select: { id: true, name: true, planDate: true, workOrderNumber: true } })
     if (!n || n.workOrderNumber !== workOrderNumber) throw new FlowError('总计划节点不存在或不属于该工单')
+    await clearAlertKeys(db, [w9SplitKey(n.id)])
     return { node: { id: n.id, name: n.name, planDay: n.planDate.toISOString().slice(0, 10) }, value: id }
   }
   const published = async () =>
