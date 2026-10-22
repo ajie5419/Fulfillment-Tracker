@@ -10,6 +10,8 @@
  *   原"领导总览"并入本页：领导、项目部负责人、管理员在汇总下方多看到一块（BoardLeaderPanel），旧地址 /overview 跳这里；
  *   全站只用"预计拖期 / 有风险 / 正常 / 未建总计划"一套分组，表格视图第一列也改成这套（不再显示红 / 黄 / 绿）；
  *   原菜单"工单详情"入口页去掉，改为工具栏里搜工单直接进详情。
+ * 只看要关注的（zhao 10-22）：只显示"预计拖期""有风险"的工单，"正常"和"未建总计划"的不显示（只给一行数量，点去"项目计划"看）；
+ *   三种视图都按这个口径。
  * 已完工 / 已取消的工单（zhao 10-22）：默认不显示；工具栏"显示已完工"打开后（?closed=1）在最下面单列一组，表格 / 按项目经理里也列出，
  *   但不进 4 个分组、汇总卡和"源头延误在哪个部门"。工单搜索默认也只搜在做的，打开开关后连已完工的一起搜。
  */
@@ -61,6 +63,8 @@ const groupOf = (r: Row): BoardGroup => boardGroup(r)
 /** 在做的工单（分组、汇总只算它们）；已完工 / 已取消的单列 */
 const activeRows = computed(() => data.value.rows.filter((r) => !r.closed))
 const closedRows = computed(() => data.value.rows.filter((r) => r.closed))
+/** 要关注的：预计拖期 + 有风险（正常、未建总计划的不在本页显示） */
+const focusRows = computed(() => activeRows.value.filter((r) => { const g = groupOf(r); return g === 'LATE' || g === 'RISK' }))
 const grouped = computed(() => {
   const g: Record<BoardGroup, Row[]> = { LATE: [], RISK: [], OK: [], NO_PLAN: [] }
   for (const r of activeRows.value) g[groupOf(r)].push(r)
@@ -68,18 +72,17 @@ const grouped = computed(() => {
   g.LATE.sort((a, b) => (b.delayDays ?? 0) - (a.delayDays ?? 0))
   return g
 })
-const COLUMNS: { key: Exclude<BoardGroup, 'NO_PLAN'>; icon: 'alert' | 'warn' | 'check'; tone: 'late' | 'risk' | 'done' }[] = [
+const COLUMNS: { key: 'LATE' | 'RISK'; icon: 'alert' | 'warn'; tone: 'late' | 'risk' }[] = [
   { key: 'LATE', icon: 'alert', tone: 'late' },
   { key: 'RISK', icon: 'warn', tone: 'risk' },
-  { key: 'OK', icon: 'check', tone: 'done' },
 ]
 const GROUP_TONE: Record<BoardGroup, 'late' | 'risk' | 'done' | 'none'> = { LATE: 'late', RISK: 'risk', OK: 'done', NO_PLAN: 'none' }
-const GROUPS = (['LATE', 'RISK', 'OK', 'NO_PLAN'] as const).map((key) => ({ key, tone: GROUP_TONE[key] }))
+const GROUPS = (['LATE', 'RISK'] as const).map((key) => ({ key, tone: GROUP_TONE[key] }))
 const deptItems = computed(() => data.value.sourceByDept.map((d) => ({ key: d.dept, label: d.deptText, value: d.nodes })))
 
 const byPm = computed(() => {
   const m = new Map<string, Row[]>()
-  for (const r of [...activeRows.value, ...closedRows.value]) {
+  for (const r of [...focusRows.value, ...closedRows.value]) {
     const k = r.projectManagerName ?? '未设置项目经理'
     m.set(k, [...(m.get(k) ?? []), r])
   }
@@ -133,7 +136,7 @@ const enc = encodeURIComponent
     <!-- 汇总 -->
     <div class="summary">
       <UiStatCard v-for="c in COLUMNS" :key="c.key" :label="BOARD_GROUP_TEXT[c.key]" :value="grouped[c.key].length" unit="个工单" :tone="c.tone" :icon="c.icon" accent />
-      <UiStatCard :label="BOARD_GROUP_TEXT.NO_PLAN" :value="grouped.NO_PLAN.length" unit="个工单" tone="none" icon="ring" accent />
+      <UiStatCard label="其余工单（不在本页显示）" :value="grouped.OK.length + grouped.NO_PLAN.length" unit="个工单" tone="none" icon="ring" :sub="`${BOARD_GROUP_TEXT.OK} ${grouped.OK.length} · ${BOARD_GROUP_TEXT.NO_PLAN} ${grouped.NO_PLAN.length}，在项目计划里看`" to="/plan" accent />
       <UiSectionCard padding="tight" class="dept-card">
         <div class="dept-title">源头延误在哪个部门<span class="ft-muted">（节点数）</span></div>
         <UiBarList :items="deptItems" compact empty="没有源头延误的节点" />
@@ -146,7 +149,7 @@ const enc = encodeURIComponent
     <a-spin :spinning="pending">
       <!-- 按状态分组 -->
       <template v-if="view === 'status'">
-        <a-empty v-if="!activeRows.length" description="没有在做的工单" class="empty" />
+        <a-empty v-if="!focusRows.length" description="没有预计拖期或有风险的工单" class="empty" />
         <div v-else class="columns">
           <section v-for="c in COLUMNS" :key="c.key" class="col">
             <h2 class="col-title"><UiStatusIcon :kind="c.icon" :tone="c.tone" />{{ BOARD_GROUP_TEXT[c.key] }} · {{ grouped[c.key].length }}</h2>
@@ -154,12 +157,6 @@ const enc = encodeURIComponent
             <BoardWoCard v-for="r in grouped[c.key]" :key="r.workOrderNumber" :row="r" :group="c.key" />
           </section>
         </div>
-        <section v-if="grouped.NO_PLAN.length" class="noplan-sec">
-          <h2 class="col-title"><UiStatusIcon kind="ring" />{{ BOARD_GROUP_TEXT.NO_PLAN }} · {{ grouped.NO_PLAN.length }}</h2>
-          <div class="noplan-grid">
-            <BoardWoCard v-for="r in grouped.NO_PLAN" :key="r.workOrderNumber" :row="r" group="NO_PLAN" />
-          </div>
-        </section>
         <section v-if="closedRows.length" class="noplan-sec">
           <h2 class="col-title"><UiStatusIcon kind="check" tone="none" />已完工 / 已取消 · {{ closedRows.length }}</h2>
           <div class="noplan-grid">
@@ -170,7 +167,7 @@ const enc = encodeURIComponent
 
       <!-- 按项目经理 -->
       <template v-else-if="view === 'pm'">
-        <a-empty v-if="!data.rows.length" description="没有可见的工单" class="empty" />
+        <a-empty v-if="!byPm.length" description="没有预计拖期或有风险的工单" class="empty" />
         <section v-for="[pm, rows] in byPm" :key="pm" class="pm-group">
           <h2 class="col-title">{{ pm }} · {{ rows.length }}</h2>
           <div class="noplan-grid">
@@ -186,8 +183,8 @@ const enc = encodeURIComponent
           <span v-if="closedRows.length"><UiStatusTag tone="none">已完工 / 已取消 {{ closedRows.length }}</UiStatusTag></span>
           <span class="ft-muted">有风险 = 有源头延误节点、活动预警或超期异常</span>
         </div>
-        <a-table :columns="columns" :data-source="[...activeRows, ...closedRows]" row-key="workOrderNumber" size="middle" :pagination="false" :scroll="{ x: 1500 }">
-          <template #emptyText><a-empty description="没有可见的工单" /></template>
+        <a-table :columns="columns" :data-source="[...focusRows, ...closedRows]" row-key="workOrderNumber" size="middle" :pagination="false" :scroll="{ x: 1500 }">
+          <template #emptyText><a-empty description="没有预计拖期或有风险的工单" /></template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'color'">
               <UiStatusTag v-if="record.closed" tone="none">{{ woStatusText(record.status) }}</UiStatusTag>
@@ -252,9 +249,9 @@ const enc = encodeURIComponent
 .tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .sync-time { font-size: 12px; }
 .sync-error { margin-bottom: 16px; }
-.summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.3fr); gap: 16px; margin-bottom: 20px; }
+.summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.3fr); gap: 16px; margin-bottom: 20px; }
 .dept-title { font-size: 13px; color: var(--ft-text-2); margin-bottom: 6px; }
-.columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
 .col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .col-title { display: flex; align-items: center; gap: 6px; margin: 0 0 2px; font-size: 15px; font-weight: 600; color: var(--ft-text); }
 .col-empty { padding: 12px 4px; font-size: 13px; }
@@ -269,7 +266,7 @@ const enc = encodeURIComponent
 .warn { color: var(--ft-late); font-weight: 600; }
 .small { font-size: 12px; }
 @media (max-width: 1279px) {
-  .summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .dept-card { grid-column: 1 / -1; }
 }
 @media (max-width: 991px) {
