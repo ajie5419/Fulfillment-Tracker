@@ -1,7 +1,7 @@
 /**
  * 项目日历（zhao 10-21）：真实 MySQL 上调服务层，固定 now = 2026-10-21（周三）。
  * 覆盖：已发布总计划按最后一个节点（发运）算计划 / 实际 / 逾期台数；草稿、没有总计划按 QMS 交期计入"未排总计划"；
- * 取消、删除的工单不算；工作台卡片的本周 / 下周 / 本月。
+ * 取消、删除的工单不算；QMS 已完工的：有总计划按已完成算（不判逾期），没有总计划的不进日历；工作台卡片的本周 / 下周 / 本月。
  * 运行：TEST_DATABASE_URL=mysql://…/fulfillment_test pnpm test:integration
  */
 import { execFileSync } from 'node:child_process'
@@ -52,6 +52,8 @@ describe.skipIf(!DB)('项目日历', () => {
         wo('C-D', 5, '2026-11-10'), // 没有总计划 → 按 QMS 交期，11 月
         wo('C-E', 4, '2026-10-25', { status: 'CANCELLED' }),
         wo('C-F', 4, '2026-10-25', { isDeleted: true }),
+        wo('C-G', 6, '2026-12-20', { status: 'COMPLETED' }), // 已发布：发运 12-10 没点完成，但 QMS 已完工 → 已完成
+        wo('C-H', 7, '2026-12-15', { status: 'COMPLETED' }), // 没有总计划、QMS 已完工 → 不进日历
       ],
     })
     await db.workOrderPlan.createMany({
@@ -59,6 +61,7 @@ describe.skipIf(!DB)('项目日历', () => {
         { workOrderNumber: 'C-A', status: 'PUBLISHED', publishedAt: NOW },
         { workOrderNumber: 'C-B', status: 'PUBLISHED', publishedAt: NOW },
         { workOrderNumber: 'C-C', status: 'DRAFT' },
+        { workOrderNumber: 'C-G', status: 'PUBLISHED', publishedAt: NOW },
       ],
     })
     const node = (id: string, workOrderNumber: string, seq: number, name: string, dept: 'TECH' | 'PROJECT', planDate: string) => ({ id, workOrderNumber, seq, name, dept, planDate: D(planDate), baselineDate: D(planDate) })
@@ -68,6 +71,7 @@ describe.skipIf(!DB)('项目日历', () => {
         node('n-a2', 'C-A', 2, '发运', 'PROJECT', '2026-10-20'),
         node('n-b1', 'C-B', 1, '发运', 'PROJECT', '2026-10-28'),
         node('n-c1', 'C-C', 1, '发运', 'PROJECT', '2026-10-29'),
+        node('n-g1', 'C-G', 1, '发运', 'PROJECT', '2026-12-10'),
       ],
     })
     await plan.completeNode('n-a1', D('2026-10-04'), 'u-test', NOW)
@@ -110,6 +114,14 @@ describe.skipIf(!DB)('项目日历', () => {
     expect(r.summary.planned).toEqual({ orders: 1, units: 2 })
     // B 计划在下周、实际在 10-15（第 42 周），本周两头都不沾
     expect(r.completions.map((c) => c.workOrderNumber)).toEqual(['C-A'])
+  })
+
+  it('QMS 已完工：有总计划按已完成算（没有落库完成日，不计实际台数），没有总计划的不进日历', async () => {
+    const r = await cal.getCalendar('month', '2026-12-01', NOW)
+    expect(r.completions.map((c) => [c.workOrderNumber, c.state])).toEqual([['C-G', 'DONE']])
+    expect(r.summary.planned).toEqual({ orders: 1, units: 6 })
+    expect(r.summary.actual).toEqual({ orders: 0, units: 0 })
+    expect(r.summary.noPlan).toEqual({ orders: 0, units: 0 })
   })
 
   it('工作台卡片：本周 / 下周 / 本月', async () => {

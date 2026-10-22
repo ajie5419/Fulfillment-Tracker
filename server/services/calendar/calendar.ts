@@ -9,6 +9,7 @@ import { prisma } from '../../utils/prisma'
 import { dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { loadPlans } from '../plan/plan'
 import { stableDoneDay } from './rules'
+import { isClosedWorkOrder } from '../../../shared/status'
 import {
   type CalendarView,
   type CompletionLike,
@@ -36,13 +37,17 @@ export interface Completion extends CompletionLike {
   state: CompletionState
 }
 
-/** 全部有效工单（没删除、没取消）的完成情况 */
+/**
+ * 全部有效工单（没删除、没取消）的完成情况。
+ * QMS 已完工的工单（zhao 10-22）：有已发布总计划的照常算（历史期的计划 / 实际完成台数还要用），总计划里发运节点没点完成的按"已完成"算
+ * （和自动完成一样，没有落库完成日就不计入实际完成台数，也不再判逾期）；没有总计划的（多是上系统前的老工单）不进日历。
+ */
 async function loadAll(now: Date) {
   const today = shanghaiDay(now)
   const [wos, plans] = await Promise.all([
     prisma.qmsWorkOrder.findMany({
       where: { isDeleted: false, status: { not: 'CANCELLED' } },
-      select: { workOrderNumber: true, projectName: true, customerName: true, quantity: true, deliveryDate: true },
+      select: { workOrderNumber: true, projectName: true, customerName: true, quantity: true, deliveryDate: true, status: true },
       orderBy: [{ deliveryDate: 'asc' }, { workOrderNumber: 'asc' }],
     }),
     loadPlans({ publishedOnly: true }, now),
@@ -50,6 +55,8 @@ async function loadAll(now: Date) {
   const completions: Completion[] = []
   for (const w of wos) {
     const plan = plans.get(w.workOrderNumber)
+    const completed = isClosedWorkOrder(w.status)
+    if (completed && !plan) continue
     const deliveryDay = dateFieldDay(w.deliveryDate)
     const last = plan?.nodes.at(-1)
     const lastEst = plan && last ? plan.forecast.nodes.find((x) => x.id === last.id) : undefined
@@ -59,7 +66,7 @@ async function loadAll(now: Date) {
         ...base,
         planDay: dateFieldDay(last.planDate),
         source: 'PLAN' as const,
-        done: lastEst.done,
+        done: lastEst.done || completed,
         // 只认落库的完成日（见 rules.ts）；自动完成但日期会变的算已完成、不计入实际完成台数
         actualDay: stableDoneDay(lastEst, plan.tasks.filter((t) => t.nodeId === last.id).map((t) => t.facts)),
         expectedDay: lastEst.expectedDay,

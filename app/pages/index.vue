@@ -165,7 +165,7 @@ const filterTo = (f: Filter) => ({ query: { ...route.query, f: active.value === 
 
 const LEVEL_LABEL: Record<AlertLevelKey, string> = { RED: '红色', YELLOW: '黄色', REMIND: '提醒' }
 const toneIcon = (t: Tone) => (t === 'late' ? 'alert' : t === 'risk' ? 'warn' : 'dot')
-/** 待办的"查看"跳转：工序 → 工件与工序链；发放 → 发放单；总计划 → 总计划页 */
+/** 待办的"查看"跳转：工序 → 工件与工序链；发放 → 发放单；总计划 → 工单详情的总计划页签 */
 function todoLink(t: Todo): string | null {
   if (t.plan) return t.plan.link
   if (t.release) return `/releases?id=${encodeURIComponent(t.release.id)}`

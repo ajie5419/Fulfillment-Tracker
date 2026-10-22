@@ -3,6 +3,8 @@
  * 日期一律用 'YYYY-MM-DD' 字符串比较；"今天"按工厂时区 Asia/Shanghai 算，不用浏览器本地时区。
  */
 
+import { workBucket } from './workbench'
+
 export const FACTORY_TZ = 'Asia/Shanghai'
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 const DAY_MS = 86_400_000
@@ -18,23 +20,21 @@ export function addDays(day: string, n: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10)
 }
 
-/** 本周最后一天（周日）；周一为一周第一天 */
-export function weekEndDay(day: string): string {
-  const dow = new Date(`${day}T00:00:00Z`).getUTCDay() // 0 = 周日
-  return addDays(day, dow === 0 ? 0 : 7 - dow)
-}
+/** 本周最后一天（周日）；周一为一周第一天。与电脑端工作台共用一份实现（功能重复梳理第三批） */
+export { weekEndDay } from './workbench'
 
 /** 截止日分组：已过期 / 今天 / 本周（明天到周日）/ 以后 / 未定截止日 */
 export type DueGroup = 'OVERDUE' | 'TODAY' | 'WEEK' | 'LATER' | 'NONE'
 export const DUE_GROUP_ORDER: DueGroup[] = ['OVERDUE', 'TODAY', 'WEEK', 'LATER', 'NONE']
 export const DUE_GROUP_TEXT: Readonly<Record<DueGroup, string>> = { OVERDUE: '已过期', TODAY: '今天', WEEK: '本周', LATER: '以后', NONE: '未定截止日' }
 
+/**
+ * 分组规则只有一份：直接用电脑端工作台的 workBucket（shared/workbench.ts），这里只把 NO_DUE 换成手机端的 NONE。
+ * 功能重复梳理第三批（zhao 10-22）：原来手机端自己又写了一遍，改规则容易只改一边。
+ */
 export function dueGroup(due: string | null, today: string): DueGroup {
-  if (!due) return 'NONE'
-  if (due < today) return 'OVERDUE'
-  if (due === today) return 'TODAY'
-  if (due <= weekEndDay(today)) return 'WEEK'
-  return 'LATER'
+  const b = workBucket({ dueDay: due, kind: 'todo' }, today)
+  return b === 'NO_DUE' ? 'NONE' : b
 }
 
 /** 按截止日分组，只返回有内容的组，组内按截止日从早到晚（同日保持原顺序） */

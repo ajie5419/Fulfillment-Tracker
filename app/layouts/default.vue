@@ -22,10 +22,9 @@ const groups = computed(() => {
       { key: '/risks', label: '风险' },
     ]) },
     // 功能重复梳理第一批：领导总览并入项目总览（有权限的人在项目总览汇总下方多看到一块），
-    // "工单详情"入口页去掉（项目总览顶部搜工单、卡片点进详情），旧地址 /overview、/wo 跳项目总览；/templates 不在菜单里但保留（非管理员只读查看）
+    // "工单详情"入口页去掉（项目总览顶部搜工单、卡片点进详情）；第二批：总计划并进工单详情的"总计划"页签（/plan 跳过去），旧地址 /overview、/wo 跳项目总览；/templates 不在菜单里但保留（非管理员只读查看）
     { title: '项目', items: show([
       { key: '/board', label: '项目总览' },
-      { key: '/plan', label: '总计划' },
     ]) },
     { title: '部门工作台', items: show([
       { key: '/drawings', label: '设计任务', sections: ['tech'] },

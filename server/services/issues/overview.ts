@@ -65,7 +65,7 @@ export async function getOverview(now = new Date()) {
     byDept.set(dept, row)
   }
 
-  // 总计划（R14）：只算看板上有的工单（QMS 里还在的）
+  // 总计划（R14）：只算看板上有的工单（QMS 里还在、没完工 / 取消的）
   const onBoard = new Set(board.rows.map((r) => r.workOrderNumber))
   const deptDelayed = new Map(BUSINESS_DEPTS.map((d) => [d, { dept: d, deptText: BUSINESS_DEPT_NAME[d], delayed: 0, open: 0 }]))
   for (const p of plans.values()) {

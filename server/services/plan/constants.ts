@@ -308,7 +308,7 @@ export function w9PlanSummary(deliveryDay: string, f: Pick<PlanForecast, 'expect
 /** 部门日期晚于节点日的提示（保存时返回给页面；只提示不拦截） */
 export function lateWarning(what: string, recordDay: string | null, node: { name: string; planDay: string } | null): string | null {
   if (!node || !recordDay || recordDay <= node.planDay) return null
-  return `${what} ${recordDay} 晚于总计划节点"${node.name}"的计划日 ${node.planDay}（晚 ${dayDiff(node.planDay, recordDay)} 天），已保存，总计划页会标红`
+  return `${what} ${recordDay} 晚于总计划节点"${node.name}"的计划日 ${node.planDay}（晚 ${dayDiff(node.planDay, recordDay)} 天），已保存，总计划里会标红`
 }
 
 export type { BusinessDept }

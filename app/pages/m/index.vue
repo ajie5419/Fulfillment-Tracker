@@ -32,8 +32,8 @@ type Todo = (typeof todos.value)[number]
 
 /** 安排发出 → 发出登记页（预填该步骤）；安排开工 → 确认后开工；签收 / 确认变更影响 → 手机签收页；可以开工 → 按第一道工序的方式发出或开工 */
 async function open(t: Todo) {
-  // 确认总计划节点（R14）：总计划页只有电脑端
-  if (t.plan) return showToast('确认总计划节点请在电脑端“总计划”页处理')
+  // 确认总计划节点（R14）：总计划只有电脑端（工单详情的“总计划”页签）
+  if (t.plan) return showToast('确认总计划节点请在电脑端工单详情的“总计划”页签处理')
   if (t.release) return navigateTo(`/m/release?id=${encodeURIComponent(t.release.id)}`)
   if (!t.step) return
   const ready = t.action === 'READY_TO_START' && t.step.status === 'PENDING'

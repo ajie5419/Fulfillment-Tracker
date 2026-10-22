@@ -97,6 +97,23 @@ export function compactIndexes(count: number, max = 7, keep: number | null = nul
   return out
 }
 
+// ───────────── 工单（QMS）状态 ─────────────
+
+/**
+ * QMS 工单状态（qms_work_order.status 原样存 QMS 的值）。
+ * 已完工 / 已取消 = "已关闭"：同步照常全部保存（查历史用），但项目总览、工单下拉、设置里的工单列表、
+ * 进度类预警（W2/W3/W5–W9）默认不算它们（zhao 10-22 定"默认隐藏，可开关查看"）。
+ * 只按"是不是已关闭"排除，QMS 以后多出别的状态值也照样显示，不会被误藏。
+ */
+export const CLOSED_WO_STATUSES = ['COMPLETED', 'CANCELLED'] as const
+export const WO_STATUS_TEXT: Readonly<Record<string, string>> = { OPEN: '未开工', IN_PROGRESS: '进行中', COMPLETED: '已完工', CANCELLED: '已取消' }
+export function isClosedWorkOrder(status: string | null | undefined): boolean {
+  return !!status && (CLOSED_WO_STATUSES as readonly string[]).includes(status.toUpperCase())
+}
+export function woStatusText(status: string | null | undefined): string {
+  return status ? (WO_STATUS_TEXT[status.toUpperCase()] ?? status) : '—'
+}
+
 // ───────────── 项目总览分组 ─────────────
 
 /** 项目总览按状态分组：预计拖期 / 有风险 / 正常 / 未建总计划（没有已发布的总计划） */

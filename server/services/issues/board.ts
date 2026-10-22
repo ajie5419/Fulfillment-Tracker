@@ -33,7 +33,8 @@ import { NODE_LINKS, loadKitCounts } from '../kitting/kitting'
 import { kitPercent } from '../kitting/constants'
 import { dateFieldDay } from '../alerts/rules'
 import { pickMainAssembly } from '../workorder/rules'
-import { nodeState, stuckNode } from '../../../shared/status'
+import { isClosedWorkOrder, nodeState, stuckNode } from '../../../shared/status'
+import { ACTIVE_WO_WHERE } from '../workorder/active'
 import { OPEN_STATUSES } from './constants'
 
 export type BoardColor = 'RED' | 'YELLOW' | 'GREEN'
@@ -79,11 +80,15 @@ function sourceByDept(rows: { planNodes: { dept: keyof typeof BUSINESS_DEPT_NAME
   return [...m.entries()].map(([dept, nodes]) => ({ dept, deptText: BUSINESS_DEPT_NAME[dept], nodes })).sort((a, b) => b.nodes - a.nodes)
 }
 
-export async function getBoard(visibleWorkOrders: string[] | undefined, now = new Date()) {
+/**
+ * withClosed：另把已完工 / 已取消的工单也列出（项目总览"显示已完工"开关）。
+ * 这些行 closed = true，不计入 summary、sourceByDept；默认（领导那一块、看板）只算在做的工单，见 workorder/active.ts。
+ */
+export async function getBoard(visibleWorkOrders: string[] | undefined, now = new Date(), opts: { withClosed?: boolean } = {}) {
   const woWhere = visibleWorkOrders ? { in: visibleWorkOrders } : undefined
   const [workOrders, exts, outSteps, issues, alerts, sync, thresholds, offDays, unsigned, shortage, drawingOverdue] = await Promise.all([
     prisma.qmsWorkOrder.findMany({
-      where: { isDeleted: false, ...(woWhere ? { workOrderNumber: woWhere } : {}) },
+      where: { ...(opts.withClosed ? { isDeleted: false } : ACTIVE_WO_WHERE), ...(woWhere ? { workOrderNumber: woWhere } : {}) },
       orderBy: [{ deliveryDate: 'asc' }, { workOrderNumber: 'asc' }],
     }),
     prisma.workOrderExt.findMany(),
@@ -169,6 +174,8 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
       customerName: w.customerName,
       deliveryDate: w.deliveryDate,
       status: w.status,
+      /** 已完工 / 已取消（只在 withClosed 时出现）；不进分组和汇总 */
+      closed: isClosedWorkOrder(w.status),
       projectManagerId: pm,
       projectManagerName: pm ? (names.user.get(pm) ?? pm) : null,
       color,
@@ -199,13 +206,14 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
   })
   const rank = { RED: 0, YELLOW: 1, GREEN: 2 } as const
   rows.sort((a, b) => rank[a.color] - rank[b.color] || +a.deliveryDate - +b.deliveryDate)
+  const active = rows.filter((r) => !r.closed)
   return {
     lastSyncAt: sync.lastSyncAt,
     syncOldest: sync.oldest,
     syncErrors: sync.errors,
     /** 源头延误节点按责任部门计数（项目总览"源头延误在哪个部门"） */
-    sourceByDept: sourceByDept(rows),
-    summary: { red: rows.filter((r) => r.color === 'RED').length, yellow: rows.filter((r) => r.color === 'YELLOW').length, green: rows.filter((r) => r.color === 'GREEN').length },
+    sourceByDept: sourceByDept(active),
+    summary: { red: active.filter((r) => r.color === 'RED').length, yellow: active.filter((r) => r.color === 'YELLOW').length, green: active.filter((r) => r.color === 'GREEN').length },
     rows,
   }
 }
