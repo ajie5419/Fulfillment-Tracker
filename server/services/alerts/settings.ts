@@ -6,14 +6,16 @@ import { FlowError } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { type RuleThreshold, type ScanRule, dateFieldDay } from './rules'
 import { SCAN_RULES, loadThresholds } from './scan'
+import { ACTIVE_WO_WHERE } from '../workorder/active'
 
 export async function getSettings() {
   const [thresholds, offDays, roles, workOrders, exts, depts] = await Promise.all([
     loadThresholds(),
     prisma.offDay.findMany({ orderBy: { date: 'asc' } }),
     prisma.notifyRole.findMany({ orderBy: [{ role: 'asc' }, { department: 'asc' }] }),
+    // 只列在做的工单（已完工 / 已取消的不用再指定项目经理）
     prisma.qmsWorkOrder.findMany({
-      where: { isDeleted: false },
+      where: ACTIVE_WO_WHERE,
       orderBy: [{ deliveryDate: 'asc' }, { workOrderNumber: 'asc' }],
       select: { workOrderNumber: true, projectName: true, customerName: true },
     }),

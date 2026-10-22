@@ -4,8 +4,9 @@
  *   工单号 · 产品；项目经理 · 交期；右上角拖期天数（或"按期""节点 x/y"）；
  *   总计划节点圆点；"卡在：节点名（部门）"= 最早的源头延误节点；底部小标签：红 / 黄预警、异常、缺件、齐套率。
  * 未建总计划的工单（group = NO_PLAN）只显示一行"还没建总计划 · 去生成"。
+ * 已完工 / 已取消的工单（row.closed，只在"显示已完工"打开时出现）只显示工单、交期和 QMS 状态，不显示预警、拖期。
  */
-import type { BoardGroup, NodeState } from '#shared/status'
+import { type BoardGroup, type NodeState, woStatusText } from '#shared/status'
 
 const props = defineProps<{
   group: BoardGroup
@@ -13,6 +14,8 @@ const props = defineProps<{
     workOrderNumber: string
     projectName: string | null
     customerName: string
+    status?: string
+    closed?: boolean
     deliveryDate: string | Date
     projectManagerName: string | null
     delayDays: number | null
@@ -38,7 +41,14 @@ const product = computed(() => r.value.projectName ?? r.value.customerName)
 </script>
 
 <template>
-  <div v-if="group === 'NO_PLAN'" class="card noplan">
+  <NuxtLink v-if="r.closed" :to="to" class="card closed">
+    <div class="top">
+      <span class="title">{{ r.workOrderNumber }}<template v-if="product"> · {{ product }}</template></span>
+      <UiStatusTag tone="none">{{ woStatusText(r.status) }}</UiStatusTag>
+    </div>
+    <div class="sub">{{ r.projectManagerName ?? '未设置项目经理' }} · 交期 {{ dayText(r.deliveryDate) }}</div>
+  </NuxtLink>
+  <div v-else-if="group === 'NO_PLAN'" class="card noplan">
     <div class="top">
       <span class="title"><WoLink :no="r.workOrderNumber" /><template v-if="product"> · {{ product }}</template></span>
     </div>

@@ -10,7 +10,7 @@
  *   旧地址 /plan?wo=&node= 跳到这里。总计划页签不依赖详情接口：手里有确认待办、但看不到这个工单的部门负责人也能打开（/api/plan 的规则）。
  */
 import type { WorkOrderDetail } from '~~/server/services/workorder/detail'
-import { BOARD_GROUP_TEXT, NODE_STATE_COLOR, NODE_STATE_TEXT, type NodeState, boardGroup } from '#shared/status'
+import { BOARD_GROUP_TEXT, NODE_STATE_COLOR, NODE_STATE_TEXT, type NodeState, boardGroup, isClosedWorkOrder, woStatusText } from '#shared/status'
 import { deliveryBar, ganttRange, monthTicks, nodeBars, pct } from '#shared/gantt'
 
 const route = useRoute()
@@ -175,6 +175,7 @@ const enc = encodeURIComponent
               <div class="title-row">
                 <h1 class="wo-title">{{ d.workOrder.workOrderNumber }}<template v-if="title"> · {{ title }}</template></h1>
                 <span class="pill" :class="`pill-${pill.tone}`"><UiStatusIcon :kind="pill.icon" :tone="pill.tone" />{{ pill.text }}</span>
+                <UiStatusTag v-if="isClosedWorkOrder(d.workOrder.status)" tone="none" title="QMS 里的工单状态；已完工 / 已取消的工单默认不在项目总览和工单下拉里出现">QMS {{ woStatusText(d.workOrder.status) }}</UiStatusTag>
               </div>
               <div class="meta">
                 <span>项目经理 {{ d.workOrder.projectManagerName ?? '未设置' }}</span>

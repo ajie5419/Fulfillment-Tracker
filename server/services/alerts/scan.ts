@@ -1,5 +1,5 @@
 /**
- * scan-rules：一次跑完 W1–W9，新建、升级、消除预警，并给升级阶梯上的人写"我的提醒"（方案 6.2）。
+ * scan-rules：一次跑完 W1–W9，新建、升级、消除预警（工单已完工 / 已取消时只保留 W1、W4，见 collectTargets），并给升级阶梯上的人写"我的提醒"（方案 6.2）。
  *
  * 幂等：同一对象同一规则只有一条活动预警（alert.activeKey 唯一）；同一人同一预警同一级别只有一条提醒
  * （reminder 上 alertId+level+userId 唯一）。每轮都会把当前级别该收到的人补齐，所以中途失败下一轮自动补上。
@@ -27,6 +27,7 @@ import { BUSINESS_DEPT_NAME } from '../auth/departments'
 import { CONFIRM_PLAN_NODE, PLAN_REF, judgeW9, judgeW9Plan, w9ConfirmKey, w9Key, w9PlanKey, w9PlanSummary, w9Summary } from '../plan/constants'
 import { loadPlans } from '../plan/plan'
 import { SCAN_RULES, loadOffDays, loadThresholds } from './config'
+import { closedWorkOrders } from '../workorder/active'
 import {
   CONVERTIBLE_RULES,
   type ScanRule,
@@ -84,8 +85,15 @@ export async function collectTargets(now: Date, t: Thresholds, offDays: string[]
     run('W8', () => collectW8(now, t)),
     run('W9', () => collectW9(now, t, offDays)),
   ])
-  return parts.flat()
+  const all = parts.flat()
+  // 工单已完工 / 已取消（zhao 10-22）：进度类预警（W2/W3/W5–W9）不再报，已有的本轮自动消除；
+  // W1 待确认匹配（报检本身要处理）、W4 异常（人提出的问题要关闭）照常
+  const closed = await closedWorkOrders(all.filter((x) => !KEEP_WHEN_CLOSED.has(x.rule) && x.workOrderNumber).map((x) => x.workOrderNumber!))
+  return closed.size ? all.filter((x) => KEEP_WHEN_CLOSED.has(x.rule) || !x.workOrderNumber || !closed.has(x.workOrderNumber)) : all
 }
+
+/** 工单关闭后仍然照常预警的规则 */
+const KEEP_WHEN_CLOSED: ReadonlySet<ScanRule> = new Set(['W1', 'W4'])
 
 /** W1：待确认匹配，责任人是全部外协专员 */
 async function collectW1(now: Date, t: Thresholds, offDays: string[]): Promise<Target[]> {

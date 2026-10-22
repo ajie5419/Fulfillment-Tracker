@@ -18,6 +18,7 @@ import { DAY_MS, HOUR_MS, judgeW4, reminderTitle, shanghaiDay } from './rules'
 import { collectTargets } from './scan'
 import { loadPlans } from '../plan/plan'
 import { judgeW9 } from '../plan/constants'
+import { ACTIVE_WO_WHERE } from '../workorder/active'
 
 /** 工厂时区每天几点后生成（分钟） */
 export const DIGEST_AT_MINUTES = 7 * 60 + 30
@@ -80,10 +81,11 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
     .map((p) => ({ workOrderNumber: p.workOrderNumber, _count: { _all: p.forecast.nodes.filter((e) => judgeW9(e, thresholds.W9)).length } }))
     .filter((p) => p._count._all > 0)
   const lateWos = [...plans.values()].filter((p) => (p.forecast.deliveryDelayDays ?? 0) > 0).map((p) => ({ workOrderNumber: p.workOrderNumber, days: p.forecast.deliveryDelayDays! }))
-  const countedWos = [...new Set([...shortage, ...drawingOverdue, ...incompleteNodes, ...delayedPlanNodes, ...lateWos].map((s) => s.workOrderNumber))]
+  // 只算在做的工单（没删除、没完工 / 取消），口径见 workorder/active.ts
+  const countedWos = [...new Set([...unsigned, ...shortage, ...drawingOverdue, ...incompleteNodes, ...delayedPlanNodes, ...lateWos].map((s) => s.workOrderNumber))]
   const liveWos = new Set(
     countedWos.length
-      ? (await prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: countedWos } }, select: { workOrderNumber: true, isDeleted: true } })).filter((w) => !w.isDeleted).map((w) => w.workOrderNumber)
+      ? (await prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: countedWos }, ...ACTIVE_WO_WHERE }, select: { workOrderNumber: true } })).map((w) => w.workOrderNumber)
       : [],
   )
   const targetByKey = new Map(targets.map((t) => [t.key, t]))
@@ -104,7 +106,7 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
     const myIssues = issueRows.filter((x) => visible(x.i.workOrderNumber))
     const red = mine.filter((x) => x.a.level === 'RED').length
     const yellow = mine.length - red
-    const unsignedCount = unsigned.filter((r) => visible(r.workOrderNumber)).length
+    const unsignedCount = unsigned.filter((r) => liveWos.has(r.workOrderNumber) && visible(r.workOrderNumber)).length
     const countIn = (gs: { workOrderNumber: string; _count: { _all: number } }[]) => gs.filter((s) => liveWos.has(s.workOrderNumber) && visible(s.workOrderNumber)).reduce((n, s) => n + s._count._all, 0)
     const shortageCount = countIn(shortage)
     const drawingCount = countIn(drawingOverdue)

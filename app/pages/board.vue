@@ -10,13 +10,19 @@
  *   原"领导总览"并入本页：领导、项目部负责人、管理员在汇总下方多看到一块（BoardLeaderPanel），旧地址 /overview 跳这里；
  *   全站只用"预计拖期 / 有风险 / 正常 / 未建总计划"一套分组，表格视图第一列也改成这套（不再显示红 / 黄 / 绿）；
  *   原菜单"工单详情"入口页去掉，改为工具栏里搜工单直接进详情。
+ * 已完工 / 已取消的工单（zhao 10-22）：默认不显示；工具栏"显示已完工"打开后（?closed=1）在最下面单列一组，表格 / 按项目经理里也列出，
+ *   但不进 4 个分组、汇总卡和"源头延误在哪个部门"。工单搜索默认也只搜在做的，打开开关后连已完工的一起搜。
  */
-import { BOARD_GROUP_TEXT, type BoardGroup, boardGroup } from '#shared/status'
+import { BOARD_GROUP_TEXT, type BoardGroup, boardGroup, woStatusText } from '#shared/status'
 
 const route = useRoute()
 const router = useRouter()
 const { data: me } = await useMe()
-const { data: workOrders } = await useWorkOrders()
+/** 显示已完工 / 已取消的工单（地址栏 ?closed=1，刷新、分享链接都保留） */
+const showClosed = ref(route.query.closed === '1')
+watch(showClosed, (v) => router.replace({ query: { ...route.query, closed: v ? '1' : undefined } }))
+const closedQuery = computed(() => (showClosed.value ? { closed: '1' } : {}))
+const { data: workOrders } = await useFetch('/api/work-orders', { query: closedQuery, default: () => [] })
 const woOptions = computed(() =>
   workOrders.value.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName ?? ''}` })),
 )
@@ -24,6 +30,7 @@ function openWo(no: unknown) {
   if (typeof no === 'string' && no) navigateTo(`/wo/${encodeURIComponent(no)}`)
 }
 const { data, pending, refresh } = await useFetch('/api/board', {
+  query: closedQuery,
   default: () => ({ lastSyncAt: null, syncOldest: null, syncErrors: [], syncConfigured: false, summary: { red: 0, yellow: 0, green: 0 }, sourceByDept: [], rows: [] }),
 })
 /** 刷新：看板 + 领导那一块（BoardLeaderPanel 的数据 key 是 'overview'）一起刷新 */
@@ -46,9 +53,12 @@ const syncErrorText = computed(() =>
 
 // ───── 分组 ─────
 const groupOf = (r: Row): BoardGroup => boardGroup(r)
+/** 在做的工单（分组、汇总只算它们）；已完工 / 已取消的单列 */
+const activeRows = computed(() => data.value.rows.filter((r) => !r.closed))
+const closedRows = computed(() => data.value.rows.filter((r) => r.closed))
 const grouped = computed(() => {
   const g: Record<BoardGroup, Row[]> = { LATE: [], RISK: [], OK: [], NO_PLAN: [] }
-  for (const r of data.value.rows) g[groupOf(r)].push(r)
+  for (const r of activeRows.value) g[groupOf(r)].push(r)
   // 拖期多的在前；其余保持看板顺序（红黄绿、交期近的在前）
   g.LATE.sort((a, b) => (b.delayDays ?? 0) - (a.delayDays ?? 0))
   return g
@@ -64,7 +74,7 @@ const deptItems = computed(() => data.value.sourceByDept.map((d) => ({ key: d.de
 
 const byPm = computed(() => {
   const m = new Map<string, Row[]>()
-  for (const r of data.value.rows) {
+  for (const r of [...activeRows.value, ...closedRows.value]) {
     const k = r.projectManagerName ?? '未设置项目经理'
     m.set(k, [...(m.get(k) ?? []), r])
   }
@@ -108,6 +118,7 @@ const enc = encodeURIComponent
           :not-found-content="'没有可见的工单'"
           @change="openWo"
         />
+        <label class="closed-switch"><a-switch v-model:checked="showClosed" size="small" />显示已完工</label>
         <UiRefreshButton @click="refreshAll()" />
         <a-segmented v-model:value="view" :options="[{ value: 'status', label: '按状态分组' }, { value: 'pm', label: '按项目经理' }, { value: 'table', label: '表格视图' }]" />
       </div>
@@ -130,7 +141,7 @@ const enc = encodeURIComponent
     <a-spin :spinning="pending">
       <!-- 按状态分组 -->
       <template v-if="view === 'status'">
-        <a-empty v-if="!data.rows.length" description="没有可见的工单" class="empty" />
+        <a-empty v-if="!activeRows.length" description="没有在做的工单" class="empty" />
         <div v-else class="columns">
           <section v-for="c in COLUMNS" :key="c.key" class="col">
             <h2 class="col-title"><UiStatusIcon :kind="c.icon" :tone="c.tone" />{{ BOARD_GROUP_TEXT[c.key] }} · {{ grouped[c.key].length }}</h2>
@@ -142,6 +153,12 @@ const enc = encodeURIComponent
           <h2 class="col-title"><UiStatusIcon kind="ring" />{{ BOARD_GROUP_TEXT.NO_PLAN }} · {{ grouped.NO_PLAN.length }}</h2>
           <div class="noplan-grid">
             <BoardWoCard v-for="r in grouped.NO_PLAN" :key="r.workOrderNumber" :row="r" group="NO_PLAN" />
+          </div>
+        </section>
+        <section v-if="closedRows.length" class="noplan-sec">
+          <h2 class="col-title"><UiStatusIcon kind="check" tone="none" />已完工 / 已取消 · {{ closedRows.length }}</h2>
+          <div class="noplan-grid">
+            <BoardWoCard v-for="r in closedRows" :key="r.workOrderNumber" :row="r" :group="groupOf(r)" />
           </div>
         </section>
       </template>
@@ -161,13 +178,15 @@ const enc = encodeURIComponent
       <UiSectionCard v-else padding="none">
         <div class="table-legend">
           <span v-for="g in GROUPS" :key="g.key"><UiStatusTag :tone="g.tone">{{ BOARD_GROUP_TEXT[g.key] }} {{ grouped[g.key].length }}</UiStatusTag></span>
+          <span v-if="closedRows.length"><UiStatusTag tone="none">已完工 / 已取消 {{ closedRows.length }}</UiStatusTag></span>
           <span class="ft-muted">有风险 = 有源头延误节点、活动预警或超期异常</span>
         </div>
-        <a-table :columns="columns" :data-source="data.rows" row-key="workOrderNumber" size="middle" :pagination="false" :scroll="{ x: 1500 }">
+        <a-table :columns="columns" :data-source="[...activeRows, ...closedRows]" row-key="workOrderNumber" size="middle" :pagination="false" :scroll="{ x: 1500 }">
           <template #emptyText><a-empty description="没有可见的工单" /></template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'color'">
-              <UiStatusTag :tone="GROUP_TONE[groupOf(record as Row)]">{{ BOARD_GROUP_TEXT[groupOf(record as Row)] }}</UiStatusTag>
+              <UiStatusTag v-if="record.closed" tone="none">{{ woStatusText(record.status) }}</UiStatusTag>
+              <UiStatusTag v-else :tone="GROUP_TONE[groupOf(record as Row)]">{{ BOARD_GROUP_TEXT[groupOf(record as Row)] }}</UiStatusTag>
             </template>
             <template v-else-if="column.key === 'wo'">
               <WoLink :no="record.workOrderNumber" />
@@ -240,6 +259,7 @@ const enc = encodeURIComponent
 .empty { padding: 48px 0; }
 .table-legend { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 14px 20px; }
 .wo-search { width: 240px; }
+.closed-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ft-text-2); cursor: pointer; white-space: nowrap; }
 .warn { color: var(--ft-late); font-weight: 600; }
 .small { font-size: 12px; }
 @media (max-width: 1279px) {
