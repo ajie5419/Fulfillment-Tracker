@@ -45,7 +45,12 @@ function edit(t: Tpl | null) {
 const addRow = (i: number) => form.nodes.splice(i + 1, 0, blank(form.nodes[i]))
 function removeRow(i: number) {
   const [gone] = form.nodes.splice(i, 1)
-  for (const n of form.nodes) n.preds = n.preds.filter((k) => k !== gone!.key)
+  // 只等被删那一行的：改成"无前置"，不能变成空（空 = 默认等上一个，会凭空多出前置关系）
+  for (const n of form.nodes) {
+    if (!n.preds.includes(gone!.key)) continue
+    const rest = n.preds.filter((k) => k !== gone!.key)
+    n.preds = rest.length ? rest : [NONE]
+  }
 }
 /** 前置下拉：其他行（按当前顺序号显示），外加"无前置" */
 const predOptions = (row: EditRow) => [
