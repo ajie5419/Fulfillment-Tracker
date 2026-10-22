@@ -750,6 +750,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(buyer, 'DELETE', `/api/plan/tasks/${taskId}`)).status).toBe(403)
     expect((await send(tech, 'DELETE', `/api/plan/tasks/${taskId}`)).status).toBe(200)
     expect((await get(`/api/plan/nodes/${cut.id}/steps`, pm)).status).toBe(200)
+    expect((await get(`/api/plan/nodes/${cut.id}/steps`, buyer)).status).toBe(403)
     expect((await send(pm, 'POST', `/api/plan/nodes/${cut.id}/steps`, { stepIds: [] })).status).toBe(400)
     expect((await send(buyer, 'POST', `/api/plan/nodes/${cut.id}/steps`, { stepIds: ['x'] })).status).toBe(403)
   })

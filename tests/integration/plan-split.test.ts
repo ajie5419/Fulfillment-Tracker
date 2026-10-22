@@ -227,8 +227,10 @@ describe.skipIf(!DB)('部门计划二次分解', () => {
     expect(reminders.map((r) => r.userId)).toEqual(['u-techhead'])
     expect(reminders[0]!.title).toContain('还没有分解部门任务')
     expect((await nodeView('设计出图')).splitAlertLevel).toBe('REMIND')
-    // 技术部分解（设计任务挂节点）后提醒消失
+    // 技术部分解（设计任务挂节点）后提醒立刻消失（不等下次扫描），再扫也不会重新生成
     await s.dr.createTask({ workOrderNumber: WO, componentName: '主梁总图', ownerId: 'u-des', planDate: dayOff(18), planNodeId: design.id }, 'u-techhead')
+    expect((await splitAlerts()).map((a) => a.refId)).toEqual([ship.id])
+    expect((await nodeView('设计出图')).splitAlertLevel).toBeNull()
     await s.scan.scanRules(new Date(+later + HOUR))
     expect((await splitAlerts()).map((a) => a.refId)).toEqual([ship.id])
     // 节点手动完成也不再提醒
