@@ -19,8 +19,11 @@ const route = useRoute()
 const router = useRouter()
 const { data: me } = await useMe()
 /** 显示已完工 / 已取消的工单（地址栏 ?closed=1，刷新、分享链接都保留） */
-const showClosed = ref(route.query.closed === '1')
-watch(showClosed, (v) => router.replace({ query: { ...route.query, closed: v ? '1' : undefined } }))
+// 直接由地址栏算出（不另存一份），浏览器前进 / 后退、站内跳转改了地址，开关和数据跟着变
+const showClosed = computed({
+  get: () => route.query.closed === '1',
+  set: (v: boolean) => void router.replace({ query: { ...route.query, closed: v ? '1' : undefined } }),
+})
 const closedQuery = computed(() => (showClosed.value ? { closed: '1' } : {}))
 const { data: workOrders } = await useFetch('/api/work-orders', { query: closedQuery, default: () => [] })
 const woOptions = computed(() =>
@@ -40,8 +43,10 @@ async function refreshAll() {
 type Row = (typeof data.value.rows)[number]
 
 type View = 'status' | 'pm' | 'table'
-const view = ref<View>(route.query.view === 'table' || route.query.view === 'pm' ? route.query.view : 'status')
-watch(view, (v) => router.replace({ query: { ...route.query, view: v === 'status' ? undefined : v } }))
+const view = computed<View>({
+  get: () => (route.query.view === 'table' || route.query.view === 'pm' ? route.query.view : 'status'),
+  set: (v) => void router.replace({ query: { ...route.query, view: v === 'status' ? undefined : v } }),
+})
 
 const syncText = computed(() => {
   if (data.value.lastSyncAt) return timeText(data.value.lastSyncAt)
