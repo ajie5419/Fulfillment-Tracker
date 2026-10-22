@@ -88,3 +88,17 @@ describe('齐套节点色调 / 缺件原因标签', () => {
     ])
   })
 })
+
+describe('手机端与电脑端工作台分组同一口径（功能重复梳理第三批）', () => {
+  it('任意截止日：手机端 dueGroup 与电脑端 workBucket 结果一致', async () => {
+    const { workBucket } = await import('../../shared/workbench')
+    for (const today of ['2026-10-19', '2026-10-22', '2026-10-25']) {
+      for (let i = -3; i <= 12; i++) {
+        const due = addDays(today, i)
+        const b = workBucket({ dueDay: due, kind: 'todo' }, today)
+        expect(dueGroup(due, today)).toBe(b === 'NO_DUE' ? 'NONE' : b)
+      }
+      expect(dueGroup(null, today)).toBe('NONE')
+    }
+  })
+})
