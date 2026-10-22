@@ -26,6 +26,10 @@ function openWo(no: unknown) {
 const { data, pending, refresh } = await useFetch('/api/board', {
   default: () => ({ lastSyncAt: null, syncOldest: null, syncErrors: [], syncConfigured: false, summary: { red: 0, yellow: 0, green: 0 }, sourceByDept: [], rows: [] }),
 })
+/** 刷新：看板 + 领导那一块（BoardLeaderPanel 的数据 key 是 'overview'）一起刷新 */
+async function refreshAll() {
+  await Promise.all([refresh(), me.value?.can.overview ? refreshNuxtData('overview') : undefined])
+}
 type Row = (typeof data.value.rows)[number]
 
 type View = 'status' | 'pm' | 'table'
@@ -104,7 +108,7 @@ const enc = encodeURIComponent
           :not-found-content="'没有可见的工单'"
           @change="openWo"
         />
-        <UiRefreshButton @click="refresh()" />
+        <UiRefreshButton @click="refreshAll()" />
         <a-segmented v-model:value="view" :options="[{ value: 'status', label: '按状态分组' }, { value: 'pm', label: '按项目经理' }, { value: 'table', label: '表格视图' }]" />
       </div>
     </div>
