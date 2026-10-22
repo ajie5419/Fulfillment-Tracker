@@ -158,7 +158,8 @@ const enc = encodeURIComponent
       <a-segmented :value="tab" :options="[{ value: 'overview', label: '概览' }, { value: 'plan', label: '总计划' }]" @change="setTab" />
     </div>
 
-    <PlanEditor v-if="tab === 'plan'" :wo="no" @changed="refresh()" />
+    <!-- key：换工单时重建，避免上一个工单打开的编辑框（节点 ID）带到新工单里被保存 -->
+    <PlanEditor v-if="tab === 'plan'" :key="no" :wo="no" @changed="refresh()" />
 
     <template v-else>
 
