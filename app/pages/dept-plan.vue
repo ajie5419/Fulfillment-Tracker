@@ -39,7 +39,7 @@ watch(
       handledFocus = focus.id
       tab.value = focus.tab
       await nextTick()
-      document.getElementById(`node-${focus.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (import.meta.client) document.getElementById(`node-${focus.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     } else if (!focus && (!old || old === EMPTY)) {
       if (!v.summary.pending && v.summary.active) tab.value = 'active'
     }

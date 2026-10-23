@@ -31,7 +31,7 @@ watch(
       handledFocus = focus.id
       tab.value = focus.tab
       await nextTick()
-      document.getElementById(`m-node-${focus.id}`)?.scrollIntoView({ block: 'center' })
+      if (import.meta.client) document.getElementById(`m-node-${focus.id}`)?.scrollIntoView({ block: 'center' })
     } else if (!focus && (!old || old === EMPTY)) {
       if (!v.summary.pending && v.summary.active) tab.value = 'active'
     }
