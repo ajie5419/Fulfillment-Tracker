@@ -29,15 +29,18 @@ const tab = ref<Tab>('pending')
 const justAccepted = ref<string[]>([])
 watch(tab, () => (justAccepted.value = []))
 // 首次进来：没有待接收的就看执行中；定位节点时切到它所在的页签并滚过去
+/** 定位只做一次：之后接收、分解刷新数据时不再把页签拉回定位节点 */
+let handledFocus: string | null = null
 watch(
   () => data.value,
   async (v, old) => {
     const focus = v.focusNodeId ? v.groups.flatMap((g) => g.nodes).find((n) => n.id === v.focusNodeId) : null
-    if (focus) {
+    if (focus && focus.id !== handledFocus) {
+      handledFocus = focus.id
       tab.value = focus.tab
       await nextTick()
       document.getElementById(`node-${focus.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    } else if (!old || old === EMPTY) {
+    } else if (!focus && (!old || old === EMPTY)) {
       if (!v.summary.pending && v.summary.active) tab.value = 'active'
     }
   },

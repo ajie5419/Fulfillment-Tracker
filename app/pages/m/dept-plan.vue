@@ -21,15 +21,18 @@ const { data, pending, refresh } = await useFetch<DeptPlanView>('/api/plan/dept'
 
 type Tab = DeptPlanNode['tab']
 const tab = ref<Tab>('pending')
+/** 定位只做一次：之后接收、分解刷新数据时不再把页签拉回定位节点 */
+let handledFocus: string | null = null
 watch(
   () => data.value,
   async (v, old) => {
     const focus = v.focusNodeId ? v.groups.flatMap((g) => g.nodes).find((n) => n.id === v.focusNodeId) : null
-    if (focus) {
+    if (focus && focus.id !== handledFocus) {
+      handledFocus = focus.id
       tab.value = focus.tab
       await nextTick()
       document.getElementById(`m-node-${focus.id}`)?.scrollIntoView({ block: 'center' })
-    } else if (!old || old === EMPTY) {
+    } else if (!focus && (!old || old === EMPTY)) {
       if (!v.summary.pending && v.summary.active) tab.value = 'active'
     }
   },
