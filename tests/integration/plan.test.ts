@@ -188,7 +188,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     expect(view.network).toBe(true)
     expect(view.dangling).toEqual([])
     expect(view.phases).toEqual(['开工通知', '图纸设计及文件下发', '采购', '生产制作', '表面处理', '装配、调试、发运'])
-    expect(view.nodes.slice(14, 20).map((n) => `${n.code} ${n.name}`)).toEqual(['15 车架', '15.1 车架制作工艺', '15.2 车架料单制作', '15.3 下料', '15.4 组对焊接', '15.5 加工'])
+    expect(view.nodes.slice(14, 20).map((n) => `${n.code} ${n.name}`)).toEqual(['4.1 车架', '4.1.1 车架制作工艺', '4.1.2 车架料单制作', '4.1.3 下料', '4.1.4 组对焊接', '4.1.5 加工'])
     expect(view.nodes[21]!.preds.map((p) => p.seq)).toEqual([10, 11, 12, 13, 14, 21])
     expect(view.nodes[24]!.critical).toBe(true) // 发货：按时也是关键（余量 0）
     expect(view.nodes[10]!).toMatchObject({ critical: false, slackDays: 4 }) // 油缸到装配空 4 天
@@ -248,7 +248,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     await db.workOrderPlan.deleteMany({ where: { workOrderNumber: { in: [DEP_WO, OTHER_WO] } } })
   })
 
-  it('子节点（10-22，10-23 改汇总行）：挂在上级下面，编号 2.1；上级日期由子节点汇总、不能直接改；子节点默认没有前置；层级、成环校验；全完成上级自动完成；有子节点不能删；模板带上级', async () => {
+  it('子节点（10-22，10-23 改汇总行）：挂在上级下面，编号 阶段.节点.子节点（2.1.1）；上级日期由子节点汇总、不能直接改；子节点默认没有前置；层级、成环校验；全完成上级自动完成；有子节点不能删；模板带上级', async () => {
     const pm = 'u-pm'
     const a = await s.plan.createNode(DEP_WO, { name: '原材料', dept: 'PURCHASE', planDate: dayOff(20), phase: '采购' }, pm)
     const p = await s.plan.createNode(DEP_WO, { name: '下料组焊', dept: 'PRODUCTION', planDate: dayOff(40), phase: '生产制作' }, pm)
@@ -276,11 +276,12 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     await s.plan.updateNode(p.id, { note: '组焊车间', planDate: dayOff(38), startDate: dayOff(35) }, pm)
 
     let view = await s.plan.getPlan(DEP_WO, await ctxOf(pm))
-    expect(view.nodes.map((n) => `${n.code} ${n.name}`)).toEqual(['1 原材料', '2 下料组焊', '2.1 车架', '2.2 悬挂', '3 机加'])
+    // 大纲编号（10-23）：阶段.节点.子节点
+    expect(view.nodes.map((n) => `${n.code} ${n.name}`)).toEqual(['1.1 原材料', '2.1 下料组焊', '2.1.1 车架', '2.1.2 悬挂', '2.2 机加'])
     const byName = (name: string) => view.nodes.find((n) => n.name === name)!
     expect(byName('下料组焊')).toMatchObject({ childCount: 2, parentId: null })
     expect(byName('车架')).toMatchObject({ parentId: p.id, preds: [] }) // 默认：没有前置（上级的前置不往下传）
-    expect(byName('机加').preds).toMatchObject([{ id: p.id, code: '2' }]) // 默认接上一个一级节点，不接到子节点上
+    expect(byName('机加').preds).toMatchObject([{ id: p.id, code: '2.1' }]) // 默认接上一个一级节点，不接到子节点上
     expect(view.network).toBe(true)
     expect(view.lastNodeId).toBe(b.id)
     // 下料组焊是汇总行，它默认的前置"原材料"不推任何节点（子节点没设前置）：提示漏连
@@ -295,7 +296,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     await db.planTask.create({ data: { workOrderNumber: DEP_WO, planNodeId: c2.id, name: '悬挂外协', ownerId: pm, planDate: dayOff(43) } })
     view = await s.plan.getPlan(DEP_WO, await ctxOf(pm))
     expect(byName('悬挂')).toMatchObject({ source: true, delayDays: 5 })
-    expect(byName('下料组焊')).toMatchObject({ source: false, upstream: true, delayDays: 5, pushedBy: { code: '2.2', name: '悬挂', child: true }, unsplit: false })
+    expect(byName('下料组焊')).toMatchObject({ source: false, upstream: true, delayDays: 5, pushedBy: { code: '2.1.2', name: '悬挂', child: true }, unsplit: false })
     expect(byName('机加')).toMatchObject({ upstream: true, delayDays: 5 })
     expect(byName('车架')).toMatchObject({ delayDays: 0 })
 
@@ -328,7 +329,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     ])
     await s.plan.generateFromTemplate(DEP_WO, y.id, pm)
     view = await s.plan.getPlan(DEP_WO, await ctxOf(pm))
-    expect(view.nodes.map((m) => `${m.code} ${m.name}`)).toEqual(['1 组焊', '1.1 车架', '1.2 悬挂', '2 机加'])
+    expect(view.nodes.map((m) => `${m.code} ${m.name}`)).toEqual(['1.1 组焊', '1.1.1 车架', '1.1.2 悬挂', '1.2 机加'])
     expect([view.nodes[0]!.startDate, view.nodes[0]!.planDate]).toEqual([view.nodes[1]!.planDate, view.nodes[2]!.planDate])
     expect(view.nodes[3]!.preds.map((m) => m.name)).toEqual(['组焊'])
     await s.tpl.deleteTemplate(y.id)
@@ -395,8 +396,10 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     // 待办标题、跳转
     const mine = await s.todos.listMyTodos('u-techhead')
     const todo = mine.find((t) => t.refId === design.id)!
-    expect(todo.title).toContain(`确认总计划节点：${WO} · 设计出图（技术部`)
-    expect(todo.plan?.link).toBe(`/plan?wo=${WO}&node=${design.id}`)
+    expect(todo.title).toContain(`接收计划节点：${WO} · 设计出图（技术部`)
+    // 10-23：接收、分解在部门计划页做，待办跳那里（手机端跳手机的部门计划）
+    expect(todo.plan?.link).toBe(`/dept-plan?node=${design.id}`)
+    expect(todo.plan?.mobileLink).toBe(`/m/dept-plan?node=${design.id}`)
 
     await expect(s.plan.publishPlan(WO, 'u-pm')).rejects.toThrow('已经发布过了')
     await expect(s.plan.generateFromTemplate(WO, 'plan-tpl-generic', 'u-pm')).rejects.toThrow('已发布')
@@ -424,6 +427,42 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     expect(rem?.title).toContain('退回')
     expect(rem?.link).toBe(`/plan?wo=${WO}&node=${buy.id}`)
     expect(await openTodos(buy.id)).toHaveLength(0)
+  })
+
+  it('部门计划页（10-23）：本部门在已发布计划里的末级节点，待接收（含已退回）/ 执行中；领导类可切换部门、按节点定位', async () => {
+    const { deptPlan } = await import('../../server/services/plan/dept')
+    const nodes = await nodesOf(WO)
+    const design = nodes.find((n) => n.name === '设计出图')!
+    const buy = nodes.find((n) => n.name === '关键物料到货')!
+
+    const tech = await deptPlan(await ctxOf('u-techhead'), undefined)
+    expect(tech).toMatchObject({ dept: 'TECH', deptText: '技术部' })
+    expect(tech.deptOptions.map((d) => d.value)).toEqual(['TECH'])
+    const tg = tech.groups.find((g) => g.workOrder.workOrderNumber === WO)!
+    expect(tg.nodes.length).toBeGreaterThan(0)
+    expect(tg.nodes.every((n) => n.dept === 'TECH' && n.childCount === 0)).toBe(true)
+    expect(tg.nodes.find((n) => n.id === design.id)).toMatchObject({ tab: 'active', confirmStatus: 'CONFIRMED', confirmText: '已接收', code: expect.any(String) })
+    expect(tech.workOrderOptions.map((o) => o.value)).toContain(WO)
+    // 不能直接看别的部门：传了也按本人部门
+    expect((await deptPlan(await ctxOf('u-techhead'), undefined, { dept: 'PURCHASE' })).dept).toBe('TECH')
+
+    const pur = await deptPlan(await ctxOf('u-buyhead'), undefined)
+    expect(pur.dept).toBe('PURCHASE')
+    const pn = pur.groups.flatMap((g) => g.nodes).find((n) => n.id === buy.id)!
+    expect(pn).toMatchObject({ tab: 'pending', confirmStatus: 'REJECTED', confirmText: '已退回' })
+    expect(pur.summary.pending).toBeGreaterThanOrEqual(1)
+
+    // 项目部负责人（领导类）：能选全部部门，?node= 按节点所在部门显示并定位
+    const lead = await deptPlan(await ctxOf('u-pdh'), undefined, { node: buy.id })
+    expect(lead.deptOptions).toHaveLength(6)
+    expect(lead).toMatchObject({ dept: 'PURCHASE', focusNodeId: buy.id })
+    expect((await deptPlan(await ctxOf('u-pdh'), undefined, { dept: 'TECH' })).dept).toBe('TECH')
+    // 工单筛选；看不到的工单不列
+    expect((await deptPlan(await ctxOf('u-techhead'), undefined, { wo: 'NOPE' })).groups).toEqual([])
+    // 可见范围外的工单：只有手里有接收待办的才列（和项目计划页一致）
+    const todoWos = new Set((await db.todo.findMany({ where: { ownerId: 'u-techhead', action: 'CONFIRM_PLAN_NODE', status: 'OPEN' } })).map((t) => t.refId))
+    const heldWos = [...new Set((await db.planNode.findMany({ where: { id: { in: [...todoWos] }, dept: 'TECH' } })).map((n) => n.workOrderNumber))]
+    expect((await deptPlan(await ctxOf('u-techhead'), ['NOPE'])).groups.map((g) => g.workOrder.workOrderNumber).sort()).toEqual(heldWos.sort())
   })
 
   it('发布后改日期：必须写原因，记调整记录，重新请确认；删节点、加节点同样要原因', async () => {

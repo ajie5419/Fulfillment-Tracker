@@ -23,6 +23,8 @@ import {
   childrenOf,
   downstreamOf,
   lastTopNode,
+  outlineCodes,
+  planNodeAlertLink,
   resolvePreds,
   stepFacts,
   topoOrder,
@@ -486,5 +488,29 @@ describe('查环 / 排序和推后用同一套边（10-23 评审）', () => {
     expect(topoOrder(nodes.map((n) => n.id), waitsOn(resolvePreds(nodes), childrenOf(nodes)))).not.toBeNull()
     const est = new Map(estimateNodes([A, S, C], TODAY).map((e) => [e.id, e]))
     expect(est.get('A')).toMatchObject({ delayDays: 3, pushedBy: 'S' })
+  })
+})
+
+describe('大纲编号 outlineCodes（10-23：阶段 = 1 级、节点 = 2 级、子节点 = 3 级）', () => {
+  const n = (id: string, phase: string | null, parentId: string | null = null) => ({ id, phase, parentId })
+  it('有阶段：阶段.节点.子节点；同名阶段不连续时算新的一组', () => {
+    const codes = outlineCodes([n('a', '开工'), n('b', '设计'), n('c', '设计'), n('d', '生产'), n('d1', '生产', 'd'), n('d2', '生产', 'd'), n('e', '设计')])
+    expect(Object.fromEntries(codes)).toEqual({ a: '1.1', b: '2.1', c: '2.2', d: '3.1', d1: '3.1.1', d2: '3.1.2', e: '4.1' })
+  })
+  it('部分节点没阶段：没阶段的连续节点也算一组', () => {
+    const codes = outlineCodes([n('a', null), n('b', null), n('c', '采购')])
+    expect(Object.fromEntries(codes)).toEqual({ a: '1.1', b: '1.2', c: '2.1' })
+  })
+  it('全部没阶段：节点.子节点', () => {
+    const codes = outlineCodes([n('a', null), n('b', null), n('b1', null, 'b'), n('c', null)])
+    expect(Object.fromEntries(codes)).toEqual({ a: '1', b: '2', b1: '2.1', c: '3' })
+  })
+})
+
+describe('节点预警跳哪 planNodeAlertLink', () => {
+  it('超时未接收、未分解 → 部门计划页（电脑 / 手机）；延误 → 项目计划页', () => {
+    expect(planNodeAlertLink('planConfirm', 'WO 1', 'n1')).toEqual({ pc: '/dept-plan?node=n1', mobile: '/m/dept-plan?node=n1' })
+    expect(planNodeAlertLink('planSplit', 'WO 1', 'n1')).toEqual({ pc: '/dept-plan?node=n1', mobile: '/m/dept-plan?node=n1' })
+    expect(planNodeAlertLink('planNode', 'WO 1', 'n1')).toEqual({ pc: '/plan?wo=WO%201&node=n1', mobile: null })
   })
 })

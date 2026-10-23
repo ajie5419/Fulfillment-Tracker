@@ -54,7 +54,7 @@ export function useReminders() {
 /** 菜单"工作台"角标的未读数（前端改版第二轮）：独立的 key，不和首页的 reminders 冲突 */
 export const UNREAD_KEY = 'reminder-unread'
 export function useUnreadCount() {
-  return useFetch<{ unread: number }>('/api/reminders/unread-count', { key: UNREAD_KEY, default: () => ({ unread: 0 }) })
+  return useFetch<{ unread: number; planPending: number }>('/api/reminders/unread-count', { key: UNREAD_KEY, default: () => ({ unread: 0, planPending: 0 }) })
 }
 
 /** 提醒列表和角标一起刷新 */

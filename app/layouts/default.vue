@@ -29,6 +29,8 @@ const groups = computed(() => {
       { key: '/plan', label: '项目计划' },
     ]) },
     { title: '部门工作台', items: show([
+      // 部门计划（zhao 10-23）：项目计划发布后，各部门在这里接收本部门节点、分解任务、委派责任人
+      { key: '/dept-plan', label: '部门计划', sections: ['deptPlan'] },
       { key: '/drawings', label: '设计任务', sections: ['tech'] },
       { key: '/releases', label: '发放签收', sections: ['tech', 'releases'] },
       { key: '/purchases', label: '采购到货', sections: ['purchase'] },
@@ -70,10 +72,10 @@ const current = computed(() => menu.value.find((m) => m.key === selected.value[0
 
 // ───── 菜单"工作台"未读角标（前端改版第二轮）：独立的 key（不和首页 reminders 冲突），随下面的 60 秒轮询一起刷新 ─────
 const { data: unread, refresh: refreshUnread } = useUnreadCount()
-const unreadText = computed(() => {
-  const n = unread.value?.unread ?? 0
-  return n > 99 ? '99+' : n ? String(n) : ''
-})
+const badgeText = (n: number) => (n > 99 ? '99+' : n ? String(n) : '')
+const unreadText = computed(() => badgeText(unread.value?.unread ?? 0))
+/** 部门计划：本人待接收的计划节点数 */
+const planPendingText = computed(() => badgeText(unread.value?.planPending ?? 0))
 
 // ───── 新的黄、红预警在右上角弹出（方案 6.3）：每 60 秒轮询一次 ─────
 // 第一次只取服务器时间作为起点，不把旧提醒全弹一遍；弹过的按 id 记住，不重复弹
@@ -154,6 +156,7 @@ onBeforeUnmount(() => clearInterval(timer))
               <UiNavIcon :name="m.key" />
               <span class="item-label">{{ m.label }}</span>
               <span v-if="m.key === '/' && unreadText" class="badge" :aria-label="`未读提醒 ${unreadText} 条`">{{ unreadText }}</span>
+              <span v-if="m.key === '/dept-plan' && planPendingText" class="badge" :aria-label="`待接收计划节点 ${planPendingText} 个`">{{ planPendingText }}</span>
             </NuxtLink>
           </div>
         </nav>

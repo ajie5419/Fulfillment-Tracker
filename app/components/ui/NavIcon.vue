@@ -11,6 +11,7 @@ const PATHS: Record<string, string[]> = {
   '/risks': ['M12 3 2 20h20L12 3Z', 'M12 10v4', 'M12 17h.01'],
   '/board': ['M4 4h7v7H4z', 'M13 4h7v7h-7z', 'M4 13h7v7H4z', 'M13 13h7v7h-7z'],
   '/plan': ['M4 4v16h16', 'M8 8h6', 'M10 12h7', 'M8 16h4'],
+  '/dept-plan': ['M10 6h10', 'M10 12h10', 'M10 18h10', 'M4 6l1.5 1.5L8 5', 'M4 12l1.5 1.5L8 11', 'M4 18h4'],
   '/drawings': ['M4 20l4-1 11-11-3-3L5 16l-1 4Z', 'M14 7l3 3'],
   '/releases': ['M21 3 10 14', 'M21 3l-7 18-4-7-7-4 18-7Z'],
   '/purchases': ['M3 4h2l2.5 11h11L21 7H6.5', 'M9 20h.01', 'M18 20h.01'],

@@ -92,3 +92,10 @@ const taskFields = {
 export const newTaskBody = z.object(taskFields).strict()
 export const patchTaskBody = z.object(taskFields).partial().strict()
 export const linkStepsBody = z.object({ stepIds: z.array(z.string().min(1).max(191)).min(1, '请选择工序').max(500, '一次最多 500 道工序') }).strict()
+
+/** 部门计划页：部门（不填按本人部门）、工单筛选、定位节点 */
+export const deptPlanQuery = z.object({
+  dept: businessDept.optional(),
+  wo: z.string().max(64).optional(),
+  node: z.string().max(64).optional(),
+})

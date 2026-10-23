@@ -26,11 +26,16 @@ export const CONFIRM_PLAN_NODE = 'CONFIRM_PLAN_NODE'
 export const PLAN_REF = 'planNode'
 
 export const PLAN_DEPT_TEXT = BUSINESS_DEPT_NAME
-export const CONFIRM_TEXT: Record<PlanNodeConfirm, string> = { PENDING: '待确认', CONFIRMED: '已确认', REJECTED: '已退回' }
+/** 页面上叫"接收"（10-23 zhao：发布后各部门在"部门计划"页接收本部门的节点再分解）；库里仍是确认状态 */
+export const CONFIRM_TEXT: Record<PlanNodeConfirm, string> = { PENDING: '待接收', CONFIRMED: '已接收', REJECTED: '已退回' }
 
 /** 总计划页：选中工单并定位到节点 */
 export const planLink = (workOrderNumber: string, nodeId?: string | null) =>
   `/plan?wo=${encodeURIComponent(workOrderNumber)}${nodeId ? `&node=${encodeURIComponent(nodeId)}` : ''}`
+
+/** 部门计划页：定位到节点（接收、分解在这里做） */
+export const deptPlanLink = (nodeId: string) => `/dept-plan?node=${encodeURIComponent(nodeId)}`
+export const deptPlanMobileLink = (nodeId: string) => `/m/dept-plan?node=${encodeURIComponent(nodeId)}`
 
 /** W9 节点延误预警 / 节点超时未确认（同一规则，不同对象类型；超时未确认按 W5 的阈值计时） */
 export const w9Key = (nodeId: string) => alertKey('W9', 'planNode', nodeId)
@@ -57,6 +62,9 @@ export const PLAN_TASK_REF = 'planTask'
 /** 以总计划节点为对象（refId = 节点 ID）的 W9 预警类型：节点延误、超时未确认、未分解。按节点找工单、跳转的地方都用这一份，加类型只改这里 */
 export const PLAN_NODE_ALERT_REFS = ['planNode', 'planConfirm', 'planSplit'] as const
 export const isPlanNodeAlert = (refType: string) => (PLAN_NODE_ALERT_REFS as readonly string[]).includes(refType)
+/** 节点类预警跳哪：超时未接收、未分解 → 部门计划页（部门在那里处理）；节点延误 → 项目计划页 */
+export const planNodeAlertLink = (refType: string, workOrderNumber: string, nodeId: string): { pc: string; mobile: string | null } =>
+  refType === 'planConfirm' || refType === 'planSplit' ? { pc: deptPlanLink(nodeId), mobile: deptPlanMobileLink(nodeId) } : { pc: planLink(workOrderNumber, nodeId), mobile: null }
 
 /** W9"节点未分解"提醒（对象类型 planSplit，refId = 节点 ID） */
 export const w9SplitKey = (nodeId: string) => alertKey('W9', 'planSplit', nodeId)
@@ -315,6 +323,41 @@ export function topoOrder(ids: string[], preds: Map<string, string[]>): string[]
 export function linkFloat(predPlanDay: string, startDay: string | null | undefined): number {
   if (!startDay) return 0
   return Math.max(0, dayDiff(predPlanDay, addDays(startDay, -1)))
+}
+
+/**
+ * 大纲编号（10-23 zhao：页面要分清 1、2 级，和 MS Project 一样）：nodes 按 treeOrder 排好。
+ * 用了阶段的计划：阶段 = 1 级（连续同一阶段的一级节点算一组，按出现顺序编 1、2…），一级节点 = 2 级（1.1、1.2），子节点 = 3 级（1.1.1）；
+ * 没用阶段的：一级节点 1、2…，子节点 1.1、1.2…。没填阶段的节点夹在中间时自成一组（页面显示"未分阶段"）。
+ */
+export function outlineCodes(nodes: { id: string; parentId: string | null; phase: string | null }[]): Map<string, string> {
+  const out = new Map<string, string>()
+  const hasPhase = nodes.some((n) => n.phase)
+  const childNo = new Map<string, number>()
+  let top = 0
+  let group = 0
+  let inGroup = 0
+  let prev: string | null = null
+  for (const n of nodes) {
+    if (n.parentId && out.has(n.parentId)) {
+      const k = (childNo.get(n.parentId) ?? 0) + 1
+      childNo.set(n.parentId, k)
+      out.set(n.id, `${out.get(n.parentId)}.${k}`)
+      continue
+    }
+    if (!hasPhase) {
+      out.set(n.id, String(++top))
+      continue
+    }
+    const ph = n.phase ?? null
+    if (group === 0 || ph !== prev) {
+      group++
+      inGroup = 0
+      prev = ph
+    }
+    out.set(n.id, `${group}.${++inGroup}`)
+  }
+  return out
 }
 
 /** 最后一个一级节点（对应工单交期；子节点不算） */

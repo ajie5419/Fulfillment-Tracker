@@ -9,7 +9,7 @@ import { drawingLink, drawingMobileLink } from '../drawings/constants'
 import { kittingLink, kittingMobileLink } from '../kitting/constants'
 import { purchaseLink, purchaseMobileLink } from '../purchases/constants'
 import { releaseLink, releaseMobileLink } from '../releases/constants'
-import { isPlanNodeAlert, planLink } from '../plan/constants'
+import { isPlanNodeAlert, planLink, planNodeAlertLink } from '../plan/constants'
 import { CONVERTIBLE_RULES, durationText, elapsedExcludingOffDays } from './rules'
 import { SCAN_RULES, type Target, collectTargets, loadOffDays, loadThresholds } from './scan'
 import { todayDay } from '../flow/dates'
@@ -90,7 +90,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     if (a.refType === 'node') link = { pc: kittingLink(a.refId), mobile: kittingMobileLink(a.refId) }
     // 总计划（W9）只有电脑端页面；节点删了就没有跳转
     const planWo = isPlanNodeAlert(a.refType) ? planWoOf.get(a.refId) : undefined
-    if (planWo) link = { pc: planLink(planWo, a.refId), mobile: null }
+    if (planWo) link = planNodeAlertLink(a.refType, planWo, a.refId)
     if (a.refType === 'plan') link = { pc: planLink(a.refId), mobile: null }
     const releaseId = a.refType === 'receipt' ? releaseOf.get(a.refId) : a.refType === 'release' ? a.refId : undefined
     if (releaseId) link = { pc: releaseLink(releaseId), mobile: releaseMobileLink(releaseId) }
@@ -243,7 +243,7 @@ function targetLink(t: Target): string | null {
   if (t.refType === 'purchase') return purchaseLink(t.refId)
   if (t.refType === 'drawing') return drawingLink(t.refId)
   if (t.refType === 'node') return kittingLink(t.refId)
-  if (isPlanNodeAlert(t.refType) && t.workOrderNumber) return planLink(t.workOrderNumber, t.refId)
+  if (isPlanNodeAlert(t.refType) && t.workOrderNumber) return planNodeAlertLink(t.refType, t.workOrderNumber, t.refId).pc
   if (t.refType === 'plan') return planLink(t.refId)
   if (t.refType === 'unmatched') return '/unmatched'
   if (t.refType === 'issue') return `/issues?id=${encodeURIComponent(t.refId)}`

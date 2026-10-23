@@ -75,7 +75,7 @@ export const OPERATION_DENIED: Record<Operation, string> = {
   stepAction: '只有生产部、外协专员、该工序责任人或管理员可以登记开工、完工、发出、返厂',
   plan: '只有该工单项目经理、项目部或管理员可以编辑、发布总计划',
   planTemplate: '只有项目部负责人或管理员可以维护总计划模板',
-  planConfirm: '只有该节点责任部门的负责人或管理员可以确认、退回总计划节点',
+  planConfirm: '只有该节点责任部门的负责人或管理员可以接收、退回计划节点',
   planNodeDone: '只有该节点责任部门的人、该工单项目经理或管理员可以标记节点完成',
   planTask: '只有该节点责任部门的人、该工单项目经理、项目部或管理员可以分解这个节点',
 }
@@ -140,7 +140,7 @@ export const canSeeOverview = isLeaderLike
  *   kitting = 齐套；releases = 发放签收；payments = 付款申请；overview = 领导总览。
  * 页面本身不拦，只是不在菜单里显示（从提醒链接点进去仍能只读查看）。
  */
-export type MenuSection = 'overview' | 'tech' | 'purchase' | 'production' | 'kitting' | 'releases' | 'payments'
+export type MenuSection = 'overview' | 'deptPlan' | 'tech' | 'purchase' | 'production' | 'kitting' | 'releases' | 'payments'
 
 /** 多角色取并集；返回固定顺序，便于比较 */
 export function menuSections(ctx: RoleContext): MenuSection[] {
@@ -150,6 +150,8 @@ export function menuSections(ctx: RoleContext): MenuSection[] {
     out.add('overview')
     all()
   }
+  // 部门计划（10-23）：有业务部门（或是某部门负责人）的人接收、分解本部门节点；领导类可切换看各部门
+  if (isLeaderLike(ctx) || ctx.businessDept || ctx.deptHeadOf.length) out.add('deptPlan')
   if (ctx.pmOf.size) all()
   if (inDept(ctx, 'TECH')) out.add('tech')
   if (inDept(ctx, 'PURCHASE')) {
@@ -162,7 +164,7 @@ export function menuSections(ctx: RoleContext): MenuSection[] {
   }
   if (inDept(ctx, 'QUALITY')) out.add('production')
   if (isFinance(ctx)) out.add('payments')
-  const order: MenuSection[] = ['overview', 'tech', 'purchase', 'production', 'kitting', 'releases', 'payments']
+  const order: MenuSection[] = ['overview', 'deptPlan', 'tech', 'purchase', 'production', 'kitting', 'releases', 'payments']
   return order.filter((s) => out.has(s))
 }
 

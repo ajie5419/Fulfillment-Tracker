@@ -40,6 +40,8 @@ import {
   drawingFacts,
   forecastPlan,
   planLink,
+  deptPlanLink,
+  deptPlanMobileLink,
   planTaskFacts,
   purchaseFacts,
   resolvePreds,
@@ -47,6 +49,7 @@ import {
   topoOrder,
   treeOrder,
   downstreamOf,
+  outlineCodes,
   pushersOf,
   w9ConfirmKey,
   w9Key,
@@ -255,13 +258,8 @@ export async function getPlan(workOrderNumber: string, ctx: RoleContext, now = n
   const planAlert = alerts.find((a) => a.activeKey === w9PlanKey(workOrderNumber))
   const published = plan?.status === 'PUBLISHED'
   const est = new Map(data.forecast.nodes.map((n) => [n.id, n]))
-  /** 编号：一级节点 1、2、3…，子节点 上级编号.1、.2…（页面、前置节点都用它，和 MS Project 的大纲编号一样） */
-  const codeOf = new Map<string, string>()
-  let top = 0
-  for (const n of data.nodes) {
-    if (!n.parentId) codeOf.set(n.id, String(++top))
-    else codeOf.set(n.id, `${codeOf.get(n.parentId)}.${data.nodes.filter((m) => m.parentId === n.parentId).findIndex((m) => m.id === n.id) + 1}`)
-  }
+  /** 大纲编号：阶段.节点.子节点（没用阶段时 节点.子节点），页面、前置节点、影响范围都用它 */
+  const codeOf = outlineCodes(data.nodes)
   const seqName = new Map(data.nodes.map((n) => [n.id, { seq: n.seq, code: codeOf.get(n.id)!, name: n.name }]))
   /** 用了前置节点、开始日或子节点（多条线并行）：页面才显示余量 / 关键节点；一条主线时每个节点都"关键"，不显示 */
   const network = data.nodes.some((n) => n.customDeps || n.startDate || n.parentId)
@@ -787,8 +785,8 @@ const closeConfirmTodos = (tx: Tx, id: string, now: Date) =>
 export async function confirmNode(id: string, actorId: string) {
   return prisma.$transaction(async (tx) => {
     const { node, published } = await lockNode(tx, id)
-    if (!published || !node.confirmStatus) throw new FlowError('总计划还没有发布，不用确认')
-    if (node.confirmStatus === 'CONFIRMED') throw new FlowError('这个节点已经确认过了，请刷新')
+    if (!published || !node.confirmStatus) throw new FlowError('总计划还没有发布，不用接收')
+    if (node.confirmStatus === 'CONFIRMED') throw new FlowError('这个节点已经接收过了，请刷新')
     const now = new Date()
     await tx.planNode.update({ where: { id }, data: { confirmStatus: 'CONFIRMED', confirmedBy: actorId, confirmedAt: now, rejectReason: null } })
     await closeConfirmTodos(tx, id, now)
@@ -801,8 +799,8 @@ export async function confirmNode(id: string, actorId: string) {
 export async function rejectNode(id: string, reason: string, actorId: string) {
   return prisma.$transaction(async (tx) => {
     const { node, published } = await lockNode(tx, id)
-    if (!published || !node.confirmStatus) throw new FlowError('总计划还没有发布，不用确认')
-    if (node.confirmStatus !== 'PENDING') throw new FlowError(node.confirmStatus === 'REJECTED' ? '这个节点已经退回了，请刷新' : '这个节点已经确认了')
+    if (!published || !node.confirmStatus) throw new FlowError('总计划还没有发布，不用接收')
+    if (node.confirmStatus !== 'PENDING') throw new FlowError(node.confirmStatus === 'REJECTED' ? '这个节点已经退回了，请刷新' : '这个节点已经接收了')
     const now = new Date()
     await tx.planNode.update({ where: { id }, data: { confirmStatus: 'REJECTED', confirmedBy: actorId, confirmedAt: now, rejectReason: reason.trim() } })
     await closeConfirmTodos(tx, id, now)
@@ -867,7 +865,7 @@ export async function nodeTarget(id: string) {
 
 /** "确认总计划节点"待办的说明：节点名称、工单、计划日、责任部门；节点已删的返回不到 */
 export async function describePlanTodos(nodeIds: string[]) {
-  if (!nodeIds.length) return new Map<string, { workOrderNumber: string; name: string; planDate: string; deptText: string; link: string }>()
+  if (!nodeIds.length) return new Map<string, { workOrderNumber: string; name: string; planDate: string; deptText: string; link: string; mobileLink: string }>()
   const nodes = await prisma.planNode.findMany({ where: { id: { in: nodeIds } }, select: { id: true, workOrderNumber: true, name: true, planDate: true, dept: true } })
-  return new Map(nodes.map((n) => [n.id, { workOrderNumber: n.workOrderNumber, name: n.name, planDate: day(n.planDate), deptText: BUSINESS_DEPT_NAME[n.dept], link: planLink(n.workOrderNumber, n.id) }]))
+  return new Map(nodes.map((n) => [n.id, { workOrderNumber: n.workOrderNumber, name: n.name, planDate: day(n.planDate), deptText: BUSINESS_DEPT_NAME[n.dept], link: deptPlanLink(n.id), mobileLink: deptPlanMobileLink(n.id) }]))
 }

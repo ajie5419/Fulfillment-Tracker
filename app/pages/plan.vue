@@ -3,7 +3,7 @@
  * 项目计划（zhao 10-22：总计划从工单详情里拿出来，单独成菜单页；工单详情只留概览）。
  *   不带 ?wo：全部在做工单的计划一览——统计卡（已发布 / 草稿 / 未编制 / 交期风险，点了按它筛选）+ 表格
  *     （计划状态、节点完成、待确认、未分解、源头延误、预计交期），点一行进该工单的计划。
- *   带 ?wo（&node= 定位节点）：该工单的总计划编制 / 发布 / 调整 / 确认 / 分解（PlanEditor）。
+ *   带 ?wo（&node= 定位节点）：该工单的总计划编制 / 发布 / 调整（PlanEditor；接收、分解在部门计划页 /dept-plan）。
  *   提醒、待办、W9 通知里的链接一直是 /plan?wo=&node=，直接落在这里；旧的 /wo/:no?tab=plan 跳过来。
  */
 import type { PlanListStatus } from '~~/server/services/plan/list'
@@ -60,7 +60,7 @@ const columns = [
   { title: '合同交期', key: 'delivery', width: 104 },
   { title: '计划状态', key: 'status', width: 150 },
   { title: '节点完成', key: 'nodes', width: 90, align: 'center' as const },
-  { title: '待确认', key: 'confirm', width: 76, align: 'center' as const },
+  { title: '待接收', key: 'confirm', width: 76, align: 'center' as const },
   { title: '未分解', key: 'unsplit', width: 76, align: 'center' as const },
   { title: '源头延误', key: 'source', width: 86, align: 'center' as const },
   { title: '预计交期', key: 'expected', width: 120 },
@@ -88,7 +88,7 @@ const enc = encodeURIComponent
       <div class="page-head">
         <h1 class="page-title">
           项目计划
-          <UiHelpTip>每个工单一份总计划：项目经理、项目部按模板编制、发布、调整；责任部门负责人确认节点，并在节点下分解部门任务。点一行进入该工单的计划。</UiHelpTip>
+          <UiHelpTip>每个工单一份总计划：项目经理、项目部按模板编制、发布、调整；发布后各部门在“部门计划”里接收本部门的节点、分解任务、委派责任人。点一行进入该工单的计划。</UiHelpTip>
         </h1>
         <div class="tools">
           <a-select

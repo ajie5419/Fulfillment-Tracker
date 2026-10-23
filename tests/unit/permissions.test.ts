@@ -250,7 +250,7 @@ describe('电脑端菜单 menuSections', () => {
   const ALL = ['tech', 'purchase', 'production']
   it('领导、项目部负责人、管理员：全部 + 领导总览', () => {
     for (const c of [ctx({ roles: ['LEADER'] }), ctx({ roles: ['PROJECT_DEPT_HEAD'] }), ctx({ isAdmin: true })]) {
-      expect(menuSections(c)).toEqual(['overview', ...ALL])
+      expect(menuSections(c)).toEqual(['overview', 'deptPlan', ...ALL])
       expect(canSeeOverview(c)).toBe(true)
     }
   })
@@ -261,20 +261,20 @@ describe('电脑端菜单 menuSections', () => {
     expect(canSeeOverview(pm)).toBe(false)
   })
 
-  it('各部门', () => {
-    expect(menuSections(ctx({ businessDept: 'TECH' }))).toEqual(['tech'])
-    expect(menuSections(ctx({ businessDept: 'PURCHASE' }))).toEqual(['purchase', 'kitting'])
-    expect(menuSections(ctx({ businessDept: 'PRODUCTION' }))).toEqual(['production', 'releases'])
+  it('各部门（有业务部门的人都有"部门计划"）', () => {
+    expect(menuSections(ctx({ businessDept: 'TECH' }))).toEqual(['deptPlan', 'tech'])
+    expect(menuSections(ctx({ businessDept: 'PURCHASE' }))).toEqual(['deptPlan', 'purchase', 'kitting'])
+    expect(menuSections(ctx({ businessDept: 'PRODUCTION' }))).toEqual(['deptPlan', 'production', 'releases'])
     expect(menuSections(ctx({ roles: ['OUTSOURCE_COORDINATOR'] }))).toEqual(['production', 'releases'])
-    expect(menuSections(ctx({ businessDept: 'QUALITY' }))).toEqual(['production'])
+    expect(menuSections(ctx({ businessDept: 'QUALITY' }))).toEqual(['deptPlan', 'production'])
     expect(menuSections(ctx({ roles: ['FINANCE'] }))).toEqual(['payments'])
-    expect(menuSections(ctx({ businessDept: 'PROJECT' }))).toEqual([])
+    expect(menuSections(ctx({ businessDept: 'PROJECT' }))).toEqual(['deptPlan'])
     expect(menuSections(ctx())).toEqual([])
   })
 
   it('多角色取并集；部门负责人按负责的部门', () => {
-    expect(menuSections(ctx({ businessDept: 'TECH', roles: ['FINANCE'] }))).toEqual(['tech', 'payments'])
-    expect(menuSections(ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['采购部', '质量部'] }))).toEqual(['purchase', 'production', 'kitting'])
+    expect(menuSections(ctx({ businessDept: 'TECH', roles: ['FINANCE'] }))).toEqual(['deptPlan', 'tech', 'payments'])
+    expect(menuSections(ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['采购部', '质量部'] }))).toEqual(['deptPlan', 'purchase', 'production', 'kitting'])
   })
 
   it('手机端"发出"页签：生产部、外协专员、管理员', () => {

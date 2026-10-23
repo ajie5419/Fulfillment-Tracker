@@ -32,8 +32,8 @@ type Todo = (typeof todos.value)[number]
 
 /** 安排发出 → 发出登记页（预填该步骤）；安排开工 → 确认后开工；签收 / 确认变更影响 → 手机签收页；可以开工 → 按第一道工序的方式发出或开工 */
 async function open(t: Todo) {
-  // 确认总计划节点（R14）：总计划只有电脑端（工单详情的“总计划”页签）
-  if (t.plan) return showToast('确认总计划节点请在电脑端工单详情的“总计划”页签处理')
+  // 接收计划节点（10-23）：到手机端"部门计划"接收 / 退回
+  if (t.plan) return navigateTo(t.plan.mobileLink)
   // 完成部门任务（部门计划二次分解）：确认后标完成，完成日记今天
   if (t.planTask) {
     try {
@@ -118,6 +118,8 @@ const LEVEL_ICON = { RED: 'alert', YELLOW: 'warn', REMIND: 'dot' } as const
 const entries = computed(() =>
   [
     { text: '上报异常', icon: 'warning-o', to: '/m/issue-new', tone: 'late' },
+    // 部门计划（10-23）：有业务部门的人接收、分解本部门的计划节点
+    ...(me.value?.menu.includes('deptPlan') ? [{ text: '部门计划', icon: 'orders-o', to: '/m/dept-plan', tone: 'primary' }] : []),
     { text: '我的异常', icon: 'todo-list-o', to: '/m/issues', tone: 'primary' },
     { text: '到货确认', icon: 'completed-o', to: '/m/arrivals', tone: 'done' },
     { text: '设计任务', icon: 'description', to: '/m/drawings', tone: 'primary' },
@@ -206,7 +208,6 @@ const entries = computed(() =>
               <span class="m-spacer" />
               <van-button v-if="t.action !== 'SIGN_RELEASE'" size="small" plain @click.stop="transferring = t">转交</van-button>
               <van-button v-if="todoPrimaryLabel(t)" size="small" type="primary" @click.stop="open(t)">{{ todoPrimaryLabel(t) }}</van-button>
-              <span v-else-if="t.plan" class="pc-only">请在电脑端处理</span>
             </div>
           </MCard>
         </div>
@@ -298,7 +299,6 @@ const entries = computed(() =>
 .todo-title { margin-top: 6px; }
 .sugg { color: var(--ft-text-2); }
 .due { font-size: 12px; font-weight: 600; }
-.pc-only { font-size: 12px; color: var(--ft-text-3); }
 .unread-text { font-size: 12px; color: var(--ft-late-text); }
 .reminder-title { margin-top: 6px; font-size: 14px; }
 .read .reminder-title { font-weight: 400; color: var(--ft-text-2); }

@@ -51,7 +51,7 @@ describe('todoDueDay / todoPrimaryLabel', () => {
     expect(todoDueDay({ dueAt: null })).toBeNull()
   })
   it('主操作与 open() 分支一致', () => {
-    expect(todoPrimaryLabel({ action: 'CONFIRM_PLAN_NODE', plan: {} })).toBeNull()
+    expect(todoPrimaryLabel({ action: 'CONFIRM_PLAN_NODE', plan: {} })).toBe('去接收')
     // 完成部门任务（部门计划二次分解）：手机上直接点完成
     expect(todoPrimaryLabel({ action: 'DO_PLAN_TASK', planTask: {} })).toBe('完成')
     expect(todoPrimaryLabel({ action: 'SIGN_RELEASE', release: {} })).toBe('去签收')
