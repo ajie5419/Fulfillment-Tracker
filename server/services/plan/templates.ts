@@ -36,10 +36,6 @@ function assertNodes(nodes: TemplateInput['nodes']) {
     if (n.parent < 1 || n.parent >= i + 1) throw new FlowError(`${label}的上级节点要是排在它前面的节点`)
     if (nodes[n.parent - 1]!.parent != null) throw new FlowError(`${label}的上级"${names[n.parent - 1]}"本身是子节点：子节点下面不能再挂子节点`)
     if (n.preds?.includes(n.parent)) throw new FlowError(`${label}的前置节点不能是自己的上级（上级要等子节点做完）`)
-    // 和总计划里一样：子节点不能晚于上级完成（交期前天数不能比上级小）
-    if (n.daysBeforeDelivery < nodes[n.parent - 1]!.daysBeforeDelivery) {
-      throw new FlowError(`${label}的完成日晚于上级"${names[n.parent - 1]}"：交期前天数不能比上级小`)
-    }
   }
   const ids = nodes.map((_, i) => String(i + 1))
   const facts = nodes.map((n, i) => ({ id: ids[i]!, preds: n.preds == null ? null : n.preds.map(String), parent: n.parent == null ? null : String(n.parent) }))

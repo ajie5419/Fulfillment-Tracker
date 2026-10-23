@@ -73,7 +73,7 @@ export function todoDueDay(t: { dueDay?: string | null; dueAt?: string | Date | 
 }
 
 /**
- * 待办卡片的主操作按钮文字，与 pages/m/index.vue 的 open() 分支一一对应；不能在手机上处理的给 null（只显示提示）。
+ * 待办卡片的主操作按钮文字，与 pages/m/index.vue 的 open() 分支一一对应；不能在手机上处理的给 null。接收计划节点 → 手机端"部门计划"。
  */
 export function todoPrimaryLabel(t: {
   action: string
@@ -82,7 +82,7 @@ export function todoPrimaryLabel(t: {
   release?: unknown
   step?: { status: string; mode: string } | null
 }): string | null {
-  if (t.plan) return null
+  if (t.plan) return '去接收'
   if (t.planTask) return '完成'
   if (t.release) return t.action === 'CONFIRM_CHANGE' ? '去确认' : '去签收'
   if (!t.step) return null

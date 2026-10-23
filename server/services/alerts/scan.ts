@@ -554,7 +554,7 @@ async function collectW9(now: Date, t: Thresholds, offDays: string[]): Promise<T
           startAt: splitFrom,
           level: split,
           subject,
-          summary: `计划 ${dateFieldDay(n.planDate)}，总计划发布已 ${durationText(splitElapsed)}，还没有分解部门任务（设计任务、采购行、工序、装配节点或其他任务）`,
+          summary: `计划 ${dateFieldDay(n.planDate)}，总计划发布已 ${durationText(splitElapsed)}，还没有分解部门任务（请在"部门计划"里分解：设计任务、采购行、工序、装配节点或其他任务）`,
         })
       }
       if (n.confirmStatus !== 'PENDING') continue
@@ -574,7 +574,7 @@ async function collectW9(now: Date, t: Thresholds, offDays: string[]): Promise<T
         startAt,
         level: levelByElapsed(elapsed, t.W5),
         subject,
-        summary: `计划 ${dateFieldDay(n.planDate)}，已请确认 ${durationText(elapsed)}，仍未确认（待 ${open.map((id) => names.user.get(id) ?? id).join('、')} 确认）`,
+        summary: `计划 ${dateFieldDay(n.planDate)}，发布已 ${durationText(elapsed)}，部门还没接收（待 ${open.map((id) => names.user.get(id) ?? id).join('、')} 在"部门计划"里接收）`,
       })
     }
   }

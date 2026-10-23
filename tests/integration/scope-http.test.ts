@@ -587,12 +587,12 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     const admin = await login('h-admin')
 
     // 业务部门：直接对照 / 随上级 / 按名称（没有对照）
-    expect(await me(tech)).toMatchObject({ businessDept: 'TECH', menu: ['tech'] })
-    expect(await me(buyer)).toMatchObject({ businessDept: 'PURCHASE', menu: ['purchase', 'kitting'], can: { purchase: true, seeAmount: true } })
-    expect(await me(prod)).toMatchObject({ businessDept: 'PRODUCTION', menu: ['production', 'releases'], can: { route: true, stepAction: true, mobileSend: true } })
-    expect(await me(qa)).toMatchObject({ businessDept: 'QUALITY', menu: ['production'], can: { route: false, mobileSend: false } })
+    expect(await me(tech)).toMatchObject({ businessDept: 'TECH', menu: ['deptPlan', 'tech'] })
+    expect(await me(buyer)).toMatchObject({ businessDept: 'PURCHASE', menu: ['deptPlan', 'purchase', 'kitting'], can: { purchase: true, seeAmount: true } })
+    expect(await me(prod)).toMatchObject({ businessDept: 'PRODUCTION', menu: ['deptPlan', 'production', 'releases'], can: { route: true, stepAction: true, mobileSend: true } })
+    expect(await me(qa)).toMatchObject({ businessDept: 'QUALITY', menu: ['deptPlan', 'production'], can: { route: false, mobileSend: false } })
     expect(await me(pm)).toMatchObject({ menu: ['tech', 'purchase', 'production'], pmOf: [MINE], can: { overview: false } })
-    expect(await me(lead)).toMatchObject({ menu: ['overview', 'tech', 'purchase', 'production'], can: { overview: true, seeAmount: true } })
+    expect(await me(lead)).toMatchObject({ menu: ['overview', 'deptPlan', 'tech', 'purchase', 'production'], can: { overview: true, seeAmount: true } })
 
     // 主数据用户：department 仍是 QMS 原名称（给人看），businessDept 是换算出的编码（选人下拉按它排序）
     const master = (await (await get('/api/master', pm)).json()) as { users: { id: string; department: string; businessDept: string | null }[] }
@@ -843,8 +843,8 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       db.reminder.create({ data: { userId: 'h-pm', title: '已读的', level: 'RED', readAt: new Date() } }),
       db.reminder.create({ data: { userId: 'h-pm2', title: '别人的', level: 'RED' } }),
     ])
-    expect(await json('/api/reminders/unread-count', pm)).toEqual({ unread: 2 })
-    expect(await json('/api/reminders/unread-count', pm2)).toEqual({ unread: 1 })
+    expect(await json('/api/reminders/unread-count', pm)).toEqual({ unread: 2, planPending: 0 })
+    expect(await json('/api/reminders/unread-count', pm2)).toEqual({ unread: 1, planPending: 0 })
     const list = await json<{ unread: number; items: { id: string; workOrderNumber: string | null; dueDay: string | null; bucket: string }[] }>('/api/reminders', pm)
     expect(list.unread).toBe(2)
     // 总计划退回通知：工单从跳转地址取；没有截止日的不论级别都归"未定截止日"
@@ -852,7 +852,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(list.items.map((i) => i.bucket)).toEqual(['NO_DUE', 'NO_DUE', 'NO_DUE'])
     const read = await fetch(`${base}/api/reminders/${r1.id}/read`, { method: 'POST', headers: { cookie: cookieHeader(pm) } })
     expect(read.status).toBe(200)
-    expect(await json('/api/reminders/unread-count', pm)).toEqual({ unread: 1 })
+    expect(await json('/api/reminders/unread-count', pm)).toEqual({ unread: 1, planPending: 0 })
     expect((await fetch(`${base}/api/reminders/unread-count`)).status).toBe(401)
     // 待办也带分组字段
     const todos = await json<{ bucket: string; workOrderNumber: string | null }[]>('/api/todos', admin)

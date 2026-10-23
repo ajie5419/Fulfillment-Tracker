@@ -21,11 +21,15 @@ import {
   planTaskFacts,
   purchaseFacts,
   childrenOf,
+  downstreamOf,
   lastTopNode,
+  outlineCodes,
+  planNodeAlertLink,
   resolvePreds,
   stepFacts,
   topoOrder,
   treeOrder,
+  waitsOn,
   w9PlanSummary,
   w9Summary,
 } from '../../server/services/plan/constants'
@@ -358,7 +362,7 @@ describe('机场行李车计划：只沿前置节点顺延、余量、关键节�
 })
 
 // ───── 子节点（10-22，zhao：悬挂要挂在下料组焊下面）─────
-describe('子节点：上级等子节点、子节点默认和上级同时开始', () => {
+describe('子节点：上级等子节点、子节点默认没有前置', () => {
   // A 原材料 → P 下料组焊（子节点 C1 车架、C2 悬挂）→ B 机加；子节点顺序号比 B 大（后加的）
   const A: NodeFacts = node('A', '2026-11-01')
   const P: NodeFacts = node('P', '2026-11-20')
@@ -377,11 +381,11 @@ describe('子节点：上级等子节点、子节点默认和上级同时开始'
     expect(lastTopNode([A, P, C1])?.id).toBe('P')
   })
 
-  it('默认前置：一级节点等上一个一级节点（不接到子节点上），子节点等上级的前置；子节点选上级当前置的丢掉', () => {
+  it('默认前置：一级节点等上一个一级节点（不接到子节点上），子节点没有前置（10-23）；子节点选上级当前置的丢掉', () => {
     const preds = resolvePreds(treeOrder(input))
     expect(preds.get('P')).toEqual(['A'])
-    expect(preds.get('C1')).toEqual(['A'])
-    expect(preds.get('C2')).toEqual(['A'])
+    expect(preds.get('C1')).toEqual([])
+    expect(preds.get('C2')).toEqual([])
     expect(preds.get('B')).toEqual(['P'])
     expect(resolvePreds(treeOrder([A, P, { ...C1, preds: ['P', 'A'] }])).get('C1')).toEqual(['A'])
   })
@@ -413,5 +417,100 @@ describe('子节点：上级等子节点、子节点默认和上级同时开始'
     expect(slack.get('P')).toBe(5)
     expect(slack.get('C2')).toBe(7) // 晚到上级计划日 11-20 之前不影响上级
     expect(slack.get('C1')).toBe(10)
+  })
+})
+
+// ───── 父任务 = 汇总行（10-23，zhao：原材料来晚了，就影响下料和组对焊接，但不影响其他的）─────
+describe('父任务是汇总行：只看子任务，延误只沿子任务的前置传', () => {
+  // S 采购（M 原材料、Y 油缸、L 轮胎）→ W 下料组焊（F 车架、X 悬挂，都等原材料）；Z 装配等油缸、轮胎、下料组焊
+  const S: NodeFacts = node('S', '2026-11-10')
+  const M: NodeFacts = { ...node('M', '2026-11-01'), parent: 'S' }
+  const Y: NodeFacts = { ...node('Y', '2026-11-05'), parent: 'S' }
+  const L: NodeFacts = { ...node('L', '2026-11-10'), parent: 'S' }
+  const W: NodeFacts = node('W', '2026-11-20') // 默认前置 = 上一个一级节点 S（整个采购）
+  const F: NodeFacts = { ...node('F', '2026-11-15'), parent: 'W', preds: ['M'] }
+  const X: NodeFacts = { ...node('X', '2026-11-20'), parent: 'W', preds: ['M'] }
+  const Z: NodeFacts = { ...node('Z', '2026-11-30'), preds: ['Y', 'L', 'W'] }
+  const late = (n: NodeFacts, day: string): NodeFacts => ({ ...n, tasks: [task({ planDay: day })] })
+  const run = (list: NodeFacts[]) => new Map(estimateNodes(list, TODAY).map((e) => [e.id, e]))
+
+  it('原材料晚 5 天：车架、悬挂、下料组焊跟着晚；油缸、轮胎不受影响', () => {
+    const est = run([S, late(M, '2026-11-06'), Y, L, W, F, X, Z])
+    expect(est.get('F')).toMatchObject({ delayDays: 5, pushedBy: 'M' })
+    expect(est.get('X')).toMatchObject({ delayDays: 5, pushedBy: 'M' })
+    expect(est.get('W')).toMatchObject({ delayDays: 5, source: false })
+    expect(est.get('Y')!.delayDays).toBe(0)
+    expect(est.get('L')!.delayDays).toBe(0)
+    expect(est.get('S')!.delayDays).toBe(0) // 采购汇总 = 最晚的子任务（轮胎 11-10），原材料晚到 11-06 不拖采购
+  })
+
+  it('轮胎晚 5 天：采购汇总晚，装配晚；下料组焊（只等原材料）不受影响', () => {
+    const est = run([S, M, Y, late(L, '2026-11-15'), W, F, X, Z])
+    expect(est.get('S')!.delayDays).toBe(5)
+    expect(est.get('W')!.delayDays).toBe(0)
+    expect(est.get('F')!.delayDays).toBe(0)
+    expect(est.get('Z')).toMatchObject({ delayDays: 5, pushedBy: 'L' })
+  })
+
+  it('上级自己的前置不推它，也不往下传：采购晚了，只等原材料的下料组焊不受影响（以前默认等整个采购）', () => {
+    const est = run([late(S, '2026-11-15'), M, Y, L, W, F, X, Z])
+    expect(est.get('W')!.delayDays).toBe(0)
+    const noLink = run([late(M, '2026-11-06'), S, Y, L, W, { ...F, preds: null }, X, Z].map((n) => (n.id === 'M' ? { ...n, parent: 'S' } : n)))
+    expect(noLink.get('F')!.delayDays).toBe(0) // 车架没设前置：不受原材料影响
+    expect(noLink.get('X')!.delayDays).toBe(5)
+  })
+})
+
+describe('影响范围 downstreamOf（10-23）', () => {
+  it('沿前置、子节点 → 汇总行往后一路列；汇总行自己的前置不算；不在链上的不列', () => {
+    const S: NodeFacts = node('S', '2026-11-10')
+    const M: NodeFacts = { ...node('M', '2026-11-01'), parent: 'S' }
+    const L: NodeFacts = { ...node('L', '2026-11-10'), parent: 'S' }
+    const W: NodeFacts = node('W', '2026-11-20')
+    const G: NodeFacts = { ...node('G', '2026-11-10'), parent: 'W', preds: [] } // 工艺：不等原材料
+    const F: NodeFacts = { ...node('F', '2026-11-15'), parent: 'W', preds: ['M'] } // 下料：等原材料
+    const Z: NodeFacts = { ...node('Z', '2026-11-30'), preds: ['L', 'W'] }
+    const d = downstreamOf(estimateNodes([S, M, L, W, G, F, Z], TODAY))
+    expect(d.get('M')).toEqual(['S', 'W', 'F', 'Z'])
+    expect(d.get('G')).toEqual(['W', 'Z'])
+    expect(d.get('L')).toEqual(['S', 'Z'])
+    expect(d.get('S')).toEqual([]) // 采购汇总晚了 = 某个子节点晚了，各自的影响看子节点；W 的默认前置 S 不推 W
+    expect(d.get('Z')).toEqual([])
+  })
+})
+
+describe('查环 / 排序和推后用同一套边（10-23 评审）', () => {
+  it('汇总行自己的前置不算边：S 默认等 A，A 再等 S（= 等 S 的子节点）不成环，A 照常被子节点推后', () => {
+    const A: NodeFacts = { ...node('A', '2026-11-30'), preds: ['S'] }
+    const S: NodeFacts = { ...node('S', '2026-11-10'), preds: ['A'] }
+    const C: NodeFacts = { ...node('C', '2026-11-10'), parent: 'S', tasks: [task({ planDay: '2026-11-13' })] }
+    const nodes = treeOrder([A, S, C])
+    expect(topoOrder(nodes.map((n) => n.id), waitsOn(resolvePreds(nodes), childrenOf(nodes)))).not.toBeNull()
+    const est = new Map(estimateNodes([A, S, C], TODAY).map((e) => [e.id, e]))
+    expect(est.get('A')).toMatchObject({ delayDays: 3, pushedBy: 'S' })
+  })
+})
+
+describe('大纲编号 outlineCodes（10-23：阶段 = 1 级、节点 = 2 级、子节点 = 3 级）', () => {
+  const n = (id: string, phase: string | null, parentId: string | null = null) => ({ id, phase, parentId })
+  it('有阶段：阶段.节点.子节点；同名阶段不连续时算新的一组', () => {
+    const codes = outlineCodes([n('a', '开工'), n('b', '设计'), n('c', '设计'), n('d', '生产'), n('d1', '生产', 'd'), n('d2', '生产', 'd'), n('e', '设计')])
+    expect(Object.fromEntries(codes)).toEqual({ a: '1.1', b: '2.1', c: '2.2', d: '3.1', d1: '3.1.1', d2: '3.1.2', e: '4.1' })
+  })
+  it('部分节点没阶段：没阶段的连续节点也算一组', () => {
+    const codes = outlineCodes([n('a', null), n('b', null), n('c', '采购')])
+    expect(Object.fromEntries(codes)).toEqual({ a: '1.1', b: '1.2', c: '2.1' })
+  })
+  it('全部没阶段：节点.子节点', () => {
+    const codes = outlineCodes([n('a', null), n('b', null), n('b1', null, 'b'), n('c', null)])
+    expect(Object.fromEntries(codes)).toEqual({ a: '1', b: '2', b1: '2.1', c: '3' })
+  })
+})
+
+describe('节点预警跳哪 planNodeAlertLink', () => {
+  it('超时未接收、未分解 → 部门计划页（电脑 / 手机）；延误 → 项目计划页', () => {
+    expect(planNodeAlertLink('planConfirm', 'WO 1', 'n1')).toEqual({ pc: '/dept-plan?node=n1', mobile: '/m/dept-plan?node=n1' })
+    expect(planNodeAlertLink('planSplit', 'WO 1', 'n1')).toEqual({ pc: '/dept-plan?node=n1', mobile: '/m/dept-plan?node=n1' })
+    expect(planNodeAlertLink('planNode', 'WO 1', 'n1')).toEqual({ pc: '/plan?wo=WO%201&node=n1', mobile: null })
   })
 })

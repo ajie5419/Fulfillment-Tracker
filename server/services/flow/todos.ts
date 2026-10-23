@@ -20,7 +20,7 @@ const ACTION_TEXT: Record<string, string> = {
   [SIGN_RELEASE]: '签收',
   [CONFIRM_CHANGE]: '确认变更影响',
   [READY_TO_START]: '可以开工',
-  [CONFIRM_PLAN_NODE]: '确认总计划节点',
+  [CONFIRM_PLAN_NODE]: '接收计划节点',
   [DO_PLAN_TASK]: '完成部门任务',
 }
 
@@ -81,7 +81,7 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[], 
         ...t,
         actionText,
         title: `${actionText}：${p.workOrderNumber} · ${p.name}（${p.deptText}，计划 ${p.planDate}）`,
-        suggestion: '项目经理已发布总计划：请确认本部门能按这个日期完成；做不到请退回并写原因',
+        suggestion: '项目经理已发布总计划：请到"部门计划"接收本部门的节点，再分解任务、指定负责人；按这个日期做不到请退回并写原因',
         step: null,
         release: null,
         plan: { ...p, nodeId: t.refId },
