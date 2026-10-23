@@ -8,6 +8,7 @@
  * 后端各接口自己再校验权限，这里只决定显示。
  */
 import dayjs, { type Dayjs } from 'dayjs'
+import { factoryDay } from '#shared/mobile-todo'
 import type { CanCreate, PlanNodeRow, PlanTask } from '#shared/plan-view'
 
 const props = withDefaults(defineProps<{ node: PlanNodeRow; wo: string; canCreate: CanCreate; viewOnly?: boolean }>(), { viewOnly: false })
@@ -96,10 +97,11 @@ const undoTask = (t: PlanTask) => act(() => send(`/api/plan/tasks/${t.id}/undo-c
 // ───── 任务完成（选日期）─────
 const doneOpen = ref(false)
 const taskDoing = ref<PlanTask | null>(null)
-const doneDate = ref<Dayjs>(dayjs())
+/** 默认完成日按工厂时区（Asia/Shanghai）的今天，避免浏览器时区跨零点时传成"明天"被服务端拒 */
+const doneDate = ref<Dayjs>(dayjs(factoryDay(new Date())))
 function openTaskDone(t: PlanTask) {
   taskDoing.value = t
-  doneDate.value = dayjs()
+  doneDate.value = dayjs(factoryDay(new Date()))
   doneOpen.value = true
 }
 async function submitDone() {

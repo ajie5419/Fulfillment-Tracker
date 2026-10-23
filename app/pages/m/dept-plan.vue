@@ -63,7 +63,8 @@ async function run(fn: () => Promise<unknown>, ok: string) {
     return false
   } finally {
     busy.value = false
-    await refresh()
+    // 接收/退回会关掉接收待办，菜单上的待接收数也要跟着刷新
+    await Promise.all([refresh(), refreshReminders()])
   }
 }
 const accept = (n: DeptPlanNode) => run(() => send(`/api/plan/nodes/${n.id}/confirm`, { method: 'POST', body: {} }), '已接收，到"执行中"分解任务')
@@ -102,7 +103,6 @@ function onOwner({ selectedValues }: { selectedValues: string[] }) {
   taskForm.ownerId = selectedValues[0] ?? ''
   showOwner.value = false
 }
-const pad = (x: number) => String(x).padStart(2, '0')
 function onDate({ selectedValues }: { selectedValues: string[] }) {
   taskForm.planDate = selectedValues.join('-')
   showDate.value = false
@@ -117,11 +117,8 @@ async function saveTask() {
   if (!taskForm.ownerId) return showFailToast('请选择责任人')
   if (await run(() => send(`/api/plan/nodes/${n.id}/tasks`, { method: 'POST', body: { name: taskForm.name, ownerId: taskForm.ownerId, planDate: taskForm.planDate, note: null } }), '已新增，责任人会收到待办')) taskNode.value = null
 }
-const today = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-const doneTask = (t: PlanTask) => run(() => send(`/api/plan/tasks/${t.id}/complete`, { method: 'POST', body: { date: today() } }), '已完成')
+/** 不传完成日，由服务端按工厂时区的今天记 */
+const doneTask = (t: PlanTask) => run(() => send(`/api/plan/tasks/${t.id}/complete`, { method: 'POST', body: {} }), '已完成')
 
 const CONFIRM_TYPE = { PENDING: 'warning', CONFIRMED: 'success', REJECTED: 'danger' } as const
 const CONFIRM_TONE = { PENDING: 'risk', CONFIRMED: 'done', REJECTED: 'late' } as const

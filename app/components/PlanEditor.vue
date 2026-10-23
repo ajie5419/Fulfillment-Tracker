@@ -16,6 +16,7 @@
 import dayjs, { type Dayjs } from 'dayjs'
 import { BUSINESS_DEPT_OPTIONS } from '#shared/business-depts'
 
+import { factoryDay } from '#shared/mobile-todo'
 import type { PlanNodeRow, PlanView } from '#shared/plan-view'
 
 const DEPTS = BUSINESS_DEPT_OPTIONS
@@ -222,10 +223,10 @@ async function submitReason() {
 // ───── 节点完成 ─────
 const doneOpen = ref(false)
 const doneNode = ref<PlanNodeRow | null>(null)
-const doneDate = ref<Dayjs>(dayjs())
+const doneDate = ref<Dayjs>(dayjs(factoryDay(new Date())))
 function openDone(n: PlanNodeRow) {
   doneNode.value = n
-  doneDate.value = dayjs()
+  doneDate.value = dayjs(factoryDay(new Date()))
   doneOpen.value = true
 }
 async function submitDone() {
@@ -333,7 +334,7 @@ const predsTitle = (n: PlanNodeRow) =>
 /** 受谁影响：子节点晚了 / 前置节点晚了 */
 const pushedText = (n: PlanNodeRow) => (!n.pushedBy ? '受上游影响' : n.pushedBy.child ? `受子节点影响（${n.pushedBy.code} ${n.pushedBy.name}）` : `受 ${n.pushedBy.code} 影响`)
 const view = ref<'table' | 'gantt'>('table')
-const today = computed(() => dayjs().format('YYYY-MM-DD'))
+const today = computed(() => factoryDay(new Date()))
 function selectFromGantt(id: string) {
   view.value = 'table'
   focusNode.value = id

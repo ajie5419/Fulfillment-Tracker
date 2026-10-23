@@ -7,6 +7,7 @@
  *   领导、项目部负责人、管理员可以切换部门；?node= 定位节点（接收待办、超时提醒跳过来）。
  */
 import dayjs from 'dayjs'
+import { factoryDay } from '#shared/mobile-todo'
 import type { DeptPlanNode, DeptPlanView } from '#shared/plan-view'
 
 useHead({ title: '部门计划' })
@@ -91,10 +92,10 @@ async function submitReject() {
 // 节点完成（手动）
 const doneOpen = ref(false)
 const doneNode = ref<DeptPlanNode | null>(null)
-const doneDate = ref(dayjs())
+const doneDate = ref(dayjs(factoryDay(new Date())))
 function openDone(n: DeptPlanNode) {
   doneNode.value = n
-  doneDate.value = dayjs()
+  doneDate.value = dayjs(factoryDay(new Date()))
   doneOpen.value = true
 }
 async function submitDone() {
