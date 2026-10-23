@@ -58,6 +58,8 @@ interface PlanNodeRow {
   preds: { id: string; seq: number; code: string; name: string }[]
   /** 被哪个前置节点推后（child = 被自己的子节点推后） */
   pushedBy: { seq: number; code: string; name: string; child: boolean } | null
+  /** 影响范围：本节点晚了会推后的节点 */
+  affects: { seq: number; code: string; name: string }[]
   /** 余量（天）：≤ 0 = 关键节点；null = 不显示（一条主线、已完成、或后面没节点接着） */
   slackDays: number | null
   critical: boolean
@@ -214,7 +216,7 @@ const form = reactive<{
   seq: number | undefined
   /** 上级节点（子节点）；空 = 一级节点 */
   parentId: string | undefined
-  /** default = 默认（一级节点等上一个一级节点，子节点和上级同时开始）；custom = 自己选（可以不选 = 没有前置） */
+  /** default = 默认（一级节点等上一个一级节点，子节点没有前置）；custom = 自己选（可以不选 = 没有前置） */
   depMode: 'default' | 'custom'
   preds: string[]
   note: string
@@ -249,10 +251,9 @@ const parentOptions = computed(() =>
   (data.value?.nodes ?? []).filter((x) => !x.parentId && x.id !== editing.value?.id).map((x) => ({ value: x.id, label: `#${x.code} ${x.name}` })),
 )
 const formParent = computed(() => (data.value?.nodes ?? []).find((x) => x.id === form.parentId) ?? null)
-/** 默认前置：一级节点 = 上一个一级节点；子节点 = 和上级同时开始（等上级的前置） */
+/** 默认前置：一级节点 = 上一个一级节点；子节点 = 没有前置（和兄弟子节点同时开始） */
 const defaultPredText = computed(() => {
-  const p = formParent.value
-  if (p) return `和上级同时开始（等上级的前置：${p.preds.length ? p.preds.map((x) => `#${x.code} ${x.name}`).join('、') : '无'}）`
+  if (formParent.value) return '没有前置（可以和同一上级下的其他子节点同时开始）'
   const list = (data.value?.nodes ?? []).filter((x) => !x.parentId)
   if (editing.value && !editing.value.parentId) {
     const i = list.findIndex((x) => x.id === editing.value!.id)
@@ -261,6 +262,8 @@ const defaultPredText = computed(() => {
   const last = list.at(-1)
   return last ? `#${last.code} ${last.name}（排在最后时）` : '无'
 })
+/** 汇总行（有子节点）：日期由子节点算、不设前置 */
+const isSummary = computed(() => !!editing.value?.childCount)
 const startLate = computed(() => !!form.startDate && !!form.planDate && form.startDate.isAfter(form.planDate, 'day'))
 /** 发布后：加节点、改计划日都要写原因 */
 const needReason = computed(() => published.value && (!editing.value || (!!form.planDate && form.planDate.format('YYYY-MM-DD') !== editing.value.planDate)))
@@ -502,9 +505,10 @@ const tableRows = computed<TableRow[]>(() => {
   }
   return out
 })
+const affectsText = (n: PlanNodeRow) => n.affects.map((p) => `#${p.code} ${p.name}`).join('、')
 const predsText = (n: PlanNodeRow) => n.preds.map((p) => `#${p.code}`).join(' ')
 const predsTitle = (n: PlanNodeRow) =>
-  [...n.preds.map((p) => `#${p.code} ${p.name}`), ...(n.customDeps ? [] : [n.parentId ? '（默认：和上级同时开始）' : '（默认：上一个节点）'])].join('\n')
+  [...n.preds.map((p) => `#${p.code} ${p.name}`), ...(n.customDeps ? [] : ['（默认：上一个节点）'])].join('\n')
 /** 受谁影响：子节点晚了 / 前置节点晚了 */
 const pushedText = (n: PlanNodeRow) => (!n.pushedBy ? '受上游影响' : n.pushedBy.child ? `受子节点影响（${n.pushedBy.name}）` : `受上游影响（#${n.pushedBy.code}）`)
 const view = ref<'table' | 'gantt'>('table')
@@ -649,7 +653,8 @@ const logColumns = [
             <div v-if="record.note" class="muted">{{ record.note }}</div>
           </template>
           <template v-else-if="column.key === 'preds'">
-            <span v-if="!record.preds.length" class="muted">{{ record.customDeps ? '无' : '—' }}</span>
+            <span v-if="record.childCount" class="muted" title="汇总行：日期由子节点算，看子节点的前置">按子节点</span>
+            <span v-else-if="!record.preds.length" class="muted">{{ record.customDeps ? '无' : '—' }}</span>
             <span v-else :class="{ muted: !record.customDeps }" :title="predsTitle(record as PlanNodeRow)">
               {{ predsText(record as PlanNodeRow) }}
             </span>
@@ -657,6 +662,7 @@ const logColumns = [
           <template v-else-if="column.key === 'plan'">
             {{ record.planDate }}
             <div v-if="record.startDate" class="muted">开始 {{ record.startDate }}</div>
+            <div v-if="record.childCount" class="muted small">子节点汇总</div>
             <div v-if="record.baselineDate && record.baselineDate !== record.planDate" class="muted">基线 <span class="changed">{{ record.baselineDate }}</span></div>
             <div v-else-if="published && !record.baselineDate" class="muted">发布后新增</div>
           </template>
@@ -666,6 +672,7 @@ const logColumns = [
               <span :class="{ late: record.delayDays > 0 }">{{ record.expectedDate }}</span>
               <div v-if="record.delayDays > 0" class="late small">晚 {{ record.delayDays }} 天<template v-if="record.source && DRIVER_TEXT[record.driver] && record.driver !== 'prev'">（{{ DRIVER_TEXT[record.driver] }}）</template></div>
               <div v-if="record.source && record.upstream" class="late small">其中自身晚 {{ record.selfDelayDays }} 天</div>
+              <div v-if="record.source && record.affects.length" class="late small" :title="affectsText(record as PlanNodeRow)">影响后续 {{ record.affects.length }} 个节点</div>
               <a-tag v-if="record.upstream && !record.source" color="default" class="small" :title="record.pushedBy ? `被 #${record.pushedBy.code} ${record.pushedBy.name} 推后` : ''">{{ pushedText(record as PlanNodeRow) }}</a-tag>
               <div v-if="record.slackDays != null">
                 <UiStatusTag v-if="record.critical" tone="primary">关键</UiStatusTag>
@@ -726,6 +733,10 @@ const logColumns = [
           </template>
         </template>
         <template #expandedRowRender="{ record }">
+          <div v-if="data?.network" class="affects small">
+            <template v-if="record.affects.length">晚了会影响 {{ record.affects.length }} 个节点：<span class="muted">{{ affectsText(record as PlanNodeRow) }}</span></template>
+            <span v-else class="muted">晚了不影响其他节点</span>
+          </div>
           <a-empty v-if="!record.tasks.length" :description="splitItems(record as PlanNodeRow).length ? '还没有分解：点本行“部门任务”列的“+ 分解”新建' : '还没有分解：等责任部门在这里新建部门任务'" />
           <a-table v-else :columns="taskColumns" :data-source="record.tasks" :row-key="(t: PlanTask) => `${t.kind}:${t.id}`" size="small" :pagination="false">
             <template #bodyCell="{ column: c, record: t }">
@@ -784,7 +795,7 @@ const logColumns = [
           <a-select v-model:value="form.dept" :options="DEPTS" />
           <div v-if="published && editing && form.dept !== editing.dept" class="muted">改责任部门后会重新请新部门负责人确认</div>
         </a-form-item>
-        <a-form-item label="上级节点（挂在某个节点下面当子节点；子节点都完成上级才算完成，子节点晚了上级跟着晚）">
+        <a-form-item label="上级节点（挂在某个节点下面当子节点；上级是汇总行：日期由子节点算，子节点都完成上级才算完成）">
           <a-select
             v-model:value="form.parentId"
             :options="parentOptions"
@@ -796,7 +807,6 @@ const logColumns = [
             style="width: 100%"
           />
           <div v-if="editing?.childCount" class="muted">这个节点下面有 {{ editing.childCount }} 个子节点，不能再挂到别的节点下面（子节点只有一层）</div>
-          <div v-else-if="formParent" class="muted">计划完成日不能晚于上级（{{ formParent.planDate }}）</div>
         </a-form-item>
         <a-form-item v-if="formParent" label="阶段">
           <span class="muted">跟上级：{{ formParent.phase ?? '未分阶段' }}</span>
@@ -804,7 +814,11 @@ const logColumns = [
         <a-form-item v-else label="阶段（分组显示，可不填）">
           <a-auto-complete v-model:value="form.phase" :options="phaseOptions" :maxlength="64" placeholder="如：图纸设计及文件下发、采购" />
         </a-form-item>
-        <div class="date-pair">
+        <a-form-item v-if="isSummary" label="计划日期">
+          <span>{{ editing!.startDate ?? editing!.planDate }} ～ {{ editing!.planDate }}</span>
+          <div class="muted">由子节点汇总（最早开始～最晚完成），请改子节点的日期。别的节点把它设为前置 = 等它下面的子节点全部完成。</div>
+        </a-form-item>
+        <div v-else class="date-pair">
           <a-form-item label="计划开始日（可不填）">
             <a-date-picker v-model:value="form.startDate" style="width: 100%" />
           </a-form-item>
@@ -814,7 +828,7 @@ const logColumns = [
         </div>
         <div v-if="startLate" class="late small form-tip">计划开始日晚于计划完成日</div>
         <div v-if="editing?.baselineDate" class="muted form-tip">基线 {{ editing.baselineDate }}</div>
-        <a-form-item label="前置节点（等它们完成才能开始；它们晚了，本节点跟着往后推）">
+        <a-form-item v-if="!isSummary" label="前置节点（等它们完成才能开始；它们晚了，本节点跟着往后推）">
           <a-radio-group v-model:value="form.depMode">
             <a-radio value="default">默认：{{ formParent ? '' : '上一个节点（' }}{{ defaultPredText }}{{ formParent ? '' : '）' }}</a-radio>
             <a-radio value="custom">自己选</a-radio>
@@ -919,4 +933,5 @@ const logColumns = [
 :deep(.child-row) td:first-child { color: var(--ft-text-2); }
 .date-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-tip { margin: -16px 0 16px; }
+.affects { margin: 0 0 8px; line-height: 1.6; }
 </style>

@@ -181,8 +181,8 @@ const columns = [
         <a-form-item label="说明"><a-input v-model:value="form.description" :maxlength="500" /></a-form-item>
         <a-form-item label="节点（按顺序）">
           <p class="muted">
-            完成日 = 交期 − 交期前天数（可以为负 = 交期后）；填了工期的，开始日 = 完成日 − 工期 + 1。前置不选 = 默认上一个节点（子节点默认和上级同时开始）。
-            选了上级的是子节点：子节点都完成上级才算完成，阶段跟上级。
+            完成日 = 交期 − 交期前天数（可以为负 = 交期后）；填了工期的，开始日 = 完成日 − 工期 + 1。前置不选 = 默认上一个节点（子节点默认没有前置）。
+            选了上级的是子节点；上级是汇总行：生成计划时日期按子节点汇总（最早开始～最晚完成，上级自己填的天数、工期、前置不起作用），子节点都完成上级才算完成，阶段跟上级。
           </p>
           <div class="node-row head muted">
             <span class="seq">#</span><span style="width: 120px">阶段</span><span style="width: 130px">上级节点</span><span style="width: 150px">节点名称</span>
@@ -213,7 +213,7 @@ const columns = [
               :options="predOptions(n)"
               option-filter-prop="label"
               :max-tag-count="2"
-              :placeholder="n.parent != null ? '同上级' : '上一个'"
+              :placeholder="n.parent != null ? '无' : '上一个'"
               style="width: 180px"
               aria-label="前置节点"
               @change="(v: unknown) => onPreds(n, v as number[])"

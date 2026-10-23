@@ -161,7 +161,7 @@ export interface NodeFacts {
   planDay: string
   /** 计划开始日（可选）：有开始日时，前置节点晚到"开始日前一天"之前不推后（中间的空档是余量） */
   startDay?: string | null
-  /** 前置节点 ID：null / 不填 = 默认（一级节点等上一个一级节点，子节点等上级节点的前置）；[] = 没有前置 */
+  /** 前置节点 ID：null / 不填 = 默认（一级节点等上一个一级节点，子节点没有前置）；[] = 没有前置 */
   preds?: string[] | null
   /** 上级节点 ID（子节点；只有一层）：子节点都完成上级才算完成，子节点晚了上级跟着晚 */
   parent?: string | null
@@ -243,7 +243,8 @@ export function parentsOf(nodes: { id: string; parent?: string | null }[]): Map<
 
 /**
  * 解析每个节点自己的前置节点（不含子节点；nodes 按 treeOrder 排好）：
- *   preds 为 null / 不填 = 默认：一级节点等上一个一级节点；子节点等上级节点的前置（和上级同时开始）。
+ *   preds 为 null / 不填 = 默认：一级节点等上一个一级节点；子节点没有前置（可以和兄弟子节点同时开始，10-23 zhao：
+ *   延误只沿子节点自己的前置传，上级的前置不往下传——否则原材料晚了，同一上级下不等原材料的工艺、料单也被推后）。
  *   不在本计划里的 ID、自己、自己的上级丢掉（上级要等子节点，子节点再等上级就成环）。
  */
 export function resolvePreds(nodes: Pick<NodeFacts, 'id' | 'preds' | 'parent'>[]): Map<string, string[]> {
@@ -255,7 +256,7 @@ export function resolvePreds(nodes: Pick<NodeFacts, 'id' | 'preds' | 'parent'>[]
     const parent = parentOf.get(n.id) ?? null
     let mine: string[]
     if (n.preds != null) mine = [...new Set(n.preds)].filter((p) => p !== n.id && p !== parent && ids.has(p))
-    else if (parent) mine = [...(out.get(parent) ?? [])]
+    else if (parent) mine = []
     else mine = prevTop ? [prevTop] : []
     out.set(n.id, mine)
     if (!parent) prevTop = n.id
@@ -319,8 +320,10 @@ export function lastTopNode<T extends { id: string; parent?: string | null }>(no
 /**
  * 算每个节点的预计日（nodes 按顺序号排好；输出顺序同输入）。
  * 只沿前置节点往后推：前置节点 p 晚了 d 天（预计 - 计划），扣掉连接余量后还晚的天数加到本节点计划日上；多个前置取最晚。
- * 没有自定前置的一级节点默认前置 = 上一个一级节点（和 R14 的一条主线一致）；子节点默认和上级同时开始（等上级的前置）。
- * 有子节点的节点：不早于最晚的子节点预计日（子节点晚了上级跟着晚，算"受上游影响"）；挂靠任务和子节点都完成才自动完成。
+ * 没有自定前置的一级节点默认前置 = 上一个一级节点（和 R14 的一条主线一致）；子节点默认没有前置。
+ * 有子节点的节点是汇总行（10-23 zhao：子任务是父任务的细分）：只被子节点推后（不早于最晚的子节点预计日，算"受上游影响"），
+ * 自己的前置只当子节点的默认前置、不直接推它——这样原材料晚了只影响等原材料的下料、组焊，不会经"采购"汇总殃及别的；
+ * 挂靠任务和子节点都完成才自动完成。
  * deliveryDay 给了时再从最后一个一级节点往前算余量（slackDays）。
  */
 export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: string): NodeEstimate[] {
@@ -344,6 +347,8 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
     const pPlan = byId.get(p.id)!.planDay
     return addDays(n.planDay, dayDiff(pPlan, p.expectedDay) - linkFloat(pPlan, n.startDay))
   }
+  /** 能推后节点的：有子任务的父任务是汇总行，只看子任务（自己的前置只当子任务的默认前置，不直接推它）；其余看前置 */
+  const pushers = (id: string) => pushersOf({ children: kids.get(id)!, preds: preds.get(id)! })
   for (const id of order ?? ids) {
     const n = byId.get(id)!
     const tasks = n.tasks.map((t) => ({ ...t, ...estimateTask(t, n.planDay, today) }))
@@ -377,7 +382,7 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
       }
       // 前置节点（和子节点）推到的最晚一天
       let shifted: string | null = null
-      for (const p of [...myPreds, ...kids.get(id)!]) {
+      for (const p of pushers(id)) {
         const d = pushOf(est.get(p)!, n)
         if (!shifted || d > shifted) [shifted, pushedBy] = [d, p]
       }
@@ -422,7 +427,7 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
     const slack = new Map<string, number>()
     if (!est.get(last.id)!.done) slack.set(last.id, dayDiff(est.get(last.id)!.expectedDay, deliveryDay))
     const succ = new Map<string, string[]>(ids.map((id) => [id, []]))
-    for (const [id, ws] of waitsOn(preds, kids)) for (const p of ws) succ.get(p)!.push(id)
+    for (const id of ids) for (const p of pushers(id)) succ.get(p)!.push(id)
     for (const id of [...(order ?? ids)].reverse()) {
       const me = est.get(id)!
       if (id === last.id || me.done) continue
@@ -438,6 +443,32 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
     for (const [id, v] of slack) est.get(id)!.slackDays = v
   }
   return input.map((n) => est.get(n.id)!)
+}
+
+/** 能推后节点的那些节点：汇总行（有子节点）只看子节点，其余看前置（和 estimateNodes 一致） */
+export const pushersOf = (e: Pick<NodeEstimate, 'preds' | 'children'>) => (e.children.length ? e.children : e.preds)
+
+/**
+ * 影响范围（10-23 zhao：建计划时就要知道缺什么影响什么）：每个节点晚了会一路推后哪些节点（沿前置、子节点 → 汇总行往后，直到最后），
+ * 按输入顺序排。不在里面的节点不受它影响。
+ */
+export function downstreamOf(est: Pick<NodeEstimate, 'id' | 'preds' | 'children'>[]): Map<string, string[]> {
+  const succ = new Map<string, string[]>(est.map((e) => [e.id, []]))
+  for (const e of est) for (const p of pushersOf(e)) succ.get(p)?.push(e.id)
+  const pos = new Map(est.map((e, i) => [e.id, i]))
+  const out = new Map<string, string[]>()
+  for (const e of est) {
+    const seen = new Set<string>()
+    const stack = [...succ.get(e.id)!]
+    while (stack.length) {
+      const id = stack.pop()!
+      if (seen.has(id) || id === e.id) continue
+      seen.add(id)
+      stack.push(...succ.get(id)!)
+    }
+    out.set(e.id, [...seen].sort((a, b) => pos.get(a)! - pos.get(b)!))
+  }
+  return out
 }
 
 /** 关键节点：没完成、余量 ≤ 0（再晚就拖交期） */
