@@ -40,3 +40,18 @@ WHERE t.id = 'plan-tpl-special-vehicle';
 
 UPDATE `plan_template` SET `description` = '内置模板：按机场行李车项目计划整理（100 天），含阶段、工期、前置节点，车架拆到下料、组焊、加工；按工单实际情况调整', `updatedAt` = CURRENT_TIMESTAMP(3)
 WHERE `id` = 'plan-tpl-special-vehicle';
+
+-- 已有总计划里的上级节点改成汇总行（和服务层 rollupParents 一致）：日期按子节点汇总（最早开始～最晚完成；开始 = 完成时不另存开始日），
+-- 不用部门确认（确认状态清空，没处理的确认待办作废）。没有子节点的数据不变。
+UPDATE `plan_node` p
+JOIN (
+    SELECT `parentId`, MAX(`planDate`) AS mx, MIN(COALESCE(`startDate`, `planDate`)) AS mn
+    FROM `plan_node` WHERE `parentId` IS NOT NULL GROUP BY `parentId`
+) c ON c.`parentId` = p.`id`
+SET p.`planDate` = c.mx,
+    p.`startDate` = IF(c.mn = c.mx, NULL, c.mn),
+    p.`confirmStatus` = NULL, p.`confirmedBy` = NULL, p.`confirmedAt` = NULL, p.`rejectReason` = NULL;
+
+UPDATE `todo` SET `status` = 'CANCELLED', `doneAt` = CURRENT_TIMESTAMP(3)
+WHERE `refType` = 'planNode' AND `action` = 'CONFIRM_PLAN_NODE' AND `status` = 'OPEN'
+  AND `refId` IN (SELECT `parentId` FROM (SELECT DISTINCT `parentId` FROM `plan_node` WHERE `parentId` IS NOT NULL) x);
