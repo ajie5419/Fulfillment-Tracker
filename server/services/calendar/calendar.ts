@@ -58,7 +58,7 @@ async function loadAll(now: Date) {
     const completed = isClosedWorkOrder(w.status)
     if (completed && !plan) continue
     const deliveryDay = dateFieldDay(w.deliveryDate)
-    const last = plan?.nodes.at(-1)
+    const last = plan?.nodes.find((n) => n.id === plan.forecast.lastNodeId)
     const lastEst = plan && last ? plan.forecast.nodes.find((x) => x.id === last.id) : undefined
     const base = { workOrderNumber: w.workOrderNumber, projectName: w.projectName, customerName: w.customerName, quantity: w.quantity, deliveryDay }
     if (plan && last && lastEst) {

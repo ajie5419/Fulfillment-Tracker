@@ -13,10 +13,25 @@ const reason = z
   .nullish()
   .transform((v) => (v === undefined ? undefined : v || null))
 
+const phase = z
+  .string()
+  .trim()
+  .max(64, '阶段名称最多 64 字')
+  .nullish()
+  .transform((v) => (v === undefined ? undefined : v || null))
+
 const nodeFields = {
   name: z.string().trim().min(1, '请填写节点名称').max(191, '节点名称最多 191 字'),
   dept: businessDept,
   planDate: day,
+  /** 阶段（分组显示） */
+  phase,
+  /** 计划开始日（可选） */
+  startDate: day.nullish(),
+  /** 前置节点 ID：null = 默认上一个节点；[] = 没有前置 */
+  preds: z.array(z.string().min(1).max(191)).max(60, '前置节点最多 60 个').nullish(),
+  /** 上级节点 ID（子节点，只有一层）：null = 一级节点 */
+  parentId: z.string().min(1).max(191).nullish(),
   /** 顺序号：小的在前；不填 = 排最后 */
   seq: z.number().int().min(-100000).max(100000).nullish(),
   note: z
@@ -48,6 +63,13 @@ export const templateBody = z
           name: z.string().trim().min(1, '请填写节点名称').max(191, '节点名称最多 191 字'),
           dept: businessDept,
           daysBeforeDelivery: z.number().int('天数要是整数').min(-365, '天数太小').max(2000, '天数太大'),
+          phase,
+          /** 工期（天）：空 = 不设开始日 */
+          durationDays: z.number().int('工期要是整数').min(1, '工期至少 1 天').max(2000, '工期太长').nullish(),
+          /** 前置节点（本模板里的顺序号，从 1 开始）：null = 默认上一个节点；[] = 没有前置 */
+          preds: z.array(z.number().int().min(1).max(60)).max(60).nullish(),
+          /** 上级节点的顺序号（子节点，只有一层，上级要排在前面）：null = 一级节点 */
+          parent: z.number().int().min(1).max(60).nullish(),
         }).strict(),
       )
       .min(1, '模板至少要有一个节点')

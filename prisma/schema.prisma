@@ -893,6 +893,14 @@ model PlanTemplateNode {
   dept               BusinessDept
   /// 交期前多少天（0 = 交期当天，如"发运"）
   daysBeforeDelivery Int
+  /// 阶段（如"图纸设计及文件下发""采购"；页面按阶段分组显示）
+  phase              String?      @db.VarChar(64)
+  /// 工期（天，含首尾）：生成时计划开始日 = 计划完成日 - 工期 + 1；空 = 不设开始日
+  durationDays       Int?
+  /// 前置节点（本模板里的顺序号数组，如 [3, 8]）：null = 默认上一个节点；[] = 没有前置
+  predSeqs           Json?
+  /// 上级节点的顺序号（子节点，只有一层；上级要排在前面）：null = 一级节点
+  parentSeq          Int?
   template           PlanTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
   @@unique([templateId, seq])
@@ -939,8 +947,18 @@ model PlanNode {
   seq             Int
   name            String           @db.VarChar(191)
   dept            BusinessDept
+  /// 阶段（如"图纸设计及文件下发""采购"；页面按阶段分组显示，空 = 不分组）
+  phase           String?          @db.VarChar(64)
+  /// 计划开始日（可选，日期字段）：甘特图画横道；有开始日时前置节点只在晚到"开始日前一天"之后才往后推（中间的空档是余量）
+  startDate       DateTime?
   planDate        DateTime
   baselineDate    DateTime?
+  /// 前置节点是否自定：false = 默认（一级节点等上一个一级节点，子节点等上级节点的前置）；true = 用 plan_node_dep 里的（可以为空 = 没有前置）
+  customDeps      Boolean          @default(false)
+  /// 上级节点（10-22，子节点只有一层）：子节点都完成上级才算完成，子节点晚了上级跟着晚；子节点的阶段跟上级。上级删了子节点变回一级节点（服务层先拦）
+  parentId        String?
+  parent          PlanNode?        @relation("PlanNodeTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children        PlanNode[]       @relation("PlanNodeTree")
   /// 手动标记完成时的完成日（自动完成不写这里，现算）
   actualDate      DateTime?
   manualDoneBy    String?          @db.VarChar(64)
@@ -957,10 +975,29 @@ model PlanNode {
   routeSteps      RouteStep[]
   assemblyNodes   AssemblyNode[]
   planTasks       PlanTask[]
+  preds           PlanNodeDep[]    @relation("PlanNodeDepSucc")
+  succs           PlanNodeDep[]    @relation("PlanNodeDepPred")
 
   @@index([workOrderNumber, seq])
   @@index([confirmStatus])
+  @@index([parentId])
   @@map("plan_node")
+}
+
+/**
+ * 总计划节点的前置关系（10-22，按真实 MS Project 计划：多条线并行，各节点只等自己的前置节点）。
+ * 完成-开始：前置节点晚了，后续节点跟着往后推（有计划开始日时扣掉中间的空档）。同一工单内、不能成环（服务层校验）。
+ * 只有 plan_node.customDeps = true 的节点才看这里；任一端节点删了，关系一起删。
+ */
+model PlanNodeDep {
+  nodeId String
+  predId String
+  node   PlanNode @relation("PlanNodeDepSucc", fields: [nodeId], references: [id], onDelete: Cascade)
+  pred   PlanNode @relation("PlanNodeDepPred", fields: [predId], references: [id], onDelete: Cascade)
+
+  @@id([nodeId, predId])
+  @@index([predId])
+  @@map("plan_node_dep")
 }
 
 /**

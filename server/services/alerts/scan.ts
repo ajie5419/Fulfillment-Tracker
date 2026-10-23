@@ -541,7 +541,7 @@ async function collectW9(now: Date, t: Thresholds, offDays: string[]): Promise<T
       // 节点未分解（部门计划二次分解）：发布（发布后加的节点从加的时候）起过了 W9 提醒小时数仍没有任何部门任务 → 提醒责任部门负责人
       const splitFrom = new Date(Math.max(+(plan.publishedAt ?? n.createdAt), +n.createdAt))
       const splitElapsed = elapsedExcludingOffDays(splitFrom, now, offDays)
-      const split = judgeSplit(e, splitElapsed, t.W9.remindHours)
+      const split = judgeSplit({ done: e.done, taskCount: e.taskCount + e.children.length }, splitElapsed, t.W9.remindHours)
       if (split) {
         out.push({
           rule: 'W9',

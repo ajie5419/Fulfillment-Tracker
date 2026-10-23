@@ -1,6 +1,6 @@
 /**
  * 项目部总计划（R14，总计划设计.md）：每个工单一份，按模板倒推生成 → 项目经理调整 → 发布（锁基线、各部门确认）→
- * 部门记录挂节点 → 预计完成日沿主线顺延 → 预计交期 / 拖期天数、W9 预警。
+ * 部门记录挂节点 → 预计完成日沿前置节点顺延（10-22 起支持多条线并行，默认前置 = 上一个节点）→ 预计交期 / 拖期天数、余量、W9 预警。
  *
  *   发布前（草稿）：随便改日期、增删节点，不记调整记录；
  *   发布后：当时的计划日记为基线（不再变）；给每个节点的责任部门负责人发"确认总计划节点"待办（可确认、可退回写原因，退回提醒项目经理）；
@@ -34,17 +34,23 @@ import {
   type TaskFacts,
   type TaskKind,
   addDays,
+  childrenOf,
+  isCritical,
   assemblyFacts,
   drawingFacts,
   forecastPlan,
   planLink,
   planTaskFacts,
   purchaseFacts,
+  resolvePreds,
   stepFacts,
+  topoOrder,
+  treeOrder,
   w9ConfirmKey,
   w9Key,
   w9PlanKey,
   w9SplitKey,
+  waitsOn,
 } from './constants'
 
 type Tx = Prisma.TransactionClient
@@ -95,13 +101,14 @@ export async function loadPlans(filter: { workOrderNumbers?: string[]; published
   const nodes = await prisma.planNode.findMany({ where: { workOrderNumber: { in: wos } }, orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] })
   const nodeIds = nodes.map((n) => n.id)
   const linked = { planNodeId: { in: nodeIds } }
-  const [workOrders, drawings, purchases, steps, assemblies, others] = await Promise.all([
+  const [workOrders, drawings, purchases, steps, assemblies, others, deps] = await Promise.all([
     prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: wos } }, select: { workOrderNumber: true, deliveryDate: true } }),
     nodeIds.length ? prisma.drawingTask.findMany({ where: linked, orderBy: { planDate: 'asc' } }) : [],
     nodeIds.length ? prisma.purchaseLine.findMany({ where: linked, orderBy: { needDate: 'asc' } }) : [],
     nodeIds.length ? prisma.routeStep.findMany({ where: linked, include: { part: { select: { name: true } } }, orderBy: [{ partId: 'asc' }, { seq: 'asc' }] }) : [],
     nodeIds.length ? prisma.assemblyNode.findMany({ where: linked, include: NODE_LINKS, orderBy: { needDate: 'asc' } }) : [],
     nodeIds.length ? prisma.planTask.findMany({ where: linked, orderBy: [{ planDate: 'asc' }, { createdAt: 'asc' }] }) : [],
+    nodeIds.length ? prisma.planNodeDep.findMany({ where: { nodeId: { in: nodeIds } } }) : [],
   ])
   const today = shanghaiDay(now)
   const [kits, names] = await Promise.all([
@@ -166,21 +173,29 @@ export async function loadPlans(filter: { workOrderNumbers?: string[]; published
     })),
   ]
   const woOfNode = new Map(nodes.map((n) => [n.id, n.workOrderNumber]))
+  const predsOf = new Map<string, string[]>()
+  for (const d of deps) predsOf.set(d.nodeId, [...(predsOf.get(d.nodeId) ?? []), d.predId])
   for (const t of tasks) if (t.kind === 'step') t.link = `/parts?wo=${encodeURIComponent(woOfNode.get(t.nodeId) ?? '')}`
   const delivery = new Map(workOrders.map((w) => [w.workOrderNumber, day(w.deliveryDate)]))
   const statusOf = new Map(plans.map((p) => [p.workOrderNumber, p.status]))
   const publishedAtOf = new Map(plans.map((p) => [p.workOrderNumber, p.publishedAt]))
   const out = new Map<string, PlanData>()
   for (const wo of wos) {
-    const mine = nodes.filter((n) => n.workOrderNumber === wo)
+    // 按层级排：一级节点按顺序号，子节点紧跟在上级后面
+    const mine = treeOrder(nodes.filter((n) => n.workOrderNumber === wo).map((n) => ({ id: n.id, parent: n.parentId, n }))).map((x) => x.n)
     const myTasks = tasks.filter((t) => woOfNode.get(t.nodeId) === wo)
     const facts: NodeFacts[] = mine.map((n) => ({
       id: n.id,
       planDay: day(n.planDate),
+      startDay: n.startDate ? day(n.startDate) : null,
+      preds: n.customDeps ? (predsOf.get(n.id) ?? []) : null,
+      parent: n.parentId,
       manualDoneDay: n.manualDoneAt && n.actualDate ? day(n.actualDate) : null,
       tasks: myTasks.filter((t) => t.nodeId === n.id).map((t) => t.facts),
     }))
     const deliveryDay = delivery.get(wo) ?? null
+    const lastTop = mine.filter((n) => !n.parentId).at(-1)
+    const lastPlanDay = lastTop ? day(lastTop.planDate) : null
     out.set(wo, {
       workOrderNumber: wo,
       status: statusOf.get(wo) ?? null,
@@ -188,7 +203,7 @@ export async function loadPlans(filter: { workOrderNumbers?: string[]; published
       deliveryDay,
       nodes: mine,
       tasks: myTasks,
-      forecast: forecastPlan(facts, deliveryDay ?? facts.at(-1)?.planDay ?? today, today),
+      forecast: forecastPlan(facts, deliveryDay ?? lastPlanDay ?? today, today),
     })
   }
   return out
@@ -238,6 +253,18 @@ export async function getPlan(workOrderNumber: string, ctx: RoleContext, now = n
   const planAlert = alerts.find((a) => a.activeKey === w9PlanKey(workOrderNumber))
   const published = plan?.status === 'PUBLISHED'
   const est = new Map(data.forecast.nodes.map((n) => [n.id, n]))
+  /** 编号：一级节点 1、2、3…，子节点 上级编号.1、.2…（页面、前置节点都用它，和 MS Project 的大纲编号一样） */
+  const codeOf = new Map<string, string>()
+  let top = 0
+  for (const n of data.nodes) {
+    if (!n.parentId) codeOf.set(n.id, String(++top))
+    else codeOf.set(n.id, `${codeOf.get(n.parentId)}.${data.nodes.filter((m) => m.parentId === n.parentId).findIndex((m) => m.id === n.id) + 1}`)
+  }
+  const seqName = new Map(data.nodes.map((n) => [n.id, { seq: n.seq, code: codeOf.get(n.id)!, name: n.name }]))
+  /** 用了前置节点、开始日或子节点（多条线并行）：页面才显示余量 / 关键节点；一条主线时每个节点都"关键"，不显示 */
+  const network = data.nodes.some((n) => n.customDeps || n.startDate || n.parentId)
+  const hasSucc = new Set([...data.forecast.nodes.flatMap((e) => e.preds), ...data.nodes.filter((n) => n.parentId).map((n) => n.id)])
+  const lastId = data.forecast.lastNodeId
   return {
     workOrder: {
       workOrderNumber,
@@ -255,6 +282,13 @@ export async function getPlan(workOrderNumber: string, ctx: RoleContext, now = n
     /** W9 工单级（预计交期晚于合同交期）的活动预警级别 */
     planAlertLevel: planAlert?.level ?? null,
     unlinked,
+    network,
+    /** 没有后续节点接着的节点（最后一个除外）：它们晚了不影响预计交期，多半是漏连了前置关系 */
+    dangling: network ? data.nodes.filter((n) => n.id !== lastId && !hasSucc.has(n.id)).map((n) => ({ id: n.id, seq: n.seq, code: codeOf.get(n.id)!, name: n.name })) : [],
+    /** 对应交期的节点（最后一个一级节点） */
+    lastNodeId: lastId,
+    /** 阶段下拉（已用过的阶段名，按出现顺序） */
+    phases: [...new Set(data.nodes.map((n) => n.phase).filter((x): x is string => !!x))],
     canEdit: canOperate(ctx, 'plan', { workOrderNumber }),
     /** 节点"分解"菜单里能新建哪几类部门记录（只决定显示，后端各自再校验） */
     canCreate: {
@@ -270,11 +304,24 @@ export async function getPlan(workOrderNumber: string, ctx: RoleContext, now = n
       return {
         id: n.id,
         seq: n.seq,
+        code: codeOf.get(n.id)!,
         name: n.name,
         dept: n.dept,
         deptText: BUSINESS_DEPT_NAME[n.dept],
         note: n.note,
+        /** 上级节点（子节点）；子节点数 */
+        parentId: n.parentId,
+        childCount: e.children.length,
+        phase: n.phase,
+        startDate: n.startDate ? day(n.startDate) : null,
         planDate: day(n.planDate),
+        /** 前置节点：customDeps = false 时是默认的"上一个节点" */
+        customDeps: n.customDeps,
+        preds: e.preds.map((id) => ({ id, ...seqName.get(id)! })),
+        /** 被哪个前置节点（或子节点，child = true）推后（driver = prev 时） */
+        pushedBy: e.pushedBy ? { ...seqName.get(e.pushedBy)!, child: e.children.includes(e.pushedBy) } : null,
+        slackDays: network ? e.slackDays : null,
+        critical: network && isCritical(e),
         baselineDate: n.baselineDate ? day(n.baselineDate) : null,
         expectedDate: e.expectedDay,
         actualDate: e.actualDay,
@@ -323,8 +370,8 @@ export async function getPlan(workOrderNumber: string, ctx: RoleContext, now = n
             canDone: t.kind === 'task' && (canSplit || t.owner?.id === ctx.userId),
           }
         }),
-        /** 未分解：节点下还没有任何部门任务（不算已取消的） */
-        unsplit: e.taskCount === 0,
+        /** 未分解：节点下还没有任何部门任务（不算已取消的），也没有子节点 */
+        unsplit: e.taskCount === 0 && e.children.length === 0,
         splitAlertLevel: levelOf.get(w9SplitKey(n.id)) ?? null,
         /** 能在这个节点下分解（加其他任务；4 类记录另看 canCreate） */
         canSplit,
@@ -350,11 +397,11 @@ export async function getPlan(workOrderNumber: string, ctx: RoleContext, now = n
 export async function planOptions(workOrderNumber: string) {
   const [plan, nodes] = await Promise.all([
     prisma.workOrderPlan.findUnique({ where: { workOrderNumber }, select: { status: true } }),
-    prisma.planNode.findMany({ where: { workOrderNumber }, orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }], select: { id: true, seq: true, name: true, dept: true, planDate: true } }),
+    prisma.planNode.findMany({ where: { workOrderNumber }, orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }], select: { id: true, seq: true, name: true, dept: true, planDate: true, parentId: true } }),
   ])
   return {
     published: plan?.status === 'PUBLISHED',
-    nodes: nodes.map((n) => ({ id: n.id, seq: n.seq, name: n.name, dept: n.dept, deptText: BUSINESS_DEPT_NAME[n.dept], planDate: day(n.planDate) })),
+    nodes: treeOrder(nodes.map((n) => ({ ...n, parent: n.parentId }))).map((n) => ({ id: n.id, seq: n.seq, name: n.name, dept: n.dept, deptText: BUSINESS_DEPT_NAME[n.dept], planDate: day(n.planDate) })),
   }
 }
 
@@ -392,10 +439,67 @@ async function requestConfirm(tx: Tx, node: Pick<PlanNode, 'id' | 'dept'>): Prom
   return owners.length
 }
 
-/** 日期改了以后，这个节点和后面节点的延误预警按新日期重算（下一轮扫描），先清掉旧的 */
-async function clearDelayAlerts(tx: Tx, workOrderNumber: string, fromSeq: number) {
-  const later = await tx.planNode.findMany({ where: { workOrderNumber, seq: { gte: fromSeq } }, select: { id: true } })
-  await clearAlertKeys(tx, later.map((n) => w9Key(n.id)))
+/** 日期、顺序、前置关系改了以后，全工单节点的延误预警按新计划重算（下一轮扫描），先清掉旧的（有前置关系后受影响的不一定在后面） */
+async function clearDelayAlerts(tx: Tx, workOrderNumber: string) {
+  const all = await tx.planNode.findMany({ where: { workOrderNumber }, select: { id: true } })
+  await clearAlertKeys(tx, all.map((n) => w9Key(n.id)))
+}
+
+/** 写前置节点：null = 恢复默认（上一个节点），数组 = 自定（可以为空 = 没有前置）。只能选同一工单的其他节点 */
+async function saveDeps(tx: Tx, workOrderNumber: string, nodeId: string, preds: string[] | null) {
+  await tx.planNodeDep.deleteMany({ where: { nodeId } })
+  if (preds == null) {
+    await tx.planNode.update({ where: { id: nodeId }, data: { customDeps: false } })
+    return
+  }
+  const ids = [...new Set(preds)]
+  if (ids.includes(nodeId)) throw new FlowError('前置节点不能选自己')
+  const ok = await tx.planNode.count({ where: { id: { in: ids }, workOrderNumber } })
+  if (ok !== ids.length) throw new FlowError('前置节点要是同一个工单总计划里的节点，请刷新后重选')
+  await tx.planNode.update({ where: { id: nodeId }, data: { customDeps: true } })
+  if (ids.length) await tx.planNodeDep.createMany({ data: ids.map((predId) => ({ nodeId, predId })) })
+}
+
+/** 改完以后整份校验：前置关系不能成环（默认的"上一个节点"也算，调顺序也可能成环），在同一事务里失败就整体回滚 */
+async function assertNoCycle(tx: Tx, workOrderNumber: string) {
+  const rows = await tx.planNode.findMany({
+    where: { workOrderNumber },
+    orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+    select: { id: true, name: true, customDeps: true, parentId: true },
+  })
+  const deps = await tx.planNodeDep.findMany({ where: { nodeId: { in: rows.map((n) => n.id) } } })
+  const facts = treeOrder(rows.map((n) => ({ id: n.id, parent: n.parentId, preds: n.customDeps ? deps.filter((d) => d.nodeId === n.id).map((d) => d.predId) : null })))
+  // 子节点等自己的上级：上级又要等子节点做完，必成环，单独说清楚
+  const nameOf = new Map(rows.map((n) => [n.id, n.name]))
+  const bad = facts.find((n) => n.parent && n.preds?.includes(n.parent))
+  if (bad) throw new FlowError(`"${nameOf.get(bad.id)}"的前置节点里有它的上级"${nameOf.get(bad.parent!)}"：上级要等子节点做完，子节点不能再等上级，请去掉`)
+  if (topoOrder(facts.map((n) => n.id), waitsOn(resolvePreds(facts), childrenOf(facts)))) return
+  throw new FlowError('前置节点成环了（A 等 B、B 又等 A）：请检查前置节点，或者没自定前置的节点默认等"上一个节点"，调整顺序后可能成环')
+}
+
+const startCheck = (start: Date | null | undefined, plan: Date) => {
+  if (start && day(start) > day(plan)) throw new FlowError(`计划开始日 ${day(start)} 不能晚于计划完成日 ${day(plan)}`)
+}
+
+/** 上级节点校验（只有一层）：同一工单、不是自己、上级自己不是子节点、本节点下面没有子节点。返回上级（null = 一级节点） */
+async function checkParent(tx: Tx, workOrderNumber: string, nodeId: string | null, parentId: string | null | undefined) {
+  if (!parentId) return null
+  if (parentId === nodeId) throw new FlowError('上级节点不能选自己')
+  const parent = await tx.planNode.findUnique({ where: { id: parentId }, select: { id: true, workOrderNumber: true, parentId: true, phase: true, planDate: true, name: true } })
+  if (!parent || parent.workOrderNumber !== workOrderNumber) throw new FlowError('上级节点要是同一个工单总计划里的节点，请刷新后重选')
+  if (parent.parentId) throw new FlowError(`"${parent.name}"本身是子节点：子节点下面不能再挂子节点`)
+  if (nodeId && (await tx.planNode.count({ where: { parentId: nodeId } }))) throw new FlowError('这个节点下面有子节点，不能再挂到别的节点下面')
+  return parent
+}
+
+/** 子节点的计划完成日不能晚于上级（上级要等子节点都做完）；改上级的计划日也不能早于子节点 */
+async function treeDateCheck(tx: Tx, nodeId: string | null, name: string, plan: Date, parent: { name: string; planDate: Date } | null) {
+  if (parent && day(plan) > day(parent.planDate)) {
+    throw new FlowError(`"${name}"的计划完成日 ${day(plan)} 晚于上级"${parent.name}"的 ${day(parent.planDate)}：上级要等子节点都做完，请先把上级的计划完成日往后调`)
+  }
+  if (!nodeId) return
+  const late = await tx.planNode.findFirst({ where: { parentId: nodeId, planDate: { gt: plan } }, orderBy: { planDate: 'desc' }, select: { name: true, planDate: true } })
+  if (late) throw new FlowError(`子节点"${late.name}"的计划完成日 ${day(late.planDate)} 晚于 ${day(plan)}：上级不能早于子节点完成，请先调整子节点`)
 }
 
 const needReason = (published: boolean, reason: string | null | undefined, what: string) => {
@@ -403,7 +507,7 @@ const needReason = (published: boolean, reason: string | null | undefined, what:
 }
 
 /**
- * 按模板生成：模板里的"交期前多少天"按 QMS 交期倒推出各节点计划日。
+ * 按模板生成：模板里的"交期前多少天"按 QMS 交期倒推出各节点计划日；有工期的算出计划开始日，有前置的连上前置节点。
  * 只能在草稿（或还没有总计划）时生成；已有的草稿节点整份替换（挂在它们上面的部门记录变成未挂）。
  */
 export async function generateFromTemplate(workOrderNumber: string, templateId: string, actorId: string) {
@@ -418,9 +522,40 @@ export async function generateFromTemplate(workOrderNumber: string, templateId: 
     // 草稿节点下已分解的其他任务随节点一起删，待办作废
     await cancelTaskTodos(tx, (await tx.planTask.findMany({ where: { workOrderNumber }, select: { id: true } })).map((t) => t.id))
     const replaced = await tx.planNode.deleteMany({ where: { workOrderNumber } })
-    await tx.planNode.createMany({
-      data: tpl.nodes.map((n, i) => ({ workOrderNumber, seq: i + 1, name: n.name, dept: n.dept, planDate: parse(addDays(delivery, -n.daysBeforeDelivery)) })),
-    })
+    // 逐个建（要拿到 ID 连前置节点）；模板有工期的算出计划开始日，有前置顺序号的转成节点 ID
+    const idOfSeq = new Map<number, string>()
+    for (const [i, n] of tpl.nodes.entries()) {
+      const plan = addDays(delivery, -n.daysBeforeDelivery)
+      const node = await tx.planNode.create({
+        data: {
+          workOrderNumber,
+          seq: i + 1,
+          name: n.name,
+          dept: n.dept,
+          phase: n.phase,
+          planDate: parse(plan),
+          startDate: n.durationDays && n.durationDays > 0 ? parse(addDays(plan, -(n.durationDays - 1))) : null,
+          customDeps: Array.isArray(n.predSeqs),
+        },
+      })
+      idOfSeq.set(n.seq, node.id)
+    }
+    const deps = tpl.nodes.flatMap((n) =>
+      (Array.isArray(n.predSeqs) ? (n.predSeqs as unknown[]) : [])
+        .map((seq) => idOfSeq.get(Number(seq)))
+        .filter((predId): predId is string => !!predId && predId !== idOfSeq.get(n.seq))
+        .map((predId) => ({ nodeId: idOfSeq.get(n.seq)!, predId })),
+    )
+    if (deps.length) await tx.planNodeDep.createMany({ data: deps, skipDuplicates: true })
+    // 子节点挂到上级下面（阶段跟上级）
+    const phaseOfSeq = new Map(tpl.nodes.map((n) => [n.seq, n.phase]))
+    for (const n of tpl.nodes) {
+      const parentId = n.parentSeq != null ? idOfSeq.get(n.parentSeq) : undefined
+      if (parentId && parentId !== idOfSeq.get(n.seq)) {
+        await tx.planNode.update({ where: { id: idOfSeq.get(n.seq)! }, data: { parentId, phase: phaseOfSeq.get(n.parentSeq!) ?? null } })
+      }
+    }
+    await assertNoCycle(tx, workOrderNumber)
     await tx.workOrderPlan.update({ where: { workOrderNumber }, data: { templateName: tpl.name } })
     return { created: tpl.nodes.length, replaced: replaced.count }
   })
@@ -430,6 +565,14 @@ export interface NodeInput {
   name: string
   dept: BusinessDept
   planDate: Date
+  /** 阶段（分组显示） */
+  phase?: string | null
+  /** 计划开始日（可选，不能晚于计划日） */
+  startDate?: Date | null
+  /** 前置节点 ID：null = 默认；[] = 没有前置 */
+  preds?: string[] | null
+  /** 上级节点 ID（子节点，只有一层）：null = 一级节点 */
+  parentId?: string | null
   /** 顺序号：小的在前；不填 = 排最后 */
   seq?: number | null
   note?: string | null
@@ -445,19 +588,35 @@ export async function createNode(workOrderNumber: string, input: NodeInput, acto
     const published = plan.status === 'PUBLISHED'
     needReason(published, input.reason, '加节点')
     const seq = input.seq ?? ((await tx.planNode.aggregate({ where: { workOrderNumber }, _max: { seq: true } }))._max.seq ?? 0) + 1
+    startCheck(input.startDate, input.planDate)
+    const parent = await checkParent(tx, workOrderNumber, null, input.parentId)
+    await treeDateCheck(tx, null, input.name.trim(), input.planDate, parent)
     const node = await tx.planNode.create({
-      data: { workOrderNumber, seq, name: input.name.trim(), dept: input.dept, planDate: input.planDate, note: input.note?.trim() || null },
+      data: {
+        workOrderNumber,
+        seq,
+        name: input.name.trim(),
+        dept: input.dept,
+        parentId: parent?.id ?? null,
+        // 子节点的阶段跟上级
+        phase: parent ? parent.phase : input.phase?.trim() || null,
+        startDate: input.startDate ?? null,
+        planDate: input.planDate,
+        note: input.note?.trim() || null,
+      },
     })
+    if (input.preds !== undefined) await saveDeps(tx, workOrderNumber, node.id, input.preds)
+    await assertNoCycle(tx, workOrderNumber)
     if (published) {
       await tx.planChangeLog.create({ data: { workOrderNumber, nodeId: node.id, nodeName: node.name, kind: 'ADD', newDate: node.planDate, reason: input.reason!.trim(), actorId } })
       await requestConfirm(tx, node)
-      await clearDelayAlerts(tx, workOrderNumber, seq)
+      await clearDelayAlerts(tx, workOrderNumber)
     }
     return { id: node.id }
   })
 }
 
-/** 改节点（名称、责任部门、计划日、顺序、备注）。发布后改计划日要写原因（记调整记录）；改了计划日或责任部门的节点重新请部门确认 */
+/** 改节点（名称、责任部门、阶段、开始日、计划日、顺序、前置节点、备注）。发布后改计划日要写原因（记调整记录）；改了计划日或责任部门的节点重新请部门确认 */
 export async function updateNode(id: string, input: Partial<NodeInput>, actorId: string) {
   return prisma.$transaction(async (tx) => {
     const cur = await tx.planNode.findUnique({ where: { id }, select: { workOrderNumber: true } })
@@ -475,7 +634,34 @@ export async function updateNode(id: string, input: Partial<NodeInput>, actorId:
     if (input.planDate !== undefined) data.planDate = input.planDate
     if (input.seq != null) data.seq = input.seq
     if (input.note !== undefined) data.note = input.note?.trim() || null
+    if (input.phase !== undefined) data.phase = input.phase?.trim() || null
+    if (input.startDate !== undefined) data.startDate = input.startDate
+    startCheck(input.startDate !== undefined ? input.startDate : old.startDate, input.planDate ?? old.planDate)
+    // 上级节点：改了要校验；子节点的阶段跟上级
+    const newParentId = input.parentId !== undefined ? input.parentId || null : old.parentId
+    const parentChanged = newParentId !== old.parentId
+    const parent = parentChanged
+      ? await checkParent(tx, old.workOrderNumber, id, newParentId)
+      : old.parentId
+        ? await tx.planNode.findUnique({ where: { id: old.parentId }, select: { name: true, planDate: true, phase: true } })
+        : null
+    if (parentChanged) data.parent = newParentId ? { connect: { id: newParentId } } : { disconnect: true }
+    if (parent) data.phase = parent.phase
+    // 只在改了计划日或上级时校验（只改名称、备注的不拦，免得被已有的不一致数据卡住）
+    if (dateChanged || parentChanged) await treeDateCheck(tx, id, input.name?.trim() ?? old.name, input.planDate ?? old.planDate, parent)
     const node = await tx.planNode.update({ where: { id }, data })
+    if (!node.parentId && node.phase !== old.phase) await tx.planNode.updateMany({ where: { parentId: id }, data: { phase: node.phase } })
+    // 前置节点：页面每次保存都会带上，只有真的变了才重写（避免无谓地清掉、重发延误预警）
+    let depsChanged = false
+    if (input.preds !== undefined) {
+      const oldPreds = old.customDeps ? (await tx.planNodeDep.findMany({ where: { nodeId: id }, select: { predId: true } })).map((d) => d.predId).sort() : null
+      const newPreds = input.preds == null ? null : [...new Set(input.preds)].sort()
+      depsChanged = JSON.stringify(oldPreds) !== JSON.stringify(newPreds)
+      if (depsChanged) await saveDeps(tx, node.workOrderNumber, id, input.preds)
+    }
+    const startChanged = input.startDate !== undefined && (input.startDate ? day(input.startDate) : null) !== (old.startDate ? day(old.startDate) : null)
+    const seqChanged = input.seq != null && input.seq !== old.seq
+    if (depsChanged || seqChanged || parentChanged) await assertNoCycle(tx, node.workOrderNumber)
     if (published && dateChanged) {
       await tx.planChangeLog.create({
         data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'DATE', oldDate: old.planDate, newDate: node.planDate, reason: input.reason!.trim(), actorId },
@@ -486,7 +672,7 @@ export async function updateNode(id: string, input: Partial<NodeInput>, actorId:
       await requestConfirm(tx, node)
       reconfirm = true
     }
-    if (dateChanged || (input.seq != null && input.seq !== old.seq)) await clearDelayAlerts(tx, node.workOrderNumber, Math.min(old.seq, node.seq))
+    if (dateChanged || seqChanged || depsChanged || startChanged || parentChanged) await clearDelayAlerts(tx, node.workOrderNumber)
     return { id, reconfirm }
   })
 }
@@ -500,6 +686,8 @@ export async function deleteNode(id: string, reason: string | null | undefined, 
     const node = await tx.planNode.findUnique({ where: { id } })
     if (!node) throw new FlowError('总计划节点不存在')
     const published = plan.status === 'PUBLISHED'
+    const kids = await tx.planNode.count({ where: { parentId: id } })
+    if (kids) throw new FlowError(`"${node.name}"下面还有 ${kids} 个子节点：请先删除子节点，或把它们改成一级节点`)
     needReason(published, reason, '删节点')
     if (published) {
       await tx.planChangeLog.create({ data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'DELETE', oldDate: node.planDate, reason: reason!.trim(), actorId } })
@@ -508,8 +696,10 @@ export async function deleteNode(id: string, reason: string | null | undefined, 
     // 节点下的其他任务随节点一起删（外键级联），待办作废
     await cancelTaskTodos(tx, (await tx.planTask.findMany({ where: { planNodeId: id }, select: { id: true } })).map((t) => t.id))
     await clearAlertKeys(tx, [w9Key(id), w9ConfirmKey(id), w9SplitKey(id)])
-    await tx.planNode.delete({ where: { id } })
-    await clearDelayAlerts(tx, node.workOrderNumber, node.seq)
+    await tx.planNode.delete({ where: { id } }) // 前置关系两头都级联删除
+    // 删掉后，紧跟着它、默认等"上一个节点"的节点改等更前面的节点，可能成环：成环就整笔回滚
+    await assertNoCycle(tx, node.workOrderNumber)
+    await clearDelayAlerts(tx, node.workOrderNumber)
     return { ok: true }
   })
 }
@@ -599,6 +789,13 @@ export async function rejectNode(id: string, reason: string, actorId: string) {
 export async function completeNode(id: string, date: Date | null | undefined, actorId: string, now = new Date()) {
   const d = date ?? todayDate(now)
   if (day(d) > shanghaiDay(now)) throw new FlowError('完成日期不能晚于今天')
+  // 有子节点的：子节点都完成才能完成（子节点都完成时会自动完成）
+  const kids = await prisma.planNode.findMany({ where: { parentId: id }, select: { id: true, name: true, workOrderNumber: true } })
+  if (kids.length) {
+    const est = (await loadPlans({ workOrderNumbers: [kids[0]!.workOrderNumber] }, now)).get(kids[0]!.workOrderNumber)?.forecast.nodes ?? []
+    const undone = kids.filter((k) => !est.find((e) => e.id === k.id)?.done)
+    if (undone.length) throw new FlowError(`还有子节点没完成：${undone.map((k) => k.name).join('、')}（子节点都完成后会自动完成）`)
+  }
   return prisma.$transaction(async (tx) => {
     const { node } = await lockNode(tx, id)
     if (node.manualDoneAt) throw new FlowError('这个节点已经标记完成了，请刷新')
