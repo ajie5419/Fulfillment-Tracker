@@ -27,6 +27,7 @@ import {
   stepFacts,
   topoOrder,
   treeOrder,
+  waitsOn,
   w9PlanSummary,
   w9Summary,
 } from '../../server/services/plan/constants'
@@ -473,5 +474,17 @@ describe('影响范围 downstreamOf（10-23）', () => {
     expect(d.get('L')).toEqual(['S', 'Z'])
     expect(d.get('S')).toEqual([]) // 采购汇总晚了 = 某个子节点晚了，各自的影响看子节点；W 的默认前置 S 不推 W
     expect(d.get('Z')).toEqual([])
+  })
+})
+
+describe('查环 / 排序和推后用同一套边（10-23 评审）', () => {
+  it('汇总行自己的前置不算边：S 默认等 A，A 再等 S（= 等 S 的子节点）不成环，A 照常被子节点推后', () => {
+    const A: NodeFacts = { ...node('A', '2026-11-30'), preds: ['S'] }
+    const S: NodeFacts = { ...node('S', '2026-11-10'), preds: ['A'] }
+    const C: NodeFacts = { ...node('C', '2026-11-10'), parent: 'S', tasks: [task({ planDay: '2026-11-13' })] }
+    const nodes = treeOrder([A, S, C])
+    expect(topoOrder(nodes.map((n) => n.id), waitsOn(resolvePreds(nodes), childrenOf(nodes)))).not.toBeNull()
+    const est = new Map(estimateNodes([A, S, C], TODAY).map((e) => [e.id, e]))
+    expect(est.get('A')).toMatchObject({ delayDays: 3, pushedBy: 'S' })
   })
 })

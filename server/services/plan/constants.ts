@@ -275,9 +275,15 @@ export function childrenOf(nodes: Pick<NodeFacts, 'id' | 'parent'>[]): Map<strin
   return out
 }
 
-/** 节点要等的全部节点：自己的前置 + 子节点（排拓扑顺序、查环用） */
+/** 能推后节点的那些节点：汇总行（有子节点）只看子节点，其余看前置（和 estimateNodes 一致） */
+export const pushersOf = (e: Pick<NodeEstimate, 'preds' | 'children'>) => (e.children.length ? e.children : e.preds)
+
+/**
+ * 节点实际要等的节点（排拓扑顺序、查环用，和推后预计日的规则 pushersOf 一致）：
+ * 有子节点的汇总行只等子节点（自己的前置不起作用，不算边）；其余等自己的前置。
+ */
 export function waitsOn(preds: Map<string, string[]>, children: Map<string, string[]>): Map<string, string[]> {
-  return new Map([...preds].map(([id, ps]) => [id, [...ps, ...(children.get(id) ?? [])]]))
+  return new Map([...preds].map(([id, ps]) => [id, pushersOf({ preds: ps, children: children.get(id) ?? [] })]))
 }
 
 /**
@@ -444,9 +450,6 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
   }
   return input.map((n) => est.get(n.id)!)
 }
-
-/** 能推后节点的那些节点：汇总行（有子节点）只看子节点，其余看前置（和 estimateNodes 一致） */
-export const pushersOf = (e: Pick<NodeEstimate, 'preds' | 'children'>) => (e.children.length ? e.children : e.preds)
 
 /**
  * 影响范围（10-23 zhao：建计划时就要知道缺什么影响什么）：每个节点晚了会一路推后哪些节点（沿前置、子节点 → 汇总行往后，直到最后），
