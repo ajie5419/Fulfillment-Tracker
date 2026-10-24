@@ -654,6 +654,20 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       const bad = await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], bomFileId: wf!.id })
       expect(bad.status).toBe(400)
       expect(((await bad.json()) as { message: string }).message).toContain('工单号是 OTHER-WO-1')
+      // 没有 Excel：粘贴明细（10-24 zhao 技术部只有纸质明细表）→ 预览行号对上粘贴内容 → save 存成 BOM 表 → 发放建工件
+      const paste = (sess: Record<string, string>, text: string, save = false) => send(sess, 'POST', '/api/bom/text', { workOrderNumber: MINE, text, save })
+      expect((await paste(proc, 'HTTP-BOM-5 接口销轴 4')).status).toBe(403)
+      const pt = await paste(tech, 'HTTP-BOM-5 接口销轴 4\n\nHTTP-BOM-6 接口连接板 x')
+      expect(pt.status).toBe(200)
+      expect(await pt.json()).toMatchObject({ rows: 2, errors: [{ row: 3, messages: [expect.stringContaining('数量"x"')] }] })
+      expect((await paste(tech, 'HTTP-BOM-5 接口销轴 4\n\nHTTP-BOM-6 接口连接板 x', true)).status).toBe(400) // 有错不存
+      const ok = await paste(tech, '代号\t名称\t数量\nHTTP-BOM-5\t接口销轴\t4\nHTTP-BOM-1\t接口主梁\t1', true)
+      expect(ok.status).toBe(200)
+      const okBody = (await ok.json()) as { fileId: string; lines: { drawingNo: string; status: string }[] }
+      expect(okBody.lines.map((l) => [l.drawingNo, l.status])).toEqual([['HTTP-BOM-5', 'new'], ['HTTP-BOM-1', 'exists']])
+      const rel2 = await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: '车架图纸第二批', userIds: ['h-prod'], bomFileId: okBody.fileId })
+      expect(rel2.status).toBe(200)
+      expect(((await rel2.json()) as { bom: unknown }).bom).toMatchObject({ created: 1, matched: 1 })
     }
     expect(await me(qa)).toMatchObject({ businessDept: 'QUALITY', menu: ['deptPlan', 'production'], can: { route: false, mobileSend: false } })
     expect(await me(pm)).toMatchObject({ menu: ['tech', 'purchase', 'production'], pmOf: [MINE], can: { overview: false } })

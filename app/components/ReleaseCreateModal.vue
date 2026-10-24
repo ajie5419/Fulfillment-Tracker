@@ -27,8 +27,11 @@ const form = reactive({
   groups: [] as { department?: string; role: string }[],
 })
 const files = ref<UploadFile[]>([])
-const bomFile = ref<File | null>(null)
+const bomAttached = ref(false)
 const bomBlocked = ref(false)
+const bomField = ref<{ prepare: () => Promise<string | null> } | null>(null)
+/** 每次打开换一个 key：BOM 栏（选的文件、粘的明细）跟着清空 */
+const openSeq = ref(0)
 const submitting = ref(false)
 
 /** 打开时装入的工单：工单 watch 碰到它就不清工件（预填的工件要留着）；用户之后改工单照常清空 */
@@ -48,7 +51,7 @@ watch(
       groups: [],
     })
     files.value = []
-    bomFile.value = null
+    openSeq.value++
     loadedWo = form.workOrderNumber
     if (form.workOrderNumber) refreshParts()
   },
@@ -98,12 +101,12 @@ async function submit() {
   if (!form.description.trim()) return message.warning('请填写说明')
   const groups = form.groups.filter((g) => g.department || g.role).map((g) => ({ department: g.department || null, role: g.role || null }))
   if (!form.userIds.length && !groups.length) return message.warning('请选择接收人')
-  const withBom = form.type === 'DRAWING' && !!bomFile.value
-  if (withBom && bomBlocked.value) return message.warning('BOM 表有问题，改好后重新选，或点"不附"')
+  const withBom = form.type === 'DRAWING' && bomAttached.value
+  if (withBom && bomBlocked.value) return message.warning('BOM 表还没识别好或有问题，看 BOM 表一栏的提示；不附的话点"不附"或"清空"')
   submitting.value = true
   try {
     const attachmentIds = await uploadAttachments(files.value.map((f) => f.originFileObj as File).filter(Boolean))
-    const bomFileId = withBom ? await uploadBomFile(bomFile.value!) : null
+    const bomFileId = withBom ? ((await bomField.value?.prepare()) ?? null) : null
     const r = await releasePost<{
       id: string
       releaseNo: string
@@ -159,10 +162,10 @@ async function submit() {
         />
       </a-form-item>
       <a-form-item v-if="form.type === 'DRAWING'" label="BOM 表">
-        <ReleaseBomField v-model:file="bomFile" v-model:blocked="bomBlocked" :work-order-number="form.workOrderNumber" />
+        <ReleaseBomField :key="openSeq" ref="bomField" v-model:attached="bomAttached" v-model:blocked="bomBlocked" :work-order-number="form.workOrderNumber" />
       </a-form-item>
       <a-form-item label="关联工件">
-        <a-select v-model:value="form.partIds" mode="multiple" allow-clear option-filter-prop="label" :placeholder="form.workOrderNumber ? (bomFile && form.type === 'DRAWING' ? 'BOM 里的工件发放时自动关联，这里可不选' : '可多选，可不选') : '先选工单'" :options="partOptions" />
+        <a-select v-model:value="form.partIds" mode="multiple" allow-clear option-filter-prop="label" :placeholder="form.workOrderNumber ? (bomAttached && form.type === 'DRAWING' ? 'BOM 里的工件发放时自动关联，这里可不选' : '可多选，可不选') : '先选工单'" :options="partOptions" />
       </a-form-item>
       <a-form-item label="版本号"><a-input v-model:value="form.version" :maxlength="64" placeholder="如 A、B、V2，可空" /></a-form-item>
       <a-form-item label="说明" required>

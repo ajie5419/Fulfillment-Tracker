@@ -1,7 +1,7 @@
 /** 技术部 BOM Excel 导入：读表头、归类（螺栓螺母、没图号、同图号合并、已有工件、版号不同）；QMS BOM 按图号关联（纯函数，不连库） */
 import ExcelJS from 'exceljs'
 import { describe, expect, it } from 'vitest'
-import { classifyBom, drawingKey, readBomFile, readBomWorkbook, workOrderMismatch, type RawBomRow } from '../../server/services/bom/excel'
+import { bomTextToXlsx, classifyBom, drawingKey, readBomFile, readBomWorkbook, workOrderMismatch, type RawBomRow } from '../../server/services/bom/excel'
 import { planBomImport } from '../../server/services/bom/import'
 import type { QmsBomItem } from '../../server/services/bom/client'
 
@@ -77,6 +77,42 @@ describe('readBomWorkbook', () => {
     const sheet = await readBomFile(await xlsx([['工单号：', 'WO-9'], ['代号', '名称', '数量'], ['A-1', '主梁', 3]]))
     expect(sheet).toMatchObject({ workOrderNumber: 'WO-9', rows: [{ drawingNo: 'A-1', quantity: 3 }] })
     expect(sheet.rows[0]!.noQuantityColumn).toBeUndefined()
+  })
+
+  it('粘贴的明细：从 Word 复制（制表符、带表头和工单号）', async () => {
+    const text = [
+      '项目名称：EMSV70管片运输车\t\t\t工单号：25TL-CL-2626-2',
+      '序号\t代号\t名称\t幅面\t张数\t备注',
+      '1\tEMSV70-01000000\t驾驶室安装\t\t1\t',
+      '2\tEMSV70-01010001\t销轴1\tA4\t2\t',
+      '\t\t\t合计\t3\t',
+    ].join('\r\n')
+    const sheet = await readBomFile((await bomTextToXlsx(text)).buf)
+    expect(sheet.workOrderNumber).toBe('25TL-CL-2626-2')
+    expect(sheet.rows.map((r) => [r.drawingNo, r.name, r.quantity, !!r.noQuantityColumn])).toEqual([
+      ['EMSV70-01000000', '驾驶室安装', 1, true],
+      ['EMSV70-01010001', '销轴1', 1, true],
+    ])
+  })
+
+  it('粘贴的明细：没有表头，按空白分列；第一列序号去掉；第三列是数量', async () => {
+    const sheet = await readBomFile((await bomTextToXlsx('1  EMSV70-01010001  销轴1  4\n2 EMSV70-01010002 销轴2\n\n')).buf)
+    expect(sheet.rows.map((r) => [r.drawingNo, r.name, r.quantity])).toEqual([
+      ['EMSV70-01010001', '销轴1', '4'],
+      ['EMSV70-01010002', '销轴2', null],
+    ])
+    const two = await readBomFile((await bomTextToXlsx('EMSV70-01010001 销轴1\nEMSV70-01010002 销轴2')).buf)
+    expect(two.rows.map((r) => [r.drawingNo, r.quantity, r.noQuantityColumn])).toEqual([['EMSV70-01010001', 1, true], ['EMSV70-01010002', 1, true]])
+    await expect(bomTextToXlsx('  \n ')).rejects.toThrow('请粘贴明细')
+  })
+
+  it('粘贴的明细：行号减 rowOffset 就是粘贴内容里的第几行（空行也算）', async () => {
+    const noHeader = await bomTextToXlsx('EMSV70-01010001 销轴1 2\n\nEMSV70-01010002 销轴2 3')
+    expect(noHeader.rowOffset).toBe(1)
+    expect((await readBomFile(noHeader.buf)).rows.map((r) => r.row - noHeader.rowOffset)).toEqual([1, 3])
+    const withHeader = await bomTextToXlsx('代号\t名称\n\nEMSV70-01010001\t销轴1')
+    expect(withHeader.rowOffset).toBe(0)
+    expect((await readBomFile(withHeader.buf)).rows.map((r) => r.row)).toEqual([3])
   })
 
   it('稀疏表（最后一行在第 1048576 行）只读有内容的行，不空转', async () => {

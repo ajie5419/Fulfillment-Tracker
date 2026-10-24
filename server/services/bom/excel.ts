@@ -169,6 +169,39 @@ export async function readBomFile(buf: Buffer): Promise<BomSheet> {
 
 export const readBomWorkbook = async (buf: Buffer) => (await readBomFile(buf)).rows
 
+/** 粘贴的明细最多多少字（2000 行 × 每行约 100 字） */
+export const MAX_BOM_TEXT = 200_000
+
+/**
+ * 把从 Word / Excel / PDF 复制来的明细表文字转成 .xlsx（之后和上传的 Excel 走同一套读表、归类；这份 xlsx 也作为发放单的 BOM 表存档）。
+ * 有制表符按制表符分列，没有就按空白分列。认不出表头时补一行表头（代号、名称，有第三列再加数量）；
+ * 每行第一列是纯数字且后面还有两列以上时当序号去掉。
+ * 空行原样留成空行（读表时跳过），所以 xlsx 行号 - rowOffset = 粘贴内容里的第几行，报错时按这个行号告诉用户。
+ */
+export async function bomTextToXlsx(textIn: string): Promise<{ buf: Buffer; rowOffset: number }> {
+  const lines = textIn.replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n').map((l) => l.trim())
+  const filled = lines.filter(Boolean)
+  if (!filled.length) throw new FlowError('请粘贴明细')
+  if (filled.length > MAX_BOM_ROWS + HEADER_SCAN_ROWS) throw new FlowError(`一张 BOM 表最多 ${MAX_BOM_ROWS} 行`)
+  const byTab = filled.some((l) => l.includes('\t'))
+  let grid = lines.map((l) => (!l ? [] : (byTab ? l.split('\t') : l.split(/\s+/)).map((c) => c.trim())))
+  const hasHeader = grid.slice(0, HEADER_SCAN_ROWS).some((row) => {
+    const keys = new Set(row.map(headerKey).filter(Boolean))
+    return REQUIRED.every((k) => keys.has(k))
+  })
+  if (!hasHeader) {
+    grid = grid.map((row) => {
+      const cells = row.filter((c) => c !== '')
+      return cells.length >= 3 && /^\d+$/.test(cells[0]!) ? cells.slice(1) : cells
+    })
+    // 有第三列才当有数量列；只有代号、名称两列时按每个图号 1 件
+    grid.unshift(grid.some((r) => r.length >= 3) ? ['代号', '名称', '数量'] : ['代号', '名称'])
+  }
+  const wb = new ExcelJS.Workbook()
+  wb.addWorksheet('明细').addRows(grid)
+  return { buf: Buffer.from(await wb.xlsx.writeBuffer()), rowOffset: hasHeader ? 0 : 1 }
+}
+
 /** 表上写的工单号和发放时选的工单不一样（忽略大小写和空格）；表上没写不算 */
 export const workOrderMismatch = (sheet: string | null, selected: string) => !!sheet && drawingKey(sheet) !== drawingKey(selected)
 
@@ -291,9 +324,12 @@ const loadExisting = (db: Pick<typeof prisma, 'part'>, workOrderNumber: string) 
  * 预览：读文件 → 归类，不写库。blocking 为版号变了、发放时会被拦下的图号数；
  * sheetWorkOrder 为表上写的工单号，和选的工单不一样时 workOrderMismatch = true（发放时拦下）。
  */
-export async function previewTechBom(workOrderNumber: string, buf: Buffer) {
+/** rowOffset：粘贴的明细（bomTextToXlsx）把行号换成粘贴内容里的第几行，提示文字里的行号也跟着对上 */
+export async function previewTechBom(workOrderNumber: string, buf: Buffer, rowOffset = 0) {
   await assertWorkOrder(workOrderNumber)
-  const { rows, workOrderNumber: sheetWorkOrder } = await readBomFile(buf)
+  const sheet = await readBomFile(buf)
+  const rows = sheet.rows.map((r) => ({ ...r, row: r.row - rowOffset }))
+  const sheetWorkOrder = sheet.workOrderNumber
   const { lines, errors } = classifyBom(rows, await loadExisting(prisma, workOrderNumber))
   const blocking = lines.filter((l) => l.status === 'revisionChanged' && l.existing?.revision).length
   return { rows: rows.length, lines, errors, blocking, sheetWorkOrder, workOrderMismatch: workOrderMismatch(sheetWorkOrder, workOrderNumber) }
