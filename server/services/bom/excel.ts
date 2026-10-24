@@ -15,6 +15,8 @@ import { prisma } from '../../utils/prisma'
 import { FlowError } from '../flow/errors'
 
 export const MAX_BOM_ROWS = 2000
+/** 单个工件数量上限（同图号合并后也不能超过） */
+export const MAX_QUANTITY = 100000
 
 type Key = 'drawingNo' | 'revision' | 'name' | 'quantity'
 const HEADERS: Record<Key, string[]> = {
@@ -142,7 +144,7 @@ export interface BomRowError {
 function parseQuantity(v: Cell): number | undefined {
   if (v === null) return undefined
   const n = typeof v === 'number' ? v : Number(String(v).replace(/[,，\s]/g, ''))
-  return Number.isInteger(n) && n >= 1 && n <= 100000 ? n : undefined
+  return Number.isInteger(n) && n >= 1 && n <= MAX_QUANTITY ? n : undefined
 }
 
 /** 行 → 待导入清单：校验数量、合并同图号、对照工单里已有的工件 */
@@ -178,8 +180,13 @@ export function classifyBom(rows: RawBomRow[], existing: ExistingPart[]): { line
     const key = drawingKey(drawingNo)
     const same = byKey.get(key)
     if (same) {
+      if (same.quantity + quantity! > MAX_QUANTITY) {
+        // 合计超过上限时报错，不悄悄截断
+        errors.push({ row: r.row, messages: [`图号 ${drawingNo} 合并后数量 ${same.quantity + quantity!} 超过 ${MAX_QUANTITY}`] })
+        continue
+      }
       same.rows.push(r.row)
-      same.quantity = Math.min(same.quantity + quantity!, 100000)
+      same.quantity += quantity!
       if (name && name !== same.name) same.notes.push(`第 ${r.row} 行名称是"${name}"，按第 ${same.rows[0]} 行的"${same.name}"建`)
       if (revision && revision !== same.revision) same.notes.push(`第 ${r.row} 行版号是"${revision}"，和第 ${same.rows[0]} 行"${same.revision ?? '空'}"不一致`)
       continue

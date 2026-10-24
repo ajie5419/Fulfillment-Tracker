@@ -80,6 +80,12 @@ describe('classifyBom', () => {
     ])
   })
 
+  it('同图号合并后数量超过上限：报错，不悄悄截断', () => {
+    const { lines, errors } = classifyBom([raw(2, 'ZL-001', '主梁', 60000), raw(3, 'ZL-001', '主梁', 60000)], [])
+    expect(errors).toEqual([{ row: 3, messages: ['图号 ZL-001 合并后数量 120000 超过 100000'] }])
+    expect(lines.map((l) => l.quantity)).toEqual([60000])
+  })
+
   it('图号比较忽略空格和大小写', () => {
     expect(drawingKey(' zl - 001 ')).toBe('ZL-001')
   })
@@ -112,5 +118,12 @@ describe('planBomImport 按图号关联', () => {
     expect(plan.create.map((p) => p.qmsBomId)).toEqual(['3'])
     expect(plan.skipped).toEqual(['4'])
     expect(plan.warnings).toEqual(['零件4：图号 ZL-001 在 QMS 里录了不止一行，已关联到工件"主梁"，这行跳过'])
+  })
+
+  it('上次已关联过的图号：之后再勾选同图号的 QMS 行也不新建', () => {
+    const plan = planBomImport([row('5', 'ZL-001'), row('6', 'ZT-003')], ['5', '6'], new Set(), known, new Map(), new Map([['ZL-001', '主梁']]))
+    expect(plan.create.map((p) => p.qmsBomId)).toEqual(['6'])
+    expect(plan.skipped).toEqual(['5'])
+    expect(plan.warnings[0]).toBe('零件5：图号 ZL-001 已有关联 QMS 的工件"主梁"，这行跳过')
   })
 })

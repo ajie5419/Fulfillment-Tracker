@@ -90,6 +90,8 @@ export function planBomImport(
   imported: ReadonlySet<string>,
   known: ReadonlySet<string>,
   linkable: LinkableParts = new Map(),
+  /** 已关联过 QMS 的工件：图号（drawingKey）→ 工件名称。同图号的新 QMS 行不再建工件 */
+  linked: ReadonlyMap<string, string> = new Map(),
 ): BomImportPlan {
   const byId = new Map(rows.map((r) => [r.id, r]))
   const plan: BomImportPlan = { create: [], link: [], skipped: [], missing: [], warnings: [] }
@@ -106,6 +108,13 @@ export function planBomImport(
         // QMS 里同一图号录了两行：第一行已关联，这行不再建，避免重复工件
         plan.skipped.push(id)
         plan.warnings.push(`${p.part.name}：图号 ${row.partNumber} 在 QMS 里录了不止一行，已关联到工件"${target.name}"，这行跳过`)
+        continue
+      }
+      const takenBy = key && !target ? linked.get(key) : undefined
+      if (takenBy !== undefined) {
+        // 同图号的工件已经关联过别的 QMS 行（比如上次导入时跳过的重复行）：仍然不建，避免重复工件
+        plan.skipped.push(id)
+        plan.warnings.push(`${p.part.name}：图号 ${row.partNumber} 已有关联 QMS 的工件"${takenBy}"，这行跳过`)
         continue
       }
       if (target) {
@@ -133,6 +142,21 @@ async function linkableParts(db: Pick<Prisma.TransactionClient, 'part'>, workOrd
   return map
 }
 
+/** 工单里已经关联 QMS 的、带图号的工件 → 按图号索引名称 */
+async function linkedParts(db: Pick<Prisma.TransactionClient, 'part'>, workOrderNumber: string) {
+  const parts = await db.part.findMany({
+    where: { workOrderNumber, qmsBomId: { not: null }, drawingNo: { not: null } },
+    select: { name: true, drawingNo: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  const map = new Map<string, string>()
+  for (const p of parts) {
+    const k = drawingKey(p.drawingNo)
+    if (k && !map.has(k)) map.set(k, p.name)
+  }
+  return map
+}
+
 const allProcessIds = (rows: QmsBomItem[]) => [...new Set(rows.flatMap((r) => r.processes.map((p) => p.processId)).filter((x): x is string => !!x))]
 
 async function knownProcesses(db: Pick<Prisma.TransactionClient, 'qmsProcess'>, ids: string[]) {
@@ -152,10 +176,11 @@ async function assertWorkOrder(db: Pick<Prisma.TransactionClient, 'qmsWorkOrder'
  */
 export async function previewBom(workOrderNumber: string, rows: QmsBomItem[]) {
   await assertWorkOrder(prisma, workOrderNumber)
-  const [known, parts, linkable, techParts] = await Promise.all([
+  const [known, parts, linkable, linked, techParts] = await Promise.all([
     knownProcesses(prisma, allProcessIds(rows)),
     prisma.part.findMany({ where: { workOrderNumber, qmsBomId: { in: rows.map((r) => r.id) } }, select: { qmsBomId: true } }),
     linkableParts(prisma, workOrderNumber),
+    linkedParts(prisma, workOrderNumber),
     prisma.part.findMany({ where: { workOrderNumber, fromTechBom: true }, select: { name: true, drawingNo: true, qmsBomId: true } }),
   ])
   const imported = new Set(parts.map((p) => p.qmsBomId))
@@ -176,6 +201,8 @@ export async function previewBom(workOrderNumber: string, rows: QmsBomItem[]) {
       const t = linkable.get(drawingKey(r.partNumber))
       return t ? { partId: t.id, name: t.name, hasSteps: t.hasSteps } : null
     })(),
+    /** 同图号的工件已关联过别的 QMS 行：导入时跳过，不重复建 */
+    duplicateOf: imported.has(r.id) || linkable.has(drawingKey(r.partNumber)) ? null : (linked.get(drawingKey(r.partNumber)) ?? null),
     /** 工单有技术部 BOM、但里面没有这个图号 */
     notInTechBom: hasTechBom && !techKeys.has(drawingKey(r.partNumber)),
     processes: r.processes.map((p) => ({ processId: p.processId, processName: p.processName, problem: processProblem(p, known) })),
@@ -195,12 +222,13 @@ export async function importBom(workOrderNumber: string, rows: QmsBomItem[], sel
       const ids = [...new Set(selected)]
       // 锁住工单的工件行：和技术 BOM 导入、另一次 QMS 导入串行，按图号关联不会关联两次
       await tx.$queryRaw`SELECT id FROM part WHERE workOrderNumber = ${workOrderNumber} FOR UPDATE`
-      const [existing, known, linkable] = await Promise.all([
+      const [existing, known, linkable, linked] = await Promise.all([
         tx.part.findMany({ where: { workOrderNumber, qmsBomId: { in: ids } }, select: { qmsBomId: true } }),
         knownProcesses(tx, allProcessIds(rows)),
         linkableParts(tx, workOrderNumber),
+        linkedParts(tx, workOrderNumber),
       ])
-      const plan = planBomImport(rows, ids, new Set(existing.map((p) => p.qmsBomId!)), known, linkable)
+      const plan = planBomImport(rows, ids, new Set(existing.map((p) => p.qmsBomId!)), known, linkable, linked)
       let steps = 0
       for (const l of plan.link) {
         const part = await tx.part.findUniqueOrThrow({ where: { id: l.partId }, select: { qmsPartId: true } })

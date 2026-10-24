@@ -213,10 +213,11 @@ const columns = [
         {{ p.name }}
         <span class="muted">　图号 {{ p.drawingNo || '—' }}{{ p.revision ? `（${p.revision} 版）` : '' }}　数量 {{ p.quantity }}　BOM 物料 ID {{ p.qmsPartId || '—' }}</span>
         <a-tag v-if="p.status === 'DONE'" color="success" style="margin-left: 8px">已完成</a-tag>
-        <a-tag v-if="p.fromTechBom" style="margin-left: 8px">来自技术 BOM</a-tag>
-        <a-tag v-if="p.qmsBomId" style="margin-left: 8px">{{ p.fromTechBom ? '已关联 QMS' : '来自 QMS BOM' }}</a-tag>
+        <UiStatusTag v-if="p.fromTechBom" tone="none" style="margin-left: 8px">来自技术 BOM</UiStatusTag>
+        <a-tag v-if="p.qmsBomId && !p.fromTechBom" style="margin-left: 8px">来自 QMS BOM</a-tag>
+        <UiStatusTag v-if="p.qmsBomId && p.fromTechBom" tone="done" style="margin-left: 8px">已关联 QMS</UiStatusTag>
         <a-tooltip v-else-if="p.fromTechBom" title="QMS 里品质人员录完这个图号后，点“从 QMS BOM 导入”按图号关联，报检才能自动匹配">
-          <a-tag color="default">未关联 QMS</a-tag>
+          <UiStatusTag tone="risk" style="margin-left: 8px">未关联 QMS</UiStatusTag>
         </a-tooltip>
         <a-tooltip v-if="fillCount(p)" title="还没开工、但缺负责人，或外协没选外协厂的工序；从 BOM 导入的工序默认自制，请确认方式">
           <a-tag color="warning">{{ fillCount(p) }} 道待补充</a-tag>

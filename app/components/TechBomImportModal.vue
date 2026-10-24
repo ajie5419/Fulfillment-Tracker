@@ -21,12 +21,12 @@ interface Line {
 interface Preview { rows: number; lines: Line[]; errors: { row: number; messages: string[] }[] }
 interface ImportResult { created: number; skipped: number; rows: number; errors: { row: number; messages: string[] }[] }
 
-const STATUS: Record<Status, { text: string; color: string }> = {
-  new: { text: '新建', color: 'processing' },
-  exists: { text: '已有，跳过', color: 'default' },
-  revisionChanged: { text: '版号不同', color: 'warning' },
-  fastener: { text: '辅材，不建', color: 'default' },
-  noDrawing: { text: '外购件，不建', color: 'default' },
+const STATUS: Record<Status, { text: string; tone: 'primary' | 'none' | 'risk' }> = {
+  new: { text: '新建', tone: 'primary' },
+  exists: { text: '已有，跳过', tone: 'none' },
+  revisionChanged: { text: '版号不同', tone: 'risk' },
+  fastener: { text: '辅材，不建', tone: 'none' },
+  noDrawing: { text: '外购件，不建', tone: 'none' },
 }
 
 const file = ref<File | null>(null)
@@ -164,7 +164,7 @@ const errorColumns = [
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'rows'">{{ (record as Line).rows.join('、') }}</template>
             <template v-else-if="column.key === 'status'">
-              <a-tag :color="STATUS[(record as Line).status].color">{{ STATUS[(record as Line).status].text }}</a-tag>
+              <UiStatusTag :tone="STATUS[(record as Line).status].tone">{{ STATUS[(record as Line).status].text }}</UiStatusTag>
             </template>
             <template v-else-if="column.key === 'notes'"><span class="muted">{{ (record as Line).notes.join('；') }}</span></template>
           </template>

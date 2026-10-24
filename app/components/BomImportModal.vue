@@ -19,6 +19,7 @@ interface BomRow {
   imported: boolean
   linkTo: { partId: string; name: string; hasSteps: boolean } | null
   notInTechBom: boolean
+  duplicateOf: string | null
   processes: BomProcess[]
 }
 interface Preview { items: BomRow[]; hasTechBom: boolean; missingInQms: { name: string; drawingNo: string | null }[] }
@@ -143,10 +144,13 @@ const columns = [
         <template v-else-if="column.key === 'state'">
           <a-tag v-if="record.imported" color="success">已导入</a-tag>
           <a-tooltip v-else-if="record.linkTo" :title="record.linkTo.hasSteps ? '补上 QMS 零件 ID，已有工序不动' : '补上 QMS 零件 ID 和工序'">
-            <a-tag color="processing">关联：{{ record.linkTo.name }}</a-tag>
+            <UiStatusTag tone="primary">关联：{{ record.linkTo.name }}</UiStatusTag>
+          </a-tooltip>
+          <a-tooltip v-else-if="record.duplicateOf" :title="`同图号的工件「${record.duplicateOf}」已关联过 QMS，导入时这行跳过，不重复建`">
+            <UiStatusTag tone="none">图号已有工件</UiStatusTag>
           </a-tooltip>
           <a-tooltip v-else-if="record.notInTechBom" title="技术部 BOM 里没有这个图号，导入会新建工件；请核对图号是否录错">
-            <a-tag color="warning">技术 BOM 没有</a-tag>
+            <UiStatusTag tone="risk">技术 BOM 没有</UiStatusTag>
           </a-tooltip>
         </template>
       </template>
