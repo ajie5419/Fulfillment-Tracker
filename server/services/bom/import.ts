@@ -219,11 +219,12 @@ export async function importBom(workOrderNumber: string, rows: QmsBomItem[], sel
   if (!selected.length) throw new FlowError('请勾选要导入的零件')
   try {
     return await prisma.$transaction(async (tx) => {
-      await assertWorkOrder(tx, workOrderNumber)
       const ids = [...new Set(selected)]
-      // 先锁工单行（工单还没有工件时，锁工件行锁不住任何东西），再锁工件行：和技术 BOM 导入、另一次 QMS 导入串行，按图号关联不会关联两次
+      // 先锁工单行（工单还没有工件时，锁工件行锁不住任何东西），再锁工件行：和技术 BOM 导入、另一次 QMS 导入串行，按图号关联不会关联两次。
+      // 加锁必须是事务里的第一次读：MySQL 可重复读下，第一次普通读就定下快照，锁之前读会看不到等锁期间别人刚提交的工件
       await tx.$queryRaw`SELECT workOrderNumber FROM qms_work_order WHERE workOrderNumber = ${workOrderNumber} FOR UPDATE`
       await tx.$queryRaw`SELECT id FROM part WHERE workOrderNumber = ${workOrderNumber} FOR UPDATE`
+      await assertWorkOrder(tx, workOrderNumber)
       const [existing, known, linkable, linked] = await Promise.all([
         tx.part.findMany({ where: { workOrderNumber, qmsBomId: { in: ids } }, select: { qmsBomId: true } }),
         knownProcesses(tx, allProcessIds(rows)),
