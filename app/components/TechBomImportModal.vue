@@ -105,7 +105,8 @@ const rowSelection = computed(() => ({
   onChange: (keys: (string | number)[]) => (selected.value = keys.map(String)),
   getCheckboxProps: (l: Line) => ({ disabled: l.status !== 'new' }),
 }))
-const rowKey = (l: Line) => l.drawingNo ?? `row-${l.rows[0]}`
+// 只有"新建"行按图号勾选（同图号已合并成一行）；其他行图号可能重复，用 Excel 行号
+const rowKey = (l: Line) => (l.status === 'new' ? l.drawingNo! : `row-${l.rows[0]}`)
 
 const columns = [
   { title: '行', key: 'rows', width: 70 },

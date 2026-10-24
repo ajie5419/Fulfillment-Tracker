@@ -37,6 +37,18 @@ describe('readBomWorkbook', () => {
     await expect(readBomWorkbook(await xlsx([['名称', '数量'], ['主梁', 1]]))).rejects.toThrow('没找到表头')
     await expect(readBomWorkbook(Buffer.from('not a zip'))).rejects.toThrow('不是有效的 Excel')
   })
+
+  it('稀疏表（最后一行在第 1048576 行）只读有内容的行，不空转', async () => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('BOM')
+    ws.addRows([['图号', '部件名称', '数量'], ['ZL-001', '主梁', 1]])
+    ws.getCell('A1048576').value = 'X-END'
+    const buf = Buffer.from(await wb.xlsx.writeBuffer())
+    const t0 = Date.now()
+    const rows = await readBomWorkbook(buf)
+    expect(Date.now() - t0).toBeLessThan(2000)
+    expect(rows.map((r) => [r.row, r.drawingNo])).toEqual([[2, 'ZL-001'], [1048576, 'X-END']])
+  })
 })
 
 describe('classifyBom', () => {

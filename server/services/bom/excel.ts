@@ -94,18 +94,20 @@ export async function readBomWorkbook(buf: Buffer): Promise<RawBomRow[]> {
     const header = findHeader(ws)
     if (!header) continue
     const rows: RawBomRow[] = []
-    for (let r = header.row + 1; r <= ws.rowCount; r++) {
+    // eachRow 只走有内容的行：稀疏表（如只在第 1048576 行有一个格）不会空转上百万次
+    ws.eachRow({ includeEmpty: false }, (row, r) => {
+      if (r <= header.row) return
       const v: Partial<Record<Key, Cell>> = {}
       let empty = true
       for (const [col, key] of header.cols) {
-        const c = cellValue(ws.getRow(r).getCell(col).value)
+        const c = cellValue(row.getCell(col).value)
         if (c !== null) empty = false
         v[key] = c
       }
-      if (empty) continue
+      if (empty) return
       if (rows.length >= MAX_BOM_ROWS) throw new FlowError(`一次最多导入 ${MAX_BOM_ROWS} 行`)
       rows.push({ row: r, drawingNo: text(v.drawingNo ?? null), revision: text(v.revision ?? null), name: text(v.name ?? null), quantity: v.quantity ?? null })
-    }
+    })
     if (!rows.length) throw new FlowError('Excel 表头下面没有数据')
     return rows
   }

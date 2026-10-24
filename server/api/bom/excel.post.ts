@@ -42,6 +42,8 @@ export default defineFlowHandler(async (event) => {
   const files = parts.filter((p) => p.name === 'file' && p.filename !== undefined)
   if (files.length !== 1) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: '请选择一个 Excel 文件' })
   const file = files[0]!
+  // Content-Length 只管整个请求；文件本身再查一次
+  if (file.data.length > MAX_FILE_BYTES) throw createError({ statusCode: 413, statusMessage: 'Payload Too Large', message: '文件太大：不能超过 5MB' })
   if (!isZip(file.data)) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: '只能导入 .xlsx 文件（.xls 请先用 Excel 另存为 .xlsx）' })
   const form: Record<string, string> = {}
   for (const p of parts) if (p.name && p.name !== 'file' && p.filename === undefined) form[p.name] = p.data.toString('utf8')
