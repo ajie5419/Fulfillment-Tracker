@@ -502,7 +502,7 @@ model OffDay {
 
 enum NotifyRoleKind {
   OUTSOURCE_COORDINATOR // 外协专员（W1 的责任人）
-  DEPT_HEAD // 部门负责人，department 填业务部门名称（技术部/采购部/生产部/质量部/财务部/项目部；用户部门经 dept_mapping 换成业务部门后对应）
+  DEPT_HEAD // 部门负责人，department 填业务部门名称（技术部/工艺部/采购部/生产部/质量部/财务部/项目部；用户部门经 dept_mapping 换成业务部门后对应）
   PROJECT_DEPT_HEAD // 项目部负责人
   LEADER // 分管领导
   FINANCE // 财务（R10）：付款申请标记已付 / 暂缓
@@ -519,9 +519,10 @@ model NotifyRole {
   @@map("notify_role")
 }
 
-/// 业务部门（权限方案 R13）：用户的 QMS 部门对到这 6 个大部门之一；没对上的算"其他"
+/// 业务部门（权限方案 R13）：用户的 QMS 部门对到这 7 个大部门之一；没对上的算"其他"
 enum BusinessDept {
   TECH // 技术部
+  PROCESS // 工艺部：按图纸分解料单发下料车间、编制下发工艺文件、定工艺路线
   PURCHASE // 采购部
   PRODUCTION // 生产部
   QUALITY // 质量部

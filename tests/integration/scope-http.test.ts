@@ -655,9 +655,9 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       deptsWithoutHead: string[]
       qmsDepartments: { id: string; parentName: string | null; level: number; businessDept: string | null; effective: string | null }[]
     }
-    expect(settings.departments).toEqual(['技术部', '采购部', '生产部', '质量部', '财务部', '项目部'])
+    expect(settings.departments).toEqual(['技术部', '工艺部', '采购部', '生产部', '质量部', '财务部', '项目部'])
     expect(settings.qmsDepartments.find((d) => d.id === 'T-DEPT-BUY1')).toMatchObject({ parentName: '供应部', level: 1, businessDept: null, effective: '采购部' })
-    // 部门负责人只能选 6 个业务部门
+    // 部门负责人只能选 7 个业务部门
     expect((await send(admin, 'POST', '/api/settings/roles', { role: 'DEPT_HEAD', userId: 'h-qa', department: '检验科' })).status).toBe(400)
   })
 
