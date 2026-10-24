@@ -2,6 +2,7 @@
 /**
  * 从 QMS BOM 导入（R8）：打开时从 QMS 实时读本工单的 BOM（服务端读，浏览器不碰 QMS 凭据）→ 勾选 → 导入。
  * 已导入过的行不能勾；工序在履约查不到的会跳过（灰色并说明原因）。导入的步骤默认"自制"、不带负责人，回到工件页按"待补充"补。
+ * 工单里已有同图号的工件（一般是技术部 BOM 导入的）只关联、不新建；两边图号对不上的列出来，方便查录入差异。
  */
 const props = defineProps<{ open: boolean; workOrderNumber?: string }>()
 const emit = defineEmits<{ close: []; done: [] }>()
@@ -16,14 +17,18 @@ interface BomRow {
   quantity: number
   unit: string | null
   imported: boolean
+  linkTo: { partId: string; name: string; hasSteps: boolean } | null
+  notInTechBom: boolean
   processes: BomProcess[]
 }
-interface ImportResult { created: number; steps: number; skipped: number; missing: number; warnings: string[] }
+interface Preview { items: BomRow[]; hasTechBom: boolean; missingInQms: { name: string; drawingNo: string | null }[] }
+interface ImportResult { created: number; linked: number; steps: number; skipped: number; missing: number; warnings: string[] }
 // 绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"）
-const get = $fetch as unknown as (url: string, opts: { query: object }) => Promise<BomRow[]>
+const get = $fetch as unknown as (url: string, opts: { query: object }) => Promise<Preview>
 const post = $fetch as unknown as (url: string, opts: { method: 'POST'; body: object }) => Promise<ImportResult>
 
 const rows = ref<BomRow[]>([])
+const missingInQms = ref<Preview['missingInQms']>([])
 const selected = ref<string[]>([])
 const loading = ref(false)
 const saving = ref(false)
@@ -34,9 +39,12 @@ async function load() {
   loading.value = true
   loadError.value = ''
   rows.value = []
+  missingInQms.value = []
   selected.value = []
   try {
-    rows.value = await get('/api/bom/preview', { query: { workOrderNumber: props.workOrderNumber } })
+    const p = await get('/api/bom/preview', { query: { workOrderNumber: props.workOrderNumber } })
+    rows.value = p.items
+    missingInQms.value = p.missingInQms
     // 默认勾上所有还没导入的
     selected.value = rows.value.filter((r) => !r.imported).map((r) => r.bomId)
   } catch (e) {
@@ -59,7 +67,7 @@ async function submit() {
   saving.value = true
   try {
     const r = await post('/api/bom/import', { method: 'POST', body: { workOrderNumber: props.workOrderNumber, bomIds: selected.value } })
-    const parts = [`已导入 ${r.created} 个工件、${r.steps} 道工序`]
+    const parts = [r.linked ? `新建 ${r.created} 个、按图号关联 ${r.linked} 个工件，建 ${r.steps} 道工序` : `已导入 ${r.created} 个工件、${r.steps} 道工序`]
     if (r.skipped) parts.push(`${r.skipped} 个之前已导入，跳过`)
     if (r.missing) parts.push(`${r.missing} 个在 QMS 里已经没有了`)
     const summary = parts.join('；')
@@ -80,7 +88,7 @@ const columns = [
   { title: '材质', dataIndex: 'material', width: 90 },
   { title: '数量', key: 'quantity', width: 80 },
   { title: '必经工序（按顺序）', key: 'processes' },
-  { title: '', key: 'state', width: 80 },
+  { title: '', key: 'state', width: 150 },
 ]
 </script>
 
@@ -96,11 +104,19 @@ const columns = [
     @cancel="emit('close')"
   >
     <p class="muted">
-      每个零件建一个工件（名称、图号、数量、QMS 零件 ID 带过来，报检按零件 ID 自动匹配），必经工序按顺序建成工序链，方式默认"自制"、不带负责人——导入后在工件页把标着"待补充"的工序补上方式、外协厂和负责人。已导入过的零件不会重复导入，也不会改动已有工件。
+      每个零件建一个工件（名称、图号、数量、QMS 零件 ID 带过来，报检按零件 ID 自动匹配），必经工序按顺序建成工序链，方式默认"自制"、不带负责人——导入后在工件页把标着"待补充"的工序补上方式、外协厂和负责人。已导入过的零件不会重复导入。工单里已有同图号的工件（技术部 BOM 导入的）不新建，只补上 QMS 零件 ID，还没有工序的按 QMS 建工序。
     </p>
     <a-alert v-if="loadError" type="error" :message="loadError" show-icon style="margin-bottom: 12px">
       <template #action><a-button size="small" @click="load">重试</a-button></template>
     </a-alert>
+    <a-alert
+      v-if="missingInQms.length"
+      type="warning"
+      show-icon
+      style="margin-bottom: 12px"
+      :message="`技术部 BOM 里有 ${missingInQms.length} 个图号，QMS 里还没录`"
+      :description="missingInQms.slice(0, 20).map((p) => `${p.drawingNo}（${p.name}）`).join('、') + (missingInQms.length > 20 ? ' 等' : '') + '。这些工件报检暂时不能自动匹配'"
+    />
     <a-table
       :columns="columns"
       :data-source="rows"
@@ -126,6 +142,12 @@ const columns = [
         </template>
         <template v-else-if="column.key === 'state'">
           <a-tag v-if="record.imported" color="success">已导入</a-tag>
+          <a-tooltip v-else-if="record.linkTo" :title="record.linkTo.hasSteps ? '补上 QMS 零件 ID，已有工序不动' : '补上 QMS 零件 ID 和工序'">
+            <a-tag color="processing">关联：{{ record.linkTo.name }}</a-tag>
+          </a-tooltip>
+          <a-tooltip v-else-if="record.notInTechBom" title="技术部 BOM 里没有这个图号，导入会新建工件；请核对图号是否录错">
+            <a-tag color="warning">技术 BOM 没有</a-tag>
+          </a-tooltip>
         </template>
       </template>
     </a-table>

@@ -47,14 +47,14 @@ async function call(fn: () => unknown, ok?: string) {
 }
 
 // ───── 工件 ─────
-const partForm = reactive({ open: false, id: '' as string, name: '', drawingNo: '', quantity: 1, qmsPartId: '' })
+const partForm = reactive({ open: false, id: '' as string, name: '', drawingNo: '', revision: '', quantity: 1, qmsPartId: '' })
 function editPart(p?: PartRow) {
   Object.assign(partForm, p
-    ? { open: true, id: p.id, name: p.name, drawingNo: p.drawingNo ?? '', quantity: p.quantity, qmsPartId: p.qmsPartId ?? '' }
-    : { open: true, id: '', name: '', drawingNo: '', quantity: 1, qmsPartId: '' })
+    ? { open: true, id: p.id, name: p.name, drawingNo: p.drawingNo ?? '', revision: p.revision ?? '', quantity: p.quantity, qmsPartId: p.qmsPartId ?? '' }
+    : { open: true, id: '', name: '', drawingNo: '', revision: '', quantity: 1, qmsPartId: '' })
 }
 async function savePart() {
-  const body = { name: partForm.name, drawingNo: partForm.drawingNo || null, quantity: partForm.quantity, qmsPartId: partForm.qmsPartId || null }
+  const body = { name: partForm.name, drawingNo: partForm.drawingNo || null, revision: partForm.revision || null, quantity: partForm.quantity, qmsPartId: partForm.qmsPartId || null }
   if (!body.name.trim()) return message.warning('请填写工件名称')
   const id = partForm.id
   await call(async () => {
@@ -144,10 +144,12 @@ const { data: me } = await useMe()
 const canRoute = computed(() => canDo(me.value, 'route', { workOrderNumber: workOrderNumber.value }))
 const canStep = (s: { ownerId: string | null }) => canDo(me.value, 'stepAction', { ownerId: s.ownerId })
 const bomImportOpen = ref(false)
+const techBomOpen = ref(false)
 const templateTarget = ref<{ partId: string; partName: string; mode: 'apply' | 'save' } | null>(null)
 const fillCount = (p: PartRow) => p.steps.filter((s) => s.needsFill).length
 function afterR8() {
   bomImportOpen.value = false
+  techBomOpen.value = false
   templateTarget.value = null
   refresh()
   eventsCache.clear()
@@ -198,6 +200,7 @@ const columns = [
       <WoLink v-if="workOrderNumber" :no="workOrderNumber" text="工单详情" />
       <template v-if="canRoute">
         <a-button type="primary" :disabled="!workOrderNumber" @click="editPart()">新建工件</a-button>
+        <a-button :disabled="!workOrderNumber" @click="techBomOpen = true">导入技术部 BOM（Excel）</a-button>
         <a-button :disabled="!workOrderNumber" @click="bomImportOpen = true">从 QMS BOM 导入</a-button>
       </template>
     </a-space>
@@ -208,9 +211,13 @@ const columns = [
     <a-card v-for="p in parts" :key="p.id" class="part" size="small">
       <template #title>
         {{ p.name }}
-        <span class="muted">　图号 {{ p.drawingNo || '—' }}　数量 {{ p.quantity }}　BOM 物料 ID {{ p.qmsPartId || '—' }}</span>
+        <span class="muted">　图号 {{ p.drawingNo || '—' }}{{ p.revision ? `（${p.revision} 版）` : '' }}　数量 {{ p.quantity }}　BOM 物料 ID {{ p.qmsPartId || '—' }}</span>
         <a-tag v-if="p.status === 'DONE'" color="success" style="margin-left: 8px">已完成</a-tag>
-        <a-tag v-if="p.qmsBomId" style="margin-left: 8px">来自 QMS BOM</a-tag>
+        <a-tag v-if="p.fromTechBom" style="margin-left: 8px">来自技术 BOM</a-tag>
+        <a-tag v-if="p.qmsBomId" style="margin-left: 8px">{{ p.fromTechBom ? '已关联 QMS' : '来自 QMS BOM' }}</a-tag>
+        <a-tooltip v-else-if="p.fromTechBom" title="QMS 里品质人员录完这个图号后，点“从 QMS BOM 导入”按图号关联，报检才能自动匹配">
+          <a-tag color="default">未关联 QMS</a-tag>
+        </a-tooltip>
         <a-tooltip v-if="fillCount(p)" title="还没开工、但缺负责人，或外协没选外协厂的工序；从 BOM 导入的工序默认自制，请确认方式">
           <a-tag color="warning">{{ fillCount(p) }} 道待补充</a-tag>
         </a-tooltip>
@@ -338,6 +345,7 @@ const columns = [
     <a-form layout="vertical">
       <a-form-item label="工件名称" required><a-input v-model:value="partForm.name" placeholder="如：主梁结构件" /></a-form-item>
       <a-form-item label="图号"><a-input v-model:value="partForm.drawingNo" /></a-form-item>
+      <a-form-item label="版号"><a-input v-model:value="partForm.revision" placeholder="可空，如 A" /></a-form-item>
       <a-form-item label="数量" required><a-input-number v-model:value="partForm.quantity" :min="1" style="width: 100%" /></a-form-item>
       <a-form-item label="QMS BOM 物料 ID" extra="填了以后，QMS 报检按物料 ID 自动匹配；不填则按名称和工序匹配">
         <a-input v-model:value="partForm.qmsPartId" />
@@ -360,6 +368,7 @@ const columns = [
     </a-form>
   </a-modal>
 
+  <TechBomImportModal :open="techBomOpen" :work-order-number="workOrderNumber" @close="techBomOpen = false" @done="afterR8" />
   <BomImportModal :open="bomImportOpen" :work-order-number="workOrderNumber" @close="bomImportOpen = false" @done="afterR8" />
   <PartTemplateModal :target="templateTarget" @close="templateTarget = null" @done="afterR8" />
 
