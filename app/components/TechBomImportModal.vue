@@ -155,10 +155,10 @@ const errorColumns = [
         </a-table>
       </template>
       <template v-else>
-        <a-space class="gap" wrap>
+        <div class="gap summary">
           <span class="muted">共 {{ preview.rows }} 行：新建 {{ counts.new }}，已有 {{ counts.exists }}，版号不同 {{ counts.revisionChanged }}，辅材 {{ counts.fastener }}，外购件 {{ counts.noDrawing }}</span>
           <a-checkbox v-model:checked="showSkipped">显示不建的行</a-checkbox>
-        </a-space>
+        </div>
         <a-alert v-if="counts.revisionChanged" type="warning" show-icon class="gap" :message="`${counts.revisionChanged} 个图号的版号和已有工件不一样`" description="导入不会改已有工件，请走设计变更" />
         <a-table :columns="columns" :data-source="shown" :row-key="rowKey" size="small" :pagination="false" :scroll="{ y: 400 }" :row-selection="rowSelection">
           <template #bodyCell="{ column, record }">
@@ -177,4 +177,5 @@ const errorColumns = [
 <style scoped>
 .muted { color: var(--ft-text-2); font-size: 12px; }
 .gap { margin-bottom: 8px; }
+.summary { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 </style>

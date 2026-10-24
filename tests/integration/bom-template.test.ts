@@ -6,6 +6,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import type { PrismaClient } from '@prisma/client'
+import ExcelJS from 'exceljs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startMockIdentityBridge } from '../../scripts/mock-identity-bridge.mjs'
 import { loadFixture } from '../../scripts/mock-qms-sync.mjs'
@@ -14,11 +15,13 @@ const DB = process.env.TEST_DATABASE_URL
 const SECRET = 'local-dev-secret-local-dev-secret-0'
 const WO1 = 'QMS-WO-2026-001'
 const WO2 = 'QMS-WO-2026-002'
+const WO3 = 'QMS-WO-2026-003'
 const ACTOR = 'u-001'
 
 type Services = {
   sync: typeof import('../../server/services/sync/sync')
   bom: typeof import('../../server/services/bom/import')
+  techBom: typeof import('../../server/services/bom/excel')
   source: typeof import('../../server/services/bom/source')
   steps: typeof import('../../server/services/flow/steps')
   templates: typeof import('../../server/services/templates/templates')
@@ -39,6 +42,7 @@ describe.skipIf(!DB)('R8 BOM 导入与路线模板', () => {
     s = {
       sync: await import('../../server/services/sync/sync'),
       bom: await import('../../server/services/bom/import'),
+      techBom: await import('../../server/services/bom/excel'),
       source: await import('../../server/services/bom/source'),
       steps: await import('../../server/services/flow/steps'),
       templates: await import('../../server/services/templates/templates'),
@@ -200,5 +204,63 @@ describe.skipIf(!DB)('R8 BOM 导入与路线模板', () => {
     expect(reset.templates).toBe(1)
     expect(await db.part.count({ where: { workOrderNumber: { startsWith: 'DEMO-' } } })).toBe(0)
     expect(await db.routeTemplate.count({ where: { name: '主梁路线' } })).toBe(1) // 真实模板不动
+  })
+  it('技术部 BOM Excel：建工件不建工序、螺栓螺母和没图号的不建、重复导入跳过；之后 QMS BOM 按图号关联，不重复建', async () => {
+    const book = async (rows: (string | number | null)[][]) => {
+      const wb = new ExcelJS.Workbook()
+      wb.addWorksheet('BOM').addRows(rows)
+      return Buffer.from(await wb.xlsx.writeBuffer())
+    }
+    const buf = await book([
+      ['车架 BOM 明细'],
+      ['图号', '版号', '部件名称', '数量'],
+      ['zl-001 ', 'A', '主梁', 1],
+      ['ZL-001', 'A', '主梁', 1],
+      ['DL-009', 'B', '端梁', 2],
+      ['GB5783', null, '六角头螺栓 M16', 40],
+      [null, null, '减速机', 1],
+    ])
+    const preview = await s.techBom.previewTechBom(WO3, buf)
+    expect(preview.errors).toEqual([])
+    expect(preview.lines.map((l) => [l.drawingNo, l.status, l.quantity])).toEqual(
+      expect.arrayContaining([
+        [expect.stringMatching(/ZL-001/i), 'new', 2],
+        ['DL-009', 'new', 2],
+      ]),
+    )
+    expect(preview.lines.filter((l) => l.status === 'fastener' || l.status === 'noDrawing')).toHaveLength(2)
+
+    expect(await s.techBom.importTechBom(WO3, buf, null)).toMatchObject({ created: 2, errors: [] })
+    const parts = await db.part.findMany({ where: { workOrderNumber: WO3 }, include: { steps: true }, orderBy: { name: 'asc' } })
+    expect(parts.map((p) => [p.name, p.revision, p.quantity, p.fromTechBom, p.steps.length, p.qmsPartId])).toEqual([
+      ['主梁', 'A', 2, true, 0, null],
+      ['端梁', 'B', 2, true, 0, null],
+    ])
+    // 再导同一份：都已存在，不建、不改
+    await expect(s.techBom.importTechBom(WO3, buf, null)).rejects.toThrow('没有要导入的工件')
+    // 版号变了：单列出来，不自动改
+    const v2 = await book([
+      ['图号', '版号', '部件名称', '数量'],
+      ['DL-009', 'C', '端梁', 2],
+    ])
+    expect((await s.techBom.previewTechBom(WO3, v2)).lines.map((l) => l.status)).toEqual(['revisionChanged'])
+    expect((await db.part.findFirstOrThrow({ where: { workOrderNumber: WO3, drawingNo: 'DL-009' } })).revision).toBe('B')
+
+    // QMS 录完：同图号的关联到已有工件（补 QMS 零件 ID 和工序），只有 QMS 有的新建
+    const fixture = loadFixture().boms[WO1]
+    mock.sync!.setBom(WO3, [
+      { ...fixture[0], id: 'bom-301', partId: 'qms-part-301', partName: '主梁结构件', partNumber: 'ZL-001' },
+      { ...fixture[0], id: 'bom-302', partId: 'qms-part-302', partName: '吊耳', partNumber: 'DE-010', processes: [{ position: 0, processId: 'prc-weld', processName: '组焊' }] },
+    ])
+    const qmsPreview = await s.bom.previewBom(WO3, await load(WO3))
+    expect(qmsPreview.hasTechBom).toBe(true)
+    const r = await s.bom.importBom(WO3, await load(WO3), ['bom-301', 'bom-302'])
+    expect(r).toMatchObject({ created: 1, linked: 1 })
+    const after = await db.part.findMany({ where: { workOrderNumber: WO3 }, include: { _count: { select: { steps: true } } }, orderBy: { name: 'asc' } })
+    expect(after.map((p) => [p.name, p.drawingNo, p.qmsPartId, p.qmsBomId, p._count.steps])).toEqual([
+      ['主梁', expect.stringMatching(/ZL-001/i), 'qms-part-301', 'bom-301', fixture[0].processes.filter((x: { processId: string | null }) => x.processId).length],
+      ['吊耳', 'DE-010', 'qms-part-302', 'bom-302', 1],
+      ['端梁', 'DL-009', null, null, 0],
+    ])
   })
 })
