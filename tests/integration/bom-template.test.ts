@@ -78,7 +78,7 @@ describe.skipIf(!DB)('R8 BOM 导入与路线模板', () => {
   })
 
   it('预览：实时读 QMS BOM，标出履约查不到的工序；QMS 没有 BOM 的工单是空列表', async () => {
-    const preview = await s.bom.previewBom(WO1, await load(WO1))
+    const preview = (await s.bom.previewBom(WO1, await load(WO1))).items
     expect(preview.map((r) => [r.bomId, r.partName, r.imported])).toEqual([
       ['bom-001', '主梁结构件', false],
       ['bom-002', '支腿', false],
@@ -88,12 +88,12 @@ describe.skipIf(!DB)('R8 BOM 导入与路线模板', () => {
       ['探伤', '在 QMS 没有关联工序'],
       ['涂装', null],
     ])
-    expect(await s.bom.previewBom(WO2, await load(WO2))).toEqual([])
+    expect(await s.bom.previewBom(WO2, await load(WO2))).toEqual({ items: [], hasTechBom: false, missingInQms: [] })
   })
 
   it('导入：每行一个工件 + 按顺序的工序（自制、无负责人 → 待补充）；跳过的工序给出提示', async () => {
     const r = await s.bom.importBom(WO1, await load(WO1), ['bom-001', 'bom-002'])
-    expect(r).toEqual({ created: 2, steps: 4, skipped: 0, missing: 0, warnings: ['支腿：工序"探伤"在 QMS 没有关联工序，已跳过'] })
+    expect(r).toEqual({ created: 2, linked: 0, steps: 4, skipped: 0, missing: 0, warnings: ['支腿：工序"探伤"在 QMS 没有关联工序，已跳过'] })
     const parts = await s.steps.listParts(WO1)
     expect(parts.map((p) => ({ name: p.name, drawingNo: p.drawingNo, quantity: p.quantity, qmsPartId: p.qmsPartId, qmsBomId: p.qmsBomId }))).toEqual([
       { name: '主梁结构件', drawingNo: 'ZL-001', quantity: 2, qmsPartId: 'qms-part-001', qmsBomId: 'bom-001' },
@@ -115,7 +115,7 @@ describe.skipIf(!DB)('R8 BOM 导入与路线模板', () => {
     const before = await db.part.findFirstOrThrow({ where: { qmsBomId: 'bom-001' } })
     await db.part.update({ where: { id: before.id }, data: { name: '主梁结构件（现场改名）' } })
     const again = await s.bom.importBom(WO1, await load(WO1), ['bom-001', 'bom-002'])
-    expect(again).toEqual({ created: 0, steps: 0, skipped: 2, missing: 0, warnings: [] })
+    expect(again).toEqual({ created: 0, linked: 0, steps: 0, skipped: 2, missing: 0, warnings: [] })
     expect((await db.part.findUniqueOrThrow({ where: { id: before.id } })).name).toBe('主梁结构件（现场改名）')
     expect(await db.routeStep.count({ where: { partId: before.id } })).toBe(2)
 
@@ -124,7 +124,7 @@ describe.skipIf(!DB)('R8 BOM 导入与路线模板', () => {
       fixture[0],
       { ...fixture[0], id: 'bom-003', partId: 'qms-part-003', partName: '端梁', partNumber: 'DL-003', processes: [{ position: 0, processId: 'prc-weld', processName: '组焊' }] },
     ])
-    expect((await s.bom.previewBom(WO1, await load(WO1))).map((r) => [r.bomId, r.imported])).toEqual([
+    expect((await s.bom.previewBom(WO1, await load(WO1))).items.map((r) => [r.bomId, r.imported])).toEqual([
       ['bom-001', true],
       ['bom-003', false],
     ])

@@ -72,7 +72,7 @@ describe('planBomImport（幂等）', () => {
     const imported = new Set(first.create.map((p) => p.qmsBomId))
     const second = planBomImport(rows, ['1', '2', '3'], imported, known)
     expect(first.create).toHaveLength(3)
-    expect(second).toEqual({ create: [], skipped: ['1', '2', '3'], missing: [], warnings: [] })
+    expect(second).toEqual({ create: [], link: [], skipped: ['1', '2', '3'], missing: [], warnings: [] })
   })
 })
 

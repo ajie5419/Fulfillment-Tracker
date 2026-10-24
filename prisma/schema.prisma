@@ -169,10 +169,14 @@ model Part {
   workOrderNumber String             @db.VarChar(64)
   name            String
   drawingNo       String?
+  /// 版号（技术部 BOM 里的版本），可空
+  revision        String?            @db.VarChar(64)
   quantity        Int                @default(1)
   qmsPartId       String?            @db.VarChar(64) // 引用 QMS BOM 物料 ID，用于报检匹配
   /// 从 QMS 项目 BOM 导入时的 BOM 行 ID（project_boms.id）；同一工单下唯一，重复导入据此跳过。手工建的工件为空
   qmsBomId        String?            @db.VarChar(191)
+  /// 从技术部 BOM Excel（CAD 导出）导入的工件；QMS BOM 之后按图号关联上来，不再另建
+  fromTechBom     Boolean            @default(false)
   currentStepId   String?
   status          PartStatus         @default(ACTIVE)
   statusSince     DateTime           @default(now())
@@ -187,7 +191,7 @@ model Part {
   assemblyNodes   AssemblyNodePart[]
 
   @@unique([workOrderNumber, qmsBomId])
-  @@index([workOrderNumber])
+  @@index([workOrderNumber, drawingNo])
   @@index([qmsPartId])
   @@map("part")
 }

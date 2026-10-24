@@ -110,6 +110,7 @@ export async function listEvents(partId: string) {
 export interface PartInput {
   name: string
   drawingNo?: string | null
+  revision?: string | null
   quantity: number
   qmsPartId?: string | null
 }
@@ -122,6 +123,7 @@ export async function createPart(workOrderNumber: string, input: PartInput) {
       workOrderNumber,
       name: input.name.trim(),
       drawingNo: input.drawingNo?.trim() || null,
+      revision: input.revision?.trim() || null,
       quantity: input.quantity,
       qmsPartId: input.qmsPartId?.trim() || null,
     },
@@ -136,6 +138,7 @@ export async function updatePart(partId: string, input: Partial<PartInput>) {
       data: {
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
         ...(input.drawingNo !== undefined ? { drawingNo: input.drawingNo?.trim() || null } : {}),
+        ...(input.revision !== undefined ? { revision: input.revision?.trim() || null } : {}),
         ...(input.quantity !== undefined ? { quantity: input.quantity } : {}),
         ...(input.qmsPartId !== undefined ? { qmsPartId: input.qmsPartId?.trim() || null } : {}),
       },
