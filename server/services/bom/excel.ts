@@ -29,7 +29,8 @@ const HEADERS: Record<Key, string[]> = {
   name: ['部件名称', '零件名称', '名称'],
   quantity: ['数量', '件数'],
 }
-const REQUIRED: Key[] = ['drawingNo', 'name', 'quantity']
+/** 数量可以没有：技术部的「图纸明细表」只有代号、名称、张数（张数是图纸张数，不是零件数量），没有数量时每个图号按 1 件建 */
+const REQUIRED: Key[] = ['drawingNo', 'name']
 const LABEL: Record<Key, string> = { drawingNo: '图号', revision: '版号', name: '部件名称', quantity: '数量' }
 /** 表头最多往下找这么多行 */
 const HEADER_SCAN_ROWS = 20
@@ -42,6 +43,14 @@ export interface RawBomRow {
   revision: string | null
   name: string | null
   quantity: Cell
+  /** 表里没有数量列：按 1 件建，提示由生产核对 */
+  noQuantityColumn?: boolean
+}
+
+export interface BomSheet {
+  rows: RawBomRow[]
+  /** 表头上方写的工单号（如"工单号：25TL-CL-2626-2"），没写为 null */
+  workOrderNumber: string | null
 }
 
 /** 图号比较用：去空白、转大写（CAD 和手工录入的大小写、空格常不一致） */
@@ -72,7 +81,7 @@ const headerKey = (text: string): Key | undefined => {
 }
 const text = (c: Cell) => (c === null ? null : String(c).trim() || null)
 
-/** 在一张表里找表头行：同一行里认出图号、部件名称、数量三列 */
+/** 在一张表里找表头行：同一行里认出图号、名称两列（数量、版号可选） */
 function findHeader(ws: ExcelJS.Worksheet): { row: number; cols: Map<number, Key> } | null {
   const last = Math.min(ws.rowCount, HEADER_SCAN_ROWS)
   for (let r = 1; r <= last; r++) {
@@ -86,8 +95,29 @@ function findHeader(ws: ExcelJS.Worksheet): { row: number; cols: Map<number, Key
   return null
 }
 
-/** 读 Excel：取第一张能认出表头的工作表，表头下面每行一条（整行空的跳过） */
-export async function readBomWorkbook(buf: Buffer): Promise<RawBomRow[]> {
+/** 表格到这里结束：合计、签字栏 */
+const END_RE = /^(合计|总计|编制|审核|批准)/
+/** 表头上方的工单号：同一格"工单号：X"，或"工单号"一格、值在右边一格 */
+const WO_RE = /工单号\s*[:：]?\s*([A-Za-z0-9][A-Za-z0-9\-_/.]*)/
+
+function findWorkOrder(ws: ExcelJS.Worksheet, headerRow: number): string | null {
+  for (let r = 1; r < headerRow; r++) {
+    const cells: string[] = []
+    ws.getRow(r).eachCell((cell) => cells.push(String(cellValue(cell.value) ?? '')))
+    for (let k = 0; k < cells.length; k++) {
+      const m = WO_RE.exec(cells[k]!)
+      if (m) return m[1]!
+      if (/工单号\s*[:：]?$/.test(cells[k]!.trim()) && cells[k + 1]) return cells[k + 1]!.trim() || null
+    }
+  }
+  return null
+}
+
+/**
+ * 读 Excel：取第一张能认出表头的工作表，表头下面每行一条。
+ * 整行空的跳过；合并单元格只认左上角那格（表尾跨列的说明行不会被当成零件）；碰到"合计""编制""审核"等签字栏就结束。
+ */
+export async function readBomFile(buf: Buffer): Promise<BomSheet> {
   const wb = new ExcelJS.Workbook()
   try {
     await wb.xlsx.load(buf as unknown as ArrayBuffer)
@@ -97,26 +127,50 @@ export async function readBomWorkbook(buf: Buffer): Promise<RawBomRow[]> {
   for (const ws of wb.worksheets) {
     const header = findHeader(ws)
     if (!header) continue
+    const noQuantityColumn = ![...header.cols.values()].includes('quantity')
     const rows: RawBomRow[] = []
+    let ended = false
     // eachRow 只走有内容的行：稀疏表（如只在第 1048576 行有一个格）不会空转上百万次
     ws.eachRow({ includeEmpty: false }, (row, r) => {
-      if (r <= header.row) return
+      if (ended || r <= header.row) return
+      let isEnd = false
+      row.eachCell((cell) => {
+        if (cell.master.address === cell.address && END_RE.test(String(cellValue(cell.value) ?? ''))) isEnd = true
+      })
+      if (isEnd) {
+        ended = true
+        return
+      }
       const v: Partial<Record<Key, Cell>> = {}
       let empty = true
       for (const [col, key] of header.cols) {
-        const c = cellValue(row.getCell(col).value)
+        const cell = row.getCell(col)
+        // 合并单元格的其他格读出来是左上角的值：只认左上角
+        const c = cell.master.address === cell.address ? cellValue(cell.value) : null
         if (c !== null) empty = false
         v[key] = c
       }
       if (empty) return
       if (rows.length >= MAX_BOM_ROWS) throw new FlowError(`一张 BOM 表最多 ${MAX_BOM_ROWS} 行`)
-      rows.push({ row: r, drawingNo: text(v.drawingNo ?? null), revision: text(v.revision ?? null), name: text(v.name ?? null), quantity: v.quantity ?? null })
+      rows.push({
+        row: r,
+        drawingNo: text(v.drawingNo ?? null),
+        revision: text(v.revision ?? null),
+        name: text(v.name ?? null),
+        quantity: noQuantityColumn ? 1 : (v.quantity ?? null),
+        ...(noQuantityColumn ? { noQuantityColumn } : {}),
+      })
     })
     if (!rows.length) throw new FlowError('Excel 表头下面没有数据')
-    return rows
+    return { rows, workOrderNumber: findWorkOrder(ws, header.row) }
   }
-  throw new FlowError(`没找到表头：需要在同一行里有 ${REQUIRED.map((k) => LABEL[k]).join('、')} 三列（版号可选）`)
+  throw new FlowError(`没找到表头：需要在同一行里有 ${REQUIRED.map((k) => LABEL[k]).join('、')} 两列（如"代号""名称"；数量、版号可选）`)
 }
+
+export const readBomWorkbook = async (buf: Buffer) => (await readBomFile(buf)).rows
+
+/** 表上写的工单号和发放时选的工单不一样（忽略大小写和空格）；表上没写不算 */
+export const workOrderMismatch = (sheet: string | null, selected: string) => !!sheet && drawingKey(sheet) !== drawingKey(selected)
 
 // ───────────── 归类（纯函数） ─────────────
 
@@ -203,6 +257,7 @@ export function classifyBom(rows: RawBomRow[], existing: ExistingPart[]): { line
     }
     const old = have.get(key)
     const line: BomLine = { rows: [r.row], drawingNo, revision, name: name ?? drawingNo, quantity: quantity!, status: 'new', notes: [] }
+    if (r.noQuantityColumn) line.notes.push('表里没有数量列，按每个图号 1 件建，数量请生产核对')
     if (old) {
       line.existing = { id: old.id, name: old.name, revision: old.revision }
       // 表里有版号、已有工件没有或不同，都算版号不一致：没有的发放时补上，不同的拦下走设计变更
@@ -232,13 +287,16 @@ async function assertWorkOrder(workOrderNumber: string) {
 const loadExisting = (db: Pick<typeof prisma, 'part'>, workOrderNumber: string) =>
   db.part.findMany({ where: { workOrderNumber, drawingNo: { not: null } }, select: { id: true, name: true, drawingNo: true, revision: true }, orderBy: { createdAt: 'asc' } })
 
-/** 预览：读文件 → 归类，不写库。blocking 为版号变了、发放时会被拦下的图号数 */
+/**
+ * 预览：读文件 → 归类，不写库。blocking 为版号变了、发放时会被拦下的图号数；
+ * sheetWorkOrder 为表上写的工单号，和选的工单不一样时 workOrderMismatch = true（发放时拦下）。
+ */
 export async function previewTechBom(workOrderNumber: string, buf: Buffer) {
   await assertWorkOrder(workOrderNumber)
-  const rows = await readBomWorkbook(buf)
+  const { rows, workOrderNumber: sheetWorkOrder } = await readBomFile(buf)
   const { lines, errors } = classifyBom(rows, await loadExisting(prisma, workOrderNumber))
   const blocking = lines.filter((l) => l.status === 'revisionChanged' && l.existing?.revision).length
-  return { rows: rows.length, lines, errors, blocking }
+  return { rows: rows.length, lines, errors, blocking, sheetWorkOrder, workOrderMismatch: workOrderMismatch(sheetWorkOrder, workOrderNumber) }
 }
 
 export interface TechBomResult {

@@ -644,6 +644,16 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       expect(dl.headers.get('content-disposition')).toMatch(/^attachment; filename="BOM-[0-9a-f]{8}\.xlsx"$/)
       // 同一个文件不能再发
       expect((await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], bomFileId: bf!.id })).status).toBe(400)
+      // 表上写的工单号和选的不一样：预览标出来，发放拦下
+      const wb2 = new ExcelJS.Workbook()
+      wb2.addWorksheet('明细').addRows([['工单号：OTHER-WO-1'], ['代号', '名称', '张数'], ['HTTP-BOM-9', '接口吊耳', 2]])
+      const wrong = new Uint8Array(await wb2.xlsx.writeBuffer())
+      const pv2 = await fetch(`${base}/api/bom/excel`, { method: 'POST', headers: { cookie: cookieHeader(tech) }, body: form(wrong, 'w.xlsx', { workOrderNumber: MINE }) })
+      expect(await pv2.json()).toMatchObject({ sheetWorkOrder: 'OTHER-WO-1', workOrderMismatch: true, lines: [{ drawingNo: 'HTTP-BOM-9', quantity: 1, status: 'new' }] })
+      const [wf] = (await (await upBom(tech, wrong)).json()) as { id: string }[]
+      const bad = await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], bomFileId: wf!.id })
+      expect(bad.status).toBe(400)
+      expect(((await bad.json()) as { message: string }).message).toContain('工单号是 OTHER-WO-1')
     }
     expect(await me(qa)).toMatchObject({ businessDept: 'QUALITY', menu: ['deptPlan', 'production'], can: { route: false, mobileSend: false } })
     expect(await me(pm)).toMatchObject({ menu: ['tech', 'purchase', 'production'], pmOf: [MINE], can: { overview: false } })

@@ -1,7 +1,7 @@
 /** 技术部 BOM Excel 导入：读表头、归类（螺栓螺母、没图号、同图号合并、已有工件、版号不同）；QMS BOM 按图号关联（纯函数，不连库） */
 import ExcelJS from 'exceljs'
 import { describe, expect, it } from 'vitest'
-import { classifyBom, drawingKey, readBomWorkbook, type RawBomRow } from '../../server/services/bom/excel'
+import { classifyBom, drawingKey, readBomFile, readBomWorkbook, workOrderMismatch, type RawBomRow } from '../../server/services/bom/excel'
 import { planBomImport } from '../../server/services/bom/import'
 import type { QmsBomItem } from '../../server/services/bom/client'
 
@@ -36,6 +36,47 @@ describe('readBomWorkbook', () => {
   it('认不出表头 / 不是 Excel 时给中文提示', async () => {
     await expect(readBomWorkbook(await xlsx([['名称', '数量'], ['主梁', 1]]))).rejects.toThrow('没找到表头')
     await expect(readBomWorkbook(Buffer.from('not a zip'))).rejects.toThrow('不是有效的 Excel')
+  })
+
+  it('技术部图纸明细表（10-24 zhao 发的样表）：代号/名称/幅面/张数，没有数量列按 1 件；读出工单号；合并的说明行、合计、签字栏不当零件', async () => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('明细表')
+    ws.addRows([
+      ['秦皇岛天业通联重工科技有限公司'],
+      ['项目名称：EMSV70管片运输车　驾驶室安装图纸明细表', null, null, null, '工单号：25TL-CL-2626-2'],
+      ['序号', '代号', '名称', '幅面', '张数', '备注'],
+      [1, 'EMSV70-01000000', '驾驶室安装', null, 1],
+      [2, 'EMSV70-01010000', '折叠驾驶室', null, 1],
+      [3, 'EMSV70-01010001', '销轴1', 'A4', 2],
+      [4, 'EMSV70-01010002', '销轴2', null, 1],
+      [],
+      [null, null, null, null, null],
+      [null, null, null, '合计', 4],
+      ['图纸数量为第四台单台数量'],
+      ['编制：XX', null, '审核：XX', null, '批准：XX'],
+    ])
+    ws.mergeCells('A1:F1')
+    ws.mergeCells('A11:F11')
+    const sheet = await readBomFile(Buffer.from(await wb.xlsx.writeBuffer()))
+    expect(sheet.workOrderNumber).toBe('25TL-CL-2626-2')
+    expect(sheet.rows.map((r) => [r.row, r.drawingNo, r.name, r.quantity, r.revision])).toEqual([
+      [4, 'EMSV70-01000000', '驾驶室安装', 1, null],
+      [5, 'EMSV70-01010000', '折叠驾驶室', 1, null],
+      [6, 'EMSV70-01010001', '销轴1', 1, null], // 张数 2 是图纸张数，不当数量
+      [7, 'EMSV70-01010002', '销轴2', 1, null],
+    ])
+    const { lines, errors } = classifyBom(sheet.rows, [])
+    expect(errors).toEqual([])
+    expect(lines.every((l) => l.status === 'new' && l.notes[0]?.includes('没有数量列'))).toBe(true)
+    expect(workOrderMismatch(sheet.workOrderNumber, '25tl-cl-2626-2 ')).toBe(false)
+    expect(workOrderMismatch(sheet.workOrderNumber, '25TL-CL-2626-3')).toBe(true)
+    expect(workOrderMismatch(null, '25TL-CL-2626-3')).toBe(false)
+  })
+
+  it('工单号写在单独一格、值在右边一格也能读出', async () => {
+    const sheet = await readBomFile(await xlsx([['工单号：', 'WO-9'], ['代号', '名称', '数量'], ['A-1', '主梁', 3]]))
+    expect(sheet).toMatchObject({ workOrderNumber: 'WO-9', rows: [{ drawingNo: 'A-1', quantity: 3 }] })
+    expect(sheet.rows[0]!.noQuantityColumn).toBeUndefined()
   })
 
   it('稀疏表（最后一行在第 1048576 行）只读有内容的行，不空转', async () => {

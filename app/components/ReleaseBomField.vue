@@ -22,7 +22,7 @@ interface Line {
   existing?: { id: string; name: string; revision: string | null }
   notes: string[]
 }
-interface Preview { rows: number; lines: Line[]; errors: { row: number; messages: string[] }[]; blocking: number }
+interface Preview { rows: number; lines: Line[]; errors: { row: number; messages: string[] }[]; blocking: number; sheetWorkOrder: string | null; workOrderMismatch: boolean }
 
 const preview = ref<Preview | null>(null)
 const loading = ref(false)
@@ -59,7 +59,7 @@ async function load() {
     const r = await send('/api/bom/excel', { method: 'POST', body: form })
     if (my !== seq) return
     preview.value = r
-    blocked.value = r.errors.length > 0 || r.blocking > 0
+    blocked.value = r.errors.length > 0 || r.blocking > 0 || r.workOrderMismatch
   } catch (e) {
     if (my !== seq) return
     message.error(apiError(e))
@@ -121,9 +121,13 @@ const errorColumns = [
       </template>
     </a-space>
     <div v-if="!file" class="muted">
-      CAD 导出的 BOM，要有 图号、部件名称、数量 三列，版号可选。发放时按图号建工件，生产、工艺签收时就能看到；分批发图纸的每批附自己那部分。
+      图纸明细表或 CAD 导出的 BOM（.xlsx），要有 代号（图号）、名称 两列；数量、版号可选，没有数量列按每个图号 1 件建。发放时按图号建工件，生产、工艺签收时就能看到；分批发图纸的每批附自己那部分。
     </div>
     <template v-else-if="preview">
+      <div v-if="preview.workOrderMismatch" class="line">
+        <UiStatusTag tone="late">工单号不对</UiStatusTag>
+        <span class="muted">表上写的是 {{ preview.sheetWorkOrder }}，和选的工单 {{ workOrderNumber }} 不一样，请确认是不是拿错了表</span>
+      </div>
       <div v-if="preview.errors.length" class="line">
         <UiStatusTag tone="late">{{ preview.errors.length }} 行有问题</UiStatusTag>
         <span class="muted">改好后重新选文件，有任何一行不对都不能发放</span>
@@ -138,7 +142,7 @@ const errorColumns = [
           <UiStatusTag tone="late">{{ counts.conflict }} 个图号版号变了</UiStatusTag>
           <span class="muted">已有工件的版号和表里不一样，不能随图纸发放，请改发"设计变更"，或把这几行从表里去掉</span>
         </div>
-        <div v-else class="muted">工件不建工序：自制还是外协由生产识别后再排。记得把生产部、工艺部加进接收人。</div>
+        <div v-else-if="!preview.workOrderMismatch" class="muted">工件不建工序：自制还是外协由生产识别后再排。记得把生产部、工艺部加进接收人。</div>
       </template>
     </template>
 
