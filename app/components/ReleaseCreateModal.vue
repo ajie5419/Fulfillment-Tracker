@@ -3,6 +3,7 @@
  * 新建发放单（R9）：类型、工单、关联工件（可多选，可不选）、版本号、说明、附件（PDF/照片，可选），
  * 接收人按人选，或按"部门 + 角色"选（提交时展开成人）。纸质图纸照旧下发，这里登记并要求签收。
  * prefill（R11 设计任务一键发放）：预填类型、工单、关联工件、说明，并记下 drawingTaskId；打开时装入的工单不清掉预填的工件。
+ * 图纸发放单可附 BOM 表（ReleaseBomField）：发放时按图号建工件、关联到发放单（从设计任务发放时也挂到该任务）。
  */
 import type { UploadFile } from 'ant-design-vue'
 
@@ -26,6 +27,8 @@ const form = reactive({
   groups: [] as { department?: string; role: string }[],
 })
 const files = ref<UploadFile[]>([])
+const bomFile = ref<File | null>(null)
+const bomBlocked = ref(false)
 const submitting = ref(false)
 
 /** 打开时装入的工单：工单 watch 碰到它就不清工件（预填的工件要留着）；用户之后改工单照常清空 */
@@ -45,6 +48,7 @@ watch(
       groups: [],
     })
     files.value = []
+    bomFile.value = null
     loadedWo = form.workOrderNumber
     if (form.workOrderNumber) refreshParts()
   },
@@ -94,10 +98,20 @@ async function submit() {
   if (!form.description.trim()) return message.warning('请填写说明')
   const groups = form.groups.filter((g) => g.department || g.role).map((g) => ({ department: g.department || null, role: g.role || null }))
   if (!form.userIds.length && !groups.length) return message.warning('请选择接收人')
+  const withBom = form.type === 'DRAWING' && !!bomFile.value
+  if (withBom && bomBlocked.value) return message.warning('BOM 表有问题，改好后重新选，或点"不附"')
   submitting.value = true
   try {
     const attachmentIds = await uploadAttachments(files.value.map((f) => f.originFileObj as File).filter(Boolean))
-    const r = await releasePost<{ id: string; releaseNo: string; recipients: number; impact: { started: number; held: number; confirmers: string[] }; drawing: { status: string; readySent: number } | null }>('/api/releases', {
+    const bomFileId = withBom ? await uploadBomFile(bomFile.value!) : null
+    const r = await releasePost<{
+      id: string
+      releaseNo: string
+      recipients: number
+      impact: { started: number; held: number; confirmers: string[] }
+      drawing: { status: string; readySent: number } | null
+      bom: { created: number; matched: number; revisionFilled: number; skipped: number } | null
+    }>('/api/releases', {
       type: form.type,
       workOrderNumber: form.workOrderNumber,
       partIds: form.partIds,
@@ -107,13 +121,15 @@ async function submit() {
       userIds: form.userIds,
       groups,
       drawingTaskId: props.prefill?.drawingTaskId ?? null,
+      bomFileId,
     })
     const extra =
       form.type === 'CHANGE' && (r.impact.started || r.impact.held)
         ? `；${r.impact.started ? `${r.impact.started} 道工序已在加工/在外，已通知确认变更影响` : ''}${r.impact.started && r.impact.held ? '，' : ''}${r.impact.held ? `${r.impact.held} 道未开工工序标"等变更"` : ''}`
         : ''
     const drawing = r.drawing ? `；设计任务${r.drawing.status === 'DONE' ? '已完成' : r.drawing.status === 'CUSTOMER_PENDING' ? '待客户确认' : '已更新'}${r.drawing.readySent ? `，${r.drawing.readySent} 个工件已通知"可以开工"` : ''}` : ''
-    message.success(`已发放 ${r.releaseNo}，${r.recipients} 人待签收${extra}${drawing}`, 6)
+    const bom = !r.bom ? '' : r.bom.created ? `；按 BOM 新建 ${r.bom.created} 个工件${r.bom.matched ? `，关联已有 ${r.bom.matched} 个` : ''}` : `；BOM 里的 ${r.bom.matched} 个工件都已有，已关联`
+    message.success(`已发放 ${r.releaseNo}，${r.recipients} 人待签收${bom}${extra}${drawing}`, 6)
     emit('done', r.id)
   } catch (e) {
     message.error(apiError(e))
@@ -142,8 +158,11 @@ async function submit() {
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName}` }))"
         />
       </a-form-item>
+      <a-form-item v-if="form.type === 'DRAWING'" label="BOM 表">
+        <ReleaseBomField v-model:file="bomFile" v-model:blocked="bomBlocked" :work-order-number="form.workOrderNumber" />
+      </a-form-item>
       <a-form-item label="关联工件">
-        <a-select v-model:value="form.partIds" mode="multiple" allow-clear option-filter-prop="label" :placeholder="form.workOrderNumber ? '可多选，可不选' : '先选工单'" :options="partOptions" />
+        <a-select v-model:value="form.partIds" mode="multiple" allow-clear option-filter-prop="label" :placeholder="form.workOrderNumber ? (bomFile && form.type === 'DRAWING' ? 'BOM 里的工件发放时自动关联，这里可不选' : '可多选，可不选') : '先选工单'" :options="partOptions" />
       </a-form-item>
       <a-form-item label="版本号"><a-input v-model:value="form.version" :maxlength="64" placeholder="如 A、B、V2，可空" /></a-form-item>
       <a-form-item label="说明" required>

@@ -601,6 +601,50 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(proc, 'POST', '/api/releases', { type: 'CHANGE', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'] })).status).toBe(403)
     expect((await send(proc, 'POST', '/api/releases', { type: 'PROCESS', workOrderNumber: MINE, description: '车架工艺卡', userIds: ['h-prod'] })).status).toBe(200)
     expect(await me(tech)).toMatchObject({ can: { releaseProcessOnly: false } })
+    // 10-24 图纸发放附 BOM：按 kind=bom 上传 .xlsx → 预览（能发图纸的人）→ 发放时按图号建工件；签收人能下载 BOM 表
+    {
+      const ExcelJS = (await import('exceljs')).default
+      const wb = new ExcelJS.Workbook()
+      wb.addWorksheet('BOM').addRows([['图号', '版号', '部件名称', '数量'], ['HTTP-BOM-1', 'A', '接口主梁', 1], ['HTTP-BOM-2', null, '接口端梁', 2]])
+      const xlsx = new Uint8Array(await wb.xlsx.writeBuffer())
+      const form = (data: Uint8Array, name: string, extra: Record<string, string> = {}) => {
+        const f = new FormData()
+        for (const [k, v] of Object.entries(extra)) f.append(k, v)
+        f.append('file', new Blob([new Uint8Array(data)]), name)
+        return f
+      }
+      const upBom = (sess: Record<string, string>, data: Uint8Array, name = 'bom.xlsx') =>
+        fetch(`${base}/api/uploads?kind=bom`, { method: 'POST', headers: { cookie: cookieHeader(sess) }, body: form(data, name) })
+      expect((await upBom(tech, new TextEncoder().encode('%PDF-1.4\n'), 'a.xlsx')).status).toBe(400)
+      const preview = (sess: Record<string, string>) =>
+        fetch(`${base}/api/bom/excel`, { method: 'POST', headers: { cookie: cookieHeader(sess) }, body: form(xlsx, 'bom.xlsx', { workOrderNumber: MINE }) })
+      expect((await preview(proc)).status).toBe(403) // 工艺部不能发图纸
+      expect((await preview(prod)).status).toBe(403)
+      const pv = await preview(tech)
+      expect(pv.status).toBe(200)
+      expect(await pv.json()).toMatchObject({ rows: 2, errors: [], blocking: 0, lines: [{ drawingNo: 'HTTP-BOM-1', status: 'new' }, { drawingNo: 'HTTP-BOM-2', status: 'new' }] })
+
+      const procBom = ((await (await upBom(proc, xlsx)).json()) as { id: string }[])[0]!.id
+      expect((await send(proc, 'POST', '/api/releases', { type: 'PROCESS', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], bomFileId: procBom })).status).toBe(400)
+      const [bf] = (await (await upBom(tech, xlsx)).json()) as { id: string; mime: string }[]
+      expect(bf!.mime).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      // 别人上传的 BOM 不能用
+      expect((await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], bomFileId: procBom })).status).toBe(400)
+      // BOM 表不能当普通附件
+      expect((await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], attachmentIds: [bf!.id] })).status).toBe(400)
+      const rel = await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: '车架图纸第一批', userIds: ['h-prod', 'h-proc'], bomFileId: bf!.id })
+      expect(rel.status).toBe(200)
+      const relBody = (await rel.json()) as { id: string; bom: { created: number } }
+      expect(relBody.bom).toMatchObject({ created: 2, matched: 0 })
+      // 工艺部签收时看到这批工件和 BOM 表，能下载
+      const det = (await (await get(`/api/releases/${relBody.id}`, proc)).json()) as { bomFile: { url: string }; parts: { drawingNo: string; quantity: number }[] }
+      expect(det.parts.map((p) => [p.drawingNo, p.quantity]).sort()).toEqual([['HTTP-BOM-1', 1], ['HTTP-BOM-2', 2]])
+      const dl = await get(det.bomFile.url, proc)
+      expect(dl.status).toBe(200)
+      expect(dl.headers.get('content-disposition')).toMatch(/^attachment; filename="BOM-[0-9a-f]{8}\.xlsx"$/)
+      // 同一个文件不能再发
+      expect((await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], bomFileId: bf!.id })).status).toBe(400)
+    }
     expect(await me(qa)).toMatchObject({ businessDept: 'QUALITY', menu: ['deptPlan', 'production'], can: { route: false, mobileSend: false } })
     expect(await me(pm)).toMatchObject({ menu: ['tech', 'purchase', 'production'], pmOf: [MINE], can: { overview: false } })
     expect(await me(lead)).toMatchObject({ menu: ['overview', 'deptPlan', 'tech', 'purchase', 'production'], can: { overview: true, seeAmount: true } })

@@ -77,6 +77,9 @@ async function confirmChange() {
 }
 
 const images = computed(() => (detail.value?.attachments ?? []).filter((a) => isImage(a.mime)))
+/** BOM 工件清单默认显示前 10 个 */
+const allParts = ref(false)
+const shownParts = computed(() => (allParts.value ? (detail.value?.parts ?? []) : (detail.value?.parts ?? []).slice(0, 10)))
 const pdfs = computed(() => (detail.value?.attachments ?? []).filter((a) => !isImage(a.mime)))
 </script>
 
@@ -111,7 +114,7 @@ const pdfs = computed(() => (detail.value?.attachments ?? []).filter((a) => !isI
       <van-cell-group inset title="明细">
         <van-cell title="工单" :value="detail.workOrderNumber" :label="detail.projectName ?? detail.customerName ?? ''" />
         <van-cell title="版本号" :value="detail.version ?? '—'" />
-        <van-cell title="关联工件" :value="detail.parts.map((p) => p.name).join('、') || '未关联'" />
+        <van-cell title="关联工件" :value="detail.parts.length > 3 ? `${detail.parts.length} 个` : detail.parts.map((p) => p.name).join('、') || '未关联'" />
         <van-cell title="发放人" :value="detail.issuerName ?? ''" :label="timeText(detail.createdAt)" />
         <van-cell title="签收进度" :value="`${detail.counts.SIGNED}/${detail.receipts.length} 已签收`" :label="detail.counts.REJECTED ? `${detail.counts.REJECTED} 人拒收` : ''" />
       </van-cell-group>
@@ -124,6 +127,15 @@ const pdfs = computed(() => (detail.value?.attachments ?? []).filter((a) => !isI
       <van-cell-group v-if="pdfs.length" inset>
         <van-cell v-for="(a, i) in pdfs" :key="a.id" :title="`PDF 附件 ${i + 1}`" :value="sizeText(a.size)" is-link :url="a.url" />
       </van-cell-group>
+
+      <template v-if="detail.bomFile">
+        <div class="section">工件清单（{{ detail.parts.length }} 个，随 BOM 表）</div>
+        <van-cell-group inset>
+          <van-cell v-for="p in shownParts" :key="p.id" :title="p.name" :label="`${p.drawingNo ?? '—'}${p.revision ? `　${p.revision} 版` : ''}`" :value="`× ${p.quantity}`" />
+          <van-cell v-if="detail.parts.length > shownParts.length" :title="`展开全部 ${detail.parts.length} 个`" is-link @click="allParts = true" />
+          <van-cell title="BOM 表（Excel）" :value="sizeText(detail.bomFile.size)" is-link :url="detail.bomFile.url" />
+        </van-cell-group>
+      </template>
 
       <template v-if="detail.change && detail.change.needsConfirm">
         <div class="section">设计变更影响</div>

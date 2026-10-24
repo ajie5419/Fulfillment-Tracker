@@ -87,7 +87,7 @@ describe('classifyBom', () => {
     )
     expect(lines.map((l) => [l.drawingNo, l.status, l.existing?.id])).toEqual([
       ['ZL-001', 'revisionChanged', 'p1'],
-      // 已有工件没记版号、表里是 A：也单列提示
+      // 已有工件没记版号、表里是 A：单列提示（发放时补上）
       ['DL-002', 'revisionChanged', 'p2'],
       ['ZT-003', 'new', undefined],
     ])
@@ -99,13 +99,13 @@ describe('classifyBom', () => {
     expect(lines.map((l) => l.quantity)).toEqual([60000])
   })
 
-  it('已有工件没记版号、表里有版号：也算版号不一致，不自动改', () => {
+  it('已有工件没记版号、表里有版号：单列出来，发放时补上版号', () => {
     const { lines } = classifyBom([raw(2, 'ZL-001', '主梁', 1, 'A'), raw(3, 'DL-002', '端梁', 1)], [
       { id: 'p1', name: '主梁', drawingNo: 'ZL-001', revision: null },
       { id: 'p2', name: '端梁', drawingNo: 'DL-002', revision: null },
     ])
     expect(lines.map((l) => [l.drawingNo, l.status])).toEqual([['ZL-001', 'revisionChanged'], ['DL-002', 'exists']])
-    expect(lines[0]!.notes).toEqual(['已有工件"主梁"没记版号，表里是 A：不自动改，需要的话在工件上补版号'])
+    expect(lines[0]!.notes).toEqual(['已有工件"主梁"没记版号，发放时补上版号 A'])
   })
 
   it('图号比较忽略空格和大小写', () => {

@@ -205,7 +205,7 @@ describe.skipIf(!DB)('R8 BOM 导入与路线模板', () => {
     expect(await db.part.count({ where: { workOrderNumber: { startsWith: 'DEMO-' } } })).toBe(0)
     expect(await db.routeTemplate.count({ where: { name: '主梁路线' } })).toBe(1) // 真实模板不动
   })
-  it('技术部 BOM Excel：建工件不建工序、螺栓螺母和没图号的不建、重复导入跳过；之后 QMS BOM 按图号关联，不重复建', async () => {
+  it('技术部 BOM Excel：建工件不建工序、螺栓螺母和没图号的不建、再发同一份只关联不重复建；之后 QMS BOM 按图号关联，不重复建', async () => {
     const book = async (rows: (string | number | null)[][]) => {
       const wb = new ExcelJS.Workbook()
       wb.addWorksheet('BOM').addRows(rows)
@@ -230,20 +230,33 @@ describe.skipIf(!DB)('R8 BOM 导入与路线模板', () => {
     )
     expect(preview.lines.filter((l) => l.status === 'fastener' || l.status === 'noDrawing')).toHaveLength(2)
 
-    expect(await s.techBom.importTechBom(WO3, buf, null)).toMatchObject({ created: 2, errors: [] })
+    // 随图纸发放建工件（发放单那一层见 drawing.test.ts），这里直接在事务里调
+    const apply = async (b: Buffer) => {
+      const rows = await s.techBom.readBomWorkbook(b)
+      const r = await db.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT workOrderNumber FROM qms_work_order WHERE workOrderNumber = ${WO3} FOR UPDATE`
+        return s.techBom.applyTechBom(tx, WO3, rows)
+      })
+      return { created: r.created.length, matched: r.matched.length, skipped: r.skipped }
+    }
+    expect(await apply(buf)).toMatchObject({ created: 2, matched: 0, skipped: 2 })
     const parts = await db.part.findMany({ where: { workOrderNumber: WO3 }, include: { steps: true }, orderBy: { name: 'asc' } })
     expect(parts.map((p) => [p.name, p.revision, p.quantity, p.fromTechBom, p.steps.length, p.qmsPartId])).toEqual([
       ['主梁', 'A', 2, true, 0, null],
       ['端梁', 'B', 2, true, 0, null],
     ])
-    // 再导同一份：都已存在，不建、不改
-    await expect(s.techBom.importTechBom(WO3, buf, null)).rejects.toThrow('没有要导入的工件')
-    // 版号变了：单列出来，不自动改
+    // 再发同一份：都已存在，不建、只关联
+    expect(await apply(buf)).toMatchObject({ created: 0, matched: 2 })
+    expect(await db.part.count({ where: { workOrderNumber: WO3 } })).toBe(2)
+    // 版号变了：预览标出来（发放时会拦下），不自动改
     const v2 = await book([
       ['图号', '版号', '部件名称', '数量'],
       ['DL-009', 'C', '端梁', 2],
     ])
-    expect((await s.techBom.previewTechBom(WO3, v2)).lines.map((l) => l.status)).toEqual(['revisionChanged'])
+    const p2 = await s.techBom.previewTechBom(WO3, v2)
+    expect(p2.lines.map((l) => l.status)).toEqual(['revisionChanged'])
+    expect(p2.blocking).toBe(1)
+    await expect(apply(v2)).rejects.toThrow('版号变了')
     expect((await db.part.findFirstOrThrow({ where: { workOrderNumber: WO3, drawingNo: 'DL-009' } })).revision).toBe('B')
 
     // QMS 录完：同图号的关联到已有工件（补 QMS 零件 ID 和工序），只有 QMS 有的新建

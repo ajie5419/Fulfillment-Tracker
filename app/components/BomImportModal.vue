@@ -2,7 +2,7 @@
 /**
  * 从 QMS BOM 导入（R8）：打开时从 QMS 实时读本工单的 BOM（服务端读，浏览器不碰 QMS 凭据）→ 勾选 → 导入。
  * 已导入过的行不能勾；工序在履约查不到的会跳过（灰色并说明原因）。导入的步骤默认"自制"、不带负责人，回到工件页按"待补充"补。
- * 工单里已有同图号的工件（一般是技术部 BOM 导入的）只关联、不新建；两边图号对不上的列出来，方便查录入差异。
+ * 工单里已有同图号的工件（一般是技术部发放图纸时随 BOM 建的）只关联、不新建；两边图号对不上的列出来，方便查录入差异。
  */
 const props = defineProps<{ open: boolean; workOrderNumber?: string }>()
 const emit = defineEmits<{ close: []; done: [] }>()
@@ -106,7 +106,7 @@ const columns = [
     @cancel="emit('close')"
   >
     <p class="muted">
-      每个零件建一个工件（名称、图号、数量、QMS 零件 ID 带过来，报检按零件 ID 自动匹配），必经工序按顺序建成工序链，方式默认"自制"、不带负责人——导入后在工件页把标着"待补充"的工序补上方式、外协厂和负责人。已导入过的零件不会重复导入。工单里已有同图号的工件（技术部 BOM 导入的）不新建，只补上 QMS 零件 ID，还没有工序的按 QMS 建工序。
+      每个零件建一个工件（名称、图号、数量、QMS 零件 ID 带过来，报检按零件 ID 自动匹配），必经工序按顺序建成工序链，方式默认"自制"、不带负责人——导入后在工件页把标着"待补充"的工序补上方式、外协厂和负责人。已导入过的零件不会重复导入。工单里已有同图号的工件（技术部发放图纸时随 BOM 建的）不新建，只补上 QMS 零件 ID，还没有工序的按 QMS 建工序。
     </p>
     <a-alert v-if="loadError" type="error" :message="loadError" show-icon style="margin-bottom: 12px">
       <template #action><a-button size="small" @click="load">重试</a-button></template>

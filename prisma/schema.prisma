@@ -555,7 +555,7 @@ model JobLock {
 model UploadFile {
   id         String   @id @db.VarChar(64)
   storedName String   @db.VarChar(80)
-  mime       String   @db.VarChar(40)
+  mime       String   @db.VarChar(100)
   size       Int
   uploaderId String   @db.VarChar(64)
   issueId    String?  @db.VarChar(64)
@@ -608,6 +608,8 @@ model Release {
   changeConfirmNote String?          @db.VarChar(500)
   /// 从设计任务一键发放时关联的设计任务（R11）。不是作废状态的发放单 = 该任务的图纸已发放
   drawingTaskId     String?          @db.VarChar(64)
+  /// 图纸发放单附的技术部 BOM 表（upload_file.id，同时绑定到本发放单）。发放时已按它建好工件并关联（partIds）
+  bomFileId         String?          @db.VarChar(64)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   receipts          ReleaseReceipt[]

@@ -144,12 +144,10 @@ const { data: me } = await useMe()
 const canRoute = computed(() => canDo(me.value, 'route', { workOrderNumber: workOrderNumber.value }))
 const canStep = (s: { ownerId: string | null }) => canDo(me.value, 'stepAction', { ownerId: s.ownerId })
 const bomImportOpen = ref(false)
-const techBomOpen = ref(false)
 const templateTarget = ref<{ partId: string; partName: string; mode: 'apply' | 'save' } | null>(null)
 const fillCount = (p: PartRow) => p.steps.filter((s) => s.needsFill).length
 function afterR8() {
   bomImportOpen.value = false
-  techBomOpen.value = false
   templateTarget.value = null
   refresh()
   eventsCache.clear()
@@ -200,20 +198,19 @@ const columns = [
       <WoLink v-if="workOrderNumber" :no="workOrderNumber" text="工单详情" />
       <template v-if="canRoute">
         <a-button type="primary" :disabled="!workOrderNumber" @click="editPart()">新建工件</a-button>
-        <a-button :disabled="!workOrderNumber" @click="techBomOpen = true">导入技术部 BOM（Excel）</a-button>
         <a-button :disabled="!workOrderNumber" @click="bomImportOpen = true">从 QMS BOM 导入</a-button>
       </template>
     </a-space>
   </a-card>
 
   <a-spin :spinning="pending">
-    <a-empty v-if="workOrderNumber && !parts.length" description="这个工单还没有登记工件" style="margin-top: 48px" />
+    <a-empty v-if="workOrderNumber && !parts.length" description="这个工单还没有工件：技术部发放图纸时附上 BOM 表，会按图号自动建好" style="margin-top: 48px" />
     <a-card v-for="p in parts" :key="p.id" class="part" size="small">
       <template #title>
         {{ p.name }}
         <span class="muted">　图号 {{ p.drawingNo || '—' }}{{ p.revision ? `（${p.revision} 版）` : '' }}　数量 {{ p.quantity }}　BOM 物料 ID {{ p.qmsPartId || '—' }}</span>
         <a-tag v-if="p.status === 'DONE'" color="success" style="margin-left: 8px">已完成</a-tag>
-        <UiStatusTag v-if="p.fromTechBom" tone="none" style="margin-left: 8px">来自技术 BOM</UiStatusTag>
+        <UiStatusTag v-if="p.fromTechBom" tone="none" style="margin-left: 8px">来自图纸 BOM</UiStatusTag>
         <a-tag v-if="p.qmsBomId && !p.fromTechBom" style="margin-left: 8px">来自 QMS BOM</a-tag>
         <UiStatusTag v-if="p.qmsBomId && p.fromTechBom" tone="done" style="margin-left: 8px">已关联 QMS</UiStatusTag>
         <a-tooltip v-else-if="p.fromTechBom" title="QMS 里品质人员录完这个图号后，点“从 QMS BOM 导入”按图号关联，报检才能自动匹配">
@@ -369,7 +366,6 @@ const columns = [
     </a-form>
   </a-modal>
 
-  <TechBomImportModal :open="techBomOpen" :work-order-number="workOrderNumber" @close="techBomOpen = false" @done="afterR8" />
   <BomImportModal :open="bomImportOpen" :work-order-number="workOrderNumber" @close="bomImportOpen = false" @done="afterR8" />
   <PartTemplateModal :target="templateTarget" @close="templateTarget = null" @done="afterR8" />
 

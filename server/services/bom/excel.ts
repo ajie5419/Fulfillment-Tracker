@@ -1,5 +1,6 @@
 /**
- * 从技术部 BOM Excel（CAD 导出）导入工件。这是工件的主来源：工单一下达就能导，不用等 QMS 里品质人员按图纸录完。
+ * 技术部 BOM（CAD 导出的 Excel）随图纸发放单一起下发（zhao 10-24：BOM 不单独导入，设计完成、下发图纸时自然带出）。
+ * 发放时在同一个事务里按图号建工件（applyTechBom），生产、工艺签收发放单时就看到这批工件。这是工件的主来源。
  *
  * 规则：
  *   - 列按表头名称识别（图号、版号、部件名称、数量；顺序随意），表头可以不在第 1 行（CAD 导出常带标题行）；
@@ -11,12 +12,15 @@
  * 图号和 QMS 用的是同一套编号，之后"从 QMS BOM 导入"会按图号关联到这里建的工件（补 QMS 零件 ID 和工序），不会重复建。
  */
 import ExcelJS from 'exceljs'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { FlowError } from '../flow/errors'
 
 export const MAX_BOM_ROWS = 2000
 /** 单个工件数量上限（同图号合并后也不能超过） */
 export const MAX_QUANTITY = 100000
+/** .xlsx 的 MIME（BOM 表上传后 upload_file.mime） */
+export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 type Key = 'drawingNo' | 'revision' | 'name' | 'quantity'
 const HEADERS: Record<Key, string[]> = {
@@ -88,7 +92,7 @@ export async function readBomWorkbook(buf: Buffer): Promise<RawBomRow[]> {
   try {
     await wb.xlsx.load(buf as unknown as ArrayBuffer)
   } catch {
-    throw new FlowError('文件不是有效的 Excel（.xlsx）。CAD 导出的如果是 .xls，请用 Excel 另存为 .xlsx 再导入')
+    throw new FlowError('文件不是有效的 Excel（.xlsx）。CAD 导出的如果是 .xls，请用 Excel 另存为 .xlsx 再选')
   }
   for (const ws of wb.worksheets) {
     const header = findHeader(ws)
@@ -105,7 +109,7 @@ export async function readBomWorkbook(buf: Buffer): Promise<RawBomRow[]> {
         v[key] = c
       }
       if (empty) return
-      if (rows.length >= MAX_BOM_ROWS) throw new FlowError(`一次最多导入 ${MAX_BOM_ROWS} 行`)
+      if (rows.length >= MAX_BOM_ROWS) throw new FlowError(`一张 BOM 表最多 ${MAX_BOM_ROWS} 行`)
       rows.push({ row: r, drawingNo: text(v.drawingNo ?? null), revision: text(v.revision ?? null), name: text(v.name ?? null), quantity: v.quantity ?? null })
     })
     if (!rows.length) throw new FlowError('Excel 表头下面没有数据')
@@ -197,13 +201,13 @@ export function classifyBom(rows: RawBomRow[], existing: ExistingPart[]): { line
     const line: BomLine = { rows: [r.row], drawingNo, revision, name: name ?? drawingNo, quantity: quantity!, status: 'new', notes: [] }
     if (old) {
       line.existing = { id: old.id, name: old.name, revision: old.revision }
-      // 表里有版号、已有工件没有或不同，都算版号不一致（不自动改）
+      // 表里有版号、已有工件没有或不同，都算版号不一致：没有的发放时补上，不同的拦下走设计变更
       const changed = !!revision && (!old.revision || drawingKey(revision) !== drawingKey(old.revision))
       line.status = changed ? 'revisionChanged' : 'exists'
       line.notes.push(
-        !changed ? `已有工件"${old.name}"，跳过`
-        : old.revision ? `已有工件"${old.name}"是版号 ${old.revision}，表里是 ${revision}：不自动改，按设计变更处理`
-        : `已有工件"${old.name}"没记版号，表里是 ${revision}：不自动改，需要的话在工件上补版号`,
+        !changed ? `已有工件"${old.name}"，不重复建，一并关联到发放单`
+        : old.revision ? `已有工件"${old.name}"是版号 ${old.revision}，表里是 ${revision}：版号变了不能随图纸发放，请发"设计变更"`
+        : `已有工件"${old.name}"没记版号，发放时补上版号 ${revision}`,
       )
     }
     byKey.set(key, line)
@@ -214,7 +218,7 @@ export function classifyBom(rows: RawBomRow[], existing: ExistingPart[]): { line
   return { lines, errors }
 }
 
-// ───────────── 预览 / 导入 ─────────────
+// ───────────── 预览 / 随发放单建工件 ─────────────
 
 async function assertWorkOrder(workOrderNumber: string) {
   const wo = await prisma.qmsWorkOrder.findFirst({ where: { workOrderNumber, isDeleted: false }, select: { workOrderNumber: true } })
@@ -224,34 +228,58 @@ async function assertWorkOrder(workOrderNumber: string) {
 const loadExisting = (db: Pick<typeof prisma, 'part'>, workOrderNumber: string) =>
   db.part.findMany({ where: { workOrderNumber, drawingNo: { not: null } }, select: { id: true, name: true, drawingNo: true, revision: true }, orderBy: { createdAt: 'asc' } })
 
-/** 预览：读文件 → 归类，不写库 */
+/** 预览：读文件 → 归类，不写库。blocking 为版号变了、发放时会被拦下的图号数 */
 export async function previewTechBom(workOrderNumber: string, buf: Buffer) {
   await assertWorkOrder(workOrderNumber)
   const rows = await readBomWorkbook(buf)
   const { lines, errors } = classifyBom(rows, await loadExisting(prisma, workOrderNumber))
-  return { rows: rows.length, lines, errors }
+  const blocking = lines.filter((l) => l.status === 'revisionChanged' && l.existing?.revision).length
+  return { rows: rows.length, lines, errors, blocking }
+}
+
+export interface TechBomResult {
+  /** 新建的工件 */
+  created: string[]
+  /** 已有、本次 BOM 也有的工件（发放单一并关联） */
+  matched: string[]
+  /** 原来没记版号、这次补上版号的工件数 */
+  revisionFilled: number
+  /** 不建的行：螺栓螺母、没有图号的外购件 */
+  skipped: number
 }
 
 /**
- * 导入勾选的图号（整批一个事务）。服务端重新读一次文件、对照最新的工件；有行错误整批不导。
- * selected 为空表示导入全部可导入的。
+ * 在调用方的事务里按 BOM 建工件（发放图纸时用）。调用方须已锁住工单行（qms_work_order FOR UPDATE），
+ * 这里再按 ID 顺序锁住该工单的全部工件，读最新数据后归类：
+ *   - 有任何行错误：整张发放单不发，报出前几行的问题；
+ *   - 已有同图号工件、版号不同（双方都有版号）：不发，提示走设计变更；已有工件没记版号的补上版号；
+ *   - 其余新图号建工件，已有的一并关联到发放单。
+ * 分批发图纸时每批只带自己那部分 BOM，按图号累加，不会重复建。
  */
-export async function importTechBom(workOrderNumber: string, buf: Buffer, selected: string[] | null) {
-  await assertWorkOrder(workOrderNumber)
-  const rows = await readBomWorkbook(buf)
-  return prisma.$transaction(async (tx) => {
-    // 先锁工单行：工单还没有工件时，下面锁工件行锁不住任何东西，两次导入会都当成"新建"
-    await tx.$queryRaw`SELECT workOrderNumber FROM qms_work_order WHERE workOrderNumber = ${workOrderNumber} FOR UPDATE`
-    // 锁住这个工单的工件行，两个人同时导同一份 BOM 时后一个等前一个提交，再按图号跳过
-    await tx.$queryRaw`SELECT id FROM part WHERE workOrderNumber = ${workOrderNumber} FOR UPDATE`
-    const { lines, errors } = classifyBom(rows, await loadExisting(tx, workOrderNumber))
-    if (errors.length) return { created: 0, skipped: 0, errors, rows: rows.length }
-    const want = selected ? new Set(selected.map(drawingKey)) : null
-    const toCreate = lines.filter((l) => l.status === 'new' && (!want || want.has(drawingKey(l.drawingNo))))
-    if (!toCreate.length) throw new FlowError(selected ? '勾选的图号都已经有工件了，没有要导入的' : '没有要导入的工件（都已存在，或是螺栓螺母、没有图号的行）')
-    await tx.part.createMany({
-      data: toCreate.map((l) => ({ workOrderNumber, name: l.name, drawingNo: l.drawingNo, revision: l.revision, quantity: l.quantity, fromTechBom: true })),
+export async function applyTechBom(tx: Prisma.TransactionClient, workOrderNumber: string, rows: RawBomRow[]): Promise<TechBomResult> {
+  await tx.$queryRaw`SELECT id FROM part WHERE workOrderNumber = ${workOrderNumber} ORDER BY id FOR UPDATE`
+  const { lines, errors } = classifyBom(rows, await loadExisting(tx, workOrderNumber))
+  if (errors.length) {
+    const head = errors.slice(0, 5).map((e) => `第 ${e.row} 行：${e.messages.join('，')}`).join('；')
+    throw new FlowError(`BOM 表有 ${errors.length} 行不对，没有发放：${head}${errors.length > 5 ? ' 等' : ''}`)
+  }
+  const conflict = lines.filter((l) => l.status === 'revisionChanged' && l.existing?.revision)
+  if (conflict.length) {
+    const head = conflict.slice(0, 5).map((l) => `${l.drawingNo}（已有 ${l.existing!.revision}，表里 ${l.revision}）`).join('、')
+    throw new FlowError(`BOM 里 ${conflict.length} 个图号的版号和已有工件不一样，没有发放：${head}。版号变了请发"设计变更"`)
+  }
+  const fill = lines.filter((l) => l.status === 'revisionChanged' && !l.existing?.revision)
+  for (const l of fill) await tx.part.update({ where: { id: l.existing!.id }, data: { revision: l.revision } })
+  const toCreate = lines.filter((l) => l.status === 'new')
+  const created: string[] = []
+  for (const l of toCreate) {
+    const p = await tx.part.create({
+      data: { workOrderNumber, name: l.name, drawingNo: l.drawingNo, revision: l.revision, quantity: l.quantity, fromTechBom: true },
+      select: { id: true },
     })
-    return { created: toCreate.length, skipped: lines.length - toCreate.length, errors: [], rows: rows.length }
-  })
+    created.push(p.id)
+  }
+  const matched = lines.filter((l) => (l.status === 'exists' || l.status === 'revisionChanged') && l.existing).map((l) => l.existing!.id)
+  if (!created.length && !matched.length) throw new FlowError('BOM 表里没有要建的工件（只有螺栓螺母或没有图号的行），没有发放')
+  return { created, matched, revisionFilled: fill.length, skipped: lines.filter((l) => l.status === 'fastener' || l.status === 'noDrawing').length }
 }

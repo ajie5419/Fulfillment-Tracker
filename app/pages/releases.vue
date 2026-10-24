@@ -148,7 +148,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
         </template>
         <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
         <template v-else-if="column.key === 'parts'">
-          {{ record.parts.join('、') || '—' }}
+          {{ partsText(record.parts) || '—' }}
           <div v-if="record.version" class="muted">版本 {{ record.version }}</div>
         </template>
         <template v-else-if="column.key === 'description'"><span class="desc">{{ record.description }}</span></template>
