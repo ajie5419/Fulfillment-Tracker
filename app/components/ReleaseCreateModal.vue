@@ -11,6 +11,10 @@ const emit = defineEmits<{ close: []; done: [id: string] }>()
 
 const { data: workOrders } = await useWorkOrders()
 const { data: master } = await useMaster()
+const { data: me } = await useMe()
+/** 工艺部只能发工艺文件 */
+const processOnly = computed(() => !!me.value?.can.releaseProcessOnly)
+const typeEntries = computed(() => Object.entries(RELEASE_TYPE_TEXT).filter(([k]) => !processOnly.value || k === 'PROCESS') as [ReleaseTypeKey, string][])
 
 const form = reactive({
   type: 'DRAWING' as ReleaseTypeKey,
@@ -32,7 +36,7 @@ watch(
     if (!open) return
     const p = props.prefill
     Object.assign(form, {
-      type: p?.type ?? 'DRAWING',
+      type: processOnly.value ? 'PROCESS' : (p?.type ?? 'DRAWING'),
       workOrderNumber: p?.workOrderNumber ?? props.workOrderNumber,
       partIds: [...(p?.partIds ?? [])],
       version: '',
@@ -124,7 +128,7 @@ async function submit() {
     <a-form layout="horizontal" :label-col="{ span: 4 }" :wrapper-col="{ span: 19 }">
       <a-form-item label="类型" required>
         <a-radio-group v-model:value="form.type">
-          <a-radio-button v-for="(label, key) in RELEASE_TYPE_TEXT" :key="key" :value="key">{{ label }}</a-radio-button>
+          <a-radio-button v-for="[key, label] in typeEntries" :key="key" :value="key">{{ label }}</a-radio-button>
         </a-radio-group>
         <div v-if="form.type === 'CHANGE'" class="muted">关联工件已在加工/在外协的，会通知生产经理和外协专员确认变更影响；还没开工的工序标"等变更"，暂停转序/逾期预警计时。</div>
       </a-form-item>

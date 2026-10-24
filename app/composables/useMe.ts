@@ -24,6 +24,8 @@ export interface Me {
   can: {
     drawing: boolean
     release: boolean
+    /** 只能发工艺文件（工艺部） */
+    releaseProcessOnly: boolean
     purchase: boolean
     payment: boolean
     route: boolean

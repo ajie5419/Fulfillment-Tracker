@@ -1,5 +1,5 @@
 /**
- * 业务部门（权限方案 R13 第一节）：用户的 QMS 部门 → 6 个业务部门之一，全仓只在这里换算。
+ * 业务部门（权限方案 R13 第一节）：用户的 QMS 部门 → 7 个业务部门之一，全仓只在这里换算。
  *
  *   1. 本部门在 dept_mapping 里有对照 → 对照的业务部门；
  *   2. 没有时沿 parentId 向上找最近有对照的上级（班组、科室挂在大部门下面的情况）；
@@ -25,7 +25,7 @@ void _sameCodes
 export const BUSINESS_DEPTS = Object.keys(BUSINESS_DEPT_NAME) as BusinessDept[]
 export const BUSINESS_DEPT_NAMES = Object.values(BUSINESS_DEPT_NAME)
 
-/** 名称 → 业务部门（不是 6 个之一的返回 null，算"其他"） */
+/** 名称 → 业务部门（不是 7 个之一的返回 null，算"其他"） */
 export function businessDeptOfName(name: string | null | undefined): BusinessDept | null {
   if (!name) return null
   return BUSINESS_DEPTS.find((d) => BUSINESS_DEPT_NAME[d] === name) ?? null
@@ -64,7 +64,7 @@ export function resolveDeptName(deptId: string | null | undefined, index: DeptIn
   return index.depts.get(deptId)?.name ?? null
 }
 
-/** 部门 ID → 业务部门（纯函数）：换算出的名称是 6 个之一时返回，否则 null（"其他"） */
+/** 部门 ID → 业务部门（纯函数）：换算出的名称是 7 个之一时返回，否则 null（"其他"） */
 export function resolveBusinessDept(deptId: string | null | undefined, index: DeptIndex): BusinessDept | null {
   return businessDeptOfName(resolveDeptName(deptId, index))
 }
