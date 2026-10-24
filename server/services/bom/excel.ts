@@ -197,9 +197,14 @@ export function classifyBom(rows: RawBomRow[], existing: ExistingPart[]): { line
     const line: BomLine = { rows: [r.row], drawingNo, revision, name: name ?? drawingNo, quantity: quantity!, status: 'new', notes: [] }
     if (old) {
       line.existing = { id: old.id, name: old.name, revision: old.revision }
-      const changed = !!revision && !!old.revision && drawingKey(revision) !== drawingKey(old.revision)
+      // 表里有版号、已有工件没有或不同，都算版号不一致（不自动改）
+      const changed = !!revision && (!old.revision || drawingKey(revision) !== drawingKey(old.revision))
       line.status = changed ? 'revisionChanged' : 'exists'
-      line.notes.push(changed ? `已有工件"${old.name}"是版号 ${old.revision}，表里是 ${revision}：不自动改，按设计变更处理` : `已有工件"${old.name}"，跳过`)
+      line.notes.push(
+        !changed ? `已有工件"${old.name}"，跳过`
+        : old.revision ? `已有工件"${old.name}"是版号 ${old.revision}，表里是 ${revision}：不自动改，按设计变更处理`
+        : `已有工件"${old.name}"没记版号，表里是 ${revision}：不自动改，需要的话在工件上补版号`,
+      )
     }
     byKey.set(key, line)
     lines.push(line)
@@ -235,6 +240,8 @@ export async function importTechBom(workOrderNumber: string, buf: Buffer, select
   await assertWorkOrder(workOrderNumber)
   const rows = await readBomWorkbook(buf)
   return prisma.$transaction(async (tx) => {
+    // 先锁工单行：工单还没有工件时，下面锁工件行锁不住任何东西，两次导入会都当成"新建"
+    await tx.$queryRaw`SELECT workOrderNumber FROM qms_work_order WHERE workOrderNumber = ${workOrderNumber} FOR UPDATE`
     // 锁住这个工单的工件行，两个人同时导同一份 BOM 时后一个等前一个提交，再按图号跳过
     await tx.$queryRaw`SELECT id FROM part WHERE workOrderNumber = ${workOrderNumber} FOR UPDATE`
     const { lines, errors } = classifyBom(rows, await loadExisting(tx, workOrderNumber))

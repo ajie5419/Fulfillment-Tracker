@@ -47,7 +47,7 @@ async function load() {
     rows.value = p.items
     missingInQms.value = p.missingInQms
     // 默认勾上所有还没导入的
-    selected.value = rows.value.filter((r) => !r.imported).map((r) => r.bomId)
+    selected.value = rows.value.filter((r) => !r.imported && !r.duplicateOf).map((r) => r.bomId)
   } catch (e) {
     loadError.value = apiError(e)
   } finally {
@@ -56,11 +56,12 @@ async function load() {
 }
 watch(() => props.open, (open) => open && load(), { immediate: true })
 
-const pendingCount = computed(() => rows.value.filter((r) => !r.imported).length)
+const pendingCount = computed(() => rows.value.filter((r) => !r.imported && !r.duplicateOf).length)
 const rowSelection = computed(() => ({
   selectedRowKeys: selected.value,
   onChange: (keys: (string | number)[]) => (selected.value = keys.map(String)),
-  getCheckboxProps: (r: BomRow) => ({ disabled: r.imported }),
+  // 同图号已有关联 QMS 的工件：导入时会跳过，不让勾
+  getCheckboxProps: (r: BomRow) => ({ disabled: r.imported || !!r.duplicateOf }),
 }))
 
 async function submit() {

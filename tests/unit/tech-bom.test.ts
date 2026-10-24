@@ -87,7 +87,8 @@ describe('classifyBom', () => {
     )
     expect(lines.map((l) => [l.drawingNo, l.status, l.existing?.id])).toEqual([
       ['ZL-001', 'revisionChanged', 'p1'],
-      ['DL-002', 'exists', 'p2'],
+      // 已有工件没记版号、表里是 A：也单列提示
+      ['DL-002', 'revisionChanged', 'p2'],
       ['ZT-003', 'new', undefined],
     ])
   })
@@ -96,6 +97,15 @@ describe('classifyBom', () => {
     const { lines, errors } = classifyBom([raw(2, 'ZL-001', '主梁', 60000), raw(3, 'ZL-001', '主梁', 60000)], [])
     expect(errors).toEqual([{ row: 3, messages: ['图号 ZL-001 合并后数量 120000 超过 100000'] }])
     expect(lines.map((l) => l.quantity)).toEqual([60000])
+  })
+
+  it('已有工件没记版号、表里有版号：也算版号不一致，不自动改', () => {
+    const { lines } = classifyBom([raw(2, 'ZL-001', '主梁', 1, 'A'), raw(3, 'DL-002', '端梁', 1)], [
+      { id: 'p1', name: '主梁', drawingNo: 'ZL-001', revision: null },
+      { id: 'p2', name: '端梁', drawingNo: 'DL-002', revision: null },
+    ])
+    expect(lines.map((l) => [l.drawingNo, l.status])).toEqual([['ZL-001', 'revisionChanged'], ['DL-002', 'exists']])
+    expect(lines[0]!.notes).toEqual(['已有工件"主梁"没记版号，表里是 A：不自动改，需要的话在工件上补版号'])
   })
 
   it('图号比较忽略空格和大小写', () => {
@@ -137,5 +147,13 @@ describe('planBomImport 按图号关联', () => {
     expect(plan.create.map((p) => p.qmsBomId)).toEqual(['6'])
     expect(plan.skipped).toEqual(['5'])
     expect(plan.warnings[0]).toBe('零件5：图号 ZL-001 已有关联 QMS 的工件"主梁"，这行跳过')
+  })
+
+  it('同图号既有已关联、又有未关联的工件：已关联优先，这行跳过', () => {
+    const linkable = new Map([['ZL-001', { id: 'p9', name: '主梁（手建）', hasSteps: false }]])
+    const plan = planBomImport([row('7', 'ZL-001')], ['7'], new Set(), known, linkable, new Map([['ZL-001', '主梁']]))
+    expect(plan.link).toEqual([])
+    expect(plan.create).toEqual([])
+    expect(plan.skipped).toEqual(['7'])
   })
 })

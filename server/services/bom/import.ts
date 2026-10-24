@@ -110,7 +110,8 @@ export function planBomImport(
         plan.warnings.push(`${p.part.name}：图号 ${row.partNumber} 在 QMS 里录了不止一行，已关联到工件"${target.name}"，这行跳过`)
         continue
       }
-      const takenBy = key && !target ? linked.get(key) : undefined
+      // 已关联的优先：同图号既有已关联、又有未关联的工件时也跳过，免得同一图号关联两次
+      const takenBy = key ? linked.get(key) : undefined
       if (takenBy !== undefined) {
         // 同图号的工件已经关联过别的 QMS 行（比如上次导入时跳过的重复行）：仍然不建，避免重复工件
         plan.skipped.push(id)
@@ -197,18 +198,18 @@ export async function previewBom(workOrderNumber: string, rows: QmsBomItem[]) {
     unit: r.unit,
     imported: imported.has(r.id),
     /** 导入时会关联到的已有工件（不新建） */
-    linkTo: imported.has(r.id) ? null : (() => {
+    linkTo: imported.has(r.id) || linked.has(drawingKey(r.partNumber)) ? null : (() => {
       const t = linkable.get(drawingKey(r.partNumber))
       return t ? { partId: t.id, name: t.name, hasSteps: t.hasSteps } : null
     })(),
     /** 同图号的工件已关联过别的 QMS 行：导入时跳过，不重复建 */
-    duplicateOf: imported.has(r.id) || linkable.has(drawingKey(r.partNumber)) ? null : (linked.get(drawingKey(r.partNumber)) ?? null),
+    duplicateOf: imported.has(r.id) ? null : (linked.get(drawingKey(r.partNumber)) ?? null),
     /** 工单有技术部 BOM、但里面没有这个图号 */
     notInTechBom: hasTechBom && !techKeys.has(drawingKey(r.partNumber)),
     processes: r.processes.map((p) => ({ processId: p.processId, processName: p.processName, problem: processProblem(p, known) })),
   }))
   const missingInQms = techParts
-    .filter((p) => !p.qmsBomId && !qmsKeys.has(drawingKey(p.drawingNo)))
+    .filter((p) => !qmsKeys.has(drawingKey(p.drawingNo)))
     .map((p) => ({ name: p.name, drawingNo: p.drawingNo }))
   return { items, hasTechBom, missingInQms }
 }
@@ -220,7 +221,8 @@ export async function importBom(workOrderNumber: string, rows: QmsBomItem[], sel
     return await prisma.$transaction(async (tx) => {
       await assertWorkOrder(tx, workOrderNumber)
       const ids = [...new Set(selected)]
-      // 锁住工单的工件行：和技术 BOM 导入、另一次 QMS 导入串行，按图号关联不会关联两次
+      // 先锁工单行（工单还没有工件时，锁工件行锁不住任何东西），再锁工件行：和技术 BOM 导入、另一次 QMS 导入串行，按图号关联不会关联两次
+      await tx.$queryRaw`SELECT workOrderNumber FROM qms_work_order WHERE workOrderNumber = ${workOrderNumber} FOR UPDATE`
       await tx.$queryRaw`SELECT id FROM part WHERE workOrderNumber = ${workOrderNumber} FOR UPDATE`
       const [existing, known, linkable, linked] = await Promise.all([
         tx.part.findMany({ where: { workOrderNumber, qmsBomId: { in: ids } }, select: { qmsBomId: true } }),
@@ -230,13 +232,15 @@ export async function importBom(workOrderNumber: string, rows: QmsBomItem[], sel
       ])
       const plan = planBomImport(rows, ids, new Set(existing.map((p) => p.qmsBomId!)), known, linkable, linked)
       let steps = 0
+      const hasQmsPart = new Set(
+        (await tx.part.findMany({ where: { id: { in: plan.link.map((l) => l.partId) }, qmsPartId: { not: null } }, select: { id: true } })).map((p) => p.id),
+      )
       for (const l of plan.link) {
-        const part = await tx.part.findUniqueOrThrow({ where: { id: l.partId }, select: { qmsPartId: true } })
         await tx.part.update({
           where: { id: l.partId },
           data: {
             qmsBomId: l.qmsBomId,
-            ...(part.qmsPartId ? {} : { qmsPartId: l.qmsPartId }),
+            ...(hasQmsPart.has(l.partId) ? {} : { qmsPartId: l.qmsPartId }),
             ...(l.processIds.length ? { steps: { create: l.processIds.map((processId, i) => ({ seq: i + 1, processId, mode: 'SELF' as const })) } } : {}),
           },
         })
