@@ -114,7 +114,7 @@ const pdfs = computed(() => (detail.value?.attachments ?? []).filter((a) => !isI
       <van-cell-group inset title="明细">
         <van-cell title="工单" :value="detail.workOrderNumber" :label="detail.projectName ?? detail.customerName ?? ''" />
         <van-cell title="版本号" :value="detail.version ?? '—'" />
-        <van-cell title="关联工件" :value="detail.parts.length > 3 ? `${detail.parts.length} 个` : detail.parts.map((p) => p.name).join('、') || '未关联'" />
+        <van-cell title="关联工件" :value="detail.bomFile ? `${detail.parts.length} 个，见下方工件清单` : partsText(detail.parts.map((p) => p.name)) || '未关联'" />
         <van-cell title="发放人" :value="detail.issuerName ?? ''" :label="timeText(detail.createdAt)" />
         <van-cell title="签收进度" :value="`${detail.counts.SIGNED}/${detail.receipts.length} 已签收`" :label="detail.counts.REJECTED ? `${detail.counts.REJECTED} 人拒收` : ''" />
       </van-cell-group>
