@@ -12,6 +12,9 @@
  *
  * 从设计任务一键发放（R11，drawingTaskId）：建单和作废都改用 READ COMMITTED，并按设计任务的顺序加锁
  * （先工件 → 设计任务 → 发放单），然后重算任务状态、重新评估"可以开工"（drawings.ts settleTask）。
+ *
+ * 图纸发放单附 BOM 表（bom）：同一事务里按图号建工件（bom/excel.ts applyTechBom），新建的和 BOM 里已有的工件都关联到发放单，
+ * 从设计任务发放时也挂到该设计任务。用 READ COMMITTED，加锁顺序 先工单行 → 该工单全部工件（按 ID）→ 设计任务 → 发放单。
  */
 import { Prisma, type ReceiptStatus, type Release, type ReleaseType } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
@@ -21,6 +24,7 @@ import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadDeptIndex, resolveDeptName } from '../auth/departments'
 import { departmentNames, loadNames, userDepartmentNames } from '../flow/names'
 import { assertReleasable, lockTask, settleTask } from '../drawings/drawings'
+import { XLSX_MIME, applyTechBom, type RawBomRow, type TechBomResult } from '../bom/excel'
 import { formatIssueNo, nextSeq } from '../issues/constants'
 import {
   CONFIRM_CHANGE,
@@ -134,6 +138,8 @@ export interface NewReleaseInput {
   groups?: RecipientGroup[]
   /** 从设计任务一键发放（R11） */
   drawingTaskId?: string | null
+  /** 图纸发放单附的 BOM 表：已上传的文件（upload_file.id，接口层已读出行） */
+  bom?: { fileId: string; rows: RawBomRow[] } | null
 }
 
 export interface ChangeImpact {
@@ -181,7 +187,17 @@ export async function createRelease(input: NewReleaseInput, issuerId: string) {
   const recipients = await resolveRecipients(input.userIds ?? [], input.groups ?? [], issuerId)
 
   const taskId = input.drawingTaskId || null
+  const bomInput = input.bom ?? null
+  if (bomInput && input.type !== 'DRAWING') throw new FlowError('只有图纸发放单可以附 BOM 表')
   return releaseTransaction(async (tx) => {
+    let bom: TechBomResult | null = null
+    if (bomInput) {
+      // 先锁工单行（工单还没有工件时，锁工件行锁不住任何东西），再锁该工单全部工件、按图号建工件
+      await tx.$queryRaw`SELECT workOrderNumber FROM qms_work_order WHERE workOrderNumber = ${input.workOrderNumber} FOR UPDATE`
+      const exists = await tx.qmsWorkOrder.count({ where: { workOrderNumber: input.workOrderNumber, isDeleted: false } })
+      if (!exists) throw new FlowError('工单不存在或已删除')
+      bom = await applyTechBom(tx, input.workOrderNumber, bomInput.rows)
+    }
     // 设计任务：先锁它的工件和任务行（与设计任务、采购同一加锁顺序）
     const task = taskId ? await lockTask(tx, taskId) : null
     const wo = await tx.qmsWorkOrder.findFirst({ where: { workOrderNumber: input.workOrderNumber, isDeleted: false }, select: { workOrderNumber: true } })
@@ -191,16 +207,18 @@ export async function createRelease(input: NewReleaseInput, issuerId: string) {
       const parts = await tx.part.findMany({ where: { id: { in: partIds } }, select: { workOrderNumber: true } })
       if (parts.length !== partIds.length || parts.some((p) => p.workOrderNumber !== wo.workOrderNumber)) throw new FlowError('关联工件不存在或不属于该工单')
     }
+    const bomPartIds = bom ? [...bom.created, ...bom.matched] : []
     const release = await tx.release.create({
       data: {
         releaseNo: await nextReleaseNo(tx, new Date()),
         type: input.type,
         workOrderNumber: wo.workOrderNumber,
-        partIds,
+        partIds: uniq([...partIds, ...bomPartIds]),
         version: input.version?.trim() || null,
         description,
         issuerId,
         drawingTaskId: task?.id ?? null,
+        bomFileId: bomInput?.fileId ?? null,
       },
     })
     await tx.releaseReceipt.createMany({ data: recipients.map((userId) => ({ releaseId: release.id, userId })) })
@@ -208,15 +226,26 @@ export async function createRelease(input: NewReleaseInput, issuerId: string) {
     await tx.todo.createMany({ data: receipts.map((r) => ({ ownerId: r.userId, action: SIGN_RELEASE, refType: 'receipt', refId: r.id })) })
     if (attachmentIds.length) {
       const bound = await tx.uploadFile.updateMany({
-        where: { id: { in: attachmentIds }, uploaderId: issuerId, issueId: null, releaseId: null },
+        // BOM 表（.xlsx）只能走 bomFileId，不能当普通附件
+        where: { id: { in: attachmentIds }, uploaderId: issuerId, issueId: null, releaseId: null, mime: { not: XLSX_MIME } },
         data: { releaseId: release.id },
       })
       if (bound.count !== attachmentIds.length) throw new FlowError('附件无效或已被使用，请重新上传')
     }
+    if (bomInput) {
+      const bound = await tx.uploadFile.updateMany({
+        where: { id: bomInput.fileId, uploaderId: issuerId, issueId: null, releaseId: null, mime: XLSX_MIME },
+        data: { releaseId: release.id },
+      })
+      if (bound.count !== 1) throw new FlowError('BOM 表无效或已被使用，请重新选择')
+    }
+    // 从设计任务发放：BOM 里的工件都挂到这个设计任务（原来挂着的不动）
+    if (task && bomPartIds.length) await tx.drawingTaskPart.createMany({ data: bomPartIds.map((partId) => ({ taskId: task.id, partId })), skipDuplicates: true })
     const impact: ChangeImpact = input.type === 'CHANGE' && partIds.length ? await applyChangeImpact(tx, release, partIds) : { started: 0, held: 0, confirmers: [] }
     const drawing = task ? await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, task.id) : null
-    return { id: release.id, releaseNo: release.releaseNo, recipients: receipts.length, impact, drawing }
-  }, !!taskId)
+    const bomSummary = bom ? { created: bom.created.length, matched: bom.matched.length, revisionFilled: bom.revisionFilled, skipped: bom.skipped } : null
+    return { id: release.id, releaseNo: release.releaseNo, recipients: receipts.length, impact, drawing, bom: bomSummary }
+  }, !!taskId || !!bomInput)
 }
 
 // ───────────── 签收 / 拒收 ─────────────
@@ -528,7 +557,12 @@ export async function getRelease(id: string, viewer: Actor) {
     createdAt: rel.createdAt,
     counts,
     progressText: progressText(rel.status, counts),
-    attachments: attachments.map((a) => ({ ...a, url: `/api/files/${a.id}` })),
+    attachments: attachments.filter((a) => a.id !== rel.bomFileId).map((a) => ({ ...a, url: `/api/files/${a.id}` })),
+    /** 附的 BOM 表（Excel，下载）；发放时已按它建好 parts 里的工件 */
+    bomFile: (() => {
+      const f = rel.bomFileId ? attachments.find((a) => a.id === rel.bomFileId) : undefined
+      return f ? { ...f, url: `/api/files/${f.id}` } : null
+    })(),
     receipts: rel.receipts.map((r) => ({
       id: r.id,
       userId: r.userId,
@@ -544,6 +578,8 @@ export async function getRelease(id: string, viewer: Actor) {
       id: p.id,
       name: p.name,
       drawingNo: p.drawingNo,
+      revision: p.revision,
+      quantity: p.quantity,
       steps: p.steps.map((s) => ({
         id: s.id,
         seq: s.seq,

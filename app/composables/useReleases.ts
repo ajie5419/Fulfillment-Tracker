@@ -55,7 +55,19 @@ export async function uploadAttachments(files: File[]): Promise<string[]> {
   return ids
 }
 
+/** 上传图纸发放单要附的 BOM 表（.xlsx），返回 upload_file.id */
+export async function uploadBomFile(file: File): Promise<string> {
+  const send = $fetch as unknown as (url: string, opts: { method: 'POST'; body: FormData }) => Promise<{ id: string }[]>
+  const form = new FormData()
+  form.append('file', file, file.name || 'bom.xlsx')
+  const [saved] = await send('/api/uploads?kind=bom', { method: 'POST', body: form })
+  return saved!.id
+}
+
 export const isImage = (mime: string) => mime.startsWith('image/')
+/** 工件名列表：附 BOM 的发放单 / 设计任务可能挂上百个工件，列表里只列前几个 */
+export const partsText = (names: string[], max = 3) => (names.length > max ? `${names.slice(0, max).join('、')} 等 ${names.length} 个` : names.join('、'))
+
 export const sizeText = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
 
 /** 发放单详情（GET /api/releases/:id 的返回） */
@@ -76,12 +88,16 @@ export interface ReleaseDetail {
   counts: Record<ReceiptStatusKey, number>
   progressText: string
   attachments: { id: string; mime: string; size: number; url: string }[]
+  /** 附的 BOM 表（Excel，下载）；parts 里是发放时按它建好、关联的工件 */
+  bomFile: { id: string; mime: string; size: number; url: string } | null
   receipts: { id: string; userId: string; userName: string | null; department: string | null; status: ReceiptStatusKey; statusText: string; reason: string | null; actedAt: string | null }[]
   myReceipt: { id: string; status: ReceiptStatusKey; reason: string | null; actedAt: string | null } | null
   parts: {
     id: string
     name: string
     drawingNo: string | null
+    revision: string | null
+    quantity: number
     steps: { id: string; seq: number; processName: string; supplierName: string | null; mode: string; status: string; statusText: string; held: boolean; heldByOther: boolean }[]
   }[]
   missingParts: number

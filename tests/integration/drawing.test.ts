@@ -5,6 +5,7 @@
  * 运行：TEST_DATABASE_URL=mysql://…/fulfillment_test pnpm test:integration
  */
 import { execFileSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import type { PrismaClient } from '@prisma/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -37,6 +38,7 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     await db.alert.deleteMany()
     await db.issue.deleteMany()
     await db.release.deleteMany() // 签收记录级联删除
+    await db.uploadFile.deleteMany()
     await db.drawingTask.deleteMany() // 关联工件级联删除
     await db.paymentRequest.deleteMany()
     await db.purchaseLine.deleteMany()
@@ -180,6 +182,73 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     expect((await readyTodos(part.id)).filter((x) => x.status === 'OPEN')).toHaveLength(0)
     // 改关联工件（移走）→ 原工件不再被挡，重新发
     expect(await s.dr.updateTask(t2.id, { partIds: [] })).toMatchObject({ status: 'PENDING', readySent: 1 })
+  })
+
+  it('发放图纸附 BOM：按图号建工件并关联发放单和设计任务；分批累加不重复建；版号变了拦下；没记版号的补上', async () => {
+    const BWO = OTHER_WO
+    const rows = (list: [string | null, string | null, string, number][]) => list.map(([drawingNo, revision, name, quantity], i) => ({ row: i + 2, drawingNo, revision, name, quantity }))
+    const bomFile = async () => (await db.uploadFile.create({ data: { id: randomBytes(16).toString('hex'), storedName: 'x.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 1, uploaderId: 'u-des' } })).id
+    await s.steps.createPart(BWO, { name: '旧支腿', quantity: 1, drawingNo: 'ZT-100' })
+    const t = await s.dr.createTask({ workOrderNumber: BWO, componentName: '车架总图', ownerId: 'u-des', planDate: dayOff(10) }, 'u-pm')
+    await s.dr.markDrawn(t.id, null, DESIGNER)
+    const send = async (list: Parameters<typeof rows>[0], over: Partial<Parameters<Services['rel']['createRelease']>[0]> = {}) =>
+      s.rel.createRelease({ type: 'DRAWING', workOrderNumber: BWO, description: '车架图纸', userIds: ['u-worker'], drawingTaskId: t.id, bom: { fileId: await bomFile(), rows: rows(list) }, ...over }, 'u-des')
+
+    // 只有图纸发放单能附 BOM
+    await expect(send([['CJ-001', 'A', '主梁', 1]], { type: 'CHANGE' })).rejects.toThrow('只有图纸发放单可以附 BOM 表')
+    // 行错误：整张不发、不建
+    await expect(send([['CJ-001', 'A', '主梁', 0]])).rejects.toThrow('BOM 表有 1 行不对')
+    expect(await db.release.count({ where: { workOrderNumber: BWO } })).toBe(0)
+
+    // 第一批：新建 2 个（同图号合并），已有的 ZT-100 没记版号 → 补上；螺栓、没图号的不建
+    const r1 = await send([
+      ['CJ-001', 'A', '主梁', 1],
+      ['cj-001 ', 'A', '主梁', 1],
+      ['CJ-002', 'A', '端梁', 2],
+      ['ZT-100', 'B', '支腿', 1],
+      ['GB5783', null, '六角头螺栓 M16', 40],
+      [null, null, '减速机', 1],
+    ])
+    expect(r1.bom).toEqual({ created: 2, matched: 1, revisionFilled: 1, skipped: 2 })
+    expect(r1.drawing).toMatchObject({ status: 'DONE' })
+    const parts = await db.part.findMany({ where: { workOrderNumber: BWO, drawingNo: { not: null } }, orderBy: { drawingNo: 'asc' } })
+    expect(parts.map((p) => [p.drawingNo, p.revision, p.quantity, p.fromTechBom])).toEqual([
+      ['CJ-001', 'A', 2, true],
+      ['CJ-002', 'A', 2, true],
+      ['ZT-100', 'B', 1, false],
+    ])
+    const rel1 = await db.release.findUniqueOrThrow({ where: { id: r1.id } })
+    expect(new Set(rel1.partIds as string[])).toEqual(new Set(parts.map((p) => p.id)))
+    expect(rel1.bomFileId).toBeTruthy()
+    expect((await db.uploadFile.findUniqueOrThrow({ where: { id: rel1.bomFileId! } })).releaseId).toBe(r1.id)
+    expect((await db.drawingTaskPart.findMany({ where: { taskId: t.id } })).map((x) => x.partId).sort()).toEqual(parts.map((p) => p.id).sort())
+    // 详情：BOM 表单独列出（不混在附件里），工件带版号、数量
+    const detail = await s.rel.getRelease(r1.id, DESIGNER)
+    expect(detail.bomFile?.id).toBe(rel1.bomFileId)
+    expect(detail.attachments).toEqual([])
+    expect(detail.parts.find((p) => p.drawingNo === 'CJ-002')).toMatchObject({ revision: 'A', quantity: 2 })
+    // 同一个 BOM 文件不能再用
+    await expect(
+      s.rel.createRelease({ type: 'DRAWING', workOrderNumber: BWO, description: 'x', userIds: ['u-worker'], bom: { fileId: rel1.bomFileId!, rows: rows([['CJ-009', null, '吊耳', 1]]) } }, 'u-des'),
+    ).rejects.toThrow('BOM 表无效或已被使用')
+    expect(await db.part.count({ where: { workOrderNumber: BWO, drawingNo: 'CJ-009' } })).toBe(0)
+
+    // 第二批（不从设计任务发）：只带新图号 + 一个已有的，累加不重复建
+    const r2 = await send([['CJ-002', 'A', '端梁', 2], ['CJ-003', null, '横梁', 1]], { drawingTaskId: null })
+    expect(r2.bom).toEqual({ created: 1, matched: 1, revisionFilled: 0, skipped: 0 })
+    expect(await db.part.count({ where: { workOrderNumber: BWO, drawingNo: { not: null } } })).toBe(4)
+
+    // 版号变了：整张拦下，提示发设计变更，已有工件不改
+    await expect(send([['CJ-001', 'B', '主梁', 2], ['CJ-004', 'A', '新件', 1]], { drawingTaskId: null })).rejects.toThrow('版号变了请发"设计变更"')
+    expect((await db.part.findFirstOrThrow({ where: { workOrderNumber: BWO, drawingNo: 'CJ-001' } })).revision).toBe('A')
+    expect(await db.part.count({ where: { workOrderNumber: BWO, drawingNo: 'CJ-004' } })).toBe(0)
+    // 只有螺栓：没有要建的工件
+    await expect(send([['GB5783', null, '螺栓', 4]], { drawingTaskId: null })).rejects.toThrow('没有要建的工件')
+
+    // 两人同时发同一批：后一个等前一个提交，按图号关联，不重复建
+    const [a, b] = await Promise.all([send([['CJ-010', 'A', '并发件', 1]], { drawingTaskId: null }), send([['CJ-010', 'A', '并发件', 1]], { drawingTaskId: null })])
+    expect([a.bom!.created, b.bom!.created].sort()).toEqual([0, 1])
+    expect(await db.part.count({ where: { workOrderNumber: BWO, drawingNo: 'CJ-010' } })).toBe(1)
   })
 
   it('客户确认是独立节点：发放后待客户确认，确认后才算完成；只挂设计任务的工件也会发"可以开工"', async () => {

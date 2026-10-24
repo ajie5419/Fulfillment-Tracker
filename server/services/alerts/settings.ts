@@ -28,8 +28,8 @@ export async function getSettings() {
   return {
     thresholds: SCAN_RULES.map((rule) => ({ rule, ...thresholds[rule] })),
     offDays: offDays.map((d) => dateFieldDay(d.date)),
-    // 部门负责人的部门只能选 6 个业务部门（用户的 QMS 部门经"部门对照"换成业务部门后对应）；
-    // 已配置但不在这 6 个里的旧值也列出（标为旧值），免得看不到、删不掉
+    // 部门负责人的部门只能选 7 个业务部门（用户的 QMS 部门经"部门对照"换成业务部门后对应）；
+    // 已配置但不在这 7 个里的旧值也列出（标为旧值），免得看不到、删不掉
     departments: BUSINESS_DEPT_NAMES,
     legacyDepartments: [...new Set(roles.map((r) => r.department).filter((x): x is string => !!x && !BUSINESS_DEPT_NAMES.includes(x)))].sort(),
     /** 还没有负责人的业务部门（预警升级、异常默认责任人会找不到人） */

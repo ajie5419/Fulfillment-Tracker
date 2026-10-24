@@ -23,6 +23,8 @@ export const newReleaseBody = z
       .default([]),
     /** 从设计任务一键发放（R11） */
     drawingTaskId: z.string().min(1).max(191).nullish(),
+    /** 图纸发放单附的 BOM 表（先 POST /api/uploads?kind=bom 上传） */
+    bomFileId: z.string().regex(/^[a-f0-9]{32}$/, 'BOM 表无效').nullish(),
   })
   .strict()
 

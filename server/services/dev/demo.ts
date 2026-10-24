@@ -43,6 +43,7 @@ const PM_WORK_ORDERS = [`${P}WO-001`, `${P}WO-002`]
 // 异常分类的默认责任部门按名称匹配这些部门（方案 6.4）
 const DEPARTMENTS = [
   { id: `${P}DEPT-TECH`, name: '技术部' },
+  { id: `${P}DEPT-PROC`, name: '工艺部' },
   { id: `${P}DEPT-PUR`, name: '采购部' },
   { id: `${P}DEPT-FIN`, name: '财务部' },
   { id: `${P}DEPT-QA`, name: '质量部' },
@@ -58,6 +59,7 @@ const DEPARTMENTS = [
 /** R13 部门对照：大部门对到业务部门（演示各部门视角；班组、科室不单独对照，沿上级继承） */
 const DEPT_MAPPINGS = [
   { qmsDepartmentId: `${P}DEPT-TECH`, businessDept: 'TECH' },
+  { qmsDepartmentId: `${P}DEPT-PROC`, businessDept: 'PROCESS' },
   { qmsDepartmentId: `${P}DEPT-PUR`, businessDept: 'PURCHASE' },
   { qmsDepartmentId: `${P}DEPT-FIN`, businessDept: 'FINANCE' },
   { qmsDepartmentId: `${P}DEPT-QA`, businessDept: 'QUALITY' },
@@ -103,6 +105,8 @@ const USERS = [
   { id: 'u-012', username: `${P}u-012`, realName: '测试焊工', departmentId: `${P}DEPT-WELD`, roleId: `${P}ROLE-WORKER`, roleName: '操作工' },
   { id: 'u-013', username: `${P}u-013`, realName: '测试检验员', departmentId: `${P}DEPT-QC`, roleId: `${P}ROLE-QC`, roleName: '检验员' },
   { id: 'u-014', username: `${P}u-014`, realName: '测试行政', departmentId: `${P}DEPT-ADMIN`, roleId: `${P}ROLE-ADMIN`, roleName: '行政' },
+  // 工艺部（10-24）：分解料单、编制下发工艺文件、定工艺路线
+  { id: 'u-015', username: `${P}u-015`, realName: '测试工艺员', departmentId: `${P}DEPT-PROC`, roleId: `${P}ROLE-PROCESS`, roleName: '工艺员' },
 ]
 
 // 预警升级阶梯的通知对象（方案 6.2）

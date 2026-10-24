@@ -28,6 +28,7 @@ export const source = z.enum(['MOBILE', 'PC']).default('PC')
 export const partFields = {
   name: z.string().trim().min(1, '请填写工件名称').max(191),
   drawingNo: z.string().trim().max(191).nullish(),
+  revision: z.string().trim().max(64).nullish(),
   quantity: z.number().int().min(1, '数量至少为 1').max(100000),
   qmsPartId: z.string().trim().max(64).nullish(),
 }

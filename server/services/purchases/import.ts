@@ -123,19 +123,21 @@ export async function readWorkbook(buf: Buffer): Promise<RawRow[]> {
   const missing = TEMPLATE_COLUMNS.filter((c) => c.required && ![...cols.values()].includes(c.key)).map((c) => c.header)
   if (missing.length) throw new FlowError(`表头不对，缺少列：${missing.join('、')}。请用页面上下载的模板`)
   const rows: RawRow[] = []
-  for (let r = 2; r <= ws.rowCount; r++) {
+  // eachRow 只走有内容的行：稀疏表不会空转上百万次
+  ws.eachRow({ includeEmpty: false }, (row, r) => {
+    if (r < 2) return
     const values: RawRow['values'] = {}
     let empty = true
     for (const [col, key] of cols) {
-      let v = cellValue(ws.getRow(r).getCell(col).value)
+      let v = cellValue(row.getCell(col).value)
       if (typeof v === 'string') v = v.trim() || null
       if (v !== null) empty = false
       values[key] = v
     }
-    if (empty) continue
+    if (empty) return
     if (rows.length >= MAX_IMPORT_ROWS) throw new FlowError(`一次最多导入 ${MAX_IMPORT_ROWS} 行，请分批导入`)
     rows.push({ row: r, values })
-  }
+  })
   if (!rows.length) throw new FlowError('Excel 里没有数据（从第 2 行开始填）')
   return rows
 }
