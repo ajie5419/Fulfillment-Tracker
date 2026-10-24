@@ -186,6 +186,11 @@ export function classifyBom(rows: RawBomRow[], existing: ExistingPart[]): { line
     const key = drawingKey(drawingNo)
     const same = byKey.get(key)
     if (same) {
+      // 同一图号两行版号不一样：说不清按哪个版发，整张拦下（不然会绕过和已有工件的版号比对）
+      if (drawingKey(revision) !== drawingKey(same.revision)) {
+        errors.push({ row: r.row, messages: [`图号 ${drawingNo} 的版号"${revision ?? '空'}"和第 ${same.rows[0]} 行的"${same.revision ?? '空'}"不一致`] })
+        continue
+      }
       if (same.quantity + quantity! > MAX_QUANTITY) {
         // 合计超过上限时报错，不悄悄截断
         errors.push({ row: r.row, messages: [`图号 ${drawingNo} 合并后数量 ${same.quantity + quantity!} 超过 ${MAX_QUANTITY}`] })
@@ -194,7 +199,6 @@ export function classifyBom(rows: RawBomRow[], existing: ExistingPart[]): { line
       same.rows.push(r.row)
       same.quantity += quantity!
       if (name && name !== same.name) same.notes.push(`第 ${r.row} 行名称是"${name}"，按第 ${same.rows[0]} 行的"${same.name}"建`)
-      if (revision && revision !== same.revision) same.notes.push(`第 ${r.row} 行版号是"${revision}"，和第 ${same.rows[0]} 行"${same.revision ?? '空'}"不一致`)
       continue
     }
     const old = have.get(key)

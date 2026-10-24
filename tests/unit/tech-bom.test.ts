@@ -93,6 +93,14 @@ describe('classifyBom', () => {
     ])
   })
 
+  it('同图号两行版号不一样：报错，不能绕过和已有工件的版号比对', () => {
+    const { lines, errors } = classifyBom([raw(2, 'ZL-001', '主梁', 1, 'A'), raw(3, 'zl-001', '主梁', 1, 'B'), raw(4, 'ZL-001', '主梁', 1, ' a ')], [
+      { id: 'p1', name: '主梁', drawingNo: 'ZL-001', revision: 'A' },
+    ])
+    expect(errors).toEqual([{ row: 3, messages: ['图号 zl-001 的版号"B"和第 2 行的"A"不一致'] }])
+    expect(lines.map((l) => [l.status, l.quantity, l.rows])).toEqual([['exists', 2, [2, 4]]])
+  })
+
   it('同图号合并后数量超过上限：报错，不悄悄截断', () => {
     const { lines, errors } = classifyBom([raw(2, 'ZL-001', '主梁', 60000), raw(3, 'ZL-001', '主梁', 60000)], [])
     expect(errors).toEqual([{ row: 3, messages: ['图号 ZL-001 合并后数量 120000 超过 100000'] }])
