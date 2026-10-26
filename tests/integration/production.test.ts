@@ -93,13 +93,16 @@ describe.skipIf(!DB)('生产管理补全', () => {
   }
   const act = (stepId: string) => ({ stepId, actorId: 'u-worker', source: 'MOBILE' as const })
 
-  it('派工到班组：自制工序可选厂内班组，外协厂不行；改成自制时原外协厂清空', async () => {
+  it('派工到班组：自制工序可选厂内班组，外协厂不行；自制和外协互改时原班组 / 外协厂清空', async () => {
     const { cut, paint } = await makePart(1)
     expect(cut.supplierId).toBe('T-WELD')
     await expect(s.steps.addStep(cut.partId, { processId: 'P-WELD', mode: 'SELF', supplierId: 'S-OUT' }, 'u-head')).rejects.toThrow('只能派给厂内班组')
     await expect(s.steps.updateStep(cut.id, { supplierId: 'S-OUT' })).rejects.toThrow('只能派给厂内班组')
     const self = await s.steps.updateStep(paint.id, { mode: 'SELF' })
     expect(self.supplierId).toBeNull()
+    // 反过来：派了班组的自制工序改成外协，班组不能留着当外协厂
+    await s.steps.updateStep(paint.id, { supplierId: 'T-WELD' })
+    expect((await s.steps.updateStep(paint.id, { mode: 'EXTERNAL_OUTSOURCE' })).supplierId).toBeNull()
     // 加工中列表带班组
     await s.flow.startStep(act(cut.id))
     const row = (await s.working.listWorking({})).find((r) => r.stepId === cut.id)

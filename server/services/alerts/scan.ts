@@ -240,7 +240,9 @@ async function collectW10(now: Date, t: Thresholds, offDays: string[]): Promise<
         ? `${who}超要求完成日 ${due} ${r.overdueDays} 天仍未完工`
         : r.daysLeft > 0
           ? `${who}要求 ${due} 完工，还剩 ${r.daysLeft} 天`
-          : `${who}要求今天完工`
+          : r.daysLeft === 0
+            ? `${who}要求今天完工`
+            : `${who}已过要求完成日 ${due}（中间是停工日，不计超期）`
     return {
       rule: 'W10',
       refType: 'step',

@@ -113,7 +113,7 @@ async function submit() {
       recipients: number
       impact: { started: number; held: number; confirmers: string[] }
       drawing: { status: string; readySent: number } | null
-      bom: { created: number; matched: number; revisionFilled: number; skipped: number; unrouted: number } | null
+      bom: { created: number; matched: number; revisionFilled: number; skipped: number; unrouted: number; unroutedNotified: boolean } | null
     }>('/api/releases', {
       type: form.type,
       workOrderNumber: form.workOrderNumber,
@@ -132,7 +132,9 @@ async function submit() {
         : ''
     const drawing = r.drawing ? `；设计任务${r.drawing.status === 'DONE' ? '已完成' : r.drawing.status === 'CUSTOMER_PENDING' ? '待客户确认' : '已更新'}${r.drawing.readySent ? `，${r.drawing.readySent} 个工件已通知"可以开工"` : ''}` : ''
     const bom = !r.bom ? '' : r.bom.created ? `；按 BOM 新建 ${r.bom.created} 个工件${r.bom.matched ? `，关联已有 ${r.bom.matched} 个` : ''}` : `；BOM 里的 ${r.bom.matched} 个工件都已有，已关联`
-    const route = r.bom?.unrouted ? `；${r.bom.unrouted} 个工件还没有工序链，已提醒生产经理排工序` : ''
+    const route = r.bom?.unrouted
+      ? `；${r.bom.unrouted} 个工件还没有工序链，${r.bom.unroutedNotified ? '已提醒生产经理排工序' : '但还没设生产部负责人、没人收到提醒，请到"设置→人员与角色"指定'}`
+      : ''
     message.success(`已发放 ${r.releaseNo}，${r.recipients} 人待签收${bom}${route}${extra}${drawing}`, 6)
     emit('done', r.id)
   } catch (e) {

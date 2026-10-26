@@ -7,6 +7,8 @@ import { prisma } from '../../utils/prisma'
 import { openIssuesOfSteps } from '../issues/issues'
 import { FlowError } from './errors'
 import { RETURN_TYPES } from './flow'
+import { partRelatedCounts } from './timeline'
+import { deleteCommentsOf } from '../comments/comments'
 import { loadNames } from './names'
 import { planWarning, resolvePlanNode } from '../plan/links'
 
@@ -61,7 +63,7 @@ export async function listParts(workOrderNumber: string) {
   })
   const steps = parts.flatMap((p) => p.steps)
   const stepIds = steps.map((s) => s.id)
-  const [names, sums, counts, issues] = await Promise.all([
+  const [names, sums, counts, issues, related] = await Promise.all([
     loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId), user: steps.map((s) => s.ownerId) }),
     prisma.flowEvent.groupBy({
       by: ['stepId'],
@@ -71,11 +73,14 @@ export async function listParts(workOrderNumber: string) {
     prisma.flowEvent.groupBy({ by: ['stepId'], where: { stepId: { in: stepIds } }, _count: { _all: true } }),
     // 有异常的步骤要能跳到对应异常
     openIssuesOfSteps(steps.filter((s) => s.status === 'BLOCKED').map((s) => s.id)),
+    // 卡片顶部的关联记录数（设计、物料、异常、留言）
+    partRelatedCounts(parts.map((p) => p.id)),
   ])
   const returned = new Map(sums.map((s) => [s.stepId, s._sum.qty ?? 0]))
   const eventCount = new Map(counts.map((c) => [c.stepId, c._count._all]))
   return parts.map((p) => ({
     ...p,
+    related: related.get(p.id)!,
     steps: p.steps.map((s) => ({
       ...s,
       processName: names.process.get(s.processId) ?? s.processId,
@@ -167,6 +172,7 @@ export async function deletePart(partId: string) {
     const ids = steps.map((s) => s.id)
     if (await hasEvents(tx, ids)) throw new FlowError('该工件已有流转记录，不能删除')
     await tx.todo.updateMany({ where: { refType: 'step', refId: { in: ids }, status: 'OPEN' }, data: { status: 'CANCELLED' } })
+    await deleteCommentsOf(tx, 'part', partId) // 留言和它发出的提醒都没有外键，一起删，别留下指向已删工件的数据
     await tx.part.delete({ where: { id: partId } }) // 步骤级联删除
     return { ok: true }
   })
@@ -230,7 +236,9 @@ export async function updateStep(stepId: string, input: Partial<StepInput>) {
     const mode = input.mode ?? step.mode
     if (mode !== step.mode && step.status !== 'PENDING') throw new FlowError('步骤已发出或已开工，不能再改加工方式')
     // 改成自制时原来的外协厂不一定是班组：没另外指定就清空
-    const supplierId = input.supplierId !== undefined ? input.supplierId : mode === 'SELF' && step.mode !== 'SELF' ? null : step.supplierId
+    // 只改方式不传外协厂时：自制 ↔ 外协切换要清掉原来的班组 / 外协厂（两边不通用），厂内 ↔ 厂外外协之间保留
+    const crossesSelf = mode !== step.mode && (mode === 'SELF' || step.mode === 'SELF')
+    const supplierId = input.supplierId !== undefined ? input.supplierId : crossesSelf ? null : step.supplierId
     if (input.supplierId !== undefined || mode !== step.mode) await assertSelfTeam(tx, mode, supplierId)
     assertDates(
       input.planStartDate !== undefined ? input.planStartDate : step.planStartDate,

@@ -125,8 +125,11 @@ const mobileOf = (link: string | null) => (link?.startsWith('/releases?id=') ? `
 
 /** 同步失败提醒（管理员）：点开去设置页的"QMS 同步状态" */
 const SYNC_FAIL_LINK = '/settings?tab=sync'
-/** 预警/待办类提醒、发放单通知、总计划通知（R14 节点被退回）+ 已读的同步失败提醒（未读的置顶，不在分组里重复出现） */
-const LISTED = { OR: [{ kind: null }, { kind: 'RELEASE' }, { kind: 'PLAN' }, { kind: 'SYNC_FAIL', readAt: { not: null } }] }
+/** 跳转地址存在提醒上的种类：发放单通知、总计划通知（R14 节点被退回）、留言 @ 我（10-26）。新增这类提醒只改这里 */
+const LINKED_KINDS = ['RELEASE', 'PLAN', 'COMMENT']
+const isLinked = (kind: string | null) => !!kind && LINKED_KINDS.includes(kind)
+/** 预警/待办类提醒、跳转地址存在提醒上的通知 + 已读的同步失败提醒（未读的置顶，不在分组里重复出现） */
+const LISTED = { OR: [{ kind: null }, { kind: { in: LINKED_KINDS } }, { kind: 'SYNC_FAIL', readAt: { not: null } }] }
 
 /**
  * 我的提醒。每日汇总（kind = DIGEST）单独返回最新一条作为置顶（digest），不混在分组列表里；
@@ -156,8 +159,7 @@ export async function listReminders(userId: string, now = new Date()) {
     items: items.map((i) => {
       const none = { workOrderNumber: null, dueDay: null }
       if (i.kind === 'SYNC_FAIL') return card({ ...i, ...none, rule: null, cleared: false, issueNo: null, link: SYNC_FAIL_LINK, mobileLink: null })
-      if (i.kind === 'RELEASE') return card({ ...i, ...none, rule: null, cleared: false, issueNo: null, link: i.link, mobileLink: mobileOf(i.link) })
-      if (i.kind === 'PLAN') return card({ ...i, ...none, workOrderNumber: planWoOfLink(i.link), rule: null, cleared: false, issueNo: null, link: i.link, mobileLink: null })
+      if (isLinked(i.kind)) return card({ ...i, ...none, workOrderNumber: woOfLink(i.link), rule: null, cleared: false, issueNo: null, link: i.link, mobileLink: mobileOf(i.link) })
       const l = i.alertId ? links.get(i.alertId) : undefined
       return card({
         ...i,
@@ -174,10 +176,11 @@ export async function listReminders(userId: string, now = new Date()) {
   }
 }
 
-/** 总计划通知的跳转地址 /plan?wo=… 里取工单号 */
-function planWoOfLink(link: string | null): string | null {
-  if (!link?.startsWith('/plan?')) return null
-  return new URLSearchParams(link.slice('/plan?'.length)).get('wo')
+/** 跳转地址里带的工单号（/plan?wo=…、/parts?wo=…、/purchases?wo=… 等） */
+function woOfLink(link: string | null): string | null {
+  const q = link?.indexOf('?') ?? -1
+  if (!link || q < 0) return null
+  return new URLSearchParams(link.slice(q + 1)).get('wo')
 }
 
 /** 未读提醒数（菜单"工作台"角标，前端改版第二轮）：与 listReminders 的 unread 同一口径（本人的、未读的，含每日汇总） */
@@ -208,12 +211,12 @@ export async function newReminders(userId: string, since: Date | null) {
   const now = new Date()
   since ??= now
   const items = await prisma.reminder.findMany({
-    where: { userId, OR: [{ kind: null }, { kind: 'SYNC_FAIL' }, { kind: 'RELEASE' }, { kind: 'PLAN' }], readAt: null, level: { in: ['YELLOW', 'RED'] }, createdAt: { gte: new Date(+since - OVERLAP_MS) } },
+    where: { userId, OR: [{ kind: null }, { kind: 'SYNC_FAIL' }, { kind: { in: LINKED_KINDS } }], readAt: null, level: { in: ['YELLOW', 'RED'] }, createdAt: { gte: new Date(+since - OVERLAP_MS) } },
     orderBy: { createdAt: 'asc' },
     select: SELECT,
   })
   const links = await linksFor([...new Set(items.map((i) => i.alertId).filter((x): x is string => !!x))])
-  return { now, items: items.map((i) => ({ ...i, link: i.kind === 'SYNC_FAIL' ? SYNC_FAIL_LINK : i.kind === 'RELEASE' || i.kind === 'PLAN' ? i.link : (i.alertId && links.get(i.alertId)?.pc) || null })) }
+  return { now, items: items.map((i) => ({ ...i, link: i.kind === 'SYNC_FAIL' ? SYNC_FAIL_LINK : isLinked(i.kind) ? i.link : (i.alertId && links.get(i.alertId)?.pc) || null })) }
 }
 
 // ───────────── 预警列表 ─────────────

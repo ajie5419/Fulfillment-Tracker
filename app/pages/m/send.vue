@@ -63,6 +63,8 @@ function choosePart(id: string, preferStepId?: string) {
 }
 
 function chooseStep(id: string) {
+  // 换了工序，随件发料要重填，不能把上一道写的带过去
+  if (id !== stepId.value) note.value = ''
   stepId.value = id
   const s = part.value?.steps.find((x) => x.id === id)
   supplierId.value = s?.supplierId ?? lastSupplierId.value ?? ''

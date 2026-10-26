@@ -17,6 +17,7 @@
  */
 import type { DelayReason, DrawingTaskStatus, FlowSource, Prisma, PurchaseLine, PurchaseStatus } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
+import { countComments, deleteCommentsOf } from '../comments/comments'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey, dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { FlowError } from '../flow/errors'
@@ -258,6 +259,7 @@ export async function deleteLine(id: string) {
     if (await tx.paymentLine.findFirst({ where: { purchaseLineId: id }, select: { paymentId: true } })) {
       throw new FlowError('已关联付款申请，不能删除；不再跟踪请改为"已取消"')
     }
+    await deleteCommentsOf(tx, 'purchase', id) // 留言和它发出的提醒都没有外键，一起删
     await tx.purchaseLine.delete({ where: { id } })
     await clearAlertKeys(tx, [w6Key(id)])
     await refreshPartReady(tx, line.partId, line.status === 'OPEN')
@@ -481,7 +483,9 @@ export async function listLines(filter: LineFilter, now = new Date()) {
     prisma.purchaseLine.count({ where }),
     lineStats(scope, today),
   ])
-  const rows = await describeLines(found, now, filter.amountVisible)
+  const [described, comments] = await Promise.all([describeLines(found, now, filter.amountVisible), countComments('purchase', found.map((l) => l.id))])
+  // 留言条数（列表上"留言 N"，10-26）
+  const rows = described.map((r) => ({ ...r, commentCount: comments.get(r.id) ?? 0 }))
   const rank = { OPEN: 0, ARRIVED: 1, CANCELLED: 2 } as const
   rows.sort((a, b) => rank[a.status] - rank[b.status] || (a.status === 'ARRIVED' ? +(b.arrivedDate ?? 0) - +(a.arrivedDate ?? 0) : +a.needDate - +b.needDate))
   return { rows, total, stats }
