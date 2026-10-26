@@ -1091,3 +1091,21 @@ model LoginAttempt {
   @@index([expiresAt])
   @@map("login_attempt")
 }
+
+/// 留言（借鉴 ERPNext 的记录评论，10-26）：挂在工件 / 采购行上，可以 @人，被 @ 的人收到提醒（kind = COMMENT）。只新增不修改
+model Comment {
+  id              String   @id @default(cuid())
+  /// part = 工件，purchase = 采购行
+  refType         String   @db.VarChar(20)
+  refId           String   @db.VarChar(64)
+  workOrderNumber String   @db.VarChar(64)
+  authorId        String   @db.VarChar(64)
+  body            String   @db.Text
+  /// 被 @ 的人（QMS 用户 ID 数组）
+  mentionIds      Json?
+  createdAt       DateTime @default(now())
+
+  @@index([refType, refId])
+  @@index([workOrderNumber])
+  @@map("comment")
+}

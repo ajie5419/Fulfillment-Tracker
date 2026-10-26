@@ -978,4 +978,25 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
 
     await db.reminder.deleteMany({ where: { userId: { in: ['h-pm', 'h-pm2'] } } })
   })
+  it('第二批（10-26）：留言、工件时间线、车间看板、全局搜索都按工单可见范围拦', async () => {
+    const pm = await login('h-pm')
+    const lead = await login('h-lead')
+    const post = (sess: Record<string, string>, body: object) =>
+      fetch(`${base}/api/comments`, { method: 'POST', headers: { cookie: cookieHeader(sess), 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    expect((await get(`/api/comments?refType=part&refId=${otherPartId}`, pm)).status).toBe(403)
+    expect((await post(pm, { refType: 'part', refId: otherPartId, body: '偷看' })).status).toBe(403)
+    expect((await post(lead, { refType: 'part', refId: otherPartId, body: '请抓紧', mentionIds: ['h-worker'] })).status).toBe(200)
+    const list = (await (await get(`/api/comments?refType=part&refId=${otherPartId}`, lead)).json()) as { body: string }[]
+    expect(list.map((c) => c.body)).toEqual(['请抓紧'])
+    expect((await get(`/api/parts/${otherPartId}/timeline`, pm)).status).toBe(403)
+    expect((await get(`/api/parts/${otherPartId}/timeline`, lead)).status).toBe(200)
+    expect((await get(`/api/workshop?wo=${OTHER}`, pm)).status).toBe(403)
+    expect((await get('/api/workshop', pm)).status).toBe(200)
+    const hits = (await (await get(`/api/search?q=${encodeURIComponent('别人的工件')}`, pm)).json()) as unknown[]
+    expect(hits).toEqual([])
+    const leadHits = (await (await get(`/api/search?q=${encodeURIComponent('别人的工件')}`, lead)).json()) as { type: string }[]
+    expect(leadHits.map((h) => h.type)).toEqual(['part'])
+    await db.comment.deleteMany({ where: { refId: otherPartId } })
+    await db.reminder.deleteMany({ where: { kind: 'COMMENT' } })
+  })
 })

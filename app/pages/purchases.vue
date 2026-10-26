@@ -69,12 +69,20 @@ async function saved() {
   editOpen.value = false
   await refresh()
 }
-// ?id= 打开该行（从 W6 提醒跳过来）
+// ───── 留言（10-26）：所有能看到这一行的人都能看、能写、能 @人 ─────
+const commenting = ref<{ id: string; name: string } | null>(null)
+
+// ?id= 打开该行（从 W6 提醒跳过来）；再带 comments=1 打开留言（留言 @ 提醒跳过来）
 async function openFromQuery() {
   const id = route.query.id as string | undefined
   if (!id) return
   try {
     const line = await fetchPurchase(id)
+    if (route.query.comments === '1') {
+      keyword.value = line.materialName
+      commenting.value = { id: line.id, name: line.materialName }
+      return
+    }
     // 没有编辑权限（如收到 W6 的财务）：不弹编辑框，只把列表筛到这一条，只读查看
     if (!canEdit(line)) keyword.value = line.materialName
     else openEdit(line)
@@ -275,6 +283,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
           <a v-if="canEdit(record as PurchaseRow)" @click="openEdit(record as PurchaseRow)">{{ record.materialName }}</a>
           <span v-else>{{ record.materialName }}</span>
           <div class="muted">{{ [record.spec, record.partName ? `用于 ${record.partName}` : ''].filter(Boolean).join(' · ') }}</div>
+          <a class="comment-link" @click="commenting = { id: record.id, name: record.materialName }">{{ record.commentCount ? `留言 ${record.commentCount}` : '留言' }}</a>
         </template>
         <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
         <template v-else-if="column.key === 'planNode'"><PlanNodeCell :work-order-number="record.workOrderNumber" :node="record.planNode" /></template>
@@ -333,6 +342,9 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
   </a-card>
   </div>
 
+  <a-drawer :open="!!commenting" :title="`留言：${commenting?.name ?? ''}`" :width="520" destroy-on-close @close="commenting = null; refresh()">
+    <CommentPanel v-if="commenting" ref-type="purchase" :ref-id="commenting.id" />
+  </a-drawer>
   <PurchaseEditModal :open="editOpen" :line="editing" :work-order-number="filter.workOrderNumber" @close="closeEdit" @done="saved" />
   <PurchaseImportModal :open="importing" @close="importing = false" @done="refresh()" />
   <PaymentCreateModal :open="paying" :lines="selectedRows" @close="paying = false" @done="paid" />
@@ -354,6 +366,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
 
 <style scoped>
 .muted { color: var(--ft-text-2); font-size: 12px; }
+.comment-link { font-size: 12px; }
 .warn { color: var(--ft-late); }
 .ellipsis { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

@@ -5,6 +5,8 @@
  * 开工/完工/发出/补登返厂 —— 生产部、外协专员、该工序责任人、管理员。其他人只读（后端同样拦）。
  * R14：每道工序可选"所属总计划节点"（工单总计划已发布时手工添加的工序必选；BOM 导入、套模板、复制路线生成的不强制）。
  * 10-26：可只看"未排工序"（还没有工序链）的工件，地址栏 ?noRoute=1；图纸附 BOM 发放后提醒生产经理排工序时跳到这里。
+ * 10-26 第二批：工件卡片上显示关联记录数（设计、物料、异常、留言），"时间线"抽屉串起工件的全部记录并可留言 @人；
+ *   ?part=<工件 ID> 定位到该工件（全局搜索跳过来），再带 comments=1 直接打开留言（留言提醒跳过来）。
  * 10-26 生产管理补全：自制工序可派给厂内班组；每道工序有应开工日（待办截止日取它）；完工可部分完工或报废（报废自动转异常）。
  */
 const route = useRoute()
@@ -18,7 +20,7 @@ watch(workOrders, (list) => {
 }, { immediate: true })
 /** 'none' = 只看未排工序（还没有工序链）的工件 */
 const routeFilter = ref<'all' | 'none'>(route.query.noRoute === '1' ? 'none' : 'all')
-// 选中的工单、筛选记在地址栏，刷新后不丢
+// 选中的工单、筛选记在地址栏，刷新后不丢（定位用的 part / comments 只用一次，不保留）
 watch([workOrderNumber, routeFilter], ([wo, f]) => {
   if (import.meta.client) router.replace({ query: { ...(wo ? { wo } : {}), ...(f === 'none' ? { noRoute: '1' } : {}) } })
 })
@@ -37,6 +39,38 @@ const routeFilterOptions = computed(() => [
   { value: 'none', label: `未排工序 ${unroutedCount.value}` },
 ])
 type StepRow = PartRow['steps'][number]
+
+// ───── 时间线 / 留言抽屉、按地址栏定位工件 ─────
+const drawerPart = ref<{ id: string; name: string } | null>(null)
+const drawerTab = ref<'timeline' | 'comments'>('timeline')
+function openDrawer(p: { id: string; name: string }, tab: 'timeline' | 'comments' = 'timeline') {
+  drawerTab.value = tab
+  drawerPart.value = { id: p.id, name: p.name }
+}
+const focusPartId = ref<string | null>(null)
+async function focusFromQuery() {
+  const id = route.query.part as string | undefined
+  if (!id || !import.meta.client) return
+  const p = parts.value.find((x) => x.id === id)
+  if (!p) return
+  routeFilter.value = 'all'
+  focusPartId.value = id
+  await nextTick()
+  document.getElementById(`part-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  if (route.query.comments === '1') openDrawer(p, 'comments')
+}
+onMounted(focusFromQuery)
+watch(() => [route.query.part, parts.value.length], focusFromQuery)
+/** 关联记录数：没有的不显示 */
+const relatedChips = (p: PartRow) => {
+  const r = p.related
+  return [
+    r.drawings ? { key: 'd', text: `设计 ${r.drawingsDone}/${r.drawings}`, tone: r.drawingsDone === r.drawings ? 'done' : 'primary' } : null,
+    r.purchases ? { key: 'p', text: `物料到货 ${r.purchasesArrived}/${r.purchases}`, tone: r.purchasesArrived === r.purchases ? 'done' : 'primary' } : null,
+    r.openIssues ? { key: 'i', text: `异常 ${r.openIssues}`, tone: 'late' } : null,
+    r.comments ? { key: 'c', text: `留言 ${r.comments}`, tone: 'none' } : null,
+  ].filter((x): x is { key: string; text: string; tone: 'done' | 'primary' | 'late' | 'none' } => !!x)
+}
 
 const processOptions = computed(() => master.value.processes.map((p) => ({ value: p.id, label: p.name })))
 const supplierOptions = computed(() => master.value.suppliers.map((s) => ({ value: s.id, label: s.label })))
@@ -227,7 +261,7 @@ const columns = [
   <a-spin :spinning="pending">
     <a-empty v-if="workOrderNumber && !parts.length" description="这个工单还没有工件：技术部发放图纸时附上 BOM 表，会按图号自动建好" style="margin-top: 48px" />
     <a-empty v-if="parts.length && !shownParts.length" description="这个工单的工件都已排好工序" style="margin-top: 48px" />
-    <a-card v-for="p in shownParts" :key="p.id" class="part" size="small">
+    <a-card v-for="p in shownParts" :id="`part-${p.id}`" :key="p.id" class="part" :class="{ focused: focusPartId === p.id }" size="small">
       <template #title>
         {{ p.name }}
         <span class="muted">　图号 {{ p.drawingNo || '—' }}{{ p.revision ? `（${p.revision} 版）` : '' }}　数量 {{ p.quantity }}　BOM 物料 ID {{ p.qmsPartId || '—' }}</span>
@@ -242,9 +276,15 @@ const columns = [
         <a-tooltip v-if="fillCount(p)" title="还没开工、但缺负责人，或外协没选外协厂的工序；从 BOM 导入的工序默认自制，请确认方式">
           <a-tag color="warning">{{ fillCount(p) }} 道待补充</a-tag>
         </a-tooltip>
+        <span v-if="relatedChips(p).length" class="related">
+          <button v-for="c in relatedChips(p)" :key="c.key" type="button" class="related-chip" :title="c.key === 'c' ? '看留言' : '看时间线'" @click="openDrawer(p, c.key === 'c' ? 'comments' : 'timeline')">
+            <UiStatusTag :tone="c.tone">{{ c.text }}</UiStatusTag>
+          </button>
+        </span>
       </template>
       <template #extra>
         <a-space>
+          <a-button size="small" @click="openDrawer(p)">时间线 / 留言</a-button>
           <a-button v-if="canRoute" size="small" @click="editPart(p)">编辑</a-button>
           <a-button v-if="canRoute" size="small" @click="openCopy(p)">复制工序链</a-button>
           <a-button size="small" danger @click="reportingPartId = p.id">上报异常</a-button>
@@ -331,7 +371,7 @@ const columns = [
         </template>
         <template #expandedRowRender="{ record }">
           <a-spin v-if="!eventsCache.has(record.partId)" size="small" />
-          <a-empty v-else-if="!eventsCache.get(record.partId)!.some((e) => e.stepId === record.id)" description="还没有流转记录" :image="null" />
+          <p v-else-if="!eventsCache.get(record.partId)!.some((e) => e.stepId === record.id)" class="muted">还没有流转记录</p>
           <a-timeline v-else style="margin-top: 8px">
             <a-timeline-item v-for="e in eventsCache.get(record.partId)!.filter((x) => x.stepId === record.id)" :key="e.id">
               {{ timeText(e.occurredAt) }}　{{ EVENT_TEXT[e.type] }} {{ e.qty }} 件　<span class="muted">来源：{{ SOURCE_TEXT[e.source] }}{{ e.actorName ? `，${e.actorName}` : '' }}{{ e.qmsInspectionId ? `，报检 ${e.qmsInspectionId}` : '' }}</span>
@@ -401,6 +441,7 @@ const columns = [
     <a-input-number v-model:value="returning.qty" :min="1" addon-after="件" />
   </a-modal>
 
+  <PartDrawer :part="drawerPart" :tab="drawerTab" @close="drawerPart = null" @commented="refresh()" />
   <FinishStepModal :step="finishing" @close="finishing = null" @done="afterFinish" />
   <SendStepModal :step="sending" @close="sending = null" @done="sending = null; refresh(); eventsCache.clear()" />
   <IssueReportModal
@@ -413,7 +454,11 @@ const columns = [
 </template>
 
 <style scoped>
-.part { margin-top: 16px; }
+.part { margin-top: 16px; scroll-margin-top: 8px; }
+.part.focused { border-color: var(--ft-primary); }
+.related { display: inline-flex; gap: 6px; margin-left: 8px; vertical-align: middle; }
+.related-chip { padding: 0; border: none; background: none; cursor: pointer; font: inherit; }
+.related-chip:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; border-radius: 999px; }
 .muted { color: var(--ft-text-2); font-size: 12px; font-weight: normal; }
 .add { margin-top: 12px; }
 .issue-link { color: var(--ft-late); font-size: 12px; margin-right: 6px; }

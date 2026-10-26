@@ -37,6 +37,8 @@ const groups = computed(() => {
       { key: '/payments', label: '付款申请', sections: ['purchase', 'payments'] },
       { key: '/kitting', label: '齐套', sections: ['production', 'kitting'] },
       { key: '/parts', label: '生产管理', sections: ['production'] },
+      // 车间看板（10-26 借鉴 ERPNext）：工序按状态分列只读，可按班组筛
+      { key: '/workshop', label: '车间看板', sections: ['production'] },
       { key: '/unmatched', label: '待确认匹配', sections: ['production'] },
     ]) },
     { title: '其他', items: [
@@ -175,6 +177,7 @@ onBeforeUnmount(() => clearInterval(timer))
           >菜单</a-button>
           <span v-if="current" class="page-name"><UiNavIcon :name="current.key" /><span>{{ current.label }}</span></span>
         </span>
+        <GlobalSearch class="search" />
         <span v-if="me" class="user">
           {{ me.name }}<template v-if="me.department"> · {{ me.department }}</template><template v-if="me.businessDeptName && me.businessDeptName !== me.department">（{{ me.businessDeptName }}）</template>
           <a-button type="link" size="small" @click="logout">退出 / 切换账号</a-button>
@@ -217,6 +220,7 @@ onBeforeUnmount(() => clearInterval(timer))
 .header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 56px; line-height: 56px; margin: 0 16px; padding: 0; background: transparent; border-bottom: 1px solid var(--ft-border); }
 .left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .page-name { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; color: var(--ft-text); white-space: nowrap; }
+.search { flex: 1; max-width: 360px; margin-left: auto; }
 .user { color: var(--ft-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 /* 框架四周留白控制在原来的宽度附近（侧栏 188 + 留白），各页面表格可用宽度基本不变 */
 .content { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
@@ -229,6 +233,7 @@ onBeforeUnmount(() => clearInterval(timer))
   .frame { padding: 0; border: none; border-radius: 0; }
   .main { border: none; border-radius: 0; }
   .header { margin: 0 12px; }
+  .search { display: none; }
   .content { padding: 12px; }
 }
 </style>

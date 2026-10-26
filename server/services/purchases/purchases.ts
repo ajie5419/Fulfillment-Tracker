@@ -17,6 +17,7 @@
  */
 import type { DelayReason, DrawingTaskStatus, FlowSource, Prisma, PurchaseLine, PurchaseStatus } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
+import { countComments } from '../comments/comments'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey, dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { FlowError } from '../flow/errors'
@@ -481,7 +482,9 @@ export async function listLines(filter: LineFilter, now = new Date()) {
     prisma.purchaseLine.count({ where }),
     lineStats(scope, today),
   ])
-  const rows = await describeLines(found, now, filter.amountVisible)
+  const [described, comments] = await Promise.all([describeLines(found, now, filter.amountVisible), countComments('purchase', found.map((l) => l.id))])
+  // 留言条数（列表上"留言 N"，10-26）
+  const rows = described.map((r) => ({ ...r, commentCount: comments.get(r.id) ?? 0 }))
   const rank = { OPEN: 0, ARRIVED: 1, CANCELLED: 2 } as const
   rows.sort((a, b) => rank[a.status] - rank[b.status] || (a.status === 'ARRIVED' ? +(b.arrivedDate ?? 0) - +(a.arrivedDate ?? 0) : +a.needDate - +b.needDate))
   return { rows, total, stats }
