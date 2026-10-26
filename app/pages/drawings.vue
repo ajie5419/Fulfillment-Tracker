@@ -184,7 +184,7 @@ const sumWidth = (cols: { width: number }[]) => cols.reduce((n, c) => n + c.widt
 const groupColumns = columns.filter((c) => c.key !== 'wo')
 const tableWidth = sumWidth(columns)
 const groupWidth = sumWidth(groupColumns)
-const partNames = (r: DrawingRow) => r.parts.map((p) => p.name).join('、')
+const partNames = (r: DrawingRow) => partsText(r.parts.map((p) => p.name))
 const loadKey = (r: { ownerId: string | null }) => r.ownerId ?? '-'
 const loadColumns = [
   { title: '设计负责人', key: 'owner' },

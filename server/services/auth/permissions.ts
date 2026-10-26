@@ -39,10 +39,10 @@ const isPM = (ctx: RoleContext, wo: string | null | undefined) => !!wo && ctx.pm
 
 /**
  * drawing：建/改/删设计任务、录/撤客户确认 —— 技术部、管理员
- * release：建发放单 —— 技术部、管理员（作废仍限发放人或管理员，在发放服务里判断）
+ * release：建发放单 —— 技术部、工艺部（只能发"工艺文件"）、管理员（作废仍限发放人或管理员，在发放服务里判断）
  * purchase：建/改/删采购行、Excel 导入、手工标到货/撤销 —— 采购部、该工单项目经理、管理员
  * payment：提付款申请 —— 采购部、该工单项目经理、管理员
- * route：建/改/删工件和工序、调工序顺序、导入 BOM、套模板/复制路线、处理/忽略待确认匹配 —— 生产部、外协专员、该工单项目经理、管理员
+ * route：建/改/删工件和工序、调工序顺序、导入 BOM、套模板/复制路线、处理/忽略待确认匹配 —— 生产部、工艺部（定工艺路线）、外协专员、该工单项目经理、管理员
  * stepAction：开工/完工/发出/补登返厂 —— 生产部、外协专员、该工序责任人、管理员
  *
  * 总计划（R14，总计划设计第 8 节）：
@@ -64,14 +64,16 @@ export interface OperationTarget {
   ownerId?: string | null
   /** 总计划节点的责任部门（planConfirm、planNodeDone、planTask） */
   dept?: BusinessDept | null
+  /** 发放单类型（release）：工艺部只能发工艺文件；不传时只看能不能发放 */
+  releaseType?: 'DRAWING' | 'CHANGE' | 'PROCESS'
 }
 
 export const OPERATION_DENIED: Record<Operation, string> = {
   drawing: '只有技术部或管理员可以编辑设计任务',
-  release: '只有技术部或管理员可以新建发放单',
+  release: '只有技术部、管理员可以发放图纸和设计变更；工艺部可以发放工艺文件',
   purchase: '只有采购部、该工单项目经理或管理员可以修改采购行或登记到货',
   payment: '只有采购部、该工单项目经理或管理员可以提付款申请',
-  route: '只有生产部、外协专员、该工单项目经理或管理员可以修改工件和工序',
+  route: '只有生产部、工艺部、外协专员、该工单项目经理或管理员可以修改工件和工序',
   stepAction: '只有生产部、外协专员、该工序责任人或管理员可以登记开工、完工、发出、返厂',
   plan: '只有该工单项目经理、项目部或管理员可以编辑、发布总计划',
   planTemplate: '只有项目部负责人或管理员可以维护总计划模板',
@@ -86,13 +88,14 @@ export function canOperate(ctx: RoleContext, op: Operation, target: OperationTar
   const outsource = has(ctx, 'OUTSOURCE_COORDINATOR')
   switch (op) {
     case 'drawing':
-    case 'release':
       return inDept(ctx, 'TECH')
+    case 'release':
+      return inDept(ctx, 'TECH') || (inDept(ctx, 'PROCESS') && (!target.releaseType || target.releaseType === 'PROCESS'))
     case 'purchase':
     case 'payment':
       return inDept(ctx, 'PURCHASE') || pm
     case 'route':
-      return inDept(ctx, 'PRODUCTION') || outsource || pm
+      return inDept(ctx, 'PRODUCTION') || inDept(ctx, 'PROCESS') || outsource || pm
     case 'stepAction':
       return inDept(ctx, 'PRODUCTION') || outsource || (!!target.ownerId && target.ownerId === ctx.userId)
     case 'plan':
@@ -162,6 +165,11 @@ export function menuSections(ctx: RoleContext): MenuSection[] {
     out.add('production')
     out.add('releases')
   }
+  // 工艺部：工件与工序链、路线模板（定工艺路线）、发放签收（下发工艺文件）
+  if (inDept(ctx, 'PROCESS')) {
+    out.add('production')
+    out.add('releases')
+  }
   if (inDept(ctx, 'QUALITY')) out.add('production')
   if (isFinance(ctx)) out.add('payments')
   const order: MenuSection[] = ['overview', 'deptPlan', 'tech', 'purchase', 'production', 'kitting', 'releases', 'payments']
@@ -173,6 +181,8 @@ export function permissionFlags(ctx: RoleContext) {
   return {
     drawing: canOperate(ctx, 'drawing'),
     release: canOperate(ctx, 'release'),
+    /** 只能发工艺文件（工艺部，不是技术部、管理员） */
+    releaseProcessOnly: canOperate(ctx, 'release') && !canOperate(ctx, 'release', { releaseType: 'DRAWING' }),
     purchase: canOperate(ctx, 'purchase'),
     payment: canOperate(ctx, 'payment'),
     route: canOperate(ctx, 'route'),

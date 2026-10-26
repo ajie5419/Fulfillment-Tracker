@@ -149,6 +149,24 @@ describe('操作权限 canOperate', () => {
     expect(canOperate(pm, 'stepAction', { workOrderNumber: 'WO-1' })).toBe(false)
   })
 
+  it('工艺部：定工艺路线（改工件和工序）、只发工艺文件；不能开工完工、不能编设计任务', () => {
+    const process = ctx({ businessDept: 'PROCESS' })
+    const processHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['工艺部'] })
+    expect(canOperate(process, 'route', { workOrderNumber: 'WO-9' })).toBe(true)
+    expect(canOperate(processHead, 'route')).toBe(true)
+    expect(canOperate(process, 'release')).toBe(true)
+    expect(canOperate(process, 'release', { releaseType: 'PROCESS' })).toBe(true)
+    expect(canOperate(process, 'release', { releaseType: 'DRAWING' })).toBe(false)
+    expect(canOperate(process, 'release', { releaseType: 'CHANGE' })).toBe(false)
+    expect(canOperate(tech, 'release', { releaseType: 'PROCESS' })).toBe(true)
+    expect(canOperate(process, 'drawing')).toBe(false)
+    expect(canOperate(process, 'stepAction')).toBe(false)
+    expect(permissionFlags(process)).toMatchObject({ route: true, release: true, releaseProcessOnly: true, drawing: false })
+    expect(permissionFlags(tech)).toMatchObject({ release: true, releaseProcessOnly: false })
+    expect(permissionFlags(admin)).toMatchObject({ releaseProcessOnly: false })
+    expect(menuSections(process)).toEqual(['deptPlan', 'production', 'releases'])
+  })
+
   it('其他部门什么都改不了', () => {
     for (const op of ['drawing', 'release', 'purchase', 'payment', 'route', 'stepAction'] as const) expect(canOperate(other, op, { workOrderNumber: 'WO-1' })).toBe(false)
   })

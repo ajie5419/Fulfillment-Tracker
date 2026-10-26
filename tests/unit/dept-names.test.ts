@@ -35,8 +35,8 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe('业务部门名称只有一个来源', () => {
-  it('shared/business-depts.ts 是 6 个名称', () => {
-    expect(NAMES).toEqual(['技术部', '采购部', '生产部', '质量部', '财务部', '项目部'])
+  it('shared/business-depts.ts 是 7 个名称', () => {
+    expect(NAMES).toEqual(['技术部', '工艺部', '采购部', '生产部', '质量部', '财务部', '项目部'])
   })
 
   it('app/、server/ 里没有部门名称的字符串字面量（应从 BUSINESS_DEPT_NAME 派生）', () => {

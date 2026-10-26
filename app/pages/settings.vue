@@ -111,7 +111,7 @@ function addRole(role: RoleKey) {
   return call('/api/settings/roles', 'POST', body, '已添加')
 }
 const removeRole = (id: string) => call(`/api/settings/roles/${id}`, 'DELETE', undefined, '已移除')
-/** 部门负责人的部门只能选 6 个业务部门；不在其中的旧值标出来，可以删掉重新选 */
+/** 部门负责人的部门只能选 7 个业务部门；不在其中的旧值标出来，可以删掉重新选 */
 const isLegacyDept = (d: string | null) => !!d && !!data.value?.legacyDepartments.includes(d)
 
 // ───── 部门对照（QMS 部门 → 业务部门）─────
@@ -218,7 +218,7 @@ const woColumns = [
                 :key="x.id"
                 closable
                 :color="isLegacyDept(x.department) ? 'orange' : undefined"
-                :title="isLegacyDept(x.department) ? '旧的部门名称，不是 6 个业务部门之一，请删掉后重新选部门' : undefined"
+                :title="isLegacyDept(x.department) ? '旧的部门名称，不是 7 个业务部门之一，请删掉后重新选部门' : undefined"
                 @close.prevent="removeRole(x.id)"
               >
                 {{ x.userName }}<template v-if="x.department">（{{ x.department }}<template v-if="isLegacyDept(x.department)">，旧值</template>）</template>
@@ -250,7 +250,7 @@ const woColumns = [
 
       <a-tab-pane key="depts" tab="部门对照">
         <p class="muted">
-          把同步过来的 QMS 部门对到 6 个业务部门，只配一次。班组、科室没单独对照时跟上级走；都没有对照时，部门名称正好是"技术部""生产部"等的按名称算，其余算"其他部门"。
+          把同步过来的 QMS 部门对到 7 个业务部门，只配一次。班组、科室没单独对照时跟上级走；都没有对照时，部门名称正好是"技术部""生产部"等的按名称算，其余算"其他部门"。
           业务部门决定普通员工的菜单和操作权限，也用于部门负责人、异常责任部门的对应。
         </p>
         <a-alert v-if="data.deptsWithoutHead.length" type="warning" show-icon :message="`还没有负责人的业务部门：${data.deptsWithoutHead.join('、')}（到“人员与角色”里添加部门负责人）`" class="tip" />

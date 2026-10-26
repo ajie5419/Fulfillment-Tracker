@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { BUSINESS_DEPT_NAME } from '../../shared/business-depts'
 import { day } from './flow'
 
-export const businessDept = z.enum(['TECH', 'PURCHASE', 'PRODUCTION', 'QUALITY', 'FINANCE', 'PROJECT'], { message: `责任部门只能是 ${Object.values(BUSINESS_DEPT_NAME).join(' / ')}` })
+export const businessDept = z.enum(['TECH', 'PROCESS', 'PURCHASE', 'PRODUCTION', 'QUALITY', 'FINANCE', 'PROJECT'], { message: `责任部门只能是 ${Object.values(BUSINESS_DEPT_NAME).join(' / ')}` })
 
 const wo = z.string().min(1, '请选择工单').max(64)
 const reason = z

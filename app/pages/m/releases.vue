@@ -33,7 +33,7 @@ const { data: rows, pending } = await useFetch('/api/receipts', { query: compute
           <van-tag v-else type="warning">待我签收</van-tag>
         </div>
         <div class="m-title no">{{ r.releaseNo }}<span v-if="r.version" class="ver">版本 {{ r.version }}</span></div>
-        <div class="m-desc clamp">{{ r.parts.length ? `${r.parts.join('、')}：` : '' }}{{ r.description }}</div>
+        <div class="m-desc clamp">{{ r.parts.length ? `${partsText(r.parts)}：` : '' }}{{ r.description }}</div>
         <div class="m-meta">
           <span>{{ r.workOrderNumber }}</span>
           <span>{{ r.issuerName }} 发放</span>

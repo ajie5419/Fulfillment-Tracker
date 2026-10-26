@@ -1,4 +1,4 @@
-import { readUpload } from '../../services/issues/uploads'
+import { readUpload, XLSX_MIME } from '../../services/issues/uploads'
 
 /**
  * 读取上传的照片 / 发放单附件：要求登录；已绑定异常或发放单的按所属工单 canSee 判断（发放单的接收人也能读），未绑定的只有上传人能读。
@@ -13,7 +13,8 @@ export default defineFlowHandler(async (event, user) => {
     'Content-Length': String(r.data.length),
     'Cache-Control': 'private, no-store',
     'X-Content-Type-Options': 'nosniff',
-    'Content-Disposition': 'inline',
+    // 图片、PDF 在浏览器里直接看；BOM 表（Excel）下载
+    'Content-Disposition': r.file.mime === XLSX_MIME ? `attachment; filename="BOM-${r.file.id.slice(0, 8)}.xlsx"` : 'inline',
   })
   return r.data
 })

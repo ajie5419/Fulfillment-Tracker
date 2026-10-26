@@ -51,7 +51,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
   const OTHER = 'T-WO-PM-OTHER'
   let otherIssueId = ''
   let otherPartId = ''
-  const HTTP_USERS = ['h-pm', 'h-pm2', 'h-lead', 'h-worker', 'h-fin', 'h-tech', 'h-buyer', 'h-prod', 'h-qa', 'h-admin']
+  const HTTP_USERS = ['h-pm', 'h-pm2', 'h-lead', 'h-worker', 'h-fin', 'h-tech', 'h-buyer', 'h-prod', 'h-qa', 'h-proc', 'h-admin']
   // R13 部门对照：技术科 → 技术部（直接对照）；采购一组挂在供应部下（供应部 → 采购部，下级继承）；生产部没有对照（按名称）；检验科 → 质量部
   const DEPTS = [
     { id: 'T-DEPT-TECH', name: '技术科', parentId: '0' },
@@ -59,8 +59,9 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     { id: 'T-DEPT-BUY1', name: '采购一组', parentId: 'T-DEPT-SUPPLY' },
     { id: 'T-DEPT-PROD', name: '生产部', parentId: '0' },
     { id: 'T-DEPT-QA', name: '检验科', parentId: '0' },
+    { id: 'T-DEPT-PROC', name: '工艺科', parentId: '0' },
   ]
-  const USER_DEPT: Record<string, string> = { 'h-tech': 'T-DEPT-TECH', 'h-buyer': 'T-DEPT-BUY1', 'h-prod': 'T-DEPT-PROD', 'h-qa': 'T-DEPT-QA' }
+  const USER_DEPT: Record<string, string> = { 'h-tech': 'T-DEPT-TECH', 'h-buyer': 'T-DEPT-BUY1', 'h-prod': 'T-DEPT-PROD', 'h-qa': 'T-DEPT-QA', 'h-proc': 'T-DEPT-PROC' }
 
   /** R14 总计划：节点、发布状态、调整记录、确认待办（plan_node 不挂工单外键，按工单号清） */
   async function cleanPlans() {
@@ -111,6 +112,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
         { qmsDepartmentId: 'T-DEPT-TECH', businessDept: 'TECH' },
         { qmsDepartmentId: 'T-DEPT-SUPPLY', businessDept: 'PURCHASE' },
         { qmsDepartmentId: 'T-DEPT-QA', businessDept: 'QUALITY' },
+        { qmsDepartmentId: 'T-DEPT-PROC', businessDept: 'PROCESS' },
       ],
     })
     await db.qmsUser.createMany({ data: HTTP_USERS.map((id) => ({ id, username: id, realName: id, departmentId: USER_DEPT[id] ?? null, status: 'ACTIVE', updatedAt: now })) })
@@ -132,6 +134,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
         'h-buyer': { name: '采购员', active: true },
         'h-prod': { name: '生产员工', active: true },
         'h-qa': { name: '质检员', active: true },
+        'h-proc': { name: '工艺员', active: true },
         'h-admin': { name: '管理员', active: true },
       },
     })
@@ -315,7 +318,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     // R13：建发放单只限技术部、管理员 —— 项目经理甲在自己的工单上也不行，一线也不行
     const denied = await post(pm, '/api/releases', { type: 'CHANGE', workOrderNumber: MINE, description: 'x', userIds: ['h-worker'] })
     expect(denied.status).toBe(403)
-    expect(((await denied.json()) as { message: string }).message).toBe('只有技术部或管理员可以新建发放单')
+    expect(((await denied.json()) as { message: string }).message).toBe('只有技术部、管理员可以发放图纸和设计变更；工艺部可以发放工艺文件')
     expect((await post(worker, '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-pm'] })).status).toBe(403)
     // 技术员（技术科经部门对照算技术部）在甲的工单上发给乙（乙看不到甲的工单）和一线
     const created = await post(tech, '/api/releases', { type: 'CHANGE', workOrderNumber: MINE, description: '孔位变更', userIds: ['h-pm2', 'h-worker'], attachmentIds: [att!.id] })
@@ -590,6 +593,82 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(await me(tech)).toMatchObject({ businessDept: 'TECH', menu: ['deptPlan', 'tech'] })
     expect(await me(buyer)).toMatchObject({ businessDept: 'PURCHASE', menu: ['deptPlan', 'purchase', 'kitting'], can: { purchase: true, seeAmount: true } })
     expect(await me(prod)).toMatchObject({ businessDept: 'PRODUCTION', menu: ['deptPlan', 'production', 'releases'], can: { route: true, stepAction: true, mobileSend: true } })
+    // 10-24 工艺部：工件与工序链（定工艺路线）、发放签收（只发工艺文件）；不能开工完工
+    const proc = await login('h-proc')
+    expect(await me(proc)).toMatchObject({ businessDept: 'PROCESS', menu: ['deptPlan', 'production', 'releases'], can: { route: true, stepAction: false, release: true, releaseProcessOnly: true, drawing: false } })
+    expect((await send(proc, 'POST', '/api/parts', { workOrderNumber: MINE, name: 'R13 工艺建的', quantity: 1 })).status).toBe(200)
+    expect((await send(proc, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'] })).status).toBe(403)
+    expect((await send(proc, 'POST', '/api/releases', { type: 'CHANGE', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'] })).status).toBe(403)
+    expect((await send(proc, 'POST', '/api/releases', { type: 'PROCESS', workOrderNumber: MINE, description: '车架工艺卡', userIds: ['h-prod'] })).status).toBe(200)
+    expect(await me(tech)).toMatchObject({ can: { releaseProcessOnly: false } })
+    // 10-24 图纸发放附 BOM：按 kind=bom 上传 .xlsx → 预览（能发图纸的人）→ 发放时按图号建工件；签收人能下载 BOM 表
+    {
+      const ExcelJS = (await import('exceljs')).default
+      const wb = new ExcelJS.Workbook()
+      wb.addWorksheet('BOM').addRows([['图号', '版号', '部件名称', '数量'], ['HTTP-BOM-1', 'A', '接口主梁', 1], ['HTTP-BOM-2', null, '接口端梁', 2]])
+      const xlsx = new Uint8Array(await wb.xlsx.writeBuffer())
+      const form = (data: Uint8Array, name: string, extra: Record<string, string> = {}) => {
+        const f = new FormData()
+        for (const [k, v] of Object.entries(extra)) f.append(k, v)
+        f.append('file', new Blob([new Uint8Array(data)]), name)
+        return f
+      }
+      const upBom = (sess: Record<string, string>, data: Uint8Array, name = 'bom.xlsx') =>
+        fetch(`${base}/api/uploads?kind=bom`, { method: 'POST', headers: { cookie: cookieHeader(sess) }, body: form(data, name) })
+      expect((await upBom(tech, new TextEncoder().encode('%PDF-1.4\n'), 'a.xlsx')).status).toBe(400)
+      const preview = (sess: Record<string, string>) =>
+        fetch(`${base}/api/bom/excel`, { method: 'POST', headers: { cookie: cookieHeader(sess) }, body: form(xlsx, 'bom.xlsx', { workOrderNumber: MINE }) })
+      expect((await preview(proc)).status).toBe(403) // 工艺部不能发图纸
+      expect((await preview(prod)).status).toBe(403)
+      const pv = await preview(tech)
+      expect(pv.status).toBe(200)
+      expect(await pv.json()).toMatchObject({ rows: 2, errors: [], blocking: 0, lines: [{ drawingNo: 'HTTP-BOM-1', status: 'new' }, { drawingNo: 'HTTP-BOM-2', status: 'new' }] })
+
+      const procBom = ((await (await upBom(proc, xlsx)).json()) as { id: string }[])[0]!.id
+      expect((await send(proc, 'POST', '/api/releases', { type: 'PROCESS', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], bomFileId: procBom })).status).toBe(400)
+      const [bf] = (await (await upBom(tech, xlsx)).json()) as { id: string; mime: string }[]
+      expect(bf!.mime).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      // 别人上传的 BOM 不能用
+      expect((await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], bomFileId: procBom })).status).toBe(400)
+      // BOM 表不能当普通附件
+      expect((await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], attachmentIds: [bf!.id] })).status).toBe(400)
+      const rel = await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: '车架图纸第一批', userIds: ['h-prod', 'h-proc'], bomFileId: bf!.id })
+      expect(rel.status).toBe(200)
+      const relBody = (await rel.json()) as { id: string; bom: { created: number } }
+      expect(relBody.bom).toMatchObject({ created: 2, matched: 0 })
+      // 工艺部签收时看到这批工件和 BOM 表，能下载
+      const det = (await (await get(`/api/releases/${relBody.id}`, proc)).json()) as { bomFile: { url: string }; parts: { drawingNo: string; quantity: number }[] }
+      expect(det.parts.map((p) => [p.drawingNo, p.quantity]).sort()).toEqual([['HTTP-BOM-1', 1], ['HTTP-BOM-2', 2]])
+      const dl = await get(det.bomFile.url, proc)
+      expect(dl.status).toBe(200)
+      expect(dl.headers.get('content-disposition')).toMatch(/^attachment; filename="BOM-[0-9a-f]{8}\.xlsx"$/)
+      // 同一个文件不能再发
+      expect((await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], bomFileId: bf!.id })).status).toBe(400)
+      // 表上写的工单号和选的不一样：预览标出来，发放拦下
+      const wb2 = new ExcelJS.Workbook()
+      wb2.addWorksheet('明细').addRows([['工单号：OTHER-WO-1'], ['代号', '名称', '张数'], ['HTTP-BOM-9', '接口吊耳', 2]])
+      const wrong = new Uint8Array(await wb2.xlsx.writeBuffer())
+      const pv2 = await fetch(`${base}/api/bom/excel`, { method: 'POST', headers: { cookie: cookieHeader(tech) }, body: form(wrong, 'w.xlsx', { workOrderNumber: MINE }) })
+      expect(await pv2.json()).toMatchObject({ sheetWorkOrder: 'OTHER-WO-1', workOrderMismatch: true, lines: [{ drawingNo: 'HTTP-BOM-9', quantity: 1, status: 'new' }] })
+      const [wf] = (await (await upBom(tech, wrong)).json()) as { id: string }[]
+      const bad = await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], bomFileId: wf!.id })
+      expect(bad.status).toBe(400)
+      expect(((await bad.json()) as { message: string }).message).toContain('工单号是 OTHER-WO-1')
+      // 没有 Excel：粘贴明细（10-24 zhao 技术部只有纸质明细表）→ 预览行号对上粘贴内容 → save 存成 BOM 表 → 发放建工件
+      const paste = (sess: Record<string, string>, text: string, save = false) => send(sess, 'POST', '/api/bom/text', { workOrderNumber: MINE, text, save })
+      expect((await paste(proc, 'HTTP-BOM-5 接口销轴 4')).status).toBe(403)
+      const pt = await paste(tech, 'HTTP-BOM-5 接口销轴 4\n\nHTTP-BOM-6 接口连接板 x')
+      expect(pt.status).toBe(200)
+      expect(await pt.json()).toMatchObject({ rows: 2, errors: [{ row: 3, messages: [expect.stringContaining('数量"x"')] }] })
+      expect((await paste(tech, 'HTTP-BOM-5 接口销轴 4\n\nHTTP-BOM-6 接口连接板 x', true)).status).toBe(400) // 有错不存
+      const ok = await paste(tech, '代号\t名称\t数量\nHTTP-BOM-5\t接口销轴\t4\nHTTP-BOM-1\t接口主梁\t1', true)
+      expect(ok.status).toBe(200)
+      const okBody = (await ok.json()) as { fileId: string; lines: { drawingNo: string; status: string }[] }
+      expect(okBody.lines.map((l) => [l.drawingNo, l.status])).toEqual([['HTTP-BOM-5', 'new'], ['HTTP-BOM-1', 'exists']])
+      const rel2 = await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: '车架图纸第二批', userIds: ['h-prod'], bomFileId: okBody.fileId })
+      expect(rel2.status).toBe(200)
+      expect(((await rel2.json()) as { bom: unknown }).bom).toMatchObject({ created: 1, matched: 1 })
+    }
     expect(await me(qa)).toMatchObject({ businessDept: 'QUALITY', menu: ['deptPlan', 'production'], can: { route: false, mobileSend: false } })
     expect(await me(pm)).toMatchObject({ menu: ['tech', 'purchase', 'production'], pmOf: [MINE], can: { overview: false } })
     expect(await me(lead)).toMatchObject({ menu: ['overview', 'deptPlan', 'tech', 'purchase', 'production'], can: { overview: true, seeAmount: true } })
@@ -609,7 +688,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(prodPart.status).toBe(200)
     const qaDenied = await send(qa, 'POST', '/api/parts', { workOrderNumber: MINE, name: 'x', quantity: 1 })
     expect(qaDenied.status).toBe(403)
-    expect(((await qaDenied.json()) as { message: string }).message).toBe('只有生产部、外协专员、该工单项目经理或管理员可以修改工件和工序')
+    expect(((await qaDenied.json()) as { message: string }).message).toBe('只有生产部、工艺部、外协专员、该工单项目经理或管理员可以修改工件和工序')
     expect((await send(tech, 'POST', '/api/parts', { workOrderNumber: MINE, name: 'x', quantity: 1 })).status).toBe(403)
     const pmPart = await send(pm, 'POST', '/api/parts', { workOrderNumber: MINE, name: 'R13 项目经理建的', quantity: 1 })
     expect(pmPart.status).toBe(200)
@@ -655,9 +734,9 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       deptsWithoutHead: string[]
       qmsDepartments: { id: string; parentName: string | null; level: number; businessDept: string | null; effective: string | null }[]
     }
-    expect(settings.departments).toEqual(['技术部', '采购部', '生产部', '质量部', '财务部', '项目部'])
+    expect(settings.departments).toEqual(['技术部', '工艺部', '采购部', '生产部', '质量部', '财务部', '项目部'])
     expect(settings.qmsDepartments.find((d) => d.id === 'T-DEPT-BUY1')).toMatchObject({ parentName: '供应部', level: 1, businessDept: null, effective: '采购部' })
-    // 部门负责人只能选 6 个业务部门
+    // 部门负责人只能选 7 个业务部门
     expect((await send(admin, 'POST', '/api/settings/roles', { role: 'DEPT_HEAD', userId: 'h-qa', department: '检验科' })).status).toBe(400)
   })
 

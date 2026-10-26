@@ -25,6 +25,8 @@ export default defineFlowHandler(async (event, user) => {
   const files = parts.filter((p) => p.name === 'file' && p.filename !== undefined)
   if (files.length !== 1) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: '请选择一个 Excel 文件' })
   const file = files[0]!
+  // Content-Length 只管整个请求；文件本身再查一次
+  if (file.data.length > MAX_FILE_BYTES) throw createError({ statusCode: 413, statusMessage: 'Payload Too Large', message: '文件太大：不能超过 2MB' })
   if (!isZip(file.data)) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: '只能导入 .xlsx 文件（请用页面上下载的模板）' })
   const scope = await getScope(event)
   return importPurchases(file.data, user.qmsUserId, (wo) => canSee(scope, wo), new Date(), (wo) => canOperate(ctx, 'purchase', { workOrderNumber: wo }))

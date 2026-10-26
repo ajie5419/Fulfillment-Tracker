@@ -73,6 +73,13 @@ function voidIt() {
   })
 }
 
+/** 附 BOM 的图纸发放单：工件清单 */
+const bomPartColumns = [
+  { title: '图号', dataIndex: 'drawingNo', width: 170 },
+  { title: '版号', dataIndex: 'revision', width: 70, customRender: ({ text }: { text: string | null }) => text ?? '—' },
+  { title: '部件名称', dataIndex: 'name' },
+  { title: '数量', dataIndex: 'quantity', width: 70 },
+]
 const receiptColumns = [
   { title: '接收人', key: 'user' },
   { title: '状态', key: 'status', width: 90 },
@@ -108,9 +115,16 @@ const receiptColumns = [
           <a-descriptions-item label="类型"><a-tag :color="RELEASE_TYPE_COLOR[detail.type]">{{ detail.typeText }}</a-tag></a-descriptions-item>
           <a-descriptions-item label="版本号">{{ detail.version ?? '—' }}</a-descriptions-item>
           <a-descriptions-item label="工单" :span="2"><WoLink :no="detail.workOrderNumber" /><span class="muted">　{{ detail.projectName ?? detail.customerName }}</span></a-descriptions-item>
+          <a-descriptions-item v-if="detail.bomFile" label="BOM 表" :span="2">
+            <a :href="detail.bomFile.url">下载 BOM 表（Excel，{{ sizeText(detail.bomFile.size) }}）</a>
+            <span class="muted">　发放时已按图号建好、关联下面 {{ detail.parts.length }} 个工件</span>
+          </a-descriptions-item>
           <a-descriptions-item label="关联工件" :span="2">
             <span v-if="!detail.parts.length && !detail.missingParts" class="muted">未关联</span>
-            <a-tag v-for="p in detail.parts" :key="p.id">{{ p.name }}<template v-if="p.drawingNo">（{{ p.drawingNo }}）</template></a-tag>
+            <span v-else-if="detail.bomFile">{{ detail.parts.length }} 个，见下方工件清单</span>
+            <template v-else>
+              <a-tag v-for="p in detail.parts" :key="p.id">{{ p.name }}<template v-if="p.drawingNo">（{{ p.drawingNo }}）</template></a-tag>
+            </template>
             <span v-if="detail.missingParts" class="muted">另有 {{ detail.missingParts }} 个工件已删除</span>
           </a-descriptions-item>
           <a-descriptions-item label="说明" :span="2"><div class="pre">{{ detail.description }}</div></a-descriptions-item>
@@ -126,6 +140,11 @@ const receiptColumns = [
           <a-descriptions-item label="发放人">{{ detail.issuerName }}</a-descriptions-item>
           <a-descriptions-item label="发放时间">{{ timeText(detail.createdAt) }}</a-descriptions-item>
         </a-descriptions>
+
+        <template v-if="detail.bomFile && detail.parts.length">
+          <h4>工件清单（{{ detail.parts.length }} 个）</h4>
+          <a-table :columns="bomPartColumns" :data-source="detail.parts" row-key="id" size="small" class="block" :pagination="{ pageSize: 10, hideOnSinglePage: true, size: 'small' }" />
+        </template>
 
         <template v-if="detail.change">
           <h4>设计变更影响</h4>

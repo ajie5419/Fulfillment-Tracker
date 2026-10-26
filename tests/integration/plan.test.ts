@@ -188,7 +188,9 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     expect(view.network).toBe(true)
     expect(view.dangling).toEqual([])
     expect(view.phases).toEqual(['开工通知', '图纸设计及文件下发', '采购', '生产制作', '表面处理', '装配、调试、发运'])
-    expect(view.nodes.slice(14, 20).map((n) => `${n.code} ${n.name}`)).toEqual(['4.1 车架', '4.1.1 车架制作工艺', '4.1.2 车架料单制作', '4.1.3 下料', '4.1.4 组对焊接', '4.1.5 加工'])
+    expect(view.nodes.slice(14, 20).map((n) => `${n.code} ${n.name}`)).toEqual(['4.1 车架', '4.1.1 车架工艺路线、工艺文件编制下发', '4.1.2 车架料单分解（发下料车间）', '4.1.3 下料', '4.1.4 组对焊接', '4.1.5 加工'])
+    // 10-24：工艺、料单两个子节点归工艺部
+    expect(view.nodes.slice(15, 17).map((n) => n.dept)).toEqual(['PROCESS', 'PROCESS'])
     expect(view.nodes[21]!.preds.map((p) => p.seq)).toEqual([10, 11, 12, 13, 14, 21])
     expect(view.nodes[24]!.critical).toBe(true) // 发货：按时也是关键（余量 0）
     expect(view.nodes[10]!).toMatchObject({ critical: false, slackDays: 4 }) // 油缸到装配空 4 天
@@ -454,7 +456,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
 
     // 项目部负责人（领导类）：能选全部部门，?node= 按节点所在部门显示并定位
     const lead = await deptPlan(await ctxOf('u-pdh'), undefined, { node: buy.id })
-    expect(lead.deptOptions).toHaveLength(6)
+    expect(lead.deptOptions).toHaveLength(7)
     expect(lead).toMatchObject({ dept: 'PURCHASE', focusNodeId: buy.id })
     expect((await deptPlan(await ctxOf('u-pdh'), undefined, { dept: 'TECH' })).dept).toBe('TECH')
     // 工单筛选；看不到的工单不列
