@@ -166,7 +166,7 @@ describe.skipIf(!DB)('留言、搜索、车间看板、时间线', () => {
       // 等留言请求确实卡在共享锁上（processlist 里能看到它的 FOR SHARE 语句），而不是靠固定延时碰运气
       for (let i = 0; ; i++) {
         const [w] = await db.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*) AS n FROM information_schema.processlist WHERE ID <> CONNECTION_ID() AND INFO LIKE '%FOR SHARE%'`
-        if (Number(w.n) > 0) break
+        if (Number(w?.n ?? 0) > 0) break
         if (i >= 40) throw new Error('留言请求没有在等锁')
         await new Promise((r) => setTimeout(r, 50))
       }
