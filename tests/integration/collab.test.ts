@@ -163,7 +163,13 @@ describe.skipIf(!DB)('留言、搜索、车间看板、时间线', () => {
     await db.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM part WHERE id = ${part.id} FOR UPDATE`
       adding = s.comments.addComment({ refType: 'part', refId: part.id, body: '抢在删除时留言', mentionIds: ['u-c'] }, 'u-a').catch((e: Error) => e)
-      await new Promise((r) => setTimeout(r, 300)) // 让留言请求先到并卡在锁上
+      // 等留言请求确实卡在共享锁上（processlist 里能看到它的 FOR SHARE 语句），而不是靠固定延时碰运气
+      for (let i = 0; ; i++) {
+        const [w] = await db.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*) AS n FROM information_schema.processlist WHERE ID <> CONNECTION_ID() AND INFO LIKE '%FOR SHARE%'`
+        if (Number(w.n) > 0) break
+        if (i >= 40) throw new Error('留言请求没有在等锁')
+        await new Promise((r) => setTimeout(r, 50))
+      }
       await tx.comment.deleteMany({ where: { refType: 'part', refId: part.id } })
       await tx.part.delete({ where: { id: part.id } })
     })
