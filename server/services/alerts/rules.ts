@@ -13,18 +13,20 @@
  *      工单级（对象类型 plan）：预计交期晚于 QMS 交期红（judgeW9Plan）；
  *      同一规则下另管"节点超时未确认"（对象类型 planConfirm），按 W5 的阈值计时（发布后 4 小时提醒、1 天黄、2 天红）；
  *      "节点未分解"（对象类型 planSplit，部门计划二次分解）：发布后 W9 提醒小时数（默认 72）仍没有部门任务 → 提醒，不升级
+ *   W10 厂内工序逾期未完：自制 / 厂内外协已开工（加工中）、有要求完成日的工序。要求完成日前 2 天提醒，超期 1 天黄、3 天红（同 W3 的算法，判定见 judgeW10）
  *
  * 计时按自然日/小时，停工日（off_day）整天不计入；"哪一天"一律按工厂时区 Asia/Shanghai 判定。
  * 级别只升不降：阈值调大后，已经是黄的预警也不退回提醒。
  */
 import type { AlertLevel } from '@prisma/client'
+import type { AlertRuleKey } from '../../../shared/alert-rules'
 
 export const HOUR_MS = 3_600_000
 export const DAY_MS = 86_400_000
 /** Asia/Shanghai 固定 UTC+8（1991 年起不用夏令时），按偏移直接算日界，比逐日调 Intl 简单 */
 const TZ_OFFSET_MS = 8 * HOUR_MS
 
-export type ScanRule = 'W1' | 'W2' | 'W3' | 'W4' | 'W5' | 'W6' | 'W7' | 'W8' | 'W9'
+export type ScanRule = AlertRuleKey
 
 export interface RuleThreshold {
   /** W1、W5：提醒小时数；W3：承诺返回日前多少小时提醒（48 = 前 2 天）；W6：需求日前多少小时仍无承诺日就预警（168 = 前 7 天）；W7：计划完成日前多少小时仍未完成设计就黄（48 = 前 2 天），黄/红是客户确认超期天数；W2、W4、W8 为空（不提醒）。
@@ -46,10 +48,11 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
   W7: { remindHours: 48, yellowDays: 1, redDays: 4 },
   W8: { remindHours: null, yellowDays: 5, redDays: 1 },
   W9: { remindHours: 72, yellowDays: 1, redDays: 3 },
+  W10: { remindHours: 48, yellowDays: 1, redDays: 3 },
 }
 
-/** 红色时自动转为异常的规则（W4 本身就是异常，不再转；W5 未签收、W6 物料未到货、W7 设计逾期、W8 未齐套、W9 总计划延误只升级通知，不转异常） */
-export const CONVERTIBLE_RULES: ScanRule[] = ['W1', 'W2', 'W3']
+/** 红色时自动转为异常的规则（W10 与 W3 一样转；W4 本身就是异常，不再转；W5 未签收、W6 物料未到货、W7 设计逾期、W8 未齐套、W9 总计划延误只升级通知，不转异常） */
+export const CONVERTIBLE_RULES: ScanRule[] = ['W1', 'W2', 'W3', 'W10']
 
 /** 活动预警的唯一键（alert.activeKey），消除后置 null */
 export const alertKey = (rule: ScanRule, refType: string, refId: string) => `${rule}:${refType}:${refId}`
@@ -143,6 +146,21 @@ export function judgeW3(input: W3Input, t: RuleThreshold): W3Result {
   else if (overdueDays >= t.yellowDays) level = 'YELLOW'
   else if (t.remindHours != null && daysLeft * 24 <= t.remindHours) level = 'REMIND'
   return { level, overdueDays, daysLeft, dueDatePassed }
+}
+
+export interface W10Input {
+  dueDate: Date
+  now: Date
+  offDays: Iterable<string>
+}
+
+/**
+ * W10 厂内工序逾期未完：把要求完成日当作"承诺完成日"，算法与 W3 相同——
+ * 要求完成日前 remindHours 提醒（按自然日），之后超期天数（不含停工日）到黄 / 红阈值升级。要求完成日当天不算超期。
+ */
+export function judgeW10(input: W10Input, t: RuleThreshold): Omit<W3Result, 'dueDatePassed'> {
+  const { level, overdueDays, daysLeft } = judgeW3({ promisedReturnDate: input.dueDate, dueDate: null, now: input.now, offDays: input.offDays }, t)
+  return { level, overdueDays, daysLeft }
 }
 
 /**

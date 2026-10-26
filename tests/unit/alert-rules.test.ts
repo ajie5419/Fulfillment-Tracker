@@ -1,4 +1,4 @@
-/** 预警规则判定（纯函数）：停工日计时、W1–W3 阈值边界、只升不降 */
+/** 预警规则判定（纯函数）：停工日计时、W1–W3、W10 阈值边界、只升不降 */
 import { describe, expect, it } from 'vitest'
 import {
   DAY_MS,
@@ -6,11 +6,13 @@ import {
   HOUR_MS,
   elapsedExcludingOffDays,
   judgeW3,
+  judgeW10,
   levelByElapsed,
   maxLevel,
   reminderTitle,
   shanghaiDay,
 } from '../../server/services/alerts/rules'
+import { ALERT_RULES, RULE_TEXT } from '../../shared/alert-rules'
 
 /** 北京时间 → Date */
 const bj = (s: string) => new Date(`${s}+08:00`)
@@ -137,4 +139,34 @@ describe('只升不降', () => {
 it('提醒标题一眼能看懂', () => {
   expect(reminderTitle('YELLOW', '主梁结构件 · 涂装', '组焊返厂 2 天仍未发出', 'DEMO-WO-001')).toBe('【黄】主梁结构件 · 涂装：组焊返厂 2 天仍未发出（DEMO-WO-001）')
   expect(reminderTitle('REMIND', 'x', 'y', null)).toBe('【提醒】x：y')
+})
+
+describe('W10 厂内工序逾期未完（要求完成日前 2 天提醒 / 超期 1 天黄 / 超期 3 天红）', () => {
+  const w10 = (due: string, now: string, off: string[] = []) => judgeW10({ dueDate: day(due), now: bj(now), offDays: off }, T.W10)
+
+  it('默认阈值与 W3 相同', () => {
+    expect(T.W10).toEqual({ remindHours: 48, yellowDays: 1, redDays: 3 })
+  })
+
+  it('前 3 天无预警，前 2 天起提醒，当天仍是提醒；超期 1 天黄、3 天红', () => {
+    expect(w10('2026-10-20', '2026-10-17T23:59:59').level).toBeNull()
+    expect(w10('2026-10-20', '2026-10-18T00:00:00')).toMatchObject({ level: 'REMIND', daysLeft: 2 })
+    expect(w10('2026-10-20', '2026-10-20T23:59:59')).toMatchObject({ level: 'REMIND', overdueDays: 0 })
+    expect(w10('2026-10-20', '2026-10-21T00:00:00')).toMatchObject({ level: 'YELLOW', overdueDays: 1 })
+    expect(w10('2026-10-20', '2026-10-23T00:00:00')).toMatchObject({ level: 'RED', overdueDays: 3 })
+  })
+
+  it('停工日不计入超期天数', () => {
+    expect(w10('2026-10-20', '2026-10-23T09:00:00', ['2026-10-21', '2026-10-22'])).toMatchObject({ level: 'YELLOW', overdueDays: 1 })
+  })
+})
+
+describe('预警规则清单', () => {
+  it('每条规则都有名称和默认阈值，名称以编号开头', () => {
+    for (const r of ALERT_RULES) {
+      expect(RULE_TEXT[r].startsWith(`${r} `)).toBe(true)
+      expect(T[r]).toBeDefined()
+    }
+    expect(Object.keys(T).sort()).toEqual([...ALERT_RULES].sort())
+  })
 })

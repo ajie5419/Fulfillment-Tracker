@@ -1,7 +1,7 @@
 /**
  * 预警转异常（方案 5.2、6.2）：红色预警由扫描任务自动转，黄色预警由责任人、项目经理、管理员手动转，共用这里。
  *
- * 分类：W1 → 外协-进度；W2 → 停滞的这道是外协（厂内/厂外）则外协-进度，自制则车间；W3 → 外协-进度（带外协单位）。
+ * 分类：W1 → 外协-进度；W2 → 停滞的这道是外协（厂内/厂外）则外协-进度，自制则车间；W3 → 外协-进度（带外协单位）；W10 同 W2（厂内外协 → 外协-进度，自制 → 车间）。
  * 责任人 = 预警责任人（第一个），没有则用分类默认部门的负责人。W4 本身就是异常超期，不转。
  * 转完预警状态改为"已转异常"（CONVERTED），activeKey 保留：同一对象不会立刻再生成新预警，也不再升级、不再通知；
  * 对象状态变化（原本会消除预警的时机）时只把 activeKey 置空，状态保持 CONVERTED，异常不随之关闭。
@@ -10,6 +10,7 @@ import type { Alert, IssueCategory, Prisma, StepMode } from '@prisma/client'
 import type { ScanRule } from '../alerts/rules'
 import { FlowError } from '../flow/errors'
 import { createSystemIssue } from './issues'
+import { RULE_TEXT as RULE_NAME } from '../../../shared/alert-rules'
 import type { IssueRefType } from './constants'
 
 type Tx = Prisma.TransactionClient
@@ -28,11 +29,10 @@ export interface ConvertTarget {
   meta?: { stepMode?: StepMode; supplierId?: string | null }
 }
 
-const RULE_NAME = { W1: 'W1 待确认匹配超时', W2: 'W2 转序停滞', W3: 'W3 外协逾期未返', W4: 'W4 异常超期', W5: 'W5 发放未签收 / 变更未确认', W6: 'W6 关键物料未到货', W7: 'W7 设计逾期', W8: 'W8 装配节点未齐套', W9: 'W9 总计划节点延误 / 未确认' } as const
 const LEVEL_NAME = { REMIND: '提醒', YELLOW: '黄色', RED: '红色' } as const
 
 export function categoryFor(target: ConvertTarget): { category: IssueCategory; supplierId: string | null } {
-  if (target.rule === 'W2') {
+  if (target.rule === 'W2' || target.rule === 'W10') {
     return target.meta?.stepMode && target.meta.stepMode !== 'SELF'
       ? { category: 'OUTSOURCE_SCHEDULE', supplierId: target.meta.supplierId ?? null }
       : { category: 'WORKSHOP', supplierId: null }

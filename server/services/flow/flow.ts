@@ -33,7 +33,7 @@ export async function lockStep(tx: Tx, stepId: string): Promise<RouteStep & { pa
 }
 
 /** 立即消除该步骤上指定规则的活动预警（扫描任务也会兜底消除，这里让页面马上看到） */
-async function clearStepAlerts(tx: Tx, stepId: string, rules: ('W2' | 'W3')[]) {
+async function clearStepAlerts(tx: Tx, stepId: string, rules: ('W2' | 'W3' | 'W10')[]) {
   await clearAlertKeys(tx, rules.map((r) => alertKey(r, 'step', stepId)))
 }
 
@@ -262,8 +262,8 @@ async function applyReturn(
     await tx.part.update({ where: { id: step.partId }, data: { currentStepId: step.id, statusSince: now } })
   }
 
-  // 消除该步骤的 W3（承诺返回日逾期）预警；步骤已离开待开工，W2（转序停滞）也一并消除
-  await clearStepAlerts(tx, step.id, ['W2', 'W3'])
+  // 消除该步骤的 W3（承诺返回日逾期）预警；步骤已离开待开工，W2（转序停滞）也一并消除；完工了 W10（厂内工序逾期）也消除
+  await clearStepAlerts(tx, step.id, done ? ['W2', 'W3', 'W10'] : ['W2', 'W3'])
 
   return { duplicate: false, stepDone: done, todoCreated }
 }
@@ -278,8 +278,8 @@ export async function blockStep(tx: Tx, stepId: string) {
   const step = await lockStep(tx, stepId)
   if (step.status === 'BLOCKED') return false
   await tx.routeStep.update({ where: { id: step.id }, data: { status: 'BLOCKED' } })
-  // 步骤不再"在外"，W3（承诺返回日逾期）没有意义了；W2 只看待开工的步骤，不受影响
-  await clearStepAlerts(tx, step.id, ['W3'])
+  // 步骤不再"在外"/"加工中"，W3、W10（逾期）没有意义了，由异常跟进；W2 只看待开工的步骤，不受影响
+  await clearStepAlerts(tx, step.id, ['W3', 'W10'])
   return true
 }
 

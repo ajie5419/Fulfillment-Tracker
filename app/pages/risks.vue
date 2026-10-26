@@ -7,6 +7,7 @@
  * 原操作全部保留：预警"转异常"（责任人、项目经理、管理员）、去处理；异常点开抽屉受理 / 改派 / 处理 / 关闭 / 退回，右上角"上报异常"。
  * 旧地址 /alerts、/issues 带原参数重定向到这里（见 pages/alerts.vue、pages/issues.vue）。
  */
+import { ALERT_RULES } from '#shared/alert-rules'
 import { NO_DEPT, RISK_SEVERITIES, RISK_SEVERITY_TEXT, factoryTimeText, riskTallies, type RiskSeverity } from '#shared/workbench'
 
 const route = useRoute()
@@ -156,7 +157,7 @@ const PAGE = 60
 const shown = ref(PAGE)
 watch([tab, () => ({ ...filter })], () => (shown.value = PAGE), { deep: true })
 
-const ruleOptions = (['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9'] as const).map((r) => ({ value: r, label: RULE_TEXT[r] }))
+const ruleOptions = ALERT_RULES.map((r) => ({ value: r, label: RULE_TEXT[r] }))
 const levelOptions = LEVEL_ORDER.map((l) => ({ value: l, label: LEVEL_TEXT[l] }))
 const statusOptions = [{ value: 'UNCLOSED', label: '未关闭' }, ...Object.entries(ISSUE_STATUS_TEXT).map(([value, label]) => ({ value, label }))]
 const categoryOptions = Object.entries(ISSUE_CATEGORY_TEXT).map(([value, label]) => ({ value, label }))

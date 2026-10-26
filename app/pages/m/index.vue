@@ -62,7 +62,7 @@ async function open(t: Todo) {
     }
     try {
       await $fetch(`/api/steps/${t.step.id}/start`, { method: 'POST', body: { source: 'MOBILE' } })
-      showSuccessToast('已开工')
+      showSuccessToast('已开工，完工时到"加工中"点完工')
       await refreshTodos()
     } catch (e) {
       showFailToast(apiError(e))
@@ -126,6 +126,8 @@ const entries = computed(() =>
     { text: '齐套 / 缺件', icon: 'cluster-o', to: '/m/kitting', tone: 'upstream' },
     { text: '我的签收', icon: 'certificate', to: '/m/releases', tone: 'primary' },
     { text: '外协在途', icon: 'logistics', to: '/m/transit', tone: 'risk' },
+    // 加工中（10-26）：开了工的自制 / 厂内外协工序，在这里点完工
+    { text: '加工中', icon: 'underway-o', to: '/m/working', tone: 'primary' },
     ...(me.value?.can.mobileSend ? [{ text: '发出登记', icon: 'send-gift-o', to: '/m/send', tone: 'primary' }] : []),
   ],
 )

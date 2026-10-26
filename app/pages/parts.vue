@@ -4,6 +4,7 @@
  * 权限方案 R13：建/改/删工件和工序、导入 BOM、套模板、复制路线 —— 生产部、外协专员、该工单项目经理、管理员；
  * 开工/完工/发出/补登返厂 —— 生产部、外协专员、该工序责任人、管理员。其他人只读（后端同样拦）。
  * R14：每道工序可选"所属总计划节点"（工单总计划已发布时手工添加的工序必选；BOM 导入、套模板、复制路线生成的不强制）。
+ * 10-26：可只看"未排工序"（还没有工序链）的工件，地址栏 ?noRoute=1；图纸附 BOM 发放后提醒生产经理排工序时跳到这里。
  */
 const route = useRoute()
 const router = useRouter()
@@ -14,9 +15,11 @@ const workOrderNumber = ref<string | undefined>((route.query.wo as string) || un
 watch(workOrders, (list) => {
   if (!workOrderNumber.value && list.length) workOrderNumber.value = list[0]!.workOrderNumber
 }, { immediate: true })
-// 选中的工单记在地址栏，刷新后不丢
-watch(workOrderNumber, (wo) => {
-  if (import.meta.client) router.replace({ query: wo ? { wo } : {} })
+/** 'none' = 只看未排工序（还没有工序链）的工件 */
+const routeFilter = ref<'all' | 'none'>(route.query.noRoute === '1' ? 'none' : 'all')
+// 选中的工单、筛选记在地址栏，刷新后不丢
+watch([workOrderNumber, routeFilter], ([wo, f]) => {
+  if (import.meta.client) router.replace({ query: { ...(wo ? { wo } : {}), ...(f === 'none' ? { noRoute: '1' } : {}) } })
 })
 
 const { data: parts, pending, refresh } = await useFetch('/api/parts', {
@@ -26,6 +29,12 @@ const { data: parts, pending, refresh } = await useFetch('/api/parts', {
   watch: [workOrderNumber],
 })
 type PartRow = (typeof parts.value)[number]
+const unroutedCount = computed(() => parts.value.filter((p) => !p.steps.length).length)
+const shownParts = computed(() => (routeFilter.value === 'none' ? parts.value.filter((p) => !p.steps.length) : parts.value))
+const routeFilterOptions = computed(() => [
+  { value: 'all', label: `全部 ${parts.value.length}` },
+  { value: 'none', label: `未排工序 ${unroutedCount.value}` },
+])
 type StepRow = PartRow['steps'][number]
 
 const processOptions = computed(() => master.value.processes.map((p) => ({ value: p.id, label: p.name })))
@@ -196,6 +205,7 @@ const columns = [
         :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName}　交期 ${dayText(w.deliveryDate)}` }))"
       />
       <WoLink v-if="workOrderNumber" :no="workOrderNumber" text="工单详情" />
+      <a-segmented v-if="parts.length" v-model:value="routeFilter" :options="routeFilterOptions" />
       <template v-if="canRoute">
         <a-button type="primary" :disabled="!workOrderNumber" @click="editPart()">新建工件</a-button>
         <a-button :disabled="!workOrderNumber" @click="bomImportOpen = true">从 QMS BOM 导入</a-button>
@@ -205,7 +215,8 @@ const columns = [
 
   <a-spin :spinning="pending">
     <a-empty v-if="workOrderNumber && !parts.length" description="这个工单还没有工件：技术部发放图纸时附上 BOM 表，会按图号自动建好" style="margin-top: 48px" />
-    <a-card v-for="p in parts" :key="p.id" class="part" size="small">
+    <a-empty v-if="parts.length && !shownParts.length" description="这个工单的工件都已排好工序" style="margin-top: 48px" />
+    <a-card v-for="p in shownParts" :key="p.id" class="part" size="small">
       <template #title>
         {{ p.name }}
         <span class="muted">　图号 {{ p.drawingNo || '—' }}{{ p.revision ? `（${p.revision} 版）` : '' }}　数量 {{ p.quantity }}　BOM 物料 ID {{ p.qmsPartId || '—' }}</span>
@@ -216,6 +227,7 @@ const columns = [
         <a-tooltip v-else-if="p.fromTechBom" title="QMS 里品质人员录完这个图号后，点“从 QMS BOM 导入”按图号关联，报检才能自动匹配">
           <UiStatusTag tone="risk" style="margin-left: 8px">未关联 QMS</UiStatusTag>
         </a-tooltip>
+        <UiStatusTag v-if="!p.steps.length" tone="risk" style="margin-left: 8px">未排工序</UiStatusTag>
         <a-tooltip v-if="fillCount(p)" title="还没开工、但缺负责人，或外协没选外协厂的工序；从 BOM 导入的工序默认自制，请确认方式">
           <a-tag color="warning">{{ fillCount(p) }} 道待补充</a-tag>
         </a-tooltip>
