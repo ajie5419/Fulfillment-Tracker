@@ -29,12 +29,12 @@ watch(() => route.query, () => {
 })
 
 const query = computed(() => ({ wo: filter.wo || undefined, supplierId: filter.supplierId || undefined }))
-const { data: prod, pending: prodPending, refresh: refreshProd } = await useFetch('/api/production', { query, default: () => ({ rows: [], unroutedParts: 0 }) })
-const { data: transit, pending: transitPending, refresh: refreshTransit } = await useFetch('/api/transit', {
+const { data: prod, pending: prodPending, error: prodError, refresh: refreshProd } = await useFetch('/api/production', { query, default: () => ({ rows: [], unroutedParts: 0 }) })
+const { data: transit, pending: transitPending, error: transitError, refresh: refreshTransit } = await useFetch('/api/transit', {
   query: computed(() => ({ workOrderNumber: filter.wo || undefined, supplierId: filter.supplierId || undefined })),
   default: () => [],
 })
-const { data: unmatched, refresh: refreshUnmatched } = await useFetch('/api/unmatched', { default: () => [] })
+const { data: unmatched, error: unmatchedError, refresh: refreshUnmatched } = await useFetch('/api/unmatched', { default: () => [] })
 type ProdRow = (typeof prod.value.rows)[number]
 type TransitRow = (typeof transit.value)[number]
 
@@ -55,9 +55,9 @@ const outGroups = computed(() => {
   return groups.sort((a, b) => b.late - a.late || b.rows.length - a.rows.length)
 })
 const tabOptions = computed(() => [
-  { value: 'send', label: `待发出 ${toSend.value.length}` },
-  { value: 'out', label: `在外 ${transit.value.length}` },
-  { value: 'match', label: `待确认匹配 ${unmatched.value.length}` },
+  { value: 'send', label: `待发出 ${prodError.value ? '—' : toSend.value.length}` },
+  { value: 'out', label: `在外 ${transitError.value ? '—' : transit.value.length}` },
+  { value: 'match', label: `待确认匹配 ${unmatchedError.value ? '—' : unmatched.value.length}` },
   { value: 'back', label: '近 7 天返回' },
 ])
 const woOptions = computed(() => workOrders.value.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName}` })))
@@ -66,7 +66,7 @@ const supplierOptions = computed(() => master.value.suppliers.filter((s) => s.ki
 // ───── ?step=：在外提醒跳过来定位那道工序 ─────
 const focusStep = ref('')
 // 只处理一次（useOneShotQuery）：处理完删掉 step，之后刷新、切页签都不会再被拉回
-useOneShotQuery(['step'], () => !transitPending.value, ({ step: id }) => {
+useOneShotQuery(['step'], { fetches: [{ pending: transitPending, error: transitError }] }, ({ step: id }) => {
   if (!transit.value.some((r) => r.stepId === id)) {
     // 已经不在外了（返回了、被改了状态）：交给生产调度按它实际所在页签定位（参数带过去，这边不删）
     navigateTo({ path: '/production', query: { wo: filter.wo || undefined, step: id } }, { replace: true })
@@ -124,7 +124,14 @@ const backColumns = [
       <UiRefreshButton @click="refreshAll()" />
     </template>
 
-    <a-spin v-if="filter.tab === 'send'" :spinning="prodPending">
+    <!-- 加载失败：数据是退回的默认空值，不能显示成"没有" -->
+    <a-result v-if="(filter.tab === 'send' || filter.tab === 'back') && prodError && !prodPending" status="error" title="外协工序加载失败" :sub-title="apiError(prodError)">
+      <template #extra><a-button type="primary" @click="refreshProd()">重试</a-button></template>
+    </a-result>
+    <a-result v-else-if="filter.tab === 'out' && transitError && !transitPending" status="error" title="在外清单加载失败" :sub-title="apiError(transitError)">
+      <template #extra><a-button type="primary" @click="refreshTransit()">重试</a-button></template>
+    </a-result>
+    <a-spin v-else-if="filter.tab === 'send'" :spinning="prodPending">
       <a-empty v-if="!toSend.length" description="没有待发出的外协工序" />
       <a-table v-else class="ft-table" :columns="sendColumns" :data-source="toSend" row-key="stepId" size="small" :scroll="{ x: 820 }" :pagination="false">
         <template #bodyCell="{ column, record }">

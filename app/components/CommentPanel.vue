@@ -8,7 +8,7 @@ const emit = defineEmits<{ changed: [count: number] }>()
 
 const { data: master } = await useMaster()
 const { data: me } = await useMe()
-const { data: rows, pending, refresh } = await useFetch('/api/comments', {
+const { data: rows, pending, error, refresh } = await useFetch('/api/comments', {
   query: computed(() => ({ refType: props.refType, refId: props.refId })),
   default: () => [],
   watch: [() => props.refId],
@@ -32,7 +32,8 @@ async function send() {
     body.value = ''
     mentionIds.value = []
     await refresh()
-    emit('changed', rows.value.length)
+    // 刷新失败时 rows 是默认空值，不能当成"0 条留言"报给外面
+    if (!error.value) emit('changed', rows.value.length)
   } catch (e) {
     message.error(apiError(e))
   } finally {
@@ -44,13 +45,14 @@ async function send() {
 <template>
   <div class="comments">
     <a-spin :spinning="pending">
-      <div v-if="rows.length" class="ft-well list">
+      <div v-if="rows.length && !error" class="ft-well list">
         <UiListItem v-for="c in rows" :key="c.id" tone="primary" icon="dot">
           <template #title>{{ c.authorName }}<span class="time">{{ timeText(c.createdAt) }}</span></template>
           <template #desc><span class="body">{{ c.body }}</span></template>
           <template v-if="c.mentions.length" #meta>提醒了 {{ c.mentions.map((m) => m.name).join('、') }}</template>
         </UiListItem>
       </div>
+      <p v-else-if="error && !pending" class="empty">留言加载失败：{{ apiError(error) }} <a-button size="small" type="link" @click="refresh()">重试</a-button></p>
       <p v-else class="empty">还没有留言</p>
     </a-spin>
     <div class="editor">

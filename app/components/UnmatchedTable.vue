@@ -5,7 +5,7 @@
  * 关联 / 忽略：生产部、外协专员、该工单项目经理、管理员（权限方案 R13），其他人只读。
  */
 const emit = defineEmits<{ changed: [] }>()
-const { data: rows, pending, refresh } = await useFetch('/api/unmatched', { default: () => [] })
+const { data: rows, pending, error, refresh } = await useFetch('/api/unmatched', { default: () => [] })
 defineExpose({ refresh, count: computed(() => rows.value.length) })
 type Row = (typeof rows.value)[number]
 const { data: me } = await useMe()
@@ -45,7 +45,11 @@ const reasonColor = { NO_CANDIDATE: 'orange', MULTIPLE: 'blue', CANCELLED_AFTER_
 </script>
 
 <template>
-  <a-spin :spinning="pending">
+  <!-- 加载失败时不显示成"没有需要确认的报检" -->
+  <a-result v-if="error && !pending" status="error" title="待确认匹配加载失败" :sub-title="apiError(error)">
+    <template #extra><a-button type="primary" @click="refresh()">重试</a-button></template>
+  </a-result>
+  <a-spin v-else :spinning="pending">
     <a-empty v-if="!rows.length" description="没有需要确认的报检" />
     <a-table v-else class="ft-table" :columns="columns" :data-source="rows" row-key="qmsInspectionId" size="small" :pagination="false">
       <template #bodyCell="{ column, record }">

@@ -34,7 +34,7 @@ watch(() => [route.query.wo, route.query.noRoute], ([wo, nr]) => {
   else if (routeFilter.value === 'none') routeFilter.value = 'all'
 })
 
-const { data: parts, pending, refresh } = await useFetch('/api/parts', {
+const { data: parts, pending, error, refresh } = await useFetch('/api/parts', {
   query: { workOrderNumber },
   default: () => [],
   immediate: !!workOrderNumber.value,
@@ -47,14 +47,14 @@ const filterCounts = computed(() => {
   for (const p of parts.value) c[routeFilterOf(p)]++
   return c
 })
-const filterOptions = computed(() => FILTERS.map((f) => ({ value: f, label: `${ROUTE_FILTER_TEXT[f]} ${filterCounts.value[f]}` })))
+const filterOptions = computed(() => FILTERS.map((f) => ({ value: f, label: `${ROUTE_FILTER_TEXT[f]} ${error.value ? '—' : filterCounts.value[f]}` })))
 const shownParts = computed(() => (routeFilter.value === 'all' ? parts.value : parts.value.filter((p) => routeFilterOf(p) === routeFilter.value)))
 
 const canRoute = computed(() => canDo(me.value, 'route', { workOrderNumber: workOrderNumber.value }))
 
 // ───── 总计划节点（同一工单，整页取一次）─────
 type PlanOpts = { published: boolean; nodes: { id: string; seq: number; name: string; deptText: string; planDate: string }[] }
-const { data: planOpts } = await useFetch<PlanOpts>('/api/plan/options', {
+const { data: planOpts, error: planOptsError, refresh: refreshPlanOpts } = await useFetch<PlanOpts>('/api/plan/options', {
   query: { workOrderNumber },
   default: () => ({ published: false, nodes: [] }),
   immediate: !!workOrderNumber.value,
@@ -69,8 +69,10 @@ const batch = reactive({ open: false, mode: 'fields' as 'template' | 'fields' })
 function openBatch(mode: 'template' | 'fields') {
   Object.assign(batch, { open: true, mode })
 }
+/** 批量成功后（RouteBatchModal 只在成功时发 done）：关弹窗、清空勾选，免得下一次批量还带着这批工件 */
 async function afterBatch() {
   batch.open = false
+  selected.value = []
   await refresh()
 }
 const rowSelection = computed(() => (canRoute.value ? { selectedRowKeys: selected.value, onChange: (keys: (string | number)[]) => (selected.value = keys as string[]) } : undefined))
@@ -90,10 +92,10 @@ function openDetail(id: string, tab: 'info' | 'comments' = 'info') {
  */
 useOneShotQuery(
   ['part', 'comments', 'edit'],
-  () =>
-    !pending.value &&
-    !(typeof route.query.wo === 'string' && route.query.wo !== workOrderNumber.value) &&
-    !parts.value.some((p) => p.workOrderNumber !== workOrderNumber.value),
+  {
+    fetches: [{ pending, error }],
+    when: () => !(typeof route.query.wo === 'string' && route.query.wo !== workOrderNumber.value) && !parts.value.some((p) => p.workOrderNumber !== workOrderNumber.value),
+  },
   ({ part, comments, edit }) => {
     if (part) openDetail(part, comments === '1' ? 'comments' : 'info')
     if (edit && parts.value.some((p) => p.id === edit)) {
@@ -165,7 +167,15 @@ const woOptions = computed(() => workOrders.value.map((w) => ({ value: w.workOrd
       <a-button size="small" type="link" @click="selected = []">取消选择</a-button>
     </div>
 
-    <a-spin :spinning="pending">
+    <!-- 总计划节点没取到：不能当成"没有总计划"（否则挂节点下拉显示"无总计划"） -->
+    <a-alert v-if="planOptsError" type="warning" show-icon style="margin-bottom: 12px" :message="`总计划节点加载失败，暂时不能挂节点：${apiError(planOptsError)}`">
+      <template #action><a-button size="small" @click="refreshPlanOpts()">重试</a-button></template>
+    </a-alert>
+    <!-- 加载失败：不显示成"这个工单还没有工件" -->
+    <a-result v-if="error && !pending" status="error" title="工件加载失败" :sub-title="apiError(error)">
+      <template #extra><a-button type="primary" @click="refresh()">重试</a-button></template>
+    </a-result>
+    <a-spin v-else :spinning="pending">
       <a-empty v-if="workOrderNumber && !parts.length" description="这个工单还没有工件：技术部发放图纸时附上 BOM 表，会按图号自动建好" />
       <a-empty v-else-if="parts.length && !shownParts.length" :description="`没有${ROUTE_FILTER_TEXT[routeFilter]}的工件`" />
       <a-table v-else-if="shownParts.length" class="ft-table" :columns="columns" :data-source="shownParts" row-key="id" size="small"  :row-selection="rowSelection" :scroll="{ x: 900 }" :pagination="shownParts.length > 50 ? { pageSize: 50, showSizeChanger: false } : false">

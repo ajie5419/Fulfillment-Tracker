@@ -40,14 +40,16 @@ watch(() => route.query, () => {
   filter.mine = q('mine') === '1'
 })
 
-const { data, pending, refresh } = await useFetch('/api/production', {
+const { data, pending, error, refresh } = await useFetch('/api/production', {
   query: computed(() => ({ wo: filter.wo || undefined, supplierId: filter.supplierId || undefined, mine: filter.mine ? '1' : undefined })),
   default: () => ({ rows: [], unroutedParts: 0 }),
 })
 type Row = (typeof data.value.rows)[number]
 const rows = computed(() => data.value.rows)
 const counts = computed(() => tabCounts(rows.value))
-const tabOptions = computed(() => PRODUCTION_TABS.map((t) => ({ value: t, label: `${TAB_TEXT[t]} ${counts.value[t]}` })))
+/** 统计卡数字：加载失败时显示"—"，不显示成 0 */
+const shown = (n: number) => (error.value ? '—' : n)
+const tabOptions = computed(() => PRODUCTION_TABS.map((t) => ({ value: t, label: `${TAB_TEXT[t]} ${shown(counts.value[t])}` })))
 /** 列表：超期的在前，其余按服务端顺序（要求完成日从近到远） */
 const listRows = computed(() => {
   const list = rows.value.filter((r) => inTab(r, filter.tab))
@@ -59,7 +61,7 @@ const boardColumns = computed(() => COLUMNS.map((key) => ({ key, cards: rows.val
 // ───── ?step=：提醒、预警跳过来定位那道工序 ─────
 const focusStep = ref('')
 // 只处理一次（useOneShotQuery）：处理完删掉 step，之后刷新数据、切页签都不会再被拉回这道
-useOneShotQuery(['step'], () => !pending.value, ({ step: id }) => {
+useOneShotQuery(['step'], { fetches: [{ pending, error }] }, ({ step: id }) => {
   const row = rows.value.find((r) => r.stepId === id)
   if (!row) {
     message.info('这道工序现在不在生产调度里（还在排队等上一道、完成超过 7 天或工单已关闭），可以到工序编排里看')
@@ -75,7 +77,7 @@ useOneShotQuery(['step'], () => !pending.value, ({ step: id }) => {
 // 挂载后再判断（服务端渲染时不改，免得水合后页签显示和数据对不上）
 let autoTabDone = false
 function autoTab() {
-  if (pending.value || autoTabDone || !import.meta.client) return
+  if (pending.value || error.value || autoTabDone || !import.meta.client) return
   autoTabDone = true
   if (q('tab') || q('step') || filter.view !== 'list' || counts.value[filter.tab]) return
   const first = PRODUCTION_TABS.find((t) => counts.value[t] > 0)
@@ -119,7 +121,7 @@ function closePart() {
   drawerPartId.value = null
 }
 // ?part=（只处理一次）：打开工件抽屉后从地址栏删掉，关掉抽屉、改筛选都不会再弹出来
-useOneShotQuery(['part'], () => true, ({ part }) => openPart(part!))
+useOneShotQuery(['part'], { fetches: [] }, ({ part }) => openPart(part!))
 
 const modeText = (r: Row) => (r.mode === 'SELF' ? `自制${r.supplierName ? ` · ${r.supplierName}` : ''}` : `${MODE_TEXT[r.mode]} · ${r.supplierName ?? '未选外协厂'}`)
 /** 日期一列：按所在列显示最要紧的那个日期 */
@@ -146,11 +148,11 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
 <template>
   <div class="ft-page">
     <div class="stats">
-      <UiStatCard label="可以开工" :value="counts.ready" unit="道" tone="primary" accent icon="dot" clickable :active="filter.view === 'list' && filter.tab === 'ready'" sub="上一道已完成，第一道物料图纸已齐" @click="filter.view = 'list'; filter.tab = 'ready'" />
-      <UiStatCard label="进行中" :value="counts.active" unit="道" tone="primary" accent icon="ring" clickable :active="filter.view === 'list' && filter.tab === 'active'" sub="加工中 + 在外加工" @click="filter.view = 'list'; filter.tab = 'active'" />
-      <UiStatCard label="已超期" :value="counts.overdue" unit="道" tone="late" accent icon="alert" clickable :active="filter.view === 'list' && filter.tab === 'overdue'" sub="要求完成 / 承诺返回 / 应开工日已过" @click="filter.view = 'list'; filter.tab = 'overdue'" />
-      <UiStatCard label="卡住" :value="counts.stuck" unit="道" tone="upstream" accent icon="warn" clickable :active="filter.view === 'list' && filter.tab === 'stuck'" sub="有异常、等变更、缺料缺图" @click="filter.view = 'list'; filter.tab = 'stuck'" />
-      <UiStatCard label="没排工序的工件" :value="data.unroutedParts" unit="个" tone="risk" accent icon="warn" :to="{ path: '/parts', query: { wo: filter.wo || undefined, noRoute: '1' } }" sub="点开到工序编排" />
+      <UiStatCard label="可以开工" :value="shown(counts.ready)" unit="道" tone="primary" accent icon="dot" clickable :active="filter.view === 'list' && filter.tab === 'ready'" sub="上一道已完成，第一道物料图纸已齐" @click="filter.view = 'list'; filter.tab = 'ready'" />
+      <UiStatCard label="进行中" :value="shown(counts.active)" unit="道" tone="primary" accent icon="ring" clickable :active="filter.view === 'list' && filter.tab === 'active'" sub="加工中 + 在外加工" @click="filter.view = 'list'; filter.tab = 'active'" />
+      <UiStatCard label="已超期" :value="shown(counts.overdue)" unit="道" tone="late" accent icon="alert" clickable :active="filter.view === 'list' && filter.tab === 'overdue'" sub="要求完成 / 承诺返回 / 应开工日已过" @click="filter.view = 'list'; filter.tab = 'overdue'" />
+      <UiStatCard label="卡住" :value="shown(counts.stuck)" unit="道" tone="upstream" accent icon="warn" clickable :active="filter.view === 'list' && filter.tab === 'stuck'" sub="有异常、等变更、缺料缺图" @click="filter.view = 'list'; filter.tab = 'stuck'" />
+      <UiStatCard label="没排工序的工件" :value="shown(data.unroutedParts)" unit="个" tone="risk" accent icon="warn" :to="{ path: '/parts', query: { wo: filter.wo || undefined, noRoute: '1' } }" sub="点开到工序编排" />
     </div>
 
     <a-card>
@@ -170,7 +172,11 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
 
       <UiFilterChips :items="chips" @clear-all="clearFilters" />
 
-      <a-spin :spinning="pending">
+      <!-- 加载失败：数据是退回的默认空值，不能显示成"没有工序" -->
+      <a-result v-if="error && !pending" status="error" title="生产调度加载失败" :sub-title="apiError(error)">
+        <template #extra><a-button type="primary" @click="refresh()">重试</a-button></template>
+      </a-result>
+      <a-spin v-else :spinning="pending">
         <template v-if="filter.view === 'list'">
           <a-empty v-if="!listRows.length" :description="EMPTY_TEXT[filter.tab]" />
           <a-table v-else class="ft-table" :columns="tableColumns" :data-source="listRows" row-key="stepId" :row-class-name="rowClass" size="small" :scroll="{ x: 980 }" :pagination="listRows.length > 50 ? { pageSize: 50, showSizeChanger: false } : false">

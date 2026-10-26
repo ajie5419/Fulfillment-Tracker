@@ -41,7 +41,7 @@ function setScope(m: 'mine' | 'all') {
   router.replace({ query: { ...rest, mine: m === 'mine' ? '1' : '0' } })
 }
 
-const { data, pending, refresh } = await useFetch('/api/production', {
+const { data, pending, error, refresh } = await useFetch('/api/production', {
   query: computed(() => ({ mine: scope.value === 'mine' ? '1' : '0', wo: wo.value || undefined })),
   default: () => ({ rows: [], unroutedParts: 0 }),
 })
@@ -54,14 +54,14 @@ const list = computed(() => {
 })
 // 提醒跳过来（?stepId=）：只处理一次——切到这道工序实际所在的分段并标出；不在手机三段里（卡住、已完成、排队中）时提示。
 // 处理完删掉 stepId，并把当时的范围（带 stepId 默认"全部"）写成 mine=0 / 1，之后刷新、切分段都不会再被拉回来
-useOneShotQuery(['stepId'], () => !pending.value, ({ stepId: id }) => {
+useOneShotQuery(['stepId'], { fetches: [{ pending, error }] }, ({ stepId: id }) => {
   focusId.value = id!
   const row = data.value.rows.find((r) => r.stepId === id)
   const target = row ? segOfColumn(row.column) : null
   if (!target) showToast(row?.column === 'stuck' ? `这道工序卡住了：${row.stuckText ?? '请到电脑端生产调度查看'}` : '这道工序现在不在能开工 / 在做 / 在外里，可能已完成或还在排队')
   return { seg: target ?? seg.value, mine: scope.value === 'mine' ? '1' : '0' }
 })
-const segTitle = (s: Seg) => `${{ ready: '能开工', working: '在做', out: '在外' }[s]} ${rowsOf(s).length}`
+const segTitle = (s: Seg) => `${{ ready: '能开工', working: '在做', out: '在外' }[s]} ${error.value ? '—' : rowsOf(s).length}`
 const canStep = (r: Row) => canDo(me.value, 'stepAction', { workOrderNumber: r.workOrderNumber, ownerId: r.ownerId })
 const late = (r: Row) => r.overdueDays > 0 || r.startLateDays > 0
 
@@ -169,6 +169,10 @@ const EMPTY: Record<Seg, string> = { ready: '没有能开工的工序', working:
     <div v-if="wo" class="m-hint">只看工单 {{ wo }} <van-button size="mini" plain @click="router.replace({ query: { ...route.query, wo: undefined } })">看全部工单</van-button></div>
 
     <van-loading v-if="pending" class="m-center" />
+    <!-- 加载失败：不显示成"没有能开工的" -->
+    <van-empty v-else-if="error" image="error" :description="`加载失败：${apiError(error)}`" image-size="80">
+      <van-button size="small" plain type="primary" @click="refresh()">重试</van-button>
+    </van-empty>
     <van-empty v-else-if="!list.length" :description="scope === 'mine' ? `${EMPTY[seg]}（我负责的）` : EMPTY[seg]" image-size="80">
       <van-button v-if="scope === 'mine'" size="small" plain @click="setScope('all')">看全部</van-button>
     </van-empty>

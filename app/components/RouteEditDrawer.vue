@@ -88,7 +88,7 @@ async function addStep() {
 // ───── 模板、复制 ─────
 const templateTarget = ref<{ partId: string; partName: string; mode: 'apply' | 'save' } | null>(null)
 const copyForm = reactive({ open: false, fromWo: undefined as string | undefined, fromPartId: undefined as string | undefined })
-const { data: copyParts } = await useFetch('/api/parts', {
+const { data: copyParts, error: copyPartsError } = await useFetch('/api/parts', {
   query: computed(() => ({ workOrderNumber: copyForm.fromWo })),
   default: () => [],
   immediate: false,
@@ -229,6 +229,7 @@ function removePart() {
         <a-form-item label="来源工件">
           <a-select
             v-model:value="copyForm.fromPartId"
+            :not-found-content="copyPartsError ? `工件加载失败：${apiError(copyPartsError)}` : undefined"
             :options="copyParts.filter((x) => x.id !== part?.id).map((x) => ({ value: x.id, label: `${x.name}（${x.steps.map((s) => s.processName).join(' → ') || '无工序'}）` }))"
           />
         </a-form-item>
