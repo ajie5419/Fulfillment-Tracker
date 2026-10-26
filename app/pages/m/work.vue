@@ -4,7 +4,7 @@
  *   能开工：可以开工的工序（口径同电脑端生产调度）——自制 / 厂内外协点"开工"，厂外外协点"发出"（进发出登记页）；
  *   在做：已开工的自制 / 厂内外协，点"完工"（可部分完工、报废）；
  *   在外：厂外外协已发出没全部返回的，QMS 漏报检时点"登记返厂"。
- * 默认"我的"（我负责的），可切"全部"。地址栏 ?seg=ready|working|out、?mine=0、?stepId=（提醒跳过来定位到那一道，自动切"全部"）、?wo=。
+ * 默认"我的"（我负责的），可切"全部"。地址栏 ?seg=ready|working|out、?mine=1|0、?stepId=（提醒跳过来定位到那一道，默认"全部"；用户切范围时清掉）、?wo=。
  * 能否操作与电脑端一致：生产部、外协专员、该工序负责人、管理员（后端同样拦）。
  */
 definePageMeta({ layout: 'mobile' })
@@ -16,17 +16,25 @@ type Seg = 'ready' | 'working' | 'out'
 const SEGS: Seg[] = ['ready', 'working', 'out']
 const q = (k: string) => (typeof route.query[k] === 'string' ? (route.query[k] as string) : '')
 const segOf = (v: string): Seg => ((SEGS as string[]).includes(v) ? (v as Seg) : 'ready')
-const focusId = ref(q('stepId'))
-const seg = ref<Seg>(segOf(q('seg')))
-const scope = ref<'mine' | 'all'>(focusId.value || q('mine') === '0' || q('wo') ? 'all' : 'mine')
-const wo = ref(q('wo'))
-watch([seg, scope], ([s, m]) => router.replace({ query: { ...route.query, seg: s, mine: m === 'all' ? '0' : undefined } }))
-watch(() => route.query, () => {
-  seg.value = segOf(q('seg'))
-  wo.value = q('wo')
-  focusId.value = q('stepId')
-  if (focusId.value || q('mine') === '0') scope.value = 'all'
+// 地址栏是唯一来源（返回 / 前进、点提醒再进来都跟着变）：页签、范围都从 query 算，用户操作只改 query。
+// 范围：?mine=1 我的、?mine=0 全部；没写时带 stepId / wo（从提醒、工单跳来）默认"全部"，否则"我的"
+const focusId = computed(() => q('stepId'))
+const wo = computed(() => q('wo'))
+const seg = computed<Seg>(() => segOf(q('seg')))
+const scope = computed<'mine' | 'all'>(() => {
+  const m = q('mine')
+  if (m === '1') return 'mine'
+  if (m === '0') return 'all'
+  return q('stepId') || q('wo') ? 'all' : 'mine'
 })
+function setSeg(s: Seg) {
+  router.replace({ query: { ...route.query, seg: s } })
+}
+/** 用户自己切了范围：一次性的 stepId（定位用）一并清掉，不然它会把范围又拉回"全部" */
+function setScope(m: 'mine' | 'all') {
+  const { stepId: _drop, ...rest } = route.query
+  router.replace({ query: { ...rest, mine: m === 'mine' ? '1' : '0' } })
+}
 
 const { data, pending, refresh } = await useFetch('/api/production', {
   query: computed(() => ({ mine: scope.value === 'mine' ? '1' : '0', wo: wo.value || undefined })),
@@ -133,12 +141,12 @@ const EMPTY: Record<Seg, string> = { ready: '没有能开工的工序', working:
 <template>
   <div>
     <van-nav-bar title="生产" />
-    <van-tabs v-model:active="scope" shrink>
+    <van-tabs :active="scope" shrink @update:active="(v: string | number) => setScope(v === 'all' ? 'all' : 'mine')">
       <van-tab title="我的" name="mine" />
       <van-tab title="全部" name="all" />
     </van-tabs>
     <div class="segs" role="tablist">
-      <button v-for="s in SEGS" :key="s" type="button" role="tab" :aria-selected="seg === s" class="seg" :class="{ on: seg === s }" @click="seg = s">{{ segTitle(s) }}</button>
+      <button v-for="s in SEGS" :key="s" type="button" role="tab" :aria-selected="seg === s" class="seg" :class="{ on: seg === s }" @click="setSeg(s)">{{ segTitle(s) }}</button>
     </div>
     <div v-if="me?.can.mobileSend && seg !== 'working'" class="send-any">
       <span class="m-muted">上一道还没回来也要先发出？</span>
@@ -148,7 +156,7 @@ const EMPTY: Record<Seg, string> = { ready: '没有能开工的工序', working:
 
     <van-loading v-if="pending" class="m-center" />
     <van-empty v-else-if="!list.length" :description="scope === 'mine' ? `${EMPTY[seg]}（我负责的）` : EMPTY[seg]" image-size="80">
-      <van-button v-if="scope === 'mine'" size="small" plain @click="scope = 'all'">看全部</van-button>
+      <van-button v-if="scope === 'mine'" size="small" plain @click="setScope('all')">看全部</van-button>
     </van-empty>
     <div v-else class="m-list">
       <MCard v-for="r in list" :key="r.stepId" :tone="late(r) ? 'late' : 'primary'" :class="{ focus: r.stepId === focusId }">

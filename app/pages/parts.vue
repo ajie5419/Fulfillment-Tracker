@@ -63,7 +63,8 @@ const { data: planOpts } = await useFetch<PlanOpts>('/api/plan/options', {
 
 // ───── 勾选、批量 ─────
 const selected = ref<string[]>([])
-watch(workOrderNumber, () => { selected.value = [] })
+// 换工单或切筛选就清空勾选：批量操作只作用在看得见的工件上
+watch([workOrderNumber, routeFilter], () => { selected.value = [] })
 const batch = reactive({ open: false, mode: 'fields' as 'template' | 'fields' })
 function openBatch(mode: 'template' | 'fields') {
   Object.assign(batch, { open: true, mode })
@@ -93,6 +94,9 @@ function focusFromQuery() {
   const edit = route.query.edit as string | undefined
   if (!partId && !edit) return
   if (pending.value) return
+  // 刚切工单（如工件抽屉"去编排"跳到别的工单）：列表还是上一个工单的，等新列表回来再定位，不要把 ?edit= 提前清掉
+  if (typeof route.query.wo === 'string' && route.query.wo !== workOrderNumber.value) return
+  if (parts.value.some((p) => p.workOrderNumber !== workOrderNumber.value)) return
   if (partId) openDetail(partId, route.query.comments === '1' ? 'comments' : 'info')
   if (edit && parts.value.some((p) => p.id === edit)) {
     routeFilter.value = 'all'
@@ -103,8 +107,9 @@ function focusFromQuery() {
 onMounted(focusFromQuery)
 watch(() => [route.query.part, route.query.comments, route.query.edit, pending.value], focusFromQuery)
 function onDetailEdit(p: { id: string; workOrderNumber: string }) {
-  if (p.workOrderNumber !== workOrderNumber.value) return // 别的工单：PartDrawer 自己跳 /parts?wo=&edit=
   detailId.value = null
+  // 别的工单的工件（如从搜索、留言提醒打开）：先关详情抽屉，再切到那个工单并打开编排（?edit= 由下面的地址栏同步处理）
+  if (p.workOrderNumber !== workOrderNumber.value) return navigateTo({ path: '/parts', query: { wo: p.workOrderNumber, edit: p.id } })
   editId.value = p.id
 }
 

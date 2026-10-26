@@ -17,6 +17,11 @@ const userOptions = computed(() => master.value.users.filter((u) => u.id !== me.
 const body = ref('')
 const mentionIds = ref<string[]>([])
 const saving = ref(false)
+// 换了留言对象（工件抽屉里切到别的工件）：没发出的草稿和 @ 的人清掉，不带到别的工件上
+watch(() => [props.refType, props.refId], () => {
+  body.value = ''
+  mentionIds.value = []
+})
 
 async function send() {
   if (!body.value.trim()) return message.warning('请填写留言内容')

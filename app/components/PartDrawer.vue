@@ -19,6 +19,10 @@ watch(() => props.partId, (id) => { if (id) tab.value = props.tab ?? 'info' }, {
 const { data: part, pending, refresh, error } = await useFetch<PartDetail>(() => `/api/parts/${props.partId}`, { immediate: !!props.partId, watch: false })
 const { data: timeline, pending: tlPending, refresh: refreshTimeline } = await useFetch(() => `/api/parts/${props.partId}/timeline`, { immediate: false, watch: false })
 watch(() => props.partId, (id) => {
+  // 切到别的工件：先清掉上一个工件的内容和弹窗，避免加载期间看到 / 点到旧工件
+  part.value = undefined
+  timeline.value = undefined
+  reporting.value = false
   if (!id) return
   refresh()
   if (tab.value === 'timeline') refreshTimeline()

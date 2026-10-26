@@ -103,6 +103,14 @@ async function doCopy() {
   copyForm.open = false
 }
 
+// 换了工件或工单：加一道的草稿、复制弹窗、模板弹窗都清掉（总计划节点只属于原工单，不能带到别的工单上）
+watch([() => props.part?.id, () => props.workOrderNumber], () => {
+  for (const k of Object.keys(draft) as (keyof typeof draft)[]) if (k !== 'mode') draft[k] = undefined
+  draft.mode = 'SELF'
+  Object.assign(copyForm, { open: false, fromWo: undefined, fromPartId: undefined })
+  templateTarget.value = null
+})
+
 // ───── 工件信息 ─────
 const info = reactive({ name: '', drawingNo: '', revision: '', quantity: 1, qmsPartId: '' })
 watch(() => props.part, (p) => {

@@ -62,7 +62,7 @@ async function open(t: Todo) {
     }
     try {
       await $fetch(`/api/steps/${t.step.id}/start`, { method: 'POST', body: { source: 'MOBILE' } })
-      showSuccessToast('已开工，完工时到"加工中"点完工')
+      showSuccessToast('已开工，完工时到"生产"的"在做"点完工')
       await refreshTodos()
     } catch (e) {
       showFailToast(apiError(e))
