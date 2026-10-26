@@ -62,7 +62,7 @@ async function open(t: Todo) {
     }
     try {
       await $fetch(`/api/steps/${t.step.id}/start`, { method: 'POST', body: { source: 'MOBILE' } })
-      showSuccessToast('已开工，完工时到"加工中"点完工')
+      showSuccessToast('已开工，完工时到"生产"的"在做"点完工')
       await refreshTodos()
     } catch (e) {
       showFailToast(apiError(e))
@@ -114,7 +114,7 @@ const GROUP_ICON = { OVERDUE: 'alert', TODAY: 'warn', WEEK: 'dot', LATER: 'ring'
 const LEVEL_TONE = { RED: 'late', YELLOW: 'risk', REMIND: 'primary' } as const
 const LEVEL_ICON = { RED: 'alert', YELLOW: 'warn', REMIND: 'dot' } as const
 
-/** 常用入口（宫格）：发出登记只给有发出权限的人 */
+/** 常用入口（宫格）。外协在途、加工中、发出登记已并进底部"生产"页签（生产管理重设计，10-26），这里不再重复 */
 const entries = computed(() =>
   [
     { text: '上报异常', icon: 'warning-o', to: '/m/issue-new', tone: 'late' },
@@ -125,10 +125,6 @@ const entries = computed(() =>
     { text: '设计任务', icon: 'description', to: '/m/drawings', tone: 'primary' },
     { text: '齐套 / 缺件', icon: 'cluster-o', to: '/m/kitting', tone: 'upstream' },
     { text: '我的签收', icon: 'certificate', to: '/m/releases', tone: 'primary' },
-    { text: '外协在途', icon: 'logistics', to: '/m/transit', tone: 'risk' },
-    // 加工中（10-26）：开了工的自制 / 厂内外协工序，在这里点完工
-    { text: '加工中', icon: 'underway-o', to: '/m/working', tone: 'primary' },
-    ...(me.value?.can.mobileSend ? [{ text: '发出登记', icon: 'send-gift-o', to: '/m/send', tone: 'primary' }] : []),
   ],
 )
 </script>

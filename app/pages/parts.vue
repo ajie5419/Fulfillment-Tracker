@@ -1,483 +1,248 @@
 <script setup lang="ts">
 /**
- * 生产管理：选工单 → 工件列表 → 行内编辑工序链；可从同类工件复制。
- * 权限方案 R13：建/改/删工件和工序、导入 BOM、套模板、复制路线 —— 生产部、外协专员、该工单项目经理、管理员；
- * 开工/完工/发出/补登返厂 —— 生产部、外协专员、该工序责任人、管理员。其他人只读（后端同样拦）。
- * R14：每道工序可选"所属总计划节点"（工单总计划已发布时手工添加的工序必选；BOM 导入、套模板、复制路线生成的不强制）。
- * 10-26：可只看"未排工序"（还没有工序链）的工件，地址栏 ?noRoute=1；图纸附 BOM 发放后提醒生产经理排工序时跳到这里。
- * 10-26 第二批：工件卡片上显示关联记录数（设计、物料、异常、留言），"时间线"抽屉串起工件的全部记录并可留言 @人；
- *   ?part=<工件 ID> 定位到该工件（全局搜索跳过来），再带 comments=1 直接打开留言（留言提醒跳过来）。
- * 10-26 生产管理补全：自制工序可派给厂内班组；每道工序有应开工日（待办截止日取它）；完工可部分完工或报废（报废自动转异常）。
+ * 工序编排（生产管理重设计第一批，zhao 10-26 确认；原"生产管理"页）：工艺部、生产经理给工件排工序——只管排，不放开工完工按钮
+ * （开工、完工、发出、返厂到"生产调度""外协"或手机端）。
+ *   选工单 → 每个工件一行（名称、图号、数量、压缩的工序链色块、一个最要紧的状态）→ "编排"打开右侧编排抽屉改；列表只读。
+ *   勾选多个工件：批量套用模板、批量设负责人 / 班组 / 日期 / 总计划节点。
+ * 权限方案 R13：建 / 改 / 删工件和工序、导入 BOM、套模板、复制路线 —— 生产部、工艺部、外协专员、该工单项目经理、管理员；其他人只读（后端同样拦）。
+ * R14：每道工序可选"所属总计划节点"（工单总计划已发布时手工添加的必选）。
+ * 地址栏：?wo= 工单；?noRoute=1 只看未排工序（图纸附 BOM 发放后的提醒跳过来）；?part=<工件 ID> 打开工件抽屉（全局搜索跳过来），
+ *   再带 comments=1 直接打开留言（留言提醒跳过来）；?edit=<工件 ID> 打开编排抽屉（工件抽屉里点"去编排"）。
  */
+import { chainTones, partHeadline, routeFilterOf, ROUTE_FILTER_TEXT, type ChainTone, type RouteFilter } from '#shared/production'
+import { factoryDay } from '#shared/mobile-todo'
+
 const route = useRoute()
 const router = useRouter()
 const { data: workOrders } = await useWorkOrders()
-const { data: master } = await useMaster()
+const { data: me } = await useMe()
 
+const FILTERS: RouteFilter[] = ['all', 'none', 'fill', 'ok']
 const workOrderNumber = ref<string | undefined>((route.query.wo as string) || undefined)
 watch(workOrders, (list) => {
   if (!workOrderNumber.value && list.length) workOrderNumber.value = list[0]!.workOrderNumber
 }, { immediate: true })
-/** 'none' = 只看未排工序（还没有工序链）的工件 */
-const routeFilter = ref<'all' | 'none'>(route.query.noRoute === '1' ? 'none' : 'all')
-// 选中的工单、筛选记在地址栏，刷新后不丢（定位用的 part / comments 只用一次，不保留）
+const routeFilter = ref<RouteFilter>(route.query.noRoute === '1' ? 'none' : 'all')
+// 选中的工单、筛选记在地址栏（定位用的 part / comments / edit 由 useOneShotQuery 处理一次后删掉；这里照抄，免得"去编排"切工单时提前删掉 edit）
 watch([workOrderNumber, routeFilter], ([wo, f]) => {
-  // 保留其他参数（part / comments）：从别的工单跳来时，要等新工单的工件加载完再定位
   if (import.meta.client) router.replace({ query: { ...route.query, wo: wo || undefined, noRoute: f === 'none' ? '1' : undefined } })
 })
 // 反过来：页面没离开时点了别的 /parts 链接（全局搜索、提醒），按新地址切工单和筛选
 watch(() => [route.query.wo, route.query.noRoute], ([wo, nr]) => {
   if (typeof wo === 'string' && wo && wo !== workOrderNumber.value) workOrderNumber.value = wo
-  routeFilter.value = nr === '1' ? 'none' : 'all'
+  if (nr === '1') routeFilter.value = 'none'
+  else if (routeFilter.value === 'none') routeFilter.value = 'all'
 })
 
-const { data: parts, pending, refresh } = await useFetch('/api/parts', {
+const { data: parts, pending, error, refresh } = await useFetch('/api/parts', {
   query: { workOrderNumber },
   default: () => [],
   immediate: !!workOrderNumber.value,
   watch: [workOrderNumber],
 })
 type PartRow = (typeof parts.value)[number]
-const unroutedCount = computed(() => parts.value.filter((p) => !p.steps.length).length)
-const shownParts = computed(() => (routeFilter.value === 'none' ? parts.value.filter((p) => !p.steps.length) : parts.value))
-const routeFilterOptions = computed(() => [
-  { value: 'all', label: `全部 ${parts.value.length}` },
-  { value: 'none', label: `未排工序 ${unroutedCount.value}` },
-])
-type StepRow = PartRow['steps'][number]
-
-// ───── 时间线 / 留言抽屉、按地址栏定位工件 ─────
-const drawerPart = ref<{ id: string; name: string } | null>(null)
-const drawerTab = ref<'timeline' | 'comments'>('timeline')
-function openDrawer(p: { id: string; name: string }, tab: 'timeline' | 'comments' = 'timeline') {
-  drawerTab.value = tab
-  drawerPart.value = { id: p.id, name: p.name }
-}
-function closeDrawer() {
-  drawerPart.value = null
-  // 清掉定位参数，再点同一条留言提醒还能重新打开
-  if (route.query.part || route.query.comments) router.replace({ query: { ...route.query, part: undefined, comments: undefined } })
-}
-const focusPartId = ref<string | null>(null)
-async function focusFromQuery() {
-  const id = route.query.part as string | undefined
-  if (!id || !import.meta.client) return
-  const p = parts.value.find((x) => x.id === id)
-  if (!p) return
-  routeFilter.value = 'all'
-  focusPartId.value = id
-  await nextTick()
-  document.getElementById(`part-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-  if (route.query.comments === '1') openDrawer(p, 'comments')
-  // 定位参数只用一次：清掉，之后工件列表刷新时不再反复滚动、反复打开留言
-  router.replace({ query: { ...route.query, part: undefined, comments: undefined } })
-}
-onMounted(focusFromQuery)
-watch(() => [route.query.part, route.query.comments, parts.value], focusFromQuery)
-/** 关联记录数：没有的不显示 */
-const relatedChips = (p: PartRow) => {
-  const r = p.related
-  return [
-    r.drawings ? { key: 'd', text: `设计 ${r.drawingsDone}/${r.drawings}`, tone: r.drawingsDone === r.drawings ? 'done' : 'primary' } : null,
-    r.purchases ? { key: 'p', text: `物料到货 ${r.purchasesArrived}/${r.purchases}`, tone: r.purchasesArrived === r.purchases ? 'done' : 'primary' } : null,
-    r.openIssues ? { key: 'i', text: `异常 ${r.openIssues}`, tone: 'late' } : null,
-    r.comments ? { key: 'c', text: `留言 ${r.comments}`, tone: 'none' } : null,
-  ].filter((x): x is { key: string; text: string; tone: 'done' | 'primary' | 'late' | 'none' } => !!x)
-}
-
-const processOptions = computed(() => master.value.processes.map((p) => ({ value: p.id, label: p.name })))
-const supplierOptions = computed(() => master.value.suppliers.map((s) => ({ value: s.id, label: s.label })))
-/** 自制工序只能派给厂内班组 */
-const teamOptions = computed(() => master.value.suppliers.filter((s) => s.kind === 'TEAM').map((s) => ({ value: s.id, label: s.name })))
-const supplierOptionsFor = (mode: string) => (mode === 'SELF' ? teamOptions.value : supplierOptions.value)
-const supplierPlaceholder = (mode: string) => (mode === 'SELF' ? '派工班组（可空）' : '选择外协厂')
-const userOptions = computed(() => master.value.users.map((u) => ({ value: u.id, label: u.name })))
-const modeOptions = Object.entries(MODE_TEXT).map(([value, label]) => ({ value, label }))
-
-async function call(fn: () => unknown, ok?: string) {
-  try {
-    const r = (await fn()) as { planWarning?: string | null } | undefined
-    if (ok) message.success(ok)
-    if (r?.planWarning) message.warning(r.planWarning)
-  } catch (e) {
-    message.error(apiError(e))
-  } finally {
-    await refresh()
-    eventsCache.clear()
-  }
-}
-
-// ───── 工件 ─────
-const partForm = reactive({ open: false, id: '' as string, name: '', drawingNo: '', revision: '', quantity: 1, qmsPartId: '' })
-function editPart(p?: PartRow) {
-  Object.assign(partForm, p
-    ? { open: true, id: p.id, name: p.name, drawingNo: p.drawingNo ?? '', revision: p.revision ?? '', quantity: p.quantity, qmsPartId: p.qmsPartId ?? '' }
-    : { open: true, id: '', name: '', drawingNo: '', revision: '', quantity: 1, qmsPartId: '' })
-}
-async function savePart() {
-  const body = { name: partForm.name, drawingNo: partForm.drawingNo || null, revision: partForm.revision || null, quantity: partForm.quantity, qmsPartId: partForm.qmsPartId || null }
-  if (!body.name.trim()) return message.warning('请填写工件名称')
-  const id = partForm.id
-  await call(async () => {
-    if (id) await $fetch(`/api/parts/${id}`, { method: 'PATCH', body })
-    else await $fetch('/api/parts', { method: 'POST', body: { ...body, workOrderNumber: workOrderNumber.value } })
-  }, '已保存')
-  partForm.open = false
-}
-function removePart(p: PartRow) {
-  Modal.confirm({
-    title: `删除工件"${p.name}"及其工序链？`,
-    okType: 'danger',
-    onOk: async () => {
-      await call(() => $fetch(`/api/parts/${p.id}`, { method: 'DELETE' }), '已删除')
-    },
-  })
-}
-
-// ───── 复制工序链 ─────
-const copyForm = reactive({ open: false, targetId: '', fromWo: undefined as string | undefined, fromPartId: undefined as string | undefined })
-const { data: copyParts } = await useFetch('/api/parts', {
-  query: computed(() => ({ workOrderNumber: copyForm.fromWo })),
-  default: () => [],
-  immediate: false,
-  watch: [() => copyForm.fromWo],
+const today = factoryDay(new Date())
+const filterCounts = computed(() => {
+  const c: Record<RouteFilter, number> = { all: parts.value.length, none: 0, fill: 0, ok: 0 }
+  for (const p of parts.value) c[routeFilterOf(p)]++
+  return c
 })
-function openCopy(p: PartRow) {
-  Object.assign(copyForm, { open: true, targetId: p.id, fromWo: workOrderNumber.value, fromPartId: undefined })
-}
-async function doCopy() {
-  if (!copyForm.fromPartId) return message.warning('请选择来源工件')
-  await call(() => $fetch(`/api/parts/${copyForm.targetId}/copy-route`, { method: 'POST', body: { fromPartId: copyForm.fromPartId } }), '已复制')
-  copyForm.open = false
-}
+const filterOptions = computed(() => FILTERS.map((f) => ({ value: f, label: `${ROUTE_FILTER_TEXT[f]} ${error.value ? '—' : filterCounts.value[f]}` })))
+const shownParts = computed(() => (routeFilter.value === 'all' ? parts.value : parts.value.filter((p) => routeFilterOf(p) === routeFilter.value)))
 
-// ───── 步骤 ─────
-const newStep = reactive<Record<string, { processId?: string; mode: StepModeKey; supplierId?: string; ownerId?: string; planStartDate?: string; dueDate?: string; planNodeId?: string }>>({})
-const draftOf = (partId: string) => (newStep[partId] ??= { mode: 'EXTERNAL_OUTSOURCE' })
-async function addStep(p: PartRow) {
-  const d = draftOf(p.id)
-  if (!d.processId) return message.warning('请选择工序')
-  if (planOpts.value.published && !d.planNodeId) return message.warning('该工单已发布总计划，请选择所属总计划节点')
-  await call(() => $fetch(`/api/parts/${p.id}/steps`, { method: 'POST', body: { ...d, supplierId: d.supplierId ?? null, planStartDate: d.planStartDate ?? null, planNodeId: d.planNodeId ?? null } }))
-  newStep[p.id] = { mode: d.mode, planNodeId: d.planNodeId }
-}
-// 表格插槽里的 record 类型是 Record<string, any>，这里只要求用到的字段
-type StepRef = Pick<StepRow, 'id' | 'processName'>
-const patchStep = (s: Pick<StepRow, 'id'>, body: Record<string, unknown>) => call(() => $fetch(`/api/steps/${s.id}`, { method: 'PATCH', body }))
-const moveStep = (s: Pick<StepRow, 'id'>, direction: 'up' | 'down') => call(() => $fetch(`/api/steps/${s.id}/move`, { method: 'POST', body: { direction } }))
-const removeStep = (s: Pick<StepRow, 'id'>) => call(() => $fetch(`/api/steps/${s.id}`, { method: 'DELETE' }), '已删除')
-const startStep = (s: Pick<StepRow, 'id'>) => call(() => $fetch(`/api/steps/${s.id}/start`, { method: 'POST', body: { source: 'PC' } }), '已开工')
-const finishing = ref<{ id: string; title: string; quantity: number; doneQty: number } | null>(null)
-function finishStep(p: PartRow, s: StepRef & Pick<StepRow, 'returnedQty'>) {
-  finishing.value = { id: s.id, title: `${p.name} · ${s.processName}`, quantity: p.quantity, doneQty: s.returnedQty }
-}
-async function afterFinish() {
-  finishing.value = null
-  await refresh()
-  eventsCache.clear()
-}
-
-const sending = ref<{ id: string; supplierId: string | null; title: string } | null>(null)
-/** 上报异常：带上当前工单和工件 */
-const reportingPartId = ref<string | null>(null)
-/** 上报后跳到异常列表并打开刚报的那条 */
-function onReported(issue: { id: string }) {
-  reportingPartId.value = null
-  navigateTo({ path: '/issues', query: { id: issue.id } })
-}
-const returning = reactive({ open: false, step: null as StepRef | null, qty: 1, partName: '' })
-function openReturn(p: PartRow, s: StepRef & Pick<StepRow, 'returnedQty'>) {
-  Object.assign(returning, { open: true, step: s, qty: Math.max(p.quantity - s.returnedQty, 1), partName: p.name })
-}
-async function doReturn() {
-  await call(() => $fetch(`/api/steps/${returning.step!.id}/return`, { method: 'POST', body: { qty: returning.qty, source: 'PC' } }), '已补登返厂')
-  returning.open = false
-}
-
-// ───── 流转记录（展开行时按工件加载） ─────
-type EventRow = Awaited<ReturnType<typeof loadEvents>>[number]
-const eventsCache = reactive(new Map<string, EventRow[]>())
-async function loadEvents(partId: string) {
-  return $fetch(`/api/parts/${partId}/events`)
-}
-async function onExpand(expanded: boolean, s: Pick<StepRow, 'partId'>) {
-  if (expanded && !eventsCache.has(s.partId)) eventsCache.set(s.partId, await loadEvents(s.partId))
-}
-
-// ───── R8：从 QMS BOM 导入、路线模板 ─────
-const { data: me } = await useMe()
 const canRoute = computed(() => canDo(me.value, 'route', { workOrderNumber: workOrderNumber.value }))
-const canStep = (s: { ownerId: string | null }) => canDo(me.value, 'stepAction', { ownerId: s.ownerId })
-const bomImportOpen = ref(false)
-const templateTarget = ref<{ partId: string; partName: string; mode: 'apply' | 'save' } | null>(null)
-const fillCount = (p: PartRow) => p.steps.filter((s) => s.needsFill).length
-function afterR8() {
-  bomImportOpen.value = false
-  templateTarget.value = null
-  refresh()
-  eventsCache.clear()
-}
 
-// ───── R14：所属总计划节点（同一工单的节点，整页取一次）─────
+// ───── 总计划节点（同一工单，整页取一次）─────
 type PlanOpts = { published: boolean; nodes: { id: string; seq: number; name: string; deptText: string; planDate: string }[] }
-const { data: planOpts } = await useFetch<PlanOpts>('/api/plan/options', {
+const { data: planOpts, error: planOptsError, refresh: refreshPlanOpts } = await useFetch<PlanOpts>('/api/plan/options', {
   query: { workOrderNumber },
   default: () => ({ published: false, nodes: [] }),
   immediate: !!workOrderNumber.value,
   watch: [workOrderNumber],
 })
-const planNodeOptions = computed(() => planOpts.value.nodes.map((n) => ({ value: n.id, label: `${n.seq}. ${n.name}（${n.planDate}）` })))
-const planDayOf = (id: string | null | undefined) => planOpts.value.nodes.find((n) => n.id === id)?.planDate ?? null
-/** 应开工日已过还没开工 / 发出 */
-const startLate = (s: { planStartDate: string | Date | null; status: string }) => s.status === 'PENDING' && !!s.planStartDate && dayText(s.planStartDate) < dayAfter(0)
-/** 工序日期（外协看承诺返回日，否则要求完成日）晚于节点计划日：标红（照样保存） */
-const stepLate = (s: { planNodeId: string | null; dueDate: string | Date | null; promisedReturnDate: string | Date | null; mode: string; status: string }) => {
-  const node = planDayOf(s.planNodeId)
-  const d = dayText(s.mode === 'EXTERNAL_OUTSOURCE' && s.promisedReturnDate ? s.promisedReturnDate : s.dueDate)
-  return s.status !== 'DONE' && !!node && !!d && d > node
+
+// ───── 勾选、批量 ─────
+const selected = ref<string[]>([])
+// 换工单或切筛选就清空勾选：批量操作只作用在看得见的工件上
+watch([workOrderNumber, routeFilter], () => { selected.value = [] })
+const batch = reactive({ open: false, mode: 'fields' as 'template' | 'fields' })
+function openBatch(mode: 'template' | 'fields') {
+  Object.assign(batch, { open: true, mode })
+}
+/** 批量成功后（RouteBatchModal 只在成功时发 done）：关弹窗、清空勾选，免得下一次批量还带着这批工件 */
+async function afterBatch() {
+  batch.open = false
+  selected.value = []
+  await refresh()
+}
+const rowSelection = computed(() => (canRoute.value ? { selectedRowKeys: selected.value, onChange: (keys: (string | number)[]) => (selected.value = keys as string[]) } : undefined))
+
+// ───── 编排抽屉、工件抽屉 ─────
+const editId = ref<string | null>(null)
+const editPart = computed(() => parts.value.find((p) => p.id === editId.value) ?? null)
+const detailId = ref<string | null>(null)
+const detailTab = ref<'info' | 'comments'>('info')
+function openDetail(id: string, tab: 'info' | 'comments' = 'info') {
+  detailTab.value = tab
+  detailId.value = id
+}
+/**
+ * 地址栏定位（只处理一次，useOneShotQuery）：?part= 打开工件抽屉（comments=1 开留言），?edit= 打开编排抽屉；处理完一起删掉。
+ * 要等这个工单的工件加载完：刚切工单（如工件抽屉"去编排"跳到别的工单）时列表还是上一个工单的，先不处理、不删
+ */
+useOneShotQuery(
+  ['part', 'comments', 'edit'],
+  {
+    fetches: [{ pending, error }],
+    when: () => !(typeof route.query.wo === 'string' && route.query.wo !== workOrderNumber.value) && !parts.value.some((p) => p.workOrderNumber !== workOrderNumber.value),
+  },
+  ({ part, comments, edit }) => {
+    if (part) openDetail(part, comments === '1' ? 'comments' : 'info')
+    if (edit && parts.value.some((p) => p.id === edit)) {
+      routeFilter.value = 'all'
+      editId.value = edit
+    }
+  },
+)
+function onDetailEdit(p: { id: string; workOrderNumber: string }) {
+  detailId.value = null
+  // 别的工单的工件（如从搜索、留言提醒打开）：先关详情抽屉，再切到那个工单并打开编排（?edit= 由下面的地址栏同步处理）
+  if (p.workOrderNumber !== workOrderNumber.value) return navigateTo({ path: '/parts', query: { wo: p.workOrderNumber, edit: p.id } })
+  editId.value = p.id
 }
 
+// ───── 新建工件、BOM ─────
+const partForm = reactive({ open: false, name: '', drawingNo: '', revision: '', quantity: 1, qmsPartId: '' })
+async function createPart() {
+  if (!partForm.name.trim()) return message.warning('请填写工件名称')
+  try {
+    const p = await $fetch('/api/parts', { method: 'POST', body: { workOrderNumber: workOrderNumber.value, name: partForm.name, drawingNo: partForm.drawingNo || null, revision: partForm.revision || null, quantity: partForm.quantity, qmsPartId: partForm.qmsPartId || null } })
+    message.success('已新建，接着排工序')
+    partForm.open = false
+    await refresh()
+    editId.value = (p as { id: string }).id
+  } catch (e) {
+    message.error(apiError(e))
+  }
+}
+function openCreate() {
+  Object.assign(partForm, { open: true, name: '', drawingNo: '', revision: '', quantity: 1, qmsPartId: '' })
+}
+const bomImportOpen = ref(false)
+
+// ───── 展示 ─────
+const CHAIN_CLASS: Record<ChainTone, string> = { done: 'c-done', current: 'c-cur', late: 'c-late', blocked: 'c-late', todo: 'c-todo' }
+const chainOf = (p: PartRow) => {
+  const tones = chainTones(p.steps, today)
+  return p.steps.map((s, i) => ({ id: s.id, text: s.mode === 'SELF' ? s.processName : `${s.processName}${s.supplierName ? ` · ${s.supplierName}` : ' · 外协'}`, cls: CHAIN_CLASS[tones[i]!], fill: s.needsFill }))
+}
 const columns = [
-  { title: '序', dataIndex: 'seq', width: 48 },
-  { title: '工序', key: 'process', width: 120 },
-  { title: '方式', key: 'mode', width: 104 },
-  { title: '外协厂 / 班组', key: 'supplier', width: 150 },
-  { title: '负责人', key: 'owner', width: 120 },
-  { title: '应开工 / 要求完成', key: 'dueDate', width: 136 },
-  { title: '总计划节点', key: 'planNode', width: 170 },
-  { title: '状态', key: 'status', width: 120 },
-  { title: '操作', key: 'actions' },
+  { title: '工件', key: 'part', width: 260 },
+  { title: '工序链', key: 'chain' },
+  { title: '状态', key: 'status', width: 130 },
+  { title: '', key: 'actions', width: 150, fixed: 'right' as const },
 ]
+const woOptions = computed(() => workOrders.value.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName}　交期 ${dayText(w.deliveryDate)}` })))
 </script>
 
 <template>
   <a-card>
-    <a-space wrap>
-      <span>工单</span>
-      <a-select
-        v-model:value="workOrderNumber"
-        style="width: 360px"
-        show-search
-        option-filter-prop="label"
-        placeholder="选择工单"
-        :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName}　交期 ${dayText(w.deliveryDate)}` }))"
-      />
-      <WoLink v-if="workOrderNumber" :no="workOrderNumber" text="工单详情" />
-      <a-segmented v-if="parts.length" v-model:value="routeFilter" :options="routeFilterOptions" />
+    <template #title>
+      <span class="ft-title">工序编排 <UiHelpTip>给工件排工序链：工序、方式（自制 / 厂内外协 / 厂外外协）、班组或外协厂、负责人、应开工和要求完成日、所属总计划节点。点"编排"在右侧改，勾选多个工件可批量套模板、批量设负责人 / 班组 / 日期。工件一般由技术部发放图纸时附 BOM 自动建好。开工、完工、发出在"生产调度"和"外协"做。</UiHelpTip></span>
+    </template>
+    <template #extra>
+      <a-select v-model:value="workOrderNumber" show-search option-filter-prop="label" placeholder="选择工单" :options="woOptions" class="filter-wo" />
+      <a-segmented v-if="parts.length" v-model:value="routeFilter" class="tabs-seg" :options="filterOptions" />
       <template v-if="canRoute">
-        <a-button type="primary" :disabled="!workOrderNumber" @click="editPart()">新建工件</a-button>
         <a-button :disabled="!workOrderNumber" @click="bomImportOpen = true">从 QMS BOM 导入</a-button>
+        <a-button type="primary" :disabled="!workOrderNumber" @click="openCreate">新建工件</a-button>
       </template>
-    </a-space>
-  </a-card>
+      <UiRefreshButton @click="refresh()" />
+    </template>
 
-  <a-spin :spinning="pending">
-    <a-empty v-if="workOrderNumber && !parts.length" description="这个工单还没有工件：技术部发放图纸时附上 BOM 表，会按图号自动建好" style="margin-top: 48px" />
-    <a-empty v-if="parts.length && !shownParts.length" description="这个工单的工件都已排好工序" style="margin-top: 48px" />
-    <a-card v-for="p in shownParts" :id="`part-${p.id}`" :key="p.id" class="part" :class="{ focused: focusPartId === p.id }" size="small">
-      <template #title>
-        {{ p.name }}
-        <span class="muted">　图号 {{ p.drawingNo || '—' }}{{ p.revision ? `（${p.revision} 版）` : '' }}　数量 {{ p.quantity }}　BOM 物料 ID {{ p.qmsPartId || '—' }}</span>
-        <a-tag v-if="p.status === 'DONE'" color="success" style="margin-left: 8px">已完成</a-tag>
-        <UiStatusTag v-if="p.fromTechBom" tone="none" style="margin-left: 8px">来自图纸 BOM</UiStatusTag>
-        <a-tag v-if="p.qmsBomId && !p.fromTechBom" style="margin-left: 8px">来自 QMS BOM</a-tag>
-        <UiStatusTag v-if="p.qmsBomId && p.fromTechBom" tone="done" style="margin-left: 8px">已关联 QMS</UiStatusTag>
-        <a-tooltip v-else-if="p.fromTechBom" title="QMS 里品质人员录完这个图号后，点“从 QMS BOM 导入”按图号关联，报检才能自动匹配">
-          <UiStatusTag tone="risk" style="margin-left: 8px">未关联 QMS</UiStatusTag>
-        </a-tooltip>
-        <UiStatusTag v-if="!p.steps.length" tone="risk" style="margin-left: 8px">未排工序</UiStatusTag>
-        <a-tooltip v-if="fillCount(p)" title="还没开工、但缺负责人，或外协没选外协厂的工序；从 BOM 导入的工序默认自制，请确认方式">
-          <a-tag color="warning">{{ fillCount(p) }} 道待补充</a-tag>
-        </a-tooltip>
-        <span v-if="relatedChips(p).length" class="related">
-          <button v-for="c in relatedChips(p)" :key="c.key" type="button" class="related-chip" :title="c.key === 'c' ? '看留言' : '看时间线'" @click="openDrawer(p, c.key === 'c' ? 'comments' : 'timeline')">
-            <UiStatusTag :tone="c.tone">{{ c.text }}</UiStatusTag>
-          </button>
-        </span>
-      </template>
-      <template #extra>
-        <a-space>
-          <a-button size="small" @click="openDrawer(p)">时间线 / 留言</a-button>
-          <a-button v-if="canRoute" size="small" @click="editPart(p)">编辑</a-button>
-          <a-button v-if="canRoute" size="small" @click="openCopy(p)">复制工序链</a-button>
-          <a-button size="small" danger @click="reportingPartId = p.id">上报异常</a-button>
-          <a-button v-if="canRoute" size="small" danger @click="removePart(p)">删除</a-button>
-        </a-space>
-      </template>
+    <div v-if="selected.length" class="batch-bar">
+      <span>已选 {{ selected.length }} 个工件</span>
+      <a-button size="small" @click="openBatch('template')">套用模板</a-button>
+      <a-button size="small" @click="openBatch('fields')">设负责人 / 班组 / 日期 / 节点</a-button>
+      <a-button size="small" type="link" @click="selected = []">取消选择</a-button>
+    </div>
 
-      <a-table :columns="columns" :data-source="p.steps" row-key="id" size="small" :pagination="false" @expand="onExpand">
+    <!-- 总计划节点没取到：不能当成"没有总计划"（否则挂节点下拉显示"无总计划"） -->
+    <a-alert v-if="planOptsError" type="warning" show-icon style="margin-bottom: 12px" :message="`总计划节点加载失败，暂时不能挂节点：${apiError(planOptsError)}`">
+      <template #action><a-button size="small" @click="refreshPlanOpts()">重试</a-button></template>
+    </a-alert>
+    <!-- 加载失败：不显示成"这个工单还没有工件" -->
+    <a-result v-if="error && !pending" status="error" title="工件加载失败" :sub-title="apiError(error)">
+      <template #extra><a-button type="primary" @click="refresh()">重试</a-button></template>
+    </a-result>
+    <a-spin v-else :spinning="pending">
+      <a-empty v-if="workOrderNumber && !parts.length" description="这个工单还没有工件：技术部发放图纸时附上 BOM 表，会按图号自动建好" />
+      <a-empty v-else-if="parts.length && !shownParts.length" :description="`没有${ROUTE_FILTER_TEXT[routeFilter]}的工件`" />
+      <a-table v-else-if="shownParts.length" class="ft-table" :columns="columns" :data-source="shownParts" row-key="id" size="small"  :row-selection="rowSelection" :scroll="{ x: 900 }" :pagination="shownParts.length > 50 ? { pageSize: 50, showSizeChanger: false } : false">
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'process'">
-            <a-select :value="record.processId" style="width: 100%" :options="processOptions" :disabled="!canRoute || record.eventCount > 0" @change="(v: unknown) => patchStep(record as StepRow, { processId: v })" />
+          <template v-if="column.key === 'part'">
+            <button type="button" class="name-btn" @click="openDetail(record.id)">{{ record.name }}</button>
+            <div class="muted">{{ record.drawingNo || '无图号' }}{{ record.revision ? `（${record.revision} 版）` : '' }} · {{ record.quantity }} 件</div>
           </template>
-          <template v-else-if="column.key === 'mode'">
-            <a-select :value="record.mode" style="width: 100%" :options="modeOptions" :disabled="!canRoute || record.status !== 'PENDING'" @change="(v: unknown) => patchStep(record as StepRow, { mode: v })" />
-          </template>
-          <template v-else-if="column.key === 'supplier'">
-            <a-select
-              :value="record.supplierId ?? undefined"
-              style="width: 100%"
-              allow-clear
-              show-search
-              option-filter-prop="label"
-              :options="supplierOptionsFor(record.mode)"
-              :disabled="!canRoute"
-              :placeholder="supplierPlaceholder(record.mode)"
-              @change="(v: unknown) => patchStep(record as StepRow, { supplierId: v ?? null })"
-            />
-          </template>
-          <template v-else-if="column.key === 'owner'">
-            <a-select :value="record.ownerId ?? undefined" style="width: 100%" show-search option-filter-prop="label" placeholder="待补充" :options="userOptions" :disabled="!canRoute" @change="(v: unknown) => patchStep(record as StepRow, { ownerId: v })" />
-          </template>
-          <template v-else-if="column.key === 'dueDate'">
-            <a-date-picker :value="dayText(record.planStartDate) || undefined" value-format="YYYY-MM-DD" class="day" placeholder="应开工" :status="startLate(record as StepRow) ? 'warning' : undefined" :disabled="!canRoute" @change="(v: unknown) => patchStep(record as StepRow, { planStartDate: v || null })" />
-            <a-date-picker :value="dayText(record.dueDate) || undefined" value-format="YYYY-MM-DD" class="day" style="margin-top: 4px" placeholder="要求完成" :disabled="!canRoute" @change="(v: unknown) => patchStep(record as StepRow, { dueDate: v || null })" />
-            <div v-if="startLate(record as StepRow)" class="late-node">应开工日已过</div>
-          </template>
-          <template v-else-if="column.key === 'planNode'">
-            <a-select
-              :value="record.planNodeId ?? undefined"
-              style="width: 100%"
-              :allow-clear="!planOpts.published"
-              show-search
-              option-filter-prop="label"
-              :options="planNodeOptions"
-              :disabled="!canRoute || !planNodeOptions.length"
-              :status="stepLate(record as StepRow) ? 'warning' : undefined"
-              :placeholder="planNodeOptions.length ? '未挂' : '无总计划'"
-              @change="(v: unknown) => patchStep(record as StepRow, { planNodeId: v ?? null })"
-            />
-            <div v-if="stepLate(record as StepRow)" class="late-node">晚于节点 {{ planDayOf(record.planNodeId) }}</div>
-            <WoLink v-if="record.planNodeId" :no="workOrderNumber" :node="record.planNodeId" text="看节点" class="node-link" />
+          <template v-else-if="column.key === 'chain'">
+            <span v-if="!record.steps.length" class="muted">还没排工序</span>
+            <span v-else class="chain">
+              <template v-for="(c, i) in chainOf(record as PartRow)" :key="c.id">
+                <i v-if="i" class="sep" aria-hidden="true">›</i>
+                <span class="step-chip" :class="[c.cls, { fill: c.fill }]">{{ c.text }}</span>
+              </template>
+            </span>
           </template>
           <template v-else-if="column.key === 'status'">
-            <a-tag :color="STATUS_COLOR[record.status as StepStatusKey]">{{ STATUS_TEXT[record.status as StepStatusKey] }}</a-tag>
-            <a-tag v-if="record.needsFill" color="warning">待补充</a-tag>
-            <NuxtLink v-if="record.holdReleaseId" :to="`/releases?id=${encodeURIComponent(record.holdReleaseId)}`" title="设计变更还没确认影响，转序/逾期预警暂停计时"><a-tag color="purple">等变更</a-tag></NuxtLink>
-            <div v-if="record.issues?.length">
-              <NuxtLink v-for="i in record.issues" :key="i.id" :to="`/issues?id=${encodeURIComponent(i.id)}`" class="issue-link">{{ i.issueNo }}</NuxtLink>
-            </div>
-            <span v-if="record.returnedQty" class="muted">{{ record.returnedQty }}/{{ p.quantity }}</span>
-            <div v-if="record.status === 'OUT' && record.promisedReturnDate" class="muted">承诺 {{ dayText(record.promisedReturnDate) }}</div>
+            <UiStatusTag :tone="partHeadline(record as PartRow, today).tone">{{ partHeadline(record as PartRow, today).text }}</UiStatusTag>
           </template>
           <template v-else-if="column.key === 'actions'">
-            <a-space size="small" wrap>
-              <template v-if="canRoute">
-                <a-button size="small" :disabled="record.eventCount > 0" @click="moveStep(record as StepRow, 'up')">上移</a-button>
-                <a-button size="small" :disabled="record.eventCount > 0" @click="moveStep(record as StepRow, 'down')">下移</a-button>
-                <a-button size="small" danger :disabled="record.eventCount > 0" @click="removeStep(record as StepRow)">删除</a-button>
-              </template>
-              <template v-if="canStep(record as StepRow) && record.mode === 'EXTERNAL_OUTSOURCE' && record.status === 'PENDING'">
-                <a-button size="small" type="primary" @click="sending = { id: record.id, supplierId: record.supplierId, title: `${p.name} · ${record.processName}` }">发出</a-button>
-              </template>
-              <template v-if="canStep(record as StepRow) && record.mode !== 'EXTERNAL_OUTSOURCE' && record.status === 'PENDING'">
-                <a-button size="small" type="primary" @click="startStep(record as StepRow)">开工</a-button>
-              </template>
-              <template v-if="canStep(record as StepRow) && record.mode !== 'EXTERNAL_OUTSOURCE' && (record.status === 'PENDING' || record.status === 'IN_PROGRESS')">
-                <a-button size="small" @click="finishStep(p, record as StepRow)">完工</a-button>
-              </template>
-              <template v-if="canStep(record as StepRow) && (record.status === 'OUT' || (record.mode === 'IN_PLANT_OUTSOURCE' && record.status === 'IN_PROGRESS'))">
-                <a-button size="small" @click="openReturn(p, record as StepRow)">补登返厂</a-button>
-              </template>
+            <a-space>
+              <a-button size="small" :type="record.steps.length ? 'default' : 'primary'" @click="editId = record.id">{{ canRoute ? '编排' : '查看工序' }}</a-button>
+              <a-button size="small" type="link" @click="openDetail(record.id)">详情</a-button>
             </a-space>
           </template>
         </template>
-        <template #expandedRowRender="{ record }">
-          <a-spin v-if="!eventsCache.has(record.partId)" size="small" />
-          <p v-else-if="!eventsCache.get(record.partId)!.some((e) => e.stepId === record.id)" class="muted">还没有流转记录</p>
-          <a-timeline v-else style="margin-top: 8px">
-            <a-timeline-item v-for="e in eventsCache.get(record.partId)!.filter((x) => x.stepId === record.id)" :key="e.id">
-              {{ timeText(e.occurredAt) }}　{{ EVENT_TEXT[e.type] }} {{ e.qty }} 件　<span class="muted">来源：{{ SOURCE_TEXT[e.source] }}{{ e.actorName ? `，${e.actorName}` : '' }}{{ e.qmsInspectionId ? `，报检 ${e.qmsInspectionId}` : '' }}</span>
-              <div v-if="e.note" class="muted">{{ e.type === 'SEND' ? '随件发料' : '备注' }}：{{ e.note }}</div>
-            </a-timeline-item>
-          </a-timeline>
-        </template>
       </a-table>
+      <p v-if="shownParts.length" class="legend muted">
+        工序链：<span class="step-chip c-done">已完成</span> <span class="step-chip c-cur">当前</span> <span class="step-chip c-late">超期 / 有异常</span> <span class="step-chip c-todo">未开始</span> <span class="step-chip c-todo fill">待补充</span>
+      </p>
+    </a-spin>
+  </a-card>
 
-      <a-space v-if="canRoute" class="add" wrap>
-        <a-select v-model:value="draftOf(p.id).processId" placeholder="工序" style="width: 120px" :options="processOptions" />
-        <a-select v-model:value="draftOf(p.id).mode" style="width: 120px" :options="modeOptions" @change="draftOf(p.id).supplierId = undefined" />
-        <a-select v-model:value="draftOf(p.id).supplierId" :placeholder="draftOf(p.id).mode === 'SELF' ? '班组（可空）' : '外协厂'" style="width: 160px" allow-clear show-search option-filter-prop="label" :options="supplierOptionsFor(draftOf(p.id).mode)" />
-        <a-select v-model:value="draftOf(p.id).ownerId" placeholder="负责人（默认我）" style="width: 150px" allow-clear show-search option-filter-prop="label" :options="userOptions" />
-        <a-date-picker v-model:value="draftOf(p.id).planStartDate" placeholder="应开工日" value-format="YYYY-MM-DD" />
-        <a-date-picker v-model:value="draftOf(p.id).dueDate" placeholder="要求完成日" value-format="YYYY-MM-DD" />
-        <a-select
-          v-if="planNodeOptions.length"
-          v-model:value="draftOf(p.id).planNodeId"
-          :placeholder="planOpts.published ? '总计划节点（必选）' : '总计划节点'"
-          style="width: 190px"
-          allow-clear
-          show-search
-          option-filter-prop="label"
-          :options="planNodeOptions"
-          @change="(v: unknown) => { const d = planDayOf(v as string); if (d && !draftOf(p.id).dueDate) draftOf(p.id).dueDate = d }"
-        />
-        <a-button @click="addStep(p)">添加工序</a-button>
-        <a-button v-if="!p.steps.length" @click="templateTarget = { partId: p.id, partName: p.name, mode: 'apply' }">套用模板</a-button>
-        <a-button v-if="p.steps.length && me?.isAdmin" @click="templateTarget = { partId: p.id, partName: p.name, mode: 'save' }">另存为模板</a-button>
-      </a-space>
-    </a-card>
-  </a-spin>
+  <RouteEditDrawer :part="editPart" :work-order-number="workOrderNumber ?? ''" :plan-opts="planOpts" :can-route="canRoute" @close="editId = null" @changed="refresh()" @deleted="editId = null; refresh()" />
+  <RouteBatchModal :open="batch.open" :mode="batch.mode" :part-ids="selected" :plan-opts="planOpts" @close="batch.open = false" @done="afterBatch" />
+  <PartDrawer :part-id="detailId" :tab="detailTab" @close="detailId = null" @changed="refresh()" @edit="onDetailEdit" />
+  <BomImportModal :open="bomImportOpen" :work-order-number="workOrderNumber" @close="bomImportOpen = false" @done="bomImportOpen = false; refresh()" />
 
-  <a-modal :open="partForm.open" :title="partForm.id ? '编辑工件' : '新建工件'" ok-text="保存" @ok="savePart" @cancel="partForm.open = false">
+  <a-modal :open="partForm.open" title="新建工件" ok-text="保存" @ok="createPart" @cancel="partForm.open = false">
     <a-form layout="vertical">
       <a-form-item label="工件名称" required><a-input v-model:value="partForm.name" placeholder="如：主梁结构件" /></a-form-item>
       <a-form-item label="图号"><a-input v-model:value="partForm.drawingNo" /></a-form-item>
       <a-form-item label="版号"><a-input v-model:value="partForm.revision" placeholder="可空，如 A" /></a-form-item>
       <a-form-item label="数量" required><a-input-number v-model:value="partForm.quantity" :min="1" style="width: 100%" /></a-form-item>
-      <a-form-item label="QMS BOM 物料 ID" extra="填了以后，QMS 报检按物料 ID 自动匹配；不填则按名称和工序匹配">
-        <a-input v-model:value="partForm.qmsPartId" />
-      </a-form-item>
+      <a-form-item label="QMS BOM 物料 ID" extra="填了以后，QMS 报检按物料 ID 自动匹配；不填则按名称和工序匹配"><a-input v-model:value="partForm.qmsPartId" /></a-form-item>
     </a-form>
   </a-modal>
-
-  <a-modal :open="copyForm.open" title="从其他工件复制工序链" ok-text="复制" @ok="doCopy" @cancel="copyForm.open = false">
-    <p class="muted">复制工序、方式、外协厂和负责人，追加到当前工序链末尾；不复制日期和状态。</p>
-    <a-form layout="vertical">
-      <a-form-item label="来源工单">
-        <a-select v-model:value="copyForm.fromWo" show-search option-filter-prop="label" :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName}` }))" @change="copyForm.fromPartId = undefined" />
-      </a-form-item>
-      <a-form-item label="来源工件">
-        <a-select
-          v-model:value="copyForm.fromPartId"
-          :options="copyParts.filter((x) => x.id !== copyForm.targetId).map((x) => ({ value: x.id, label: `${x.name}（${x.steps.map((s) => s.processName).join(' → ') || '无工序'}）` }))"
-        />
-      </a-form-item>
-    </a-form>
-  </a-modal>
-
-  <BomImportModal :open="bomImportOpen" :work-order-number="workOrderNumber" @close="bomImportOpen = false" @done="afterR8" />
-  <PartTemplateModal :target="templateTarget" @close="templateTarget = null" @done="afterR8" />
-
-  <a-modal :open="returning.open" :title="`补登返厂：${returning.partName} · ${returning.step?.processName ?? ''}`" ok-text="补登" @ok="doReturn" @cancel="returning.open = false">
-    <p class="muted">QMS 漏报检时使用。数量全部返回后步骤自动完成。</p>
-    <a-input-number v-model:value="returning.qty" :min="1" addon-after="件" />
-  </a-modal>
-
-  <PartDrawer :part="drawerPart" :tab="drawerTab" @close="closeDrawer" @commented="refresh()" />
-  <FinishStepModal :step="finishing" @close="finishing = null" @done="afterFinish" />
-  <SendStepModal :step="sending" @close="sending = null" @done="sending = null; refresh(); eventsCache.clear()" />
-  <IssueReportModal
-    :open="!!reportingPartId"
-    :work-order-number="workOrderNumber"
-    :part-id="reportingPartId ?? undefined"
-    @close="reportingPartId = null"
-    @done="onReported"
-  />
 </template>
 
 <style scoped>
-.part { margin-top: 16px; scroll-margin-top: 8px; }
-.part.focused { border-color: var(--ft-primary); }
-.related { display: inline-flex; gap: 6px; margin-left: 8px; vertical-align: middle; }
-.related-chip { padding: 0; border: none; background: none; cursor: pointer; font: inherit; }
-.related-chip:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; border-radius: 999px; }
-.muted { color: var(--ft-text-2); font-size: 12px; font-weight: normal; }
-.add { margin-top: 12px; }
-.issue-link { color: var(--ft-late); font-size: 12px; margin-right: 6px; }
-.late-node { color: var(--ft-upstream); font-size: 12px; }
-.node-link { font-size: 12px; }
-/* 两个日期叠在一列：去掉日历图标，留出日期文字的宽度 */
-.day { width: 100%; }
-.day :deep(.ant-picker-suffix) { display: none; }
+.tabs-seg { max-width: 100%; overflow-x: auto; }
+/* 卡片右上角的切换和筛选：窄屏时换行、不超出卡片 */
+:deep(.ant-card-extra) { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; max-width: 100%; }
+.filter-wo { width: 320px; max-width: calc(100vw - 72px); }
+.batch-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; padding: 8px 12px; border-radius: 10px; background: var(--ft-primary-bg); color: var(--ft-primary-text); font-size: 13px; }
+.name-btn { padding: 0; border: none; background: none; color: var(--ft-primary); cursor: pointer; font: inherit; font-weight: 500; text-align: left; }
+.name-btn:hover { text-decoration: underline; }
+.name-btn:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; border-radius: 4px; }
+.muted { color: var(--ft-text-2); font-size: 12px; }
+.chain { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.sep { color: var(--ft-text-3); font-style: normal; }
+.step-chip { display: inline-block; padding: 1px 8px; border-radius: 6px; font-size: 12px; line-height: 20px; white-space: nowrap; border: 1px solid transparent; }
+.c-done { background: var(--ft-done-bg); color: var(--ft-done-text); }
+.c-cur { background: var(--ft-primary-bg); color: var(--ft-primary-text); font-weight: 600; }
+.c-late { background: var(--ft-late-bg); color: var(--ft-late-text); }
+.c-todo { background: var(--ft-fill); color: var(--ft-text-2); }
+.step-chip.fill { border-color: var(--ft-risk); border-style: dashed; }
+.legend { margin: 12px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 </style>

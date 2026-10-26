@@ -16,6 +16,7 @@
  * 先锁工件是因为写采购行时外键检查会给工件行加共享锁，之后再要排他锁会和并发的另一项互相等（死锁）。
  */
 import type { DelayReason, DrawingTaskStatus, FlowSource, Prisma, PurchaseLine, PurchaseStatus } from '@prisma/client'
+import { prereqReadyForTodo, prereqState } from '../flow/readiness'
 import { prisma } from '../../utils/prisma'
 import { countComments, deleteCommentsOf } from '../comments/comments'
 import { clearAlertKeys } from '../alerts/clear'
@@ -150,7 +151,8 @@ export async function refreshPartReady(tx: Tx, partId: string | null, notify: bo
   const drawings = await tx.$queryRaw<{ status: DrawingTaskStatus }[]>`
     SELECT t.status FROM drawing_task t JOIN drawing_task_part p ON p.taskId = t.id WHERE p.partId = ${partId} AND t.status <> 'CANCELLED' FOR SHARE`
   const now = new Date()
-  const ready = lines.length + drawings.length > 0 && lines.every((l) => l.status === 'ARRIVED') && drawings.every((d) => d.status === 'DONE')
+  // 与生产调度、车间看板同一口径（flow/readiness.ts）：挂了东西且都齐了才发
+  const ready = prereqReadyForTodo(prereqState({ purchases: lines.map((l) => l.status), drawings: drawings.map((d) => d.status) }))
   const where = { refType: 'part', refId: partId, action: READY_TO_START, status: 'OPEN' as const }
   if (!ready) {
     const r = await tx.todo.updateMany({ where, data: { status: 'CANCELLED', doneAt: now } })

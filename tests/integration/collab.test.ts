@@ -188,7 +188,7 @@ describe.skipIf(!DB)('留言、搜索、车间看板、时间线', () => {
     expect((await s.search.search('风电')).map((h) => h.type)).toEqual(['workOrder'])
     expect((await s.search.search('宝钢')).map((h) => h.type)).toEqual(['purchase'])
     const sup = await s.search.search('焊接一班')
-    expect(sup).toEqual([expect.objectContaining({ type: 'supplier', id: 'T-WELD', link: '/workshop?supplierId=T-WELD' })])
+    expect(sup).toEqual([expect.objectContaining({ type: 'supplier', id: 'T-WELD', link: '/production?supplierId=T-WELD' })])
     expect(sup[0]!.sub).toContain('厂内班组')
     // 项目经理只看本人工单：WO2 的工件搜不到
     expect(await s.search.search('DWG-778', [WO])).toEqual([])

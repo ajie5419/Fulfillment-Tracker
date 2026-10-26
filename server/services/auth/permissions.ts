@@ -139,7 +139,7 @@ export const canSeeOverview = isLeaderLike
 
 /**
  * 菜单分区（"每日"组人人都有，不在这里）：
- *   tech = 设计任务 + 发放签收；purchase = 采购到货 + 付款申请；production = 齐套 + 生产管理 + 路线模板 + 待确认匹配；
+ *   tech = 设计任务 + 发放签收；purchase = 采购到货 + 付款申请；production = 齐套 + 生产调度 + 工序编排 + 外协（含待确认匹配）；
  *   kitting = 齐套；releases = 发放签收；payments = 付款申请；overview = 领导总览。
  * 页面本身不拦，只是不在菜单里显示（从提醒链接点进去仍能只读查看）。
  */
@@ -165,7 +165,7 @@ export function menuSections(ctx: RoleContext): MenuSection[] {
     out.add('production')
     out.add('releases')
   }
-  // 工艺部：生产管理、路线模板（定工艺路线）、发放签收（下发工艺文件）
+  // 工艺部：工序编排（定工序链）、发放签收（下发工艺文件）；生产调度、外协可看
   if (inDept(ctx, 'PROCESS')) {
     out.add('production')
     out.add('releases')

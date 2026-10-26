@@ -36,10 +36,11 @@ const groups = computed(() => {
       { key: '/purchases', label: '采购到货', sections: ['purchase'] },
       { key: '/payments', label: '付款申请', sections: ['purchase', 'payments'] },
       { key: '/kitting', label: '齐套', sections: ['production', 'kitting'] },
-      { key: '/parts', label: '生产管理', sections: ['production'] },
-      // 车间看板（10-26 借鉴 ERPNext）：工序按状态分列只读，可按班组筛
-      { key: '/workshop', label: '车间看板', sections: ['production'] },
-      { key: '/unmatched', label: '待确认匹配', sections: ['production'] },
+      // 生产管理重设计（zhao 10-26）：按任务拆成 生产调度（开工完工、超期、卡住）/ 工序编排（排工序链）/ 外协（发出、在外、待确认匹配）；
+      // 旧地址 /workshop、/unmatched 跳到对应页面
+      { key: '/production', label: '生产调度', sections: ['production'] },
+      { key: '/parts', label: '工序编排', sections: ['production'] },
+      { key: '/outsource', label: '外协', sections: ['production'] },
     ]) },
     { title: '其他', items: [
       // 项目部负责人（总计划模板）也能进设置页，只看到"总计划模板"一页
@@ -62,8 +63,8 @@ watch(() => route.path, () => {
   if (broken.value) collapsed.value = true
   contentEl.value?.scrollTo({ top: 0 })
 })
-/** 没有单独菜单项的页面算到哪一项下：工单详情 /wo/:no 属于项目总览；工序路线模板 /templates 属于生产管理 */
-const MENU_ALIAS: Record<string, string> = { '/wo': '/board', '/templates': '/parts' }
+/** 没有单独菜单项的页面算到哪一项下：工单详情 /wo/:no 属于项目总览；工序路线模板 /templates 属于工序编排 */
+const MENU_ALIAS: Record<string, string> = { '/wo': '/board', '/templates': '/parts', '/workshop': '/production', '/unmatched': '/outsource' }
 const selected = computed(() => {
   const alias = Object.keys(MENU_ALIAS).find((k) => route.path === k || route.path.startsWith(`${k}/`))
   const path = alias ? MENU_ALIAS[alias]! : route.path
