@@ -189,7 +189,11 @@ async function notifyUnrouted(tx: Prisma.TransactionClient, release: Pick<Releas
   const unrouted = await tx.part.count({ where: { id: { in: partIds }, steps: { none: {} } } })
   if (!unrouted) return { unrouted: 0, notified: false }
   const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PRODUCTION_DEPT }, select: { userId: true } })
-  const users = uniq(heads.map((h) => h.userId))
+  // 只算在职、未停用的负责人：设置里的角色不会随 QMS 停用账号自动删掉
+  const candidates = uniq(heads.map((h) => h.userId))
+  const users = candidates.length
+    ? (await tx.qmsUser.findMany({ where: { id: { in: candidates }, isDeleted: false, status: 'ACTIVE' }, select: { id: true } })).map((u) => u.id)
+    : []
   // 没设生产部负责人时不提醒，也不能告诉发放人"已提醒"：返回 notified=false，前端改说"请到设置→人员角色指定"
   if (users.length) {
     const title = `【待排工序】图纸发放 ${release.releaseNo} 有 ${unrouted} 个工件还没有工序链，请排工序（${release.workOrderNumber}）`

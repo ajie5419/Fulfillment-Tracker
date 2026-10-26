@@ -22,7 +22,8 @@ watch(workOrders, (list) => {
 const routeFilter = ref<'all' | 'none'>(route.query.noRoute === '1' ? 'none' : 'all')
 // 选中的工单、筛选记在地址栏，刷新后不丢（定位用的 part / comments 只用一次，不保留）
 watch([workOrderNumber, routeFilter], ([wo, f]) => {
-  if (import.meta.client) router.replace({ query: { ...(wo ? { wo } : {}), ...(f === 'none' ? { noRoute: '1' } : {}) } })
+  // 保留其他参数（part / comments）：从别的工单跳来时，要等新工单的工件加载完再定位
+  if (import.meta.client) router.replace({ query: { ...route.query, wo: wo || undefined, noRoute: f === 'none' ? '1' : undefined } })
 })
 // 反过来：页面没离开时点了别的 /parts 链接（全局搜索、提醒），按新地址切工单和筛选
 watch(() => [route.query.wo, route.query.noRoute], ([wo, nr]) => {

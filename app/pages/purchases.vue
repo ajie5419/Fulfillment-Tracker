@@ -73,11 +73,14 @@ async function saved() {
 const commenting = ref<{ id: string; name: string } | null>(null)
 
 // ?id= 打开该行（从 W6 提醒跳过来）；再带 comments=1 打开留言（留言 @ 提醒跳过来）
+let openSeq = 0
 async function openFromQuery() {
+  const my = ++openSeq
   const id = route.query.id as string | undefined
   if (!id) return
   try {
     const line = await fetchPurchase(id)
+    if (my !== openSeq) return // 连点两条提醒时，晚到的旧结果不再生效
     // 页面没离开时从别的工单的提醒跳过来：先切到该行所在工单，否则列表里找不到
     if (filter.workOrderNumber && filter.workOrderNumber !== line.workOrderNumber) filter.workOrderNumber = line.workOrderNumber
     if (route.query.comments === '1') {

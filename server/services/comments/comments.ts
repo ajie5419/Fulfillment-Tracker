@@ -74,7 +74,7 @@ export async function addComment(input: CommentInput, authorId: string, admins: 
     const ref = await resolveRef(tx, input.refType, input.refId)
     if (!ref) throw new FlowError('留言的对象不存在或已删除')
     if (mentionIds.length) {
-      const found = await tx.qmsUser.count({ where: { id: { in: mentionIds }, isDeleted: false } })
+      const found = await tx.qmsUser.count({ where: { id: { in: mentionIds }, isDeleted: false, status: 'ACTIVE' } })
       if (found !== mentionIds.length) throw new FlowError('@ 的人不存在或已停用')
       const blocked = await cannotSee(mentionIds, ref.workOrderNumber, admins)
       if (blocked.length) {

@@ -257,6 +257,16 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     expect([a.bom!.created, b.bom!.created].sort()).toEqual([0, 1])
     expect(await db.part.count({ where: { workOrderNumber: BWO, drawingNo: 'CJ-010' } })).toBe(1)
 
+    // 负责人账号在 QMS 停用了：同样算没人收到
+    const headIds = (await db.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: '生产部' } })).map((h) => h.userId)
+    await db.qmsUser.updateMany({ where: { id: { in: headIds } }, data: { status: 'INACTIVE' } })
+    try {
+      const r4 = await send([['CJ-012', null, '停用负责人件', 1]], { drawingTaskId: null })
+      expect(r4.bom).toMatchObject({ unrouted: 1, unroutedNotified: false })
+    } finally {
+      await db.qmsUser.updateMany({ where: { id: { in: headIds } }, data: { status: 'ACTIVE' } })
+    }
+
     // 没设生产部负责人：不建提醒，也不能告诉发放人"已提醒"
     const heads = await db.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: '生产部' } })
     await db.notifyRole.deleteMany({ where: { id: { in: heads.map((h) => h.id) } } })
