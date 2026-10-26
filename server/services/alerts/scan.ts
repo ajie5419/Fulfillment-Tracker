@@ -20,7 +20,7 @@ import { issueTransaction } from '../issues/issues'
 import { withLease } from '../jobs/lease'
 import { DELAY_REASON_TEXT, PAYMENT_STATUS_TEXT, PURCHASE_DEPT, judgeW6, w6Summary } from '../purchases/constants'
 import { DRAWING_STATUS_TEXT, OPEN_DRAWING_STATUSES, TECH_DEPT, judgeW7, w7Summary } from '../drawings/constants'
-import { CONFIRM_CHANGE, TYPE_TEXT } from '../releases/constants'
+import { CONFIRM_CHANGE, PRODUCTION_DEPT, TYPE_TEXT } from '../releases/constants'
 import { KITTING_DEPT, judgeW8, w8Summary } from '../kitting/constants'
 import { NODE_LINKS, dueWindowWhere, incompleteWhere, loadKitCounts } from '../kitting/kitting'
 import { BUSINESS_DEPT_NAME } from '../auth/departments'
@@ -39,6 +39,7 @@ import {
   isHigher,
   judgeW3,
   judgeW4,
+  judgeW10,
   levelByElapsed,
   maxLevel,
   reminderTitle,
@@ -71,7 +72,7 @@ export interface Target {
   meta?: { stepMode?: StepMode; supplierId?: string | null; releaseId?: string }
 }
 
-/** 收集 W1–W9 关注的全部对象，并按 now 判定级别；only 只收集某一条规则 */
+/** 收集 W1–W10 关注的全部对象，并按 now 判定级别；only 只收集某一条规则 */
 export async function collectTargets(now: Date, t: Thresholds, offDays: string[], only?: ScanRule): Promise<Target[]> {
   const run = (rule: ScanRule, fn: () => Promise<Target[]>) => (!only || only === rule ? fn() : Promise.resolve([]))
   const parts = await Promise.all([
@@ -84,9 +85,10 @@ export async function collectTargets(now: Date, t: Thresholds, offDays: string[]
     run('W7', () => collectW7(now, t, offDays)),
     run('W8', () => collectW8(now, t)),
     run('W9', () => collectW9(now, t, offDays)),
+    run('W10', () => collectW10(now, t, offDays)),
   ])
   const all = parts.flat()
-  // 工单已完工 / 已取消（zhao 10-22）：进度类预警（W2/W3/W5–W9）不再报，已有的本轮自动消除；
+  // 工单已完工 / 已取消（zhao 10-22）：进度类预警（W2/W3/W5–W10）不再报，已有的本轮自动消除；
   // W1 待确认匹配（报检本身要处理）、W4 异常（人提出的问题要关闭）照常
   const closed = await closedWorkOrders(all.filter((x) => !KEEP_WHEN_CLOSED.has(x.rule) && x.workOrderNumber).map((x) => x.workOrderNumber!))
   return closed.size ? all.filter((x) => KEEP_WHEN_CLOSED.has(x.rule) || !x.workOrderNumber || !closed.has(x.workOrderNumber)) : all
@@ -208,6 +210,45 @@ async function collectW3(now: Date, t: Thresholds, offDays: string[]): Promise<T
       workOrderNumber: s.part.workOrderNumber,
       ownerIds: s.ownerId ? [s.ownerId] : [],
       startAt: s.promisedReturnDate!,
+      level: r.level,
+      subject: `${s.part.name} · ${names.process.get(s.processId) ?? s.processId}`,
+      summary,
+      meta: { stepMode: s.mode, supplierId: s.supplierId },
+    }
+  })
+}
+
+/**
+ * W10 厂内工序逾期未完：自制 / 厂内外协已开工（加工中）、有要求完成日的工序，责任人是工序负责人，黄色起通知生产经理（生产部负责人）。
+ * 之前 W2 只管"还没开工"、W3 只管厂外外协，开了工的厂内工序超期没人管（10-26 借鉴 ERPNext 评估时发现）。
+ * "有异常"（QMS 不合格）的工序状态是 BLOCKED，不在这里，由异常跟进；完工后自动消除。
+ */
+async function collectW10(now: Date, t: Thresholds, offDays: string[]): Promise<Target[]> {
+  const steps = await prisma.routeStep.findMany({
+    where: { status: 'IN_PROGRESS', mode: { in: ['SELF', 'IN_PLANT_OUTSOURCE'] }, dueDate: { not: null } },
+    include: { part: true },
+  })
+  if (!steps.length) return []
+  const names = await loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId) })
+  return steps.map((s) => {
+    const r = judgeW10({ dueDate: s.dueDate!, now, offDays }, t.W10)
+    const due = dateFieldDay(s.dueDate!)
+    const who = s.mode === 'IN_PLANT_OUTSOURCE' && s.supplierId ? `${names.supplier.get(s.supplierId) ?? s.supplierId}` : ''
+    const summary =
+      r.overdueDays > 0
+        ? `${who}超要求完成日 ${due} ${r.overdueDays} 天仍未完工`
+        : r.daysLeft > 0
+          ? `${who}要求 ${due} 完工，还剩 ${r.daysLeft} 天`
+          : `${who}要求今天完工`
+    return {
+      rule: 'W10',
+      refType: 'step',
+      refId: s.id,
+      key: alertKey('W10', 'step', s.id),
+      workOrderNumber: s.part.workOrderNumber,
+      ownerIds: s.ownerId ? [s.ownerId] : [],
+      deptNames: [PRODUCTION_DEPT],
+      startAt: s.dueDate!,
       level: r.level,
       subject: `${s.part.name} · ${names.process.get(s.processId) ?? s.processId}`,
       summary,

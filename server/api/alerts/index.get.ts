@@ -1,8 +1,9 @@
 import { z } from 'zod'
+import { ALERT_RULES } from '../../../shared/alert-rules'
 import { listAlerts } from '../../services/alerts/reminders'
 
 const query = z.object({
-  rule: z.enum(['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9']).optional(),
+  rule: z.enum(ALERT_RULES).optional(),
   level: z.enum(['REMIND', 'YELLOW', 'RED']).optional(),
   workOrderNumber: z.string().max(64).optional(),
 })

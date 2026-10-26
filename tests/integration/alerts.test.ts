@@ -19,6 +19,7 @@ type Services = {
   scan: typeof import('../../server/services/alerts/scan')
   rules: typeof import('../../server/services/alerts/rules')
   reminders: typeof import('../../server/services/alerts/reminders')
+  working: typeof import('../../server/services/flow/working')
 }
 
 describe.skipIf(!DB)('预警与提醒', () => {
@@ -37,6 +38,7 @@ describe.skipIf(!DB)('预警与提醒', () => {
       scan: await import('../../server/services/alerts/scan'),
       rules: await import('../../server/services/alerts/rules'),
       reminders: await import('../../server/services/alerts/reminders'),
+      working: await import('../../server/services/flow/working'),
     }
     db = (await import('../../server/utils/prisma')).prisma
     await db.reminder.deleteMany()
@@ -355,5 +357,55 @@ describe.skipIf(!DB)('预警与提醒', () => {
       await db.notifyRole.delete({ where: { id: head.id } })
       await db.deptMapping.deleteMany({ where: { qmsDepartmentId: { startsWith: 'T-R13-' } } })
     }
+  })
+
+  it('W10 厂内工序逾期未完：开工后超要求完成日 1 天黄（通知负责人、生产部负责人、项目经理）、3 天红转异常（自制 → 车间）；手机"加工中"可完工，完工后消除', async () => {
+    const dayOff = (n: number) => new Date(+today() + n * DAY)
+    const mk = async (name: string, dueDate: Date) => {
+      const part = await s.steps.createPart(WO, { name, quantity: 2 })
+      const step = await s.steps.addStep(part.id, { processId: 'P-WELD', mode: 'SELF', ownerId: 'u-out', dueDate }, 'u-out')
+      return step
+    }
+    const late = await mk('W10-逾期件', dayOff(-1))
+    const soon = await mk('W10-将到期', dayOff(1))
+    const notStarted = await mk('W10-未开工', dayOff(-5))
+    for (const st of [late, soon]) await s.flow.startStep({ stepId: st.id, actorId: 'u-out', source: 'MOBILE' })
+
+    const now = new Date()
+    await s.scan.scanRules(now)
+    const [y] = await alertOf(`W10:step:${late.id}`)
+    expect(y).toMatchObject({ rule: 'W10', level: 'YELLOW', status: 'ACTIVE' })
+    expect(await remindersOf(y!.id)).toEqual(['YELLOW:u-head', 'YELLOW:u-out', 'YELLOW:u-pm'])
+    const [r] = await alertOf(`W10:step:${soon.id}`)
+    expect(r).toMatchObject({ level: 'REMIND' })
+    // 还没开工的不归 W10（由 W2 管）
+    expect(await db.alert.count({ where: { rule: 'W10', refId: notStarted.id } })).toBe(0)
+    // 提醒跳手机"加工中"页
+    const mine = await s.reminders.listReminders('u-out', now)
+    const card = mine.items.find((i) => i.alertId === y!.id)
+    expect(card).toMatchObject({ rule: 'W10', mobileLink: `/m/working?stepId=${late.id}`, link: `/parts?wo=${WO}` })
+    const list = await s.reminders.listAlerts({ rule: 'W10', workOrderNumber: WO }, now)
+    expect(list.find((a) => a.refId === late.id)).toMatchObject({ duration: null, summary: expect.stringContaining('仍未完工') })
+
+    // 手机"加工中"：我负责的、已开工的厂内工序，逾期的在前并带超期天数；没开工的不在
+    const working = await s.working.listWorking({ ownerId: 'u-out' })
+    expect(working.map((w) => w.stepId)).toEqual([late.id, soon.id])
+    expect(working[0]).toMatchObject({ overdueDays: 1, quantity: 2, mode: 'SELF' })
+    expect(await s.working.listWorking({ ownerId: 'u-head' })).toEqual([])
+    expect(await s.working.listWorking({ visibleWorkOrders: [] })).toEqual([])
+
+    // 超期 3 天红 → 自动转异常，自制归车间
+    await s.scan.scanRules(at(now, 2 * DAY))
+    const [red] = await alertOf(`W10:step:${late.id}`)
+    expect(red).toMatchObject({ level: 'RED', status: 'CONVERTED' })
+    const issue = await db.issue.findFirstOrThrow({ where: { sourceKey: `ALERT:${red!.id}` } })
+    expect(issue).toMatchObject({ category: 'WORKSHOP', refType: 'STEP', refId: late.id })
+
+    // 完工：预警立即消除，"加工中"里不再有
+    await s.flow.finishStep({ stepId: soon.id, actorId: 'u-out', source: 'MOBILE' })
+    expect((await db.alert.findUniqueOrThrow({ where: { id: r!.id } })).status).toBe('CLEARED')
+    await s.flow.finishStep({ stepId: late.id, actorId: 'u-out', source: 'MOBILE' })
+    expect((await db.alert.findUniqueOrThrow({ where: { id: red!.id } })).activeKey).toBeNull()
+    expect(await s.working.listWorking({ ownerId: 'u-out' })).toEqual([])
   })
 })

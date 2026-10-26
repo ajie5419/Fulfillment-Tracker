@@ -177,6 +177,29 @@ async function applyChangeImpact(tx: Tx, release: Release, partIds: string[]): P
   return { started: started.length, held, confirmers }
 }
 
+/** 工件页"只看未排工序"的地址 */
+export const unroutedPartsLink = (workOrderNumber: string) => `/parts?wo=${encodeURIComponent(workOrderNumber)}&noRoute=1`
+
+/**
+ * 图纸附 BOM 发放后，BOM 里还没有工序链的工件：提醒生产经理（生产部负责人）排工序（10-26，借鉴 ERPNext 生产计划
+ * "每个子件都要定自制 / 外协"）。没有工序的工件不会产生待办和预警，等于在系统里"隐身"。返回未排工序的工件数。
+ * 同一发放单每人只一条（dedupeKey），跳到工件页并只看未排工序的工件。
+ */
+async function notifyUnrouted(tx: Prisma.TransactionClient, release: Pick<Release, 'id' | 'releaseNo' | 'workOrderNumber'>, partIds: string[]) {
+  const unrouted = await tx.part.count({ where: { id: { in: partIds }, steps: { none: {} } } })
+  if (!unrouted) return 0
+  const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PRODUCTION_DEPT }, select: { userId: true } })
+  const users = uniq(heads.map((h) => h.userId))
+  if (users.length) {
+    const title = `【待排工序】图纸发放 ${release.releaseNo} 有 ${unrouted} 个工件还没有工序链，请排工序（${release.workOrderNumber}）`
+    await tx.reminder.createMany({
+      data: users.map((userId) => ({ userId, kind: 'RELEASE', level: 'REMIND' as const, title, link: unroutedPartsLink(release.workOrderNumber), dedupeKey: `RELEASE_ROUTE:${release.id}:${userId}` })),
+      skipDuplicates: true,
+    })
+  }
+  return unrouted
+}
+
 /** 新建发放单：发出即生效（不审批）。附件只能用发放人自己刚上传、还没被用过的 */
 export async function createRelease(input: NewReleaseInput, issuerId: string) {
   const description = input.description.trim()
@@ -243,7 +266,8 @@ export async function createRelease(input: NewReleaseInput, issuerId: string) {
     if (task && bomPartIds.length) await tx.drawingTaskPart.createMany({ data: bomPartIds.map((partId) => ({ taskId: task.id, partId })), skipDuplicates: true })
     const impact: ChangeImpact = input.type === 'CHANGE' && partIds.length ? await applyChangeImpact(tx, release, partIds) : { started: 0, held: 0, confirmers: [] }
     const drawing = task ? await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, task.id) : null
-    const bomSummary = bom ? { created: bom.created.length, matched: bom.matched.length, revisionFilled: bom.revisionFilled, skipped: bom.skipped } : null
+    const unrouted = bomPartIds.length ? await notifyUnrouted(tx, release, bomPartIds) : 0
+    const bomSummary = bom ? { created: bom.created.length, matched: bom.matched.length, revisionFilled: bom.revisionFilled, skipped: bom.skipped, unrouted } : null
     return { id: release.id, releaseNo: release.releaseNo, recipients: receipts.length, impact, drawing, bom: bomSummary }
   }, !!taskId || !!bomInput)
 }

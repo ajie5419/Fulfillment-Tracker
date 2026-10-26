@@ -19,7 +19,7 @@ import { workBucket } from '../../../shared/workbench'
 interface Link {
   /** 电脑端：步骤 → 工件页对应工单；待确认 → 待确认匹配页；异常 → 异常列表并打开该条；签收记录（W5）→ 发放单详情；采购行（W6）→ 采购到货页并打开该行；设计任务（W7）→ 设计任务页并打开该任务；装配节点（W8）→ 齐套页并定位该节点 */
   pc: string | null
-  /** 手机端：W2 厂外步骤 → 发出登记；在外步骤 → 外协在途；异常 → 我的异常；签收记录 → 手机签收页；采购行 → 到货确认页；设计任务 → 我的设计任务；装配节点 → 手机齐套页；待确认没有手机页面 */
+  /** 手机端：W2 厂外步骤 → 发出登记；在外步骤 → 外协在途；加工中步骤（W10）→ 手机加工中页；异常 → 我的异常；签收记录 → 手机签收页；采购行 → 到货确认页；设计任务 → 我的设计任务；装配节点 → 手机齐套页；待确认没有手机页面 */
   mobile: string | null
 }
 
@@ -104,7 +104,9 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
             ? `/m/send?stepId=${encodeURIComponent(step.id)}`
             : step.status === 'OUT'
               ? `/m/transit?wo=${wo}`
-              : null,
+              : step.status === 'IN_PROGRESS'
+                ? `/m/working?stepId=${encodeURIComponent(step.id)}`
+                : null,
       }
     }
     // 已转异常：跳到生成的异常
@@ -301,7 +303,7 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
         summary: t.summary,
         startAt: t.startAt,
         duration:
-          a.rule === 'W3' || a.rule === 'W4' || a.rule === 'W6' || a.rule === 'W7' || a.rule === 'W8' || (a.rule === 'W9' && a.refType !== 'planConfirm' && a.refType !== 'planSplit')
+          a.rule === 'W3' || a.rule === 'W10' || a.rule === 'W4' || a.rule === 'W6' || a.rule === 'W7' || a.rule === 'W8' || (a.rule === 'W9' && a.refType !== 'planConfirm' && a.refType !== 'planSplit')
             ? null
             : durationText(elapsedExcludingOffDays(t.startAt, at, offDays)),
         owners: t.ownerIds.map((id) => ({ id, name: names.user.get(id) ?? id })),

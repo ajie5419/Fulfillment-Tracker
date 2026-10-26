@@ -209,8 +209,12 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
       ['GB5783', null, '六角头螺栓 M16', 40],
       [null, null, '减速机', 1],
     ])
-    expect(r1.bom).toEqual({ created: 2, matched: 1, revisionFilled: 1, skipped: 2 })
+    // 3 个工件都还没有工序链 → 提醒生产经理排工序（每张发放单每人一条），跳到工件页只看未排工序
+    expect(r1.bom).toEqual({ created: 2, matched: 1, revisionFilled: 1, skipped: 2, unrouted: 3 })
     expect(r1.drawing).toMatchObject({ status: 'DONE' })
+    const routeReminders = await db.reminder.findMany({ where: { dedupeKey: { startsWith: `RELEASE_ROUTE:${r1.id}:` } } })
+    expect(routeReminders.map((r) => [r.userId, r.kind, r.link])).toEqual([['u-prodhead', 'RELEASE', `/parts?wo=${BWO}&noRoute=1`]])
+    expect(routeReminders[0]!.title).toContain('3 个工件还没有工序链')
     const parts = await db.part.findMany({ where: { workOrderNumber: BWO, drawingNo: { not: null } }, orderBy: { drawingNo: 'asc' } })
     expect(parts.map((p) => [p.drawingNo, p.revision, p.quantity, p.fromTechBom])).toEqual([
       ['CJ-001', 'A', 2, true],
@@ -234,8 +238,11 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     expect(await db.part.count({ where: { workOrderNumber: BWO, drawingNo: 'CJ-009' } })).toBe(0)
 
     // 第二批（不从设计任务发）：只带新图号 + 一个已有的，累加不重复建
+    // CJ-002 先排上工序：只提醒还没有工序链的 CJ-003
+    await s.steps.addStep(parts.find((p) => p.drawingNo === 'CJ-002')!.id, { processId: 'P-CUT', mode: 'SELF', ownerId: 'u-worker' }, 'u-worker')
     const r2 = await send([['CJ-002', 'A', '端梁', 2], ['CJ-003', null, '横梁', 1]], { drawingTaskId: null })
-    expect(r2.bom).toEqual({ created: 1, matched: 1, revisionFilled: 0, skipped: 0 })
+    expect(r2.bom).toEqual({ created: 1, matched: 1, revisionFilled: 0, skipped: 0, unrouted: 1 })
+    expect((await db.reminder.findFirstOrThrow({ where: { dedupeKey: `RELEASE_ROUTE:${r2.id}:u-prodhead` } })).title).toContain('1 个工件还没有工序链')
     expect(await db.part.count({ where: { workOrderNumber: BWO, drawingNo: { not: null } } })).toBe(4)
 
     // 版号变了：整张拦下，提示发设计变更，已有工件不改

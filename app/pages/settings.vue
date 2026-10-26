@@ -5,6 +5,7 @@
  * 接口也校验权限，这里只是不给没权限的人看
  */
 import dayjs, { type Dayjs } from 'dayjs'
+import type { AlertRuleKey } from '#shared/alert-rules'
 
 const { data: me } = await useMe()
 const { data: master } = await useMaster()
@@ -41,10 +42,10 @@ async function call(url: string, method: 'POST' | 'PUT' | 'DELETE', body?: objec
 }
 
 // ───── 阈值 ─────
-// W3、W6、W7 的"提醒"在表里存的是小时数（W3 承诺返回日前、W6 需求日前、W7 计划完成日前），页面上按天编辑；
+// W3、W6、W7、W10 的"提醒"在表里存的是小时数（W3 承诺返回日前、W6 需求日前、W7 计划完成日前、W10 要求完成日前），页面上按天编辑；
 // W8 不提醒，黄 / 红是"需求日前几天"（黄 ≥ 红）；W9 的提醒是"总计划发布后几天节点仍未分解"（按天编辑），黄 / 红是源头节点自身晚几天（未确认超时沿用 W5 阈值）
-type Row = { rule: 'W1' | 'W2' | 'W3' | 'W4' | 'W5' | 'W6' | 'W7' | 'W8' | 'W9'; remind: number | null; yellowDays: number; redDays: number }
-const BY_DAY = (rule: Row['rule']) => rule === 'W3' || rule === 'W6' || rule === 'W7' || rule === 'W9'
+type Row = { rule: AlertRuleKey; remind: number | null; yellowDays: number; redDays: number }
+const BY_DAY = (rule: Row['rule']) => rule === 'W3' || rule === 'W6' || rule === 'W7' || rule === 'W9' || rule === 'W10'
 const rows = ref<Row[]>([])
 watch(
   () => data.value?.thresholds,
@@ -58,9 +59,9 @@ watch(
   },
   { immediate: true },
 )
-const REMIND_LABEL = { W1: '小时后提醒', W2: '（不提醒）', W3: '天前提醒（承诺返回日前）', W4: '（不提醒）', W5: '小时未签收 / 未确认提醒', W6: '天内要用仍无承诺到货日 → 黄（需求日前）', W7: '天内到计划完成日仍未完成设计 → 黄', W8: '（不提醒）', W9: '天后节点仍未分解 → 提醒部门负责人（总计划发布后）' } as const
-const YELLOW_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（待受理 / 超期）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 黄（需求日前）', W9: '天（源头节点自身晚于计划日）' } as const
-const RED_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（超要求解决日）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 红（需求日前，已过也红）', W9: '天（源头节点自身晚于计划日）' } as const
+const REMIND_LABEL = { W1: '小时后提醒', W2: '（不提醒）', W3: '天前提醒（承诺返回日前）', W4: '（不提醒）', W5: '小时未签收 / 未确认提醒', W6: '天内要用仍无承诺到货日 → 黄（需求日前）', W7: '天内到计划完成日仍未完成设计 → 黄', W8: '（不提醒）', W9: '天后节点仍未分解 → 提醒部门负责人（总计划发布后）', W10: '天前提醒（要求完成日前）' } as const
+const YELLOW_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（待受理 / 超期）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 黄（需求日前）', W9: '天（源头节点自身晚于计划日）', W10: '天（超要求完成日）' } as const
+const RED_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（超要求解决日）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 红（需求日前，已过也红）', W9: '天（源头节点自身晚于计划日）', W10: '天（超要求完成日）' } as const
 const NO_REMIND = (rule: Row['rule']) => rule === 'W2' || rule === 'W4' || rule === 'W8'
 function saveThreshold(r: Row) {
   const remindHours = NO_REMIND(r.rule) || r.remind == null ? null : BY_DAY(r.rule) ? Math.round(r.remind * 24) : r.remind
@@ -165,6 +166,7 @@ const woColumns = [
               <a-space><a-input-number v-model:value="record.redDays" :min="1" :max="365" size="small" /><span>{{ RED_LABEL[record.rule as Row['rule']] }}</span></a-space>
               <div v-if="record.rule === 'W3'" class="muted">要求完成日已过也直接红</div>
               <div v-if="record.rule === 'W4'" class="muted">W4 红色不再转异常</div>
+              <div v-if="record.rule === 'W10'" class="muted">只看已开工的自制 / 厂内外协工序；黄色起通知生产经理；红色自动转异常；完工后自动消除</div>
               <div v-if="record.rule === 'W5'" class="muted">W5 也管"确认变更影响"待办；黄色起通知发放人，红色不转异常</div>
               <div v-if="record.rule === 'W6'" class="muted">需求日已过仍未到货直接红；有没付的卡交期付款时黄色起通知财务；红色不转异常</div>
               <div v-if="record.rule === 'W7'" class="muted">已过计划完成日仍未完成设计直接红；黄色起通知技术部负责人、项目经理；红色不转异常</div>
