@@ -7,6 +7,8 @@
  * 默认"我的"（我负责的），可切"全部"。地址栏 ?seg=ready|working|out、?mine=1|0、?stepId=（提醒跳过来定位到那一道，默认"全部"；用户切范围时清掉）、?wo=。
  * 能否操作与电脑端一致：生产部、外协专员、该工序负责人、管理员（后端同样拦）。
  */
+import { segOfColumn } from '#shared/production'
+
 definePageMeta({ layout: 'mobile' })
 const { data: me } = await useMe()
 const route = useRoute()
@@ -47,6 +49,19 @@ const list = computed(() => {
   const l = rowsOf(seg.value)
   return focusId.value ? [...l].sort((a, b) => Number(b.stepId === focusId.value) - Number(a.stepId === focusId.value)) : l
 })
+// 提醒跳过来（?stepId=）：切到这道工序实际所在的分段；不在手机三段里（卡住、已完成、排队中）时提示一次
+const warned = ref('')
+watch([focusId, pending, () => data.value.rows], () => {
+  const id = focusId.value
+  if (!id || pending.value || !import.meta.client) return
+  const row = data.value.rows.find((r) => r.stepId === id)
+  const target = row ? segOfColumn(row.column) : null
+  if (target && target !== seg.value) return setSeg(target)
+  if (!target && warned.value !== id) {
+    warned.value = id
+    showToast(row?.column === 'stuck' ? `这道工序卡住了：${row.stuckText ?? '请到电脑端生产调度查看'}` : '这道工序现在不在能开工 / 在做 / 在外里，可能已完成或还在排队')
+  }
+}, { immediate: true })
 const segTitle = (s: Seg) => `${{ ready: '能开工', working: '在做', out: '在外' }[s]} ${rowsOf(s).length}`
 const canStep = (r: Row) => canDo(me.value, 'stepAction', { workOrderNumber: r.workOrderNumber, ownerId: r.ownerId })
 const late = (r: Row) => r.overdueDays > 0 || r.startLateDays > 0

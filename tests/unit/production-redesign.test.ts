@@ -1,7 +1,7 @@
 /** 生产管理重设计第一批：统一"可以开工"口径（readiness.ts）、生产调度页签和主按钮、工序编排的筛选 / 状态 / 工序链色块 */
 import { describe, expect, it } from 'vitest'
 import { prereqMet, prereqReadyForTodo, prereqState, stepReadiness, stuckText } from '../../server/services/flow/readiness'
-import { chainTones, inTab, isOverdue, partHeadline, primaryAction, routeFilterOf, stepLate, tabCounts, type ProductionRowLike, type StepLike } from '../../shared/production'
+import { chainTones, inTab, isOverdue, partHeadline, primaryAction, routeFilterOf, segOfColumn, stepLate, stepLinkTab, tabCounts, tabForRow, type AlertLevelLike, type ProductionRowLike, type StepLike, type StepStatus } from '../../shared/production'
 
 describe('prereqState：工件开工前提', () => {
   it('已取消的物料、设计任务不算；没挂东西 = 不跟踪、也算齐', () => {
@@ -96,5 +96,39 @@ describe('工序编排：筛选、一句话状态、工序链色块', () => {
   it('色块：完成绿、第一道没完成的为当前、超期 / 异常红、其余灰', () => {
     expect(chainTones([st({ status: 'DONE' }), st({}), st({})], today)).toEqual(['done', 'current', 'todo'])
     expect(chainTones([st({ status: 'DONE' }), st({ status: 'IN_PROGRESS', dueDate: '2026-10-20' }), st({ status: 'BLOCKED' })], today)).toEqual(['done', 'late', 'blocked'])
+  })
+})
+
+describe('提醒 / 预警的跳转页签：一定能看到被提到的那道工序', () => {
+  const row = (o: Partial<ProductionRowLike>): ProductionRowLike => ({ column: 'ready', status: 'PENDING', mode: 'SELF', ownerId: 'u1', overdueDays: 0, startLateDays: 0, ...o })
+  // 每种预警在工序当时状态下，生产调度列表里这道工序的样子（与 listProduction 的口径一致）
+  const cases: { name: string; status: StepStatus; level: AlertLevelLike | null; row: ProductionRowLike }[] = [
+    { name: 'W10 提醒级（要求完成日前 2 天）', status: 'IN_PROGRESS', level: 'REMIND', row: row({ column: 'working', status: 'IN_PROGRESS', overdueDays: 0 }) },
+    { name: 'W10 黄（超 1 天）', status: 'IN_PROGRESS', level: 'YELLOW', row: row({ column: 'working', status: 'IN_PROGRESS', overdueDays: 1 }) },
+    { name: 'W10 红（超 3 天）', status: 'IN_PROGRESS', level: 'RED', row: row({ column: 'working', status: 'IN_PROGRESS', overdueDays: 3 }) },
+    { name: 'W3 提醒级（承诺返回日前）', status: 'OUT', level: 'REMIND', row: row({ column: 'out', status: 'OUT', mode: 'EXTERNAL_OUTSOURCE', overdueDays: 0 }) },
+    { name: 'W3 黄', status: 'OUT', level: 'YELLOW', row: row({ column: 'out', status: 'OUT', mode: 'EXTERNAL_OUTSOURCE', overdueDays: 1 }) },
+    { name: 'W2 转序停滞（可以开工没人动）', status: 'PENDING', level: 'YELLOW', row: row({ column: 'ready' }) },
+    { name: 'W2 应开工日也过了', status: 'PENDING', level: 'RED', row: row({ column: 'ready', startLateDays: 2 }) },
+    { name: '有异常', status: 'BLOCKED', level: null, row: row({ column: 'stuck', status: 'BLOCKED' }) },
+    { name: '已消除（已完成）', status: 'DONE', level: 'YELLOW', row: row({ column: 'done', status: 'DONE', overdueDays: 0 }) },
+  ]
+  for (const c of cases) {
+    it(`${c.name}：链接页签里就有这道`, () => {
+      expect(inTab(c.row, stepLinkTab(c.status, c.level))).toBe(true)
+    })
+  }
+  it('待开工但缺料 / 等变更（在"卡住"）：链接猜"可以开工"，页面按工序实际所在切到"卡住"', () => {
+    const stuck = row({ column: 'stuck' })
+    const hint = stepLinkTab('PENDING', 'YELLOW')
+    expect(inTab(stuck, hint)).toBe(false)
+    expect(tabForRow(stuck, hint)).toBe('stuck')
+    expect(inTab(stuck, tabForRow(stuck, hint))).toBe(true)
+  })
+  it('提示页签里有它就不换（如超期又在做的，链接给"已超期"就停在"已超期"）', () => {
+    expect(tabForRow(row({ column: 'working', status: 'IN_PROGRESS', overdueDays: 2 }), 'overdue')).toBe('overdue')
+  })
+  it('手机分段：能开工 / 在做 / 在外各对各的；卡住、完成不在手机分段里', () => {
+    expect([segOfColumn('ready'), segOfColumn('working'), segOfColumn('out'), segOfColumn('stuck'), segOfColumn('done')]).toEqual(['ready', 'working', 'out', null, null])
   })
 })

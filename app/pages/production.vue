@@ -5,8 +5,9 @@
  *   列表视图：按页签（可以开工 / 进行中 / 已超期 / 卡住 / 近 7 天完成）；看板视图：原"车间看板"五列，卡片上同样有主按钮。
  *   "可以开工"口径与工作台待办一致（server/services/flow/readiness.ts）。点工件名打开工件抽屉。
  * 地址栏：?tab= ?view=board ?wo= ?supplierId= ?mine=1；旧地址 /workshop 跳到这里的看板视图。
+ * ?step=（提醒、预警跳过来，只用一次）：找到这道工序后切到它实际所在的页签并标出来；不在生产调度里（排队中、工单已关闭等）时提示。
  */
-import { ACTION_TEXT, COLUMN_TEXT, COLUMN_TONE, PRODUCTION_TABS, TAB_TEXT, actionNeeds, inTab, isOverdue, primaryAction, tabCounts, type PrimaryAction, type ProductionColumn, type ProductionTab } from '#shared/production'
+import { ACTION_TEXT, COLUMN_TEXT, COLUMN_TONE, PRODUCTION_TABS, TAB_TEXT, actionNeeds, inTab, isOverdue, primaryAction, tabCounts, tabForRow, type PrimaryAction, type ProductionColumn, type ProductionTab } from '#shared/production'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,6 +23,7 @@ watch(filter, (f) => {
   router.replace({
     query: {
       ...route.query,
+      step: undefined, // 定位用的 step 只用一次
       tab: f.tab === 'ready' ? undefined : f.tab,
       view: f.view === 'board' ? 'board' : undefined,
       wo: f.wo || undefined,
@@ -54,6 +56,38 @@ const listRows = computed(() => {
 })
 const COLUMNS: ProductionColumn[] = ['ready', 'working', 'out', 'stuck', 'done']
 const boardColumns = computed(() => COLUMNS.map((key) => ({ key, cards: rows.value.filter((r) => r.column === key) })))
+
+// ───── ?step=：提醒、预警跳过来定位那道工序 ─────
+const focusStep = ref('')
+function focusFromQuery() {
+  const id = q('step')
+  if (!id || pending.value || !import.meta.client) return
+  const row = rows.value.find((r) => r.stepId === id)
+  if (row) {
+    filter.view = 'list'
+    filter.tab = tabForRow(row, filter.tab)
+    focusStep.value = id
+    nextTick(() => document.querySelector('.focus-row')?.scrollIntoView({ block: 'center' }))
+  } else {
+    message.info('这道工序现在不在生产调度里（还在排队等上一道、完成超过 7 天或工单已关闭），可以到工序编排里看')
+  }
+  router.replace({ query: { ...route.query, step: undefined, tab: filter.tab === 'ready' ? undefined : filter.tab, view: filter.view === 'board' ? 'board' : undefined } })
+}
+onMounted(focusFromQuery)
+watch(() => [route.query.step, pending.value], focusFromQuery)
+// 没指定页签进来（如全局搜索点外协厂 / 班组）："可以开工"是空的就切到第一个有内容的页签，免得以为没有活
+// 挂载后再判断（服务端渲染时不改，免得水合后页签显示和数据对不上）
+let autoTabDone = false
+function autoTab() {
+  if (pending.value || autoTabDone || !import.meta.client) return
+  autoTabDone = true
+  if (q('tab') || q('step') || filter.view !== 'list' || counts.value[filter.tab]) return
+  const first = PRODUCTION_TABS.find((t) => counts.value[t] > 0)
+  if (first) filter.tab = first
+}
+onMounted(autoTab)
+watch(pending, autoTab)
+const rowClass = (r: Row) => (r.stepId === focusStep.value ? 'focus-row' : '')
 
 const woOptions = computed(() => workOrders.value.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName}` })))
 // 班组在前（派工看班组），外协厂在后
@@ -143,7 +177,7 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
       <a-spin :spinning="pending">
         <template v-if="filter.view === 'list'">
           <a-empty v-if="!listRows.length" :description="EMPTY_TEXT[filter.tab]" />
-          <a-table v-else class="ft-table" :columns="tableColumns" :data-source="listRows" row-key="stepId" size="small" :scroll="{ x: 980 }" :pagination="listRows.length > 50 ? { pageSize: 50, showSizeChanger: false } : false">
+          <a-table v-else class="ft-table" :columns="tableColumns" :data-source="listRows" row-key="stepId" :row-class-name="rowClass" size="small" :scroll="{ x: 980 }" :pagination="listRows.length > 50 ? { pageSize: 50, showSizeChanger: false } : false">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'wo'"><span class="nowrap"><WoLink :no="record.workOrderNumber" /></span></template>
               <template v-else-if="column.key === 'name'">
@@ -183,7 +217,7 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
             </header>
             <div class="ft-well col-body">
               <p v-if="!col.cards.length" class="empty">无</p>
-              <article v-for="c in col.cards" :key="c.stepId" class="card" :class="{ late: isOverdue(c) }">
+              <article v-for="c in col.cards" :key="c.stepId" class="card" :class="{ late: isOverdue(c), focus: c.stepId === focusStep }">
                 <div class="card-top">
                   <span class="wo">{{ c.workOrderNumber }}</span>
                   <UiStatusTag v-if="dateInfo(c).tone === 'late'" tone="late">{{ dateInfo(c).text }}</UiStatusTag>
@@ -221,6 +255,9 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
 .muted { color: var(--ft-text-2); font-size: 12px; }
 .num { font-variant-numeric: tabular-nums; }
 .nowrap { white-space: nowrap; }
+/* 从提醒跳过来的那道工序 */
+:deep(.focus-row) > td { background: var(--ft-primary-bg) !important; }
+.card.focus { border-color: var(--ft-primary); box-shadow: 0 0 0 1px var(--ft-primary); }
 .stuck { margin-top: 2px; font-size: 12px; color: var(--ft-upstream-text); }
 .issue { margin-left: 6px; color: var(--ft-late-text); }
 /* 看板：五列等宽，1440 一屏放下；窄屏横向滑动 */

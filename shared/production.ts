@@ -53,6 +53,30 @@ export function tabCounts(rows: ProductionRowLike[]): Record<ProductionTab, numb
   return Object.fromEntries(PRODUCTION_TABS.map((t) => [t, rows.filter((r) => inTab(r, t)).length])) as Record<ProductionTab, number>
 }
 
+/**
+ * 工序提醒 / 预警跳到生产调度时先打开的页签（只是提示：页面拿 ?step= 找到这道工序后用 tabForRow 切到它实际所在的页签）。
+ * 加工中（W10）："提醒"级在要求完成日之前发，工序在"进行中"；黄、红级时要求完成日已过，在"已超期"。
+ */
+export type AlertLevelLike = 'REMIND' | 'YELLOW' | 'RED'
+export function stepLinkTab(status: StepStatus, level?: AlertLevelLike | null): ProductionTab {
+  if (status === 'IN_PROGRESS' || status === 'OUT') return level === 'YELLOW' || level === 'RED' ? 'overdue' : 'active'
+  if (status === 'BLOCKED') return 'stuck'
+  if (status === 'DONE') return 'done'
+  return 'ready'
+}
+
+/** 这道工序应该显示在哪个页签：提示的页签里有它就用提示的，没有就按页签顺序找第一个有它的（等变更、缺料的待开工工序在"卡住"） */
+export function tabForRow(r: ProductionRowLike, hint: ProductionTab): ProductionTab {
+  if (inTab(r, hint)) return hint
+  return PRODUCTION_TABS.find((t) => inTab(r, t)) ?? hint
+}
+
+/** 手机"生产"的三段：能开工 / 在做 / 在外；卡住、完成的不在手机分段里 */
+export type MobileSeg = 'ready' | 'working' | 'out'
+export function segOfColumn(c: ProductionColumn): MobileSeg | null {
+  return c === 'ready' || c === 'working' || c === 'out' ? c : null
+}
+
 /** 每行唯一的主按钮：没有负责人先指定；可以开工 → 厂外"发出"、其余"开工"；加工中 → "完工"；在外 → "登记返厂"；其余没有 */
 export type PrimaryAction = 'assign' | 'send' | 'start' | 'finish' | 'return' | null
 export const ACTION_TEXT: Readonly<Record<Exclude<PrimaryAction, null>, string>> = { assign: '指定负责人', send: '发出', start: '开工', finish: '完工', return: '登记返厂' }

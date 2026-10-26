@@ -15,11 +15,12 @@ import { SCAN_RULES, type Target, collectTargets, loadOffDays, loadThresholds } 
 import { todayDay } from '../flow/dates'
 import { userDeptNames } from '../auth/departments'
 import { workBucket } from '../../../shared/workbench'
+import { stepLinkTab, type StepStatus } from '../../../shared/production'
 
 interface Link {
   /** 电脑端：步骤 → 生产调度 / 外协页对应页签（stepPcLink）；待确认 → 外协页"待确认匹配"；异常 → 异常列表并打开该条；签收记录（W5）→ 发放单详情；采购行（W6）→ 采购到货页并打开该行；设计任务（W7）→ 设计任务页并打开该任务；装配节点（W8）→ 齐套页并定位该节点 */
   pc: string | null
-  /** 手机端：W2 厂外步骤 → 发出登记；在外步骤 → 手机"生产"在外；加工中步骤（W10）→ 手机"生产"在做；异常 → 我的异常；签收记录 → 手机签收页；采购行 → 到货确认页；设计任务 → 我的设计任务；装配节点 → 手机齐套页；待确认没有手机页面 */
+  /** 手机端：厂外待发出 → 发出登记；其余工序 → 手机"生产"对应分段（stepMobileLink）；异常 → 我的异常；签收记录 → 手机签收页；采购行 → 到货确认页；设计任务 → 我的设计任务；装配节点 → 手机齐套页；待确认没有手机页面 */
   mobile: string | null
 }
 
@@ -42,22 +43,25 @@ const issueLink = (id: string): Link => ({ pc: `/issues?id=${encodeURIComponent(
 const OUTSOURCE_MATCH_LINK = '/outsource?tab=match'
 
 /**
- * 工序预警的电脑端地址（生产管理重设计第一批）：在外 → 外协页"在外"；厂外外协待发出 → 外协页"待发出"；
- * 加工中（W10）→ 生产调度"已超期"；其余（转序停滞等待开工）→ 生产调度"可以开工"。都带工单筛选。
+ * 工序预警的电脑端地址（生产管理重设计第一批）：在外 → 外协页"在外"；其余 → 生产调度，页签按状态和预警级别先猜一个（stepLinkTab），
+ * 都带 ?step=：页面找到这道工序后切到它实际所在的页签并标出来（如待开工但缺料 / 等变更的在"卡住"），找不到时提示。都带工单筛选。
  */
-export function stepPcLink(step: { status: string; mode: string }, wo: string): string {
-  if (step.status === 'OUT') return `/outsource?tab=out&wo=${wo}`
-  if (step.status === 'PENDING' && step.mode === 'EXTERNAL_OUTSOURCE') return `/outsource?tab=send&wo=${wo}`
-  if (step.status === 'IN_PROGRESS') return `/production?tab=overdue&wo=${wo}`
-  if (step.status === 'BLOCKED') return `/production?tab=stuck&wo=${wo}`
-  return `/production?tab=ready&wo=${wo}`
+export function stepPcLink(step: { id: string; status: string; mode: string }, wo: string, level?: AlertLevel | null): string {
+  const id = encodeURIComponent(step.id)
+  if (step.status === 'OUT') return `/outsource?tab=out&wo=${wo}&step=${id}`
+  return `/production?tab=${stepLinkTab(step.status as StepStatus, level)}&wo=${wo}&step=${id}`
 }
 
-/** 工序预警的手机端地址：厂外待发出 → 发出登记；在外 → 生产"在外"；加工中 → 生产"在做"（定位到这道） */
+/**
+ * 工序预警的手机端地址：厂外待发出 → 发出登记；其余待开工 → 生产"能开工"；在外 → 生产"在外"；加工中 → 生产"在做"。
+ * 都带 stepId：页面切到这道工序实际所在的分段并定位，不在手机分段里（卡住、完成）时提示。
+ */
 export function stepMobileLink(step: { id: string; status: string; mode: string }, wo: string): string | null {
-  if (step.status === 'PENDING' && step.mode === 'EXTERNAL_OUTSOURCE') return `/m/send?stepId=${encodeURIComponent(step.id)}`
-  if (step.status === 'OUT') return `/m/work?seg=out&wo=${wo}`
-  if (step.status === 'IN_PROGRESS') return `/m/work?seg=working&stepId=${encodeURIComponent(step.id)}`
+  const id = encodeURIComponent(step.id)
+  if (step.status === 'PENDING' && step.mode === 'EXTERNAL_OUTSOURCE') return `/m/send?stepId=${id}`
+  if (step.status === 'PENDING') return `/m/work?seg=ready&wo=${wo}&stepId=${id}`
+  if (step.status === 'OUT') return `/m/work?seg=out&wo=${wo}&stepId=${id}`
+  if (step.status === 'IN_PROGRESS') return `/m/work?seg=working&wo=${wo}&stepId=${id}`
   return null
 }
 
@@ -120,7 +124,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     const step = a.refType === 'step' ? stepById.get(a.refId) : undefined
     if (step) {
       const wo = encodeURIComponent(step.part.workOrderNumber)
-      link = { pc: stepPcLink(step, wo), mobile: stepMobileLink(step, wo) }
+      link = { pc: stepPcLink(step, wo, a.level), mobile: stepMobileLink(step, wo) }
     }
     // 已转异常：跳到生成的异常
     const issue = a.status === 'CONVERTED' ? issueBySource.get(alertSourceKey(a.id)) : undefined
@@ -256,7 +260,12 @@ function canConvert(level: AlertLevel, target: Pick<Target, 'rule' | 'ownerIds'>
 }
 
 /** 预警列表里"去处理"的电脑端地址 */
-function targetLink(t: Target): string | null {
+function targetLink(t: Target, level: AlertLevel): string | null {
+  // 工序预警：与"我的提醒"同一个地址（stepPcLink）。规则决定工序当时的状态：W3 在外、W10 加工中、W2 待开工（转序停滞）
+  if (t.refType === 'step' && t.workOrderNumber) {
+    const status = t.rule === 'W3' ? 'OUT' : t.rule === 'W10' ? 'IN_PROGRESS' : 'PENDING'
+    return stepPcLink({ id: t.refId, status, mode: t.meta?.stepMode ?? 'SELF' }, encodeURIComponent(t.workOrderNumber), level)
+  }
   if ((t.refType === 'receipt' || t.refType === 'release') && t.meta?.releaseId) return releaseLink(t.meta.releaseId)
   if (t.refType === 'purchase') return purchaseLink(t.refId)
   if (t.refType === 'drawing') return drawingLink(t.refId)
@@ -329,7 +338,7 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
         levelAt: a.levelAt,
         issue: issue ? { id: issue.id, issueNo: issue.issueNo } : null,
         canConvert: a.status === 'ACTIVE' && canConvert(a.level, t, t.workOrderNumber ? pmOf.get(t.workOrderNumber) : null, filter.viewer),
-        link: targetLink(t),
+        link: targetLink(t, a.level),
       }
     })
     .filter((x) => x !== null)

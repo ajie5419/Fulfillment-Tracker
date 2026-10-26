@@ -6,6 +6,7 @@
  *   待确认匹配：原 /unmatched，QMS 报检没自动对上工序的，人工关联或忽略；
  *   近 7 天返回：外协工序最近 7 天完成的。
  * 地址栏：?tab=send|out|match|back ?wo= ?supplierId=；旧地址 /unmatched 跳到 ?tab=match。
+ * ?step=（外协在外的提醒跳过来，只用一次）：在"在外"里标出这道；已经不在外了（返回了等）转到生产调度去定位。
  */
 import { primaryAction, type PrimaryAction } from '#shared/production'
 
@@ -20,7 +21,7 @@ const TABS: Tab[] = ['send', 'out', 'match', 'back']
 const q = (k: string) => (typeof route.query[k] === 'string' ? (route.query[k] as string) : '')
 const tabOf = (v: string): Tab => ((TABS as string[]).includes(v) ? (v as Tab) : 'out')
 const filter = reactive({ tab: tabOf(q('tab')), wo: q('wo'), supplierId: q('supplierId') })
-watch(filter, (f) => router.replace({ query: { ...route.query, tab: f.tab, wo: f.wo || undefined, supplierId: f.supplierId || undefined } }))
+watch(filter, (f) => router.replace({ query: { ...route.query, step: undefined, tab: f.tab, wo: f.wo || undefined, supplierId: f.supplierId || undefined } }))
 watch(() => route.query, () => {
   filter.tab = tabOf(q('tab'))
   filter.wo = q('wo')
@@ -61,6 +62,24 @@ const tabOptions = computed(() => [
 ])
 const woOptions = computed(() => workOrders.value.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName}` })))
 const supplierOptions = computed(() => master.value.suppliers.filter((s) => s.kind !== 'TEAM').map((s) => ({ value: s.id, label: s.label })))
+
+// ───── ?step=：在外提醒跳过来定位那道工序 ─────
+const focusStep = ref('')
+function focusFromQuery() {
+  const id = q('step')
+  if (!id || transitPending.value || !import.meta.client) return
+  if (!transit.value.some((r) => r.stepId === id)) {
+    // 已经不在外了（返回了、被改了状态）：交给生产调度按它实际所在页签定位
+    return navigateTo({ path: '/production', query: { wo: filter.wo || undefined, step: id } }, { replace: true })
+  }
+  filter.tab = 'out'
+  focusStep.value = id
+  router.replace({ query: { ...route.query, step: undefined, tab: 'out' } })
+  nextTick(() => document.querySelector('.focus-row')?.scrollIntoView({ block: 'center' }))
+}
+onMounted(focusFromQuery)
+watch(() => [route.query.step, transitPending.value], focusFromQuery)
+const rowClass = (r: { stepId: string }) => (r.stepId === focusStep.value ? 'focus-row' : '')
 
 function refreshAll() {
   return Promise.all([refreshProd(), refreshTransit(), refreshUnmatched()])
@@ -135,7 +154,7 @@ const backColumns = [
           <UiStatusTag v-if="g.late" tone="late">{{ g.late }} 项超期</UiStatusTag>
           <span class="muted">在外 {{ g.rows.length }} 项</span>
         </header>
-        <a-table class="ft-table" :columns="outColumns" :data-source="g.rows" row-key="stepId" size="small" :scroll="{ x: 820 }" :pagination="false">
+        <a-table class="ft-table" :columns="outColumns" :data-source="g.rows" row-key="stepId" :row-class-name="rowClass" size="small" :scroll="{ x: 820 }" :pagination="false">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'name'">
               <button type="button" class="name-btn" @click="drawerPartId = record.partId">{{ record.partName }}</button><span class="muted"> · </span>{{ record.processName }}
@@ -177,6 +196,8 @@ const backColumns = [
 
 <style scoped>
 .tabs-seg { max-width: 100%; overflow-x: auto; }
+/* 从提醒跳过来的那道工序 */
+:deep(.focus-row) > td { background: var(--ft-primary-bg) !important; }
 /* 卡片右上角的切换和筛选：窄屏时换行、不超出卡片 */
 :deep(.ant-card-extra) { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; max-width: 100%; }
 .filter-wo { width: 200px; max-width: calc(100vw - 72px); }

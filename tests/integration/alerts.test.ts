@@ -228,7 +228,9 @@ describe.skipIf(!DB)('预警与提醒', () => {
 
     // 预警列表能看到
     const list = await s.reminders.listAlerts({ rule: 'W3', workOrderNumber: WO })
-    expect(list.find((a) => a.id === alert!.id)).toMatchObject({ level: 'YELLOW', owners: [{ id: 'u-out', name: '外协专员' }] })
+    expect(list.find((a) => a.id === alert!.id)).toMatchObject({ level: 'YELLOW', owners: [{ id: 'u-out', name: '外协专员' }], link: `/outsource?tab=out&wo=${WO}&step=${weld.id}` })
+    // 我的提醒：电脑端外协"在外"、手机"生产"在外，都定位到这道
+    expect((await s.reminders.listReminders('u-out')).items.find((i) => i.alertId === alert!.id)).toMatchObject({ link: `/outsource?tab=out&wo=${WO}&step=${weld.id}`, mobileLink: `/m/work?seg=out&wo=${WO}&stepId=${weld.id}` })
 
     await s.flow.manualReturn({ stepId: weld.id, qty: 1, actorId: 'u-out', source: 'MOBILE' })
     expect((await alertOf(key))[0]).toMatchObject({ status: 'CLEARED', activeKey: null })
@@ -382,11 +384,13 @@ describe.skipIf(!DB)('预警与提醒', () => {
     expect(r).toMatchObject({ level: 'REMIND' })
     // 还没开工的不归 W10（由 W2 管）
     expect(await db.alert.count({ where: { rule: 'W10', refId: notStarted.id } })).toBe(0)
-    // 提醒跳手机"生产"页签的"在做"、电脑端生产调度"已超期"
+    // 提醒跳手机"生产"页签的"在做"；电脑端生产调度：黄 / 红（已过要求完成日）→"已超期"，提醒级（还没到期）→"进行中"
     const mine = await s.reminders.listReminders('u-out', now)
     const card = mine.items.find((i) => i.alertId === y!.id)
-    expect(card).toMatchObject({ rule: 'W10', mobileLink: `/m/work?seg=working&stepId=${late.id}`, link: `/production?tab=overdue&wo=${WO}` })
+    expect(card).toMatchObject({ rule: 'W10', mobileLink: `/m/work?seg=working&wo=${WO}&stepId=${late.id}`, link: `/production?tab=overdue&wo=${WO}&step=${late.id}` })
     const list = await s.reminders.listAlerts({ rule: 'W10', workOrderNumber: WO }, now)
+    expect(list.find((a) => a.refId === soon.id)).toMatchObject({ level: 'REMIND', link: `/production?tab=active&wo=${WO}&step=${soon.id}` })
+    expect(list.find((a) => a.refId === late.id)).toMatchObject({ level: 'YELLOW', link: `/production?tab=overdue&wo=${WO}&step=${late.id}` })
     expect(list.find((a) => a.refId === late.id)).toMatchObject({ duration: null, summary: expect.stringContaining('仍未完工') })
 
     // 手机"加工中"：我负责的、已开工的厂内工序，逾期的在前并带超期天数；没开工的不在
