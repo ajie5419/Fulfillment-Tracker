@@ -69,7 +69,7 @@ async function onSelect(value: unknown) {
       </div>
       <span v-else class="opt-sub">{{ opt.label }}</span>
     </template>
-    <a-input placeholder="搜工单号、图号、工件、物料、外协厂" aria-label="全局搜索">
+    <a-input placeholder="搜工单号、图号、工件、物料、外协厂" aria-label="全局搜索" :maxlength="64">
       <template #prefix>
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" class="ico"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
       </template>

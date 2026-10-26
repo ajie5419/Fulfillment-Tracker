@@ -96,7 +96,7 @@ async function openFromQuery() {
   }
 }
 onMounted(openFromQuery)
-watch(() => route.query.id, openFromQuery)
+watch(() => [route.query.id, route.query.comments], openFromQuery)
 function closeComments() {
   commenting.value = null
   refresh()
