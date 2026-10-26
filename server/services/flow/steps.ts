@@ -8,6 +8,7 @@ import { openIssuesOfSteps } from '../issues/issues'
 import { FlowError } from './errors'
 import { RETURN_TYPES } from './flow'
 import { partRelatedCounts } from './timeline'
+import { deleteCommentsOf } from '../comments/comments'
 import { loadNames } from './names'
 import { planWarning, resolvePlanNode } from '../plan/links'
 
@@ -171,7 +172,7 @@ export async function deletePart(partId: string) {
     const ids = steps.map((s) => s.id)
     if (await hasEvents(tx, ids)) throw new FlowError('该工件已有流转记录，不能删除')
     await tx.todo.updateMany({ where: { refType: 'step', refId: { in: ids }, status: 'OPEN' }, data: { status: 'CANCELLED' } })
-    await tx.comment.deleteMany({ where: { refType: 'part', refId: partId } }) // 留言没有外键，一起删，别留下没人管的数据
+    await deleteCommentsOf(tx, 'part', partId) // 留言和它发出的提醒都没有外键，一起删，别留下指向已删工件的数据
     await tx.part.delete({ where: { id: partId } }) // 步骤级联删除
     return { ok: true }
   })

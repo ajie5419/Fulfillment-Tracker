@@ -17,7 +17,7 @@
  */
 import type { DelayReason, DrawingTaskStatus, FlowSource, Prisma, PurchaseLine, PurchaseStatus } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
-import { countComments } from '../comments/comments'
+import { countComments, deleteCommentsOf } from '../comments/comments'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey, dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { FlowError } from '../flow/errors'
@@ -259,7 +259,7 @@ export async function deleteLine(id: string) {
     if (await tx.paymentLine.findFirst({ where: { purchaseLineId: id }, select: { paymentId: true } })) {
       throw new FlowError('已关联付款申请，不能删除；不再跟踪请改为"已取消"')
     }
-    await tx.comment.deleteMany({ where: { refType: 'purchase', refId: id } }) // 留言没有外键，一起删
+    await deleteCommentsOf(tx, 'purchase', id) // 留言和它发出的提醒都没有外键，一起删
     await tx.purchaseLine.delete({ where: { id } })
     await clearAlertKeys(tx, [w6Key(id)])
     await refreshPartReady(tx, line.partId, line.status === 'OPEN')

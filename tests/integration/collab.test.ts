@@ -130,7 +130,7 @@ describe.skipIf(!DB)('留言、搜索、车间看板、时间线', () => {
     expect(rem.link).toBe(`/purchases?wo=${WO}&id=${line.id}&comments=1`)
   })
 
-  it('不能 @ 看不到该工单的人（只看本人工单的项目经理）；工件、采购行删除时留言一起删', async () => {
+  it('不能 @ 看不到该工单的人（只看本人工单的项目经理）；工件、采购行删除时留言和 @ 提醒一起删', async () => {
     await db.qmsUser.create({ data: { id: 'u-pm2', username: 'pm2', realName: '丁', departmentId: 'D', roleId: 'r', status: 'ACTIVE', updatedAt: new Date() } })
     await db.workOrderExt.upsert({ where: { workOrderNumber: WO2 }, create: { workOrderNumber: WO2, projectManagerId: 'u-pm2' }, update: { projectManagerId: 'u-pm2' } })
     try {
@@ -141,13 +141,17 @@ describe.skipIf(!DB)('留言、搜索、车间看板、时间线', () => {
       await s.comments.addComment({ refType: 'part', refId: part.id, body: 'y', mentionIds: ['u-pm2'] }, 'u-a', ['u-pm2'])
 
       const bare = await db.part.create({ data: { workOrderNumber: WO, name: '待删件', quantity: 1 } })
-      await s.comments.addComment({ refType: 'part', refId: bare.id, body: '删前留言' }, 'u-a')
+      const keep = await db.reminder.count({ where: { kind: 'COMMENT' } }) // 别的记录上的留言提醒不能被误删
+      await s.comments.addComment({ refType: 'part', refId: bare.id, body: '删前留言', mentionIds: ['u-c'] }, 'u-a')
+      expect(await db.reminder.count({ where: { kind: 'COMMENT' } })).toBe(keep + 1)
       await s.steps.deletePart(bare.id)
       expect(await db.comment.count({ where: { refId: bare.id } })).toBe(0)
+      expect(await db.reminder.count({ where: { kind: 'COMMENT' } })).toBe(keep) // @ 提醒一起删，不留指向已删工件的链接
       const line = await db.purchaseLine.create({ data: { workOrderNumber: WO, materialName: '待删料', quantity: 1, needDate: day('2026-11-20') } })
-      await s.comments.addComment({ refType: 'purchase', refId: line.id, body: '删前留言' }, 'u-a')
+      await s.comments.addComment({ refType: 'purchase', refId: line.id, body: '删前留言', mentionIds: ['u-c'] }, 'u-a')
       await s.purchases.deleteLine(line.id)
       expect(await db.comment.count({ where: { refId: line.id } })).toBe(0)
+      expect(await db.reminder.count({ where: { kind: 'COMMENT' } })).toBe(keep)
     } finally {
       await db.workOrderExt.deleteMany({ where: { workOrderNumber: WO2 } })
     }

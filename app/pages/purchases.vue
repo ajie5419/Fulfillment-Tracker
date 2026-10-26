@@ -294,7 +294,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
           <a v-if="canEdit(record as PurchaseRow)" @click="openEdit(record as PurchaseRow)">{{ record.materialName }}</a>
           <span v-else>{{ record.materialName }}</span>
           <div class="muted">{{ [record.spec, record.partName ? `用于 ${record.partName}` : ''].filter(Boolean).join(' · ') }}</div>
-          <a class="comment-link" @click="commenting = { id: record.id, name: record.materialName }">{{ record.commentCount ? `留言 ${record.commentCount}` : '留言' }}</a>
+          <button type="button" class="comment-link" @click="commenting = { id: record.id, name: record.materialName }">{{ record.commentCount ? `留言 ${record.commentCount}` : '留言' }}</button>
         </template>
         <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
         <template v-else-if="column.key === 'planNode'"><PlanNodeCell :work-order-number="record.workOrderNumber" :node="record.planNode" /></template>
@@ -377,7 +377,8 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
 
 <style scoped>
 .muted { color: var(--ft-text-2); font-size: 12px; }
-.comment-link { font-size: 12px; }
+.comment-link { padding: 0; border: 0; background: none; font-size: 12px; color: var(--ft-primary); cursor: pointer; }
+.comment-link:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; border-radius: 2px; }
 .warn { color: var(--ft-late); }
 .ellipsis { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

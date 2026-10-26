@@ -28,6 +28,14 @@ export async function resolveRef(db: Tx | typeof prisma, refType: CommentRef, re
   return { workOrderNumber: l.workOrderNumber, title: `采购"${l.materialName}"`, link: `/purchases?wo=${encodeURIComponent(l.workOrderNumber)}&id=${encodeURIComponent(refId)}&comments=1` }
 }
 
+/** 删除一条记录上的全部留言，连同这些留言发出的 @ 提醒（提醒没有外键，按 dedupeKey "COMMENT:<留言 ID>:<收件人>" 找） */
+export async function deleteCommentsOf(tx: Tx, refType: CommentRef, refId: string) {
+  const rows = await tx.comment.findMany({ where: { refType, refId }, select: { id: true } })
+  if (!rows.length) return
+  await tx.reminder.deleteMany({ where: { kind: 'COMMENT', OR: rows.map((r) => ({ dedupeKey: { startsWith: `COMMENT:${r.id}:` } })) } })
+  await tx.comment.deleteMany({ where: { refType, refId } })
+}
+
 const ids = (v: Prisma.JsonValue | null): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
 
 export async function listComments(refType: CommentRef, refId: string) {
