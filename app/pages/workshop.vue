@@ -58,9 +58,9 @@ const partLink = (c: Card) => `/parts?wo=${encodeURIComponent(c.workOrderNumber)
       <span class="ft-title">车间看板 <UiHelpTip>工序按状态分列，只看不改；开工、完工、发出请到"生产管理"或手机端。卡片点开跳到对应工件。</UiHelpTip></span>
     </template>
     <template #extra>
-      <a-space>
-        <a-select v-model:value="wo" :options="woOptions" show-search option-filter-prop="label" style="width: 260px" />
-        <a-select v-model:value="supplierId" :options="supplierOptions" show-search option-filter-prop="label" style="width: 200px" />
+      <a-space wrap>
+        <a-select v-model:value="wo" :options="woOptions" show-search option-filter-prop="label" class="filter-wo" />
+        <a-select v-model:value="supplierId" :options="supplierOptions" show-search option-filter-prop="label" class="filter-sup" />
         <UiRefreshButton @click="refresh()" />
       </a-space>
     </template>
@@ -93,6 +93,9 @@ const partLink = (c: Card) => `/parts?wo=${encodeURIComponent(c.workOrderNumber)
 </template>
 
 <style scoped>
+/* 窄屏两个下拉换行、不超出卡片 */
+.filter-wo { width: 260px; max-width: calc(100vw - 72px); }
+.filter-sup { width: 200px; max-width: calc(100vw - 72px); }
 /* 五列等宽，1440 宽屏幕一屏放下；窄屏横向排成可滑动的列 */
 .board { display: grid; grid-template-columns: repeat(5, minmax(200px, 1fr)); gap: 12px; overflow-x: auto; }
 .col { min-width: 0; display: flex; flex-direction: column; gap: 8px; }

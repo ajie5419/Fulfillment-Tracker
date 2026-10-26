@@ -8,6 +8,8 @@ const query = z.object({ refType: z.enum(COMMENT_REFS), refId: z.string().min(1)
 export default defineFlowHandler(async (event) => {
   const q = parseQuery(event, query)
   const ref = await resolveRef(prisma, q.refType, q.refId)
-  if (ref) await assertCanSee(event, ref.workOrderNumber)
+  // 对象已删除：不返回（没法判断该看不该看，留言也随对象删了）
+  if (!ref) return []
+  await assertCanSee(event, ref.workOrderNumber)
   return listComments(q.refType, q.refId)
 })

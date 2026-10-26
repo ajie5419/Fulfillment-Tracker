@@ -68,6 +68,8 @@ async function focusFromQuery() {
   await nextTick()
   document.getElementById(`part-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   if (route.query.comments === '1') openDrawer(p, 'comments')
+  // 定位参数只用一次：清掉，之后工件列表刷新时不再反复滚动、反复打开留言
+  router.replace({ query: { ...route.query, part: undefined, comments: undefined } })
 }
 onMounted(focusFromQuery)
 watch(() => [route.query.part, route.query.comments, parts.value], focusFromQuery)

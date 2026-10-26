@@ -14,13 +14,15 @@ let seq = 0
 
 function onSearch(v: string) {
   clearTimeout(timer)
+  // 一输入就让旧结果和还在路上的旧请求失效，避免选到上一个词的结果
+  const my = ++seq
+  hits.value = []
   if (v.trim().length < 2) {
-    hits.value = []
+    loading.value = false
     return
   }
+  loading.value = true
   timer = setTimeout(async () => {
-    const my = ++seq
-    loading.value = true
     try {
       const r = await $fetch('/api/search', { query: { q: v.trim() } })
       if (my === seq) hits.value = r

@@ -17,6 +17,7 @@ type Services = {
   search: typeof import('../../server/services/search/search')
   workshop: typeof import('../../server/services/flow/workshop')
   timeline: typeof import('../../server/services/flow/timeline')
+  purchases: typeof import('../../server/services/purchases/purchases')
 }
 
 describe.skipIf(!DB)('留言、搜索、车间看板、时间线', () => {
@@ -38,6 +39,7 @@ describe.skipIf(!DB)('留言、搜索、车间看板、时间线', () => {
       search: await import('../../server/services/search/search'),
       workshop: await import('../../server/services/flow/workshop'),
       timeline: await import('../../server/services/flow/timeline'),
+      purchases: await import('../../server/services/purchases/purchases'),
     }
     db = (await import('../../server/utils/prisma')).prisma
     await db.comment.deleteMany()
@@ -126,6 +128,29 @@ describe.skipIf(!DB)('留言、搜索、车间看板、时间线', () => {
     await s.comments.addComment({ refType: 'purchase', refId: line.id, body: '能否提前', mentionIds: ['u-c'] }, 'u-a')
     const rem = await db.reminder.findFirstOrThrow({ where: { userId: 'u-c', kind: 'COMMENT' } })
     expect(rem.link).toBe(`/purchases?wo=${WO}&id=${line.id}&comments=1`)
+  })
+
+  it('不能 @ 看不到该工单的人（只看本人工单的项目经理）；工件、采购行删除时留言一起删', async () => {
+    await db.qmsUser.create({ data: { id: 'u-pm2', username: 'pm2', realName: '丁', departmentId: 'D', roleId: 'r', status: 'ACTIVE', updatedAt: new Date() } })
+    await db.workOrderExt.upsert({ where: { workOrderNumber: WO2 }, create: { workOrderNumber: WO2, projectManagerId: 'u-pm2' }, update: { projectManagerId: 'u-pm2' } })
+    try {
+      const { part } = await makePart(WO, '不可见件')
+      await expect(s.comments.addComment({ refType: 'part', refId: part.id, body: 'x', mentionIds: ['u-pm2'] }, 'u-a')).rejects.toThrow(`丁 看不到工单 ${WO}`)
+      expect(await db.reminder.count({ where: { userId: 'u-pm2' } })).toBe(0)
+      // 管理员不受限
+      await s.comments.addComment({ refType: 'part', refId: part.id, body: 'y', mentionIds: ['u-pm2'] }, 'u-a', ['u-pm2'])
+
+      const bare = await db.part.create({ data: { workOrderNumber: WO, name: '待删件', quantity: 1 } })
+      await s.comments.addComment({ refType: 'part', refId: bare.id, body: '删前留言' }, 'u-a')
+      await s.steps.deletePart(bare.id)
+      expect(await db.comment.count({ where: { refId: bare.id } })).toBe(0)
+      const line = await db.purchaseLine.create({ data: { workOrderNumber: WO, materialName: '待删料', quantity: 1, needDate: day('2026-11-20') } })
+      await s.comments.addComment({ refType: 'purchase', refId: line.id, body: '删前留言' }, 'u-a')
+      await s.purchases.deleteLine(line.id)
+      expect(await db.comment.count({ where: { refId: line.id } })).toBe(0)
+    } finally {
+      await db.workOrderExt.deleteMany({ where: { workOrderNumber: WO2 } })
+    }
   })
 
   it('全局搜索：工单、工件 / 图号、采购物料 / 供应商、外协厂 / 班组；只搜可见工单；少于 2 个字不搜', async () => {

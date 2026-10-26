@@ -6,6 +6,7 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { FlowError } from '../flow/errors'
 import { loadNames } from '../flow/names'
+import { canSee, resolveScope } from '../../utils/auth'
 
 type Tx = Prisma.TransactionClient
 
@@ -56,7 +57,14 @@ export interface CommentInput {
   mentionIds?: string[]
 }
 
-export async function addComment(input: CommentInput, authorId: string) {
+/** 被 @ 的人里看不到这个工单的（只看本人工单的项目经理）：提醒里有工单号和留言摘要，不能发给他们 */
+async function cannotSee(userIds: string[], workOrderNumber: string, admins: string[]) {
+  const out: string[] = []
+  for (const id of userIds) if (!canSee(await resolveScope(id, admins.includes(id)), workOrderNumber)) out.push(id)
+  return out
+}
+
+export async function addComment(input: CommentInput, authorId: string, admins: string[] = []) {
   const body = input.body.trim()
   if (!body) throw new FlowError('请填写留言内容')
   if (body.length > MAX_COMMENT) throw new FlowError(`留言最多 ${MAX_COMMENT} 字`)
@@ -68,6 +76,11 @@ export async function addComment(input: CommentInput, authorId: string) {
     if (mentionIds.length) {
       const found = await tx.qmsUser.count({ where: { id: { in: mentionIds }, isDeleted: false } })
       if (found !== mentionIds.length) throw new FlowError('@ 的人不存在或已停用')
+      const blocked = await cannotSee(mentionIds, ref.workOrderNumber, admins)
+      if (blocked.length) {
+        const names = (await loadNames({ user: blocked })).user
+        throw new FlowError(`${blocked.map((id) => names.get(id) ?? id).join('、')} 看不到工单 ${ref.workOrderNumber}，不能 @`)
+      }
     }
     const comment = await tx.comment.create({
       data: { refType: input.refType, refId: input.refId, workOrderNumber: ref.workOrderNumber, authorId, body, mentionIds: mentionIds.length ? mentionIds : undefined },

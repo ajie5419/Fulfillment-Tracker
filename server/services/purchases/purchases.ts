@@ -259,6 +259,7 @@ export async function deleteLine(id: string) {
     if (await tx.paymentLine.findFirst({ where: { purchaseLineId: id }, select: { paymentId: true } })) {
       throw new FlowError('已关联付款申请，不能删除；不再跟踪请改为"已取消"')
     }
+    await tx.comment.deleteMany({ where: { refType: 'purchase', refId: id } }) // 留言没有外键，一起删
     await tx.purchaseLine.delete({ where: { id } })
     await clearAlertKeys(tx, [w6Key(id)])
     await refreshPartReady(tx, line.partId, line.status === 'OPEN')

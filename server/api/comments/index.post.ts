@@ -16,5 +16,5 @@ export default defineFlowHandler(async (event, user) => {
   const input = await parseBody(event, body)
   const ref = await resolveRef(prisma, input.refType, input.refId)
   if (ref) await assertCanSee(event, ref.workOrderNumber)
-  return addComment(input, user.qmsUserId)
+  return addComment(input, user.qmsUserId, adminIds(event))
 })
