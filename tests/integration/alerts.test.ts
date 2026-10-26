@@ -267,7 +267,7 @@ describe.skipIf(!DB)('预警与提醒', () => {
     expect(alert).toMatchObject({ rule: 'W1', refType: 'unmatched', level: 'REMIND' })
     expect(await remindersOf(alert.id)).toEqual(['REMIND:u-out'])
     expect((await db.reminder.findFirstOrThrow({ where: { alertId: alert.id } })).title).toBe(`【提醒】待确认匹配 写错的名字 · 组焊：返厂报检 4 小时未确认关联（${WO}）`)
-    expect((await s.reminders.listReminders('u-out')).items.find((i) => i.alertId === alert.id)).toMatchObject({ link: '/unmatched', mobileLink: null })
+    expect((await s.reminders.listReminders('u-out')).items.find((i) => i.alertId === alert.id)).toMatchObject({ link: '/outsource?tab=match', mobileLink: null })
 
     await s.match.resolveUnmatched(id, weld.id, 'u-out')
     expect(await db.alert.findUniqueOrThrow({ where: { id: alert.id } })).toMatchObject({ status: 'CLEARED', activeKey: null })
@@ -382,10 +382,10 @@ describe.skipIf(!DB)('预警与提醒', () => {
     expect(r).toMatchObject({ level: 'REMIND' })
     // 还没开工的不归 W10（由 W2 管）
     expect(await db.alert.count({ where: { rule: 'W10', refId: notStarted.id } })).toBe(0)
-    // 提醒跳手机"加工中"页
+    // 提醒跳手机"生产"页签的"在做"、电脑端生产调度"已超期"
     const mine = await s.reminders.listReminders('u-out', now)
     const card = mine.items.find((i) => i.alertId === y!.id)
-    expect(card).toMatchObject({ rule: 'W10', mobileLink: `/m/working?stepId=${late.id}`, link: `/parts?wo=${WO}` })
+    expect(card).toMatchObject({ rule: 'W10', mobileLink: `/m/work?seg=working&stepId=${late.id}`, link: `/production?tab=overdue&wo=${WO}` })
     const list = await s.reminders.listAlerts({ rule: 'W10', workOrderNumber: WO }, now)
     expect(list.find((a) => a.refId === late.id)).toMatchObject({ duration: null, summary: expect.stringContaining('仍未完工') })
 

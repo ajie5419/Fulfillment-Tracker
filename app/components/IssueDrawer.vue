@@ -11,6 +11,7 @@ type Detail = {
   issueNo: string
   workOrderNumber: string
   refText: string | null
+  partId: string | null
   stepId: string | null
   stepStatus: string | null
   category: IssueCategoryKey
@@ -116,7 +117,7 @@ const actions: IssueAction[] = ['accept', 'resolve', 'close', 'reject', 'reassig
         <a-descriptions :column="2" size="small" bordered>
           <a-descriptions-item label="工单"><WoLink :no="detail.workOrderNumber" /></a-descriptions-item>
           <a-descriptions-item label="关联">
-            <NuxtLink v-if="detail.refText" :to="`/parts?wo=${encodeURIComponent(detail.workOrderNumber)}`">{{ detail.refText }}</NuxtLink>
+            <NuxtLink v-if="detail.refText" :to="detail.partId ? `/parts?wo=${encodeURIComponent(detail.workOrderNumber)}&part=${encodeURIComponent(detail.partId)}` : `/parts?wo=${encodeURIComponent(detail.workOrderNumber)}`">{{ detail.refText }}</NuxtLink>
             <span v-else class="muted">—</span>
             <a-tag v-if="detail.stepStatus" :color="STATUS_COLOR[detail.stepStatus as StepStatusKey]" style="margin-left: 6px">{{ STATUS_TEXT[detail.stepStatus as StepStatusKey] }}</a-tag>
           </a-descriptions-item>

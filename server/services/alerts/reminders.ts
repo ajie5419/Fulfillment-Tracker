@@ -17,9 +17,9 @@ import { userDeptNames } from '../auth/departments'
 import { workBucket } from '../../../shared/workbench'
 
 interface Link {
-  /** 电脑端：步骤 → 工件页对应工单；待确认 → 待确认匹配页；异常 → 异常列表并打开该条；签收记录（W5）→ 发放单详情；采购行（W6）→ 采购到货页并打开该行；设计任务（W7）→ 设计任务页并打开该任务；装配节点（W8）→ 齐套页并定位该节点 */
+  /** 电脑端：步骤 → 生产调度 / 外协页对应页签（stepPcLink）；待确认 → 外协页"待确认匹配"；异常 → 异常列表并打开该条；签收记录（W5）→ 发放单详情；采购行（W6）→ 采购到货页并打开该行；设计任务（W7）→ 设计任务页并打开该任务；装配节点（W8）→ 齐套页并定位该节点 */
   pc: string | null
-  /** 手机端：W2 厂外步骤 → 发出登记；在外步骤 → 外协在途；加工中步骤（W10）→ 手机加工中页；异常 → 我的异常；签收记录 → 手机签收页；采购行 → 到货确认页；设计任务 → 我的设计任务；装配节点 → 手机齐套页；待确认没有手机页面 */
+  /** 手机端：W2 厂外步骤 → 发出登记；在外步骤 → 手机"生产"在外；加工中步骤（W10）→ 手机"生产"在做；异常 → 我的异常；签收记录 → 手机签收页；采购行 → 到货确认页；设计任务 → 我的设计任务；装配节点 → 手机齐套页；待确认没有手机页面 */
   mobile: string | null
 }
 
@@ -37,6 +37,29 @@ interface LinkInfo extends Link {
 }
 
 const issueLink = (id: string): Link => ({ pc: `/issues?id=${encodeURIComponent(id)}`, mobile: `/m/issues?id=${encodeURIComponent(id)}` })
+
+/** 待确认匹配：外协页的"待确认匹配"页签（原 /unmatched） */
+const OUTSOURCE_MATCH_LINK = '/outsource?tab=match'
+
+/**
+ * 工序预警的电脑端地址（生产管理重设计第一批）：在外 → 外协页"在外"；厂外外协待发出 → 外协页"待发出"；
+ * 加工中（W10）→ 生产调度"已超期"；其余（转序停滞等待开工）→ 生产调度"可以开工"。都带工单筛选。
+ */
+export function stepPcLink(step: { status: string; mode: string }, wo: string): string {
+  if (step.status === 'OUT') return `/outsource?tab=out&wo=${wo}`
+  if (step.status === 'PENDING' && step.mode === 'EXTERNAL_OUTSOURCE') return `/outsource?tab=send&wo=${wo}`
+  if (step.status === 'IN_PROGRESS') return `/production?tab=overdue&wo=${wo}`
+  if (step.status === 'BLOCKED') return `/production?tab=stuck&wo=${wo}`
+  return `/production?tab=ready&wo=${wo}`
+}
+
+/** 工序预警的手机端地址：厂外待发出 → 发出登记；在外 → 生产"在外"；加工中 → 生产"在做"（定位到这道） */
+export function stepMobileLink(step: { id: string; status: string; mode: string }, wo: string): string | null {
+  if (step.status === 'PENDING' && step.mode === 'EXTERNAL_OUTSOURCE') return `/m/send?stepId=${encodeURIComponent(step.id)}`
+  if (step.status === 'OUT') return `/m/work?seg=out&wo=${wo}`
+  if (step.status === 'IN_PROGRESS') return `/m/work?seg=working&stepId=${encodeURIComponent(step.id)}`
+  return null
+}
 
 async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
   const alerts = alertIds.length ? await prisma.alert.findMany({ where: { id: { in: alertIds } } }) : []
@@ -83,7 +106,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
   const out = new Map<string, LinkInfo>()
   for (const a of alerts) {
     let link: Link = { pc: null, mobile: null }
-    if (a.refType === 'unmatched') link = { pc: '/unmatched', mobile: null }
+    if (a.refType === 'unmatched') link = { pc: OUTSOURCE_MATCH_LINK, mobile: null }
     if (a.refType === 'issue') link = issueLink(a.refId)
     if (a.refType === 'purchase') link = { pc: purchaseLink(a.refId), mobile: purchaseMobileLink(a.refId) }
     if (a.refType === 'drawing') link = { pc: drawingLink(a.refId), mobile: drawingMobileLink(a.refId) }
@@ -97,17 +120,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     const step = a.refType === 'step' ? stepById.get(a.refId) : undefined
     if (step) {
       const wo = encodeURIComponent(step.part.workOrderNumber)
-      link = {
-        pc: `/parts?wo=${wo}`,
-        mobile:
-          step.status === 'PENDING' && step.mode === 'EXTERNAL_OUTSOURCE'
-            ? `/m/send?stepId=${encodeURIComponent(step.id)}`
-            : step.status === 'OUT'
-              ? `/m/transit?wo=${wo}`
-              : step.status === 'IN_PROGRESS'
-                ? `/m/working?stepId=${encodeURIComponent(step.id)}`
-                : null,
-      }
+      link = { pc: stepPcLink(step, wo), mobile: stepMobileLink(step, wo) }
     }
     // 已转异常：跳到生成的异常
     const issue = a.status === 'CONVERTED' ? issueBySource.get(alertSourceKey(a.id)) : undefined
@@ -250,9 +263,9 @@ function targetLink(t: Target): string | null {
   if (t.refType === 'node') return kittingLink(t.refId)
   if (isPlanNodeAlert(t.refType) && t.workOrderNumber) return planNodeAlertLink(t.refType, t.workOrderNumber, t.refId).pc
   if (t.refType === 'plan') return planLink(t.refId)
-  if (t.refType === 'unmatched') return '/unmatched'
+  if (t.refType === 'unmatched') return OUTSOURCE_MATCH_LINK
   if (t.refType === 'issue') return `/issues?id=${encodeURIComponent(t.refId)}`
-  return t.workOrderNumber ? `/parts?wo=${encodeURIComponent(t.workOrderNumber)}` : null
+  return t.workOrderNumber ? `/production?wo=${encodeURIComponent(t.workOrderNumber)}` : null
 }
 
 /** 预警列表：活动中的预警，以及已转异常但对象仍在关注状态的（显示"已转异常 YC-…"）。附对象、情况、已持续时长、责任人 */

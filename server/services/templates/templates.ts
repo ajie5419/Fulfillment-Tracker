@@ -130,7 +130,34 @@ export async function saveTemplateFromPart(partId: string, input: { name: string
 
 /** 给还没有工序的工件套用模板。负责人默认是操作人（与"添加工序"一致） */
 export async function applyTemplate(partId: string, templateId: string, actorId: string, startDay?: string | null) {
+  return prisma.$transaction((tx) => applyTemplateTx(tx, partId, templateId, actorId, startDay))
+}
+
+/**
+ * 批量套模板（工序编排勾选多个工件）：一个事务；已经有工序链的工件跳过（不报错，计入 skipped），其余逐个套用。
+ */
+export async function applyTemplateBatch(partIds: string[], templateId: string, actorId: string, startDay?: string | null) {
   return prisma.$transaction(async (tx) => {
+    let applied = 0
+    let skipped = 0
+    let template = ''
+    for (const id of [...new Set(partIds)].sort()) {
+      await tx.$queryRaw`SELECT id FROM part WHERE id = ${id} FOR UPDATE`
+      const n = await tx.routeStep.count({ where: { partId: id } })
+      if (n) {
+        skipped++
+        continue
+      }
+      const r = await applyTemplateTx(tx, id, templateId, actorId, startDay)
+      template = r.template
+      applied++
+    }
+    return { applied, skipped, template }
+  })
+}
+
+async function applyTemplateTx(tx: Prisma.TransactionClient, partId: string, templateId: string, actorId: string, startDay?: string | null) {
+  {
     await tx.$queryRaw`SELECT id FROM part WHERE id = ${partId} FOR UPDATE`
     const part = await tx.part.findUnique({ where: { id: partId }, select: { id: true, _count: { select: { steps: true } } } })
     if (!part) throw new FlowError('工件不存在或已删除')
@@ -141,5 +168,5 @@ export async function applyTemplate(partId: string, templateId: string, actorId:
     const rows = routeFromTemplate(template.steps, startDay)
     await tx.routeStep.createMany({ data: rows.map((r) => ({ ...r, partId, ownerId: actorId })) })
     return { copied: rows.length, template: template.name }
-  })
+  }
 }

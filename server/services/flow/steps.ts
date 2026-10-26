@@ -2,6 +2,7 @@
  * 工件和工序链的增删改。工件挂在工单（qms_work_order.workOrderNumber）下，工序链按 seq 排序。
  * 规则只有两条：已有流转记录的步骤不能删除、不能调顺序；步骤负责人默认是创建人。
  */
+import type { PrereqState } from './readiness'
 import type { Prisma, StepMode } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { openIssuesOfSteps } from '../issues/issues'
@@ -56,8 +57,22 @@ export function needsFill(s: { status: string; ownerId: string | null; mode: Ste
 
 /** 工单下的工件及其工序链（带名称、已返回数量），供页面直接展示 */
 export async function listParts(workOrderNumber: string) {
+  return loadParts({ workOrderNumber })
+}
+
+/** 单个工件（工件抽屉）：同 listParts 的一行；不存在时报错 */
+/** 工件抽屉用的单个工件（接口 GET /api/parts/:id 再带上开工前提） */
+export type PartDetail = Awaited<ReturnType<typeof getPart>> & { prereq: PrereqState }
+
+export async function getPart(partId: string) {
+  const [part] = await loadParts({ id: partId })
+  if (!part) throw new FlowError('工件不存在或已删除')
+  return part
+}
+
+async function loadParts(where: Prisma.PartWhereInput) {
   const parts = await prisma.part.findMany({
-    where: { workOrderNumber },
+    where,
     orderBy: { createdAt: 'asc' },
     include: { steps: { orderBy: { seq: 'asc' } } },
   })
@@ -225,7 +240,12 @@ export async function addStep(partId: string, input: StepInput, actorId: string)
 }
 
 export async function updateStep(stepId: string, input: Partial<StepInput>) {
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction((tx) => updateStepTx(tx, stepId, input))
+}
+
+/** 改一道工序（在调用方的事务里）：批量编排逐道调用，规则与单道修改完全一样 */
+async function updateStepTx(tx: Tx, stepId: string, input: Partial<StepInput>) {
+  {
     const found = await tx.routeStep.findUnique({ where: { id: stepId }, select: { partId: true } })
     if (!found) throw new FlowError('步骤不存在或已删除')
     const part = await lockPart(tx, found.partId)
@@ -258,6 +278,62 @@ export async function updateStep(stepId: string, input: Partial<StepInput>) {
       },
     })
     return { ...updated, planWarning: updated.status === 'DONE' ? null : stepWarning(updated, link.node) }
+  }
+}
+
+// ───────────── 批量编排（生产管理重设计第一批）─────────────
+
+export interface BatchStepInput {
+  partIds: string[]
+  /** 只改这道工序；不传 = 这些工件上全部还没完成的工序 */
+  processId?: string | null
+  set: Pick<Partial<StepInput>, 'ownerId' | 'supplierId' | 'planStartDate' | 'dueDate' | 'planNodeId'>
+}
+
+/**
+ * 勾选多个工件，一次给工序设负责人、班组 / 外协厂、应开工日、要求完成日、所属总计划节点。只改没完成的工序。
+ * 班组（厂内班组）只设到自制工序上，外协厂只设到外协工序上；方式不合的工序不设它（计入 skipped），其他字段照改。
+ * 一个事务：任何一道校验不过（如应开工日晚于要求完成日、节点不属于该工单）整批不改，报错写明是哪个工件的哪道工序。
+ */
+export async function batchUpdateSteps(input: BatchStepInput) {
+  return prisma.$transaction(async (tx) => {
+    const ids = [...new Set(input.partIds)].sort() // 按 ID 顺序加锁，避免并发批量互相等
+    for (const id of ids) await lockPart(tx, id)
+    const steps = await tx.routeStep.findMany({
+      where: { partId: { in: ids }, status: { not: 'DONE' }, ...(input.processId ? { processId: input.processId } : {}) },
+      include: { part: { select: { name: true } } },
+      orderBy: [{ partId: 'asc' }, { seq: 'asc' }],
+    })
+    let teamKind: boolean | null = null
+    if (input.set.supplierId) {
+      const sup = await tx.qmsSupplier.findFirst({ where: { id: input.set.supplierId, isDeleted: false }, select: { kind: true } })
+      if (!sup) throw new FlowError('班组 / 外协厂不存在或已停用')
+      teamKind = sup.kind === 'TEAM'
+    }
+    const names = await loadNames({ process: steps.map((s) => s.processId) })
+    let updated = 0
+    let skipped = 0
+    const warnings: string[] = []
+    for (const s of steps) {
+      const body: Partial<StepInput> = { ...input.set }
+      if (input.set.supplierId !== undefined && input.set.supplierId !== null && teamKind !== null) {
+        // 班组只给自制，外协厂只给外协；方式不合的这道不设外协厂 / 班组（其他字段照改）
+        if (teamKind !== (s.mode === 'SELF')) {
+          delete body.supplierId
+          skipped++
+        }
+      }
+      if (!Object.keys(body).length) continue
+      try {
+        const r = await updateStepTx(tx, s.id, body)
+        if (r.planWarning) warnings.push(`${s.part.name} · ${names.process.get(s.processId) ?? s.processId}：${r.planWarning}`)
+      } catch (e) {
+        if (e instanceof FlowError) throw new FlowError(`${s.part.name} · 第 ${s.seq} 道 ${names.process.get(s.processId) ?? s.processId}：${e.message}`)
+        throw e
+      }
+      updated++
+    }
+    return { updated, skipped, planWarning: warnings.length ? warnings.slice(0, 3).join('；') + (warnings.length > 3 ? ` 等 ${warnings.length} 道` : '') : null }
   })
 }
 

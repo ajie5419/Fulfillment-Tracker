@@ -75,7 +75,7 @@ export async function search(q: string, visibleWorkOrders?: string[]): Promise<S
       id: s.id,
       title: s.name,
       sub: `${s.kind === 'TEAM' ? '厂内班组' : '外协厂'} · 手上 ${busyOf.get(s.id) ?? 0} 道工序`,
-      link: `/workshop?supplierId=${enc(s.id)}`,
+      link: `/production?supplierId=${enc(s.id)}`,
     })),
   ]
 }

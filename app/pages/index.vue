@@ -5,6 +5,7 @@
  * 原有操作全部保留：待办的登记发出 / 开工 / 签收 / 确认变更影响 / 去确认 / 转交，提醒的点开（标已读并跳转）、标已读、全部已读，
  * 每日汇总和同步故障置顶。
  */
+import type { PartDetail } from '~~/server/services/flow/steps'
 import { WORK_BUCKET_TEXT, factoryTimeText, groupByBucket, type WorkBucket } from '#shared/workbench'
 
 const route = useRoute()
@@ -58,6 +59,19 @@ function start(t: Todo) {
       }
     },
   })
+}
+
+/** 直接完工（活已经干完才想起登记，生产管理重设计第一批）：同一个完工弹窗，可部分完工、报废 */
+const finishing = ref<{ id: string; title: string; quantity: number; doneQty: number } | null>(null)
+async function finish(t: Todo) {
+  if (!t.step) return
+  try {
+    const p = await $fetch<PartDetail>(`/api/parts/${t.step.partId}`)
+    const s = p.steps.find((x) => x.id === t.step!.id)
+    finishing.value = { id: t.step.id, title: `${t.step.partName} · ${t.step.processName}`, quantity: p.quantity, doneQty: s?.returnedQty ?? 0 }
+  } catch (e) {
+    message.error(apiError(e))
+  }
 }
 
 /** 完成部门任务（部门计划二次分解）：完成日记今天，关掉待办 */
@@ -184,11 +198,14 @@ const filterTo = (f: Filter) => ({ query: { ...route.query, f: active.value === 
 
 const LEVEL_LABEL: Record<AlertLevelKey, string> = { RED: '红色', YELLOW: '黄色', REMIND: '提醒' }
 const toneIcon = (t: Tone) => (t === 'late' ? 'alert' : t === 'risk' ? 'warn' : 'dot')
-/** 待办的"查看"跳转：工序 → 生产管理；发放 → 发放单；总计划 → 工单详情的总计划页签 */
+/** 待办的"查看"跳转：工序 → 工件抽屉（工序编排页）；发放 → 发放单；总计划 → 工单详情的总计划页签 */
 function todoLink(t: Todo): string | null {
   if (t.plan) return t.plan.link
   if (t.planTask) return t.planTask.link
   if (t.release) return `/releases?id=${encodeURIComponent(t.release.id)}`
+  // 工序 / 工件待办：打开工件抽屉（生产管理重设计第一批）
+  const partId = t.step?.partId ?? (t.refType === 'part' ? t.refId : null)
+  if (t.workOrderNumber && partId) return `/parts?wo=${encodeURIComponent(t.workOrderNumber)}&part=${encodeURIComponent(partId)}`
   if (t.workOrderNumber) return `/parts?wo=${encodeURIComponent(t.workOrderNumber)}`
   return null
 }
@@ -276,10 +293,16 @@ function onCardClick(c: Card) {
               <div class="ops" @click.stop>
                 <template v-if="c.todo">
                   <a-button v-if="c.todo.action === 'ARRANGE_SEND' && c.todo.step" type="primary" size="small" @click="openSend(c.todo)">登记发出</a-button>
-                  <a-button v-else-if="c.todo.action === 'ARRANGE_START' && c.todo.step" type="primary" size="small" @click="start(c.todo)">开工</a-button>
+                  <template v-else-if="c.todo.action === 'ARRANGE_START' && c.todo.step">
+                    <a-button type="primary" size="small" @click="start(c.todo)">开工</a-button>
+                    <a-button size="small" @click="finish(c.todo)">完工</a-button>
+                  </template>
                   <template v-else-if="c.todo.action === 'READY_TO_START' && c.todo.step && c.todo.step.status === 'PENDING'">
                     <a-button v-if="c.todo.step.mode === 'EXTERNAL_OUTSOURCE'" type="primary" size="small" @click="openSend(c.todo)">登记发出</a-button>
-                    <a-button v-else type="primary" size="small" @click="start(c.todo)">开工</a-button>
+                    <template v-else>
+                      <a-button type="primary" size="small" @click="start(c.todo)">开工</a-button>
+                      <a-button size="small" @click="finish(c.todo)">完工</a-button>
+                    </template>
                   </template>
                   <a-button v-else-if="c.todo.action === 'SIGN_RELEASE' && c.todo.release" type="primary" size="small" @click="releaseId = c.todo.release.id">查看并签收</a-button>
                   <a-button v-else-if="c.todo.action === 'CONFIRM_CHANGE' && c.todo.release" type="primary" size="small" @click="releaseId = c.todo.release.id">确认变更影响</a-button>
@@ -301,6 +324,7 @@ function onCardClick(c: Card) {
   </div>
 
   <SendStepModal :step="sending" @close="sending = null" @done="sending = null; afterTodo()" />
+  <FinishStepModal :step="finishing" @close="finishing = null" @done="finishing = null; afterTodo()" />
   <ReleaseDrawer :id="releaseId" @close="releaseId = null" @changed="afterTodo()" />
 
   <a-modal :open="!!transferring" title="转交待办" ok-text="转交" @ok="transfer" @cancel="transferring = null">
