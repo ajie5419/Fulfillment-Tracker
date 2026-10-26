@@ -157,6 +157,22 @@ describe.skipIf(!DB)('留言、搜索、车间看板、时间线', () => {
     }
   })
 
+  it('删工件和留言并发：删除先锁住工件时，留言要等删完，然后报"不存在"，不留下孤儿留言', async () => {
+    const part = await db.part.create({ data: { workOrderNumber: WO, name: '并发件', quantity: 1 } })
+    let adding: Promise<unknown> | undefined
+    await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM part WHERE id = ${part.id} FOR UPDATE`
+      adding = s.comments.addComment({ refType: 'part', refId: part.id, body: '抢在删除时留言', mentionIds: ['u-c'] }, 'u-a').catch((e: Error) => e)
+      await new Promise((r) => setTimeout(r, 300)) // 让留言请求先到并卡在锁上
+      await tx.comment.deleteMany({ where: { refType: 'part', refId: part.id } })
+      await tx.part.delete({ where: { id: part.id } })
+    })
+    const res = await adding
+    expect(res).toBeInstanceOf(Error)
+    expect((res as Error).message).toContain('不存在')
+    expect(await db.comment.count({ where: { refId: part.id } })).toBe(0)
+  })
+
   it('全局搜索：工单、工件 / 图号、采购物料 / 供应商、外协厂 / 班组；只搜可见工单；少于 2 个字不搜', async () => {
     await makePart(WO2, '模具底板', 'DWG-778')
     expect(await s.search.search('a')).toEqual([])

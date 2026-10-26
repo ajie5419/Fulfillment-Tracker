@@ -28,7 +28,8 @@ export async function resolveRef(db: Tx | typeof prisma, refType: CommentRef, re
   return { workOrderNumber: l.workOrderNumber, title: `采购"${l.materialName}"`, link: `/purchases?wo=${encodeURIComponent(l.workOrderNumber)}&id=${encodeURIComponent(refId)}&comments=1` }
 }
 
-/** 删除一条记录上的全部留言，连同这些留言发出的 @ 提醒（提醒没有外键，按 dedupeKey "COMMENT:<留言 ID>:<收件人>" 找） */
+/** 删除一条记录上的全部留言，连同这些留言发出的 @ 提醒（提醒没有外键，按 dedupeKey "COMMENT:<留言 ID>:<收件人>" 找）。
+ * 调用方须已在同一事务里对该记录加了 FOR UPDATE 锁（deletePart / deleteLine 都先锁），和 addComment 的共享锁互斥。 */
 export async function deleteCommentsOf(tx: Tx, refType: CommentRef, refId: string) {
   const rows = await tx.comment.findMany({ where: { refType, refId }, select: { id: true } })
   if (!rows.length) return
@@ -79,6 +80,9 @@ export async function addComment(input: CommentInput, authorId: string, admins: 
   const mentionIds = [...new Set(input.mentionIds ?? [])].filter((id) => id !== authorId)
   if (mentionIds.length > MAX_MENTIONS) throw new FlowError(`一次最多 @ ${MAX_MENTIONS} 个人`)
   return prisma.$transaction(async (tx) => {
+    // 给留言挂的记录加共享锁：删工件 / 采购行时先锁这行再清留言，两边串行，避免清完之后又插进一条没人管的留言和提醒
+    if (input.refType === 'part') await tx.$queryRaw`SELECT id FROM part WHERE id = ${input.refId} FOR SHARE`
+    else await tx.$queryRaw`SELECT id FROM purchase_line WHERE id = ${input.refId} FOR SHARE`
     const ref = await resolveRef(tx, input.refType, input.refId)
     if (!ref) throw new FlowError('留言的对象不存在或已删除')
     if (mentionIds.length) {
