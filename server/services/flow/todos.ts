@@ -153,13 +153,15 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[], 
     }
   })
   // 工作台卡片流（前端改版第二轮）：所属工单、截止日、按工厂时区的今天分组。电脑端工作台和手机端 /m 共用这里的 dueDay / bucket。
-  // 截止日：总计划节点确认取节点计划日；否则待办自带的 dueAt（按工厂时区取日期）；再没有取工序的要求完成日（日期字段）
+  // 截止日：总计划节点确认取节点计划日；工序的"安排发出 / 开工"取工序的应开工日；否则待办自带的 dueAt（按工厂时区取日期）；再没有取工序的要求完成日（日期字段）
   const today = todayDay(now)
   return rows.map((row) => {
     // 只有"完成部门任务"带 planTask，其余补 null，页面统一按 t.planTask 判断
     const t = { planTask: null, ...row }
-    const stepDue = t.refType === 'step' ? byId.get(t.refId)?.dueDate : null
-    const dueDay = t.plan?.planDate ?? t.planTask?.planDate ?? (t.dueAt ? shanghaiDay(t.dueAt) : stepDue ? dateFieldDay(stepDue) : null)
+    const stepRow = t.refType === 'step' ? byId.get(t.refId) : undefined
+    const stepStart = stepRow?.planStartDate ? dateFieldDay(stepRow.planStartDate) : t.refType === 'part' ? (ready.get(t.refId)?.step?.planStartDay ?? null) : null
+    const stepDue = stepRow?.dueDate ? dateFieldDay(stepRow.dueDate) : null
+    const dueDay = t.plan?.planDate ?? t.planTask?.planDate ?? stepStart ?? (t.dueAt ? shanghaiDay(t.dueAt) : stepDue)
     return {
       ...t,
       workOrderNumber: (t.refType === 'part' ? ready.get(t.refId)?.workOrderNumber : null) ?? t.release?.workOrderNumber ?? t.plan?.workOrderNumber ?? t.planTask?.workOrderNumber ?? (t.refType === 'step' ? byId.get(t.refId)?.part.workOrderNumber : null) ?? null,

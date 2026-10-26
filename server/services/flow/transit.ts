@@ -1,6 +1,7 @@
 /** 外协在途：已发出（OUT）还没全部返回的步骤。 */
 import { prisma } from '../../utils/prisma'
 import { overdueDays } from './dates'
+import { RETURN_TYPES } from './flow'
 import { loadNames } from './names'
 
 /** visibleWorkOrders：可见工单（undefined = 全部，见 server/utils/auth.ts 的 getScope） */
@@ -18,15 +19,19 @@ export async function listTransit(filter: { workOrderNumber?: string; supplierId
     include: { part: true },
     orderBy: [{ promisedReturnDate: 'asc' }, { startedAt: 'asc' }],
   })
-  const [names, sums] = await Promise.all([
+  const stepIds = steps.map((s) => s.id)
+  const [names, sums, sends] = await Promise.all([
     loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId), user: steps.map((s) => s.ownerId) }),
     prisma.flowEvent.groupBy({
       by: ['stepId'],
-      where: { stepId: { in: steps.map((s) => s.id) }, type: { in: ['RETURN', 'RETURN_MANUAL'] } },
+      where: { stepId: { in: stepIds }, type: { in: RETURN_TYPES } },
       _sum: { qty: true },
     }),
+    // 发出时登记的随件发料
+    prisma.flowEvent.findMany({ where: { stepId: { in: stepIds }, type: 'SEND', note: { not: null } }, select: { stepId: true, note: true }, orderBy: { occurredAt: 'asc' } }),
   ])
   const returned = new Map(sums.map((s) => [s.stepId, s._sum.qty ?? 0]))
+  const sendNote = new Map(sends.map((e) => [e.stepId, e.note]))
   const now = new Date()
   return steps.map((s) => ({
     stepId: s.id,
@@ -45,6 +50,8 @@ export async function listTransit(filter: { workOrderNumber?: string; supplierId
     ownerName: s.ownerId ? (names.user.get(s.ownerId) ?? s.ownerId) : null,
     startedAt: s.startedAt,
     promisedReturnDate: s.promisedReturnDate,
+    /** 随件发料（发出时登记） */
+    sendNote: sendNote.get(s.id) ?? null,
     overdueDays: overdueDays(s.promisedReturnDate, now),
   }))
 }

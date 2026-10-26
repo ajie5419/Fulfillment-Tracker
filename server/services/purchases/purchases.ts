@@ -542,6 +542,8 @@ function readyPart(
           partName: p.name,
           workOrderNumber: p.workOrderNumber,
           held: !!s.holdReleaseId,
+          /** 第一道的应开工日（YYYY-MM-DD），待办截止日用 */
+          planStartDay: s.planStartDate ? s.planStartDate.toISOString().slice(0, 10) : null,
         }
       : null,
   }

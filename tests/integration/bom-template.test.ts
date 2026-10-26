@@ -157,11 +157,13 @@ describe.skipIf(!DB)('R8 BOM 导入与路线模板', () => {
         description: '下料外协',
         steps: [
           { processId: 'prc-weld', mode: 'EXTERNAL_OUTSOURCE', supplierId: 'sup-weld', defaultDays: 7 },
-          { processId: 'prc-paint', mode: 'SELF', supplierId: 'sup-weld', defaultDays: 3 },
+          { processId: 'prc-paint', mode: 'SELF', defaultDays: 3 },
         ],
       },
       ACTOR,
     )
+    // 自制只能带厂内班组（10-26 派工到班组），外协厂直接拒绝，不再悄悄丢掉
+    await expect(s.templates.createTemplate({ name: '自制带外协厂', steps: [{ processId: 'prc-paint', mode: 'SELF', supplierId: 'sup-weld' }] }, ACTOR)).rejects.toThrow('只能派给厂内班组')
     await expect(s.templates.createTemplate({ name: '结构件路线', steps: [{ processId: 'prc-weld', mode: 'SELF' }] }, ACTOR)).rejects.toThrow('模板名称已存在')
     await expect(s.templates.createTemplate({ name: '坏模板', steps: [{ processId: 'prc-nope', mode: 'SELF' }] }, ACTOR)).rejects.toThrow('不存在或已停用')
 

@@ -15,6 +15,7 @@ const DAY = 86_400_000
 type Services = {
   steps: typeof import('../../server/services/flow/steps')
   flow: typeof import('../../server/services/flow/flow')
+  finish: typeof import('../../server/services/flow/finish')
   scan: typeof import('../../server/services/alerts/scan')
   rules: typeof import('../../server/services/alerts/rules')
   board: typeof import('../../server/services/issues/board')
@@ -67,6 +68,7 @@ describe.skipIf(!DB)('齐套（R12）', () => {
     s = {
       steps: await import('../../server/services/flow/steps'),
       flow: await import('../../server/services/flow/flow'),
+      finish: await import('../../server/services/flow/finish'),
       scan: await import('../../server/services/alerts/scan'),
       rules: await import('../../server/services/alerts/rules'),
       board: await import('../../server/services/issues/board'),
@@ -130,7 +132,7 @@ describe.skipIf(!DB)('齐套（R12）', () => {
   const node = (over: Partial<Parameters<Services['kit']['createNode']>[0]> = {}, actor = PROD) =>
     s.kit.createNode({ workOrderNumber: WO, name: '主梁总装', needDate: dayOff(30), ...over }, actor)
   const finishAll = async (partId: string) => {
-    for (const st of await db.routeStep.findMany({ where: { partId }, orderBy: { seq: 'asc' } })) await s.flow.finishStep({ stepId: st.id, actorId: 'u-worker', source: 'PC' })
+    for (const st of await db.routeStep.findMany({ where: { partId }, orderBy: { seq: 'asc' } })) await s.finish.finishStep({ stepId: st.id, actorId: 'u-worker', source: 'PC' })
   }
   const view = (id: string) => s.kit.getNode(id, ADMIN)
 
@@ -224,11 +226,11 @@ describe.skipIf(!DB)('齐套（R12）', () => {
     await s.flow.startStep({ stepId: steps[0]!.id, actorId: 'u-worker', source: 'PC' })
     v = await view(n.id)
     expect(partRow()).toMatchObject({ reason: '在制', stage: '下料' })
-    await s.flow.finishStep({ stepId: steps[0]!.id, actorId: 'u-worker', source: 'PC' })
+    await s.finish.finishStep({ stepId: steps[0]!.id, actorId: 'u-worker', source: 'PC' })
     v = await view(n.id)
     expect(partRow()).toMatchObject({ reason: '待开工', stage: '组焊' })
     // 最后一道完工 → 工件完成，算就绪
-    await s.flow.finishStep({ stepId: steps[1]!.id, actorId: 'u-worker', source: 'PC' })
+    await s.finish.finishStep({ stepId: steps[1]!.id, actorId: 'u-worker', source: 'PC' })
     v = await view(n.id)
     expect(v).toMatchObject({ total: 3, ready: 2, percent: 66 })
     expect(v.readyItems).toEqual(expect.arrayContaining([part.name, '钢板']))

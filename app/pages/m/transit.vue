@@ -60,6 +60,7 @@ const returnedPercent = (r: Row) => (r.quantity > 0 ? Math.min(100, Math.round((
           <span>{{ r.supplierName ?? '—' }}</span>
           <span :class="{ 'm-text-late': r.overdueDays > 0 }">承诺返回 {{ dayText(r.promisedReturnDate) || '—' }}</span>
         </div>
+        <div v-if="r.sendNote" class="m-meta"><span>随件发料：{{ r.sendNote }}</span></div>
         <div class="m-progress">
           <van-progress :percentage="returnedPercent(r)" :show-pivot="false" :class="r.overdueDays > 0 ? 'm-progress-late' : 'm-progress-primary'" />
           <span class="m-progress-text">已回 {{ r.returnedQty }}/{{ r.quantity }}</span>

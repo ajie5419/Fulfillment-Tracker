@@ -37,7 +37,7 @@ export const DEFAULT_DEPT_NAME = Object.fromEntries(
 export const SUPPLIER_CATEGORIES: IssueCategory[] = ['OUTSOURCE_SCHEDULE', 'OUTSOURCE_QUALITY']
 
 export const STATUS_TEXT: Record<IssueStatus, string> = { OPEN: '待受理', ACCEPTED: '处理中', RESOLVED: '待确认', CLOSED: '已关闭' }
-export const SOURCE_TEXT: Record<IssueSource, string> = { MANUAL: '手工上报', ALERT: '预警转入', QMS_NONCONFORMING: 'QMS 不合格' }
+export const SOURCE_TEXT: Record<IssueSource, string> = { MANUAL: '手工上报', ALERT: '预警转入', QMS_NONCONFORMING: 'QMS 不合格', SCRAP: '完工报废' }
 
 /** 未关闭的状态 */
 export const OPEN_STATUSES: IssueStatus[] = ['OPEN', 'ACCEPTED', 'RESOLVED']

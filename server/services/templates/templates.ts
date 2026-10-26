@@ -8,6 +8,7 @@ import { prisma } from '../../utils/prisma'
 import { parseDay } from '../flow/dates'
 import { FlowError } from '../flow/errors'
 import { loadNames } from '../flow/names'
+import { assertSelfTeam } from '../flow/steps'
 
 type Tx = Prisma.TransactionClient
 
@@ -27,19 +28,21 @@ export interface TemplateInput {
 const DAY_MS = 86_400_000
 
 /**
- * 模板步骤 → 工件步骤（纯函数）。自制不带外协厂。
- * 给了开工日（startDay，YYYY-MM-DD）时，按默认工期逐道累加日历天得出要求完成日；没填工期的那道不设日期、也不占天数。
+ * 模板步骤 → 工件步骤（纯函数）。自制可带派工班组。
+ * 给了开工日（startDay，YYYY-MM-DD）时，按默认工期逐道累加日历天：每道的应开工日 = 上一道的要求完成日（第一道 = 开工日），
+ * 要求完成日 = 应开工日 + 工期；没填工期的那道只设应开工日、不设要求完成日、也不占天数。
  * 不给开工日就都不设日期——要求完成日过了会直接触发 W3 红色预警，不能替人编日期。
  */
 export function routeFromTemplate(steps: TemplateStepInput[], startDay?: string | null) {
   let cursor = startDay ? parseDay(startDay).getTime() : null
   return steps.map((s, i) => {
+    const planStartDate = cursor !== null ? new Date(cursor) : null
     let dueDate: Date | null = null
     if (cursor !== null && s.defaultDays != null) {
       cursor += s.defaultDays * DAY_MS
       dueDate = new Date(cursor)
     }
-    return { seq: i + 1, processId: s.processId, mode: s.mode, supplierId: s.mode === 'SELF' ? null : s.supplierId || null, dueDate }
+    return { seq: i + 1, processId: s.processId, mode: s.mode, supplierId: s.supplierId || null, planStartDate, dueDate }
   })
 }
 
@@ -48,6 +51,7 @@ async function assertSteps(tx: Tx, steps: TemplateStepInput[]) {
   const ids = [...new Set(steps.map((s) => s.processId))]
   const found = await tx.qmsProcess.count({ where: { id: { in: ids }, isDeleted: false } })
   if (found !== ids.length) throw new FlowError('模板里有工序不存在或已停用')
+  for (const s of steps) await assertSelfTeam(tx, s.mode, s.supplierId)
 }
 
 const stepRows = (steps: TemplateStepInput[]) =>
@@ -55,7 +59,7 @@ const stepRows = (steps: TemplateStepInput[]) =>
     seq: i + 1,
     processId: s.processId,
     mode: s.mode,
-    supplierId: s.mode === 'SELF' ? null : s.supplierId || null,
+    supplierId: s.supplierId || null,
     defaultDays: s.defaultDays ?? null,
   }))
 

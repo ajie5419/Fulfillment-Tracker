@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 工序路线模板（R8）：常用工序链 = 一串工序 + 每道的执行方式、默认外协厂、默认工期。
- * 管理员维护（接口也校验）；在"工件与工序链"页给没有工序的工件"套用模板"（弹窗里能看到完整工序链）。
+ * 管理员维护（接口也校验）；在"生产管理"页给没有工序的工件"套用模板"（弹窗里能看到完整工序链）。
  * 套用是复制：改模板、删模板都不影响已经套用的工件。
  * 功能重复梳理第一批：管理员在"设置"页签维护（菜单少一项）；/templates 页也用这个组件，给非管理员只读查看。
  */
@@ -19,6 +19,8 @@ const admin = computed(() => !!me.value?.isAdmin)
 
 const processOptions = computed(() => master.value.processes.map((p) => ({ value: p.id, label: p.name })))
 const supplierOptions = computed(() => master.value.suppliers.map((s) => ({ value: s.id, label: s.label })))
+/** 自制工序只能派给厂内班组 */
+const teamOptions = computed(() => master.value.suppliers.filter((s) => s.kind === 'TEAM').map((s) => ({ value: s.id, label: s.name })))
 const modeOptions = Object.entries(MODE_TEXT).map(([value, label]) => ({ value, label }))
 
 // ───── 编辑 ─────
@@ -42,7 +44,7 @@ async function save() {
   const body = {
     name: form.name,
     description: form.description || null,
-    steps: form.steps.map((s) => ({ processId: s.processId, mode: s.mode, supplierId: s.mode === 'SELF' ? null : s.supplierId ?? null, defaultDays: s.defaultDays ?? null })),
+    steps: form.steps.map((s) => ({ processId: s.processId, mode: s.mode, supplierId: s.supplierId ?? null, defaultDays: s.defaultDays ?? null })),
   }
   saving.value = true
   try {
@@ -79,7 +81,7 @@ function remove(t: TemplateRow) {
   <div>
     <div class="head">
       <p class="muted">
-      常用工序链存成模板，在"工件与工序链"页给还没有工序的工件"套用模板"，也可以把某个工件的工序链"另存为模板"。套用是复制：以后改模板、删模板都不影响已经套用的工件。{{ admin ? '' : '模板由管理员维护。' }}
+      常用工序链存成模板，在"生产管理"页给还没有工序的工件"套用模板"，也可以把某个工件的工序链"另存为模板"。套用是复制：以后改模板、删模板都不影响已经套用的工件。{{ admin ? '' : '模板由管理员维护。' }}
       </p>
       <a-button v-if="admin" type="primary" @click="edit()">新建模板</a-button>
     </div>
@@ -114,8 +116,8 @@ function remove(t: TemplateRow) {
         <div v-for="(s, i) in form.steps" :key="i" class="step">
           <span class="seq">{{ i + 1 }}</span>
           <a-select v-model:value="s.processId" placeholder="工序" style="width: 150px" show-search option-filter-prop="label" :options="processOptions" />
-          <a-select v-model:value="s.mode" style="width: 110px" :options="modeOptions" />
-          <a-select v-model:value="s.supplierId" placeholder="默认外协厂（可空）" style="width: 190px" allow-clear show-search option-filter-prop="label" :options="supplierOptions" :disabled="s.mode === 'SELF'" />
+          <a-select v-model:value="s.mode" style="width: 110px" :options="modeOptions" @change="s.supplierId = undefined" />
+          <a-select v-model:value="s.supplierId" :placeholder="s.mode === 'SELF' ? '默认班组（可空）' : '默认外协厂（可空）'" style="width: 190px" allow-clear show-search option-filter-prop="label" :options="s.mode === 'SELF' ? teamOptions : supplierOptions" />
           <a-input-number v-model:value="s.defaultDays" :min="0" :max="365" placeholder="工期" addon-after="天" style="width: 120px" />
           <a-button size="small" :disabled="i === 0" @click="moveDraft(i, -1)">上移</a-button>
           <a-button size="small" :disabled="i === form.steps.length - 1" @click="moveDraft(i, 1)">下移</a-button>

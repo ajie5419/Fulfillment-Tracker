@@ -16,8 +16,8 @@ import { FlowError } from './errors'
 
 type Tx = Prisma.TransactionClient
 
-/** 计入"已返回数量"的事件类型。完工按全部返回处理，也计入 */
-const RETURN_TYPES: FlowEventType[] = ['RETURN', 'RETURN_MANUAL', 'FINISH']
+/** 计入"已返回 / 已完成数量"的事件类型。完工、部分完工（报工）也计入；报废（SCRAP）不计入 */
+export const RETURN_TYPES: FlowEventType[] = ['RETURN', 'RETURN_MANUAL', 'FINISH', 'REPORT']
 
 export const ARRANGE_SEND = 'ARRANGE_SEND'
 export const ARRANGE_START = 'ARRANGE_START'
@@ -55,6 +55,8 @@ export interface SendInput {
   supplierId?: string | null
   promisedReturnDate: Date
   qty?: number
+  /** 随件发料（外协带料）等备注 */
+  note?: string | null
   actorId: string
   source: FlowSource
 }
@@ -81,6 +83,7 @@ export function sendStep(input: SendInput) {
         type: 'SEND',
         qty: input.qty ?? step.part.quantity,
         source: input.source,
+        note: input.note?.trim() || null,
         actorId: input.actorId,
         occurredAt: now,
       },
@@ -99,7 +102,7 @@ export interface ActInput {
   source: FlowSource
 }
 
-function assertInPlant(step: RouteStep) {
+export function assertInPlant(step: RouteStep) {
   if (step.mode === 'EXTERNAL_OUTSOURCE') throw new FlowError('厂外外协的步骤请用发出登记和返厂，不用开工/完工')
 }
 
@@ -119,24 +122,6 @@ export function startStep(input: ActInput) {
     await clearStepAlerts(tx, step.id, ['W2'])
     await tx.part.update({ where: { id: step.partId }, data: { currentStepId: step.id, statusSince: now } })
     return updated
-  })
-}
-
-/** 完工：自制、厂内外协。效果与"剩余数量全部返厂"相同。没点开工直接完工也允许（开工是可选的）。 */
-export function finishStep(input: ActInput) {
-  return prisma.$transaction(async (tx) => {
-    const step = await lockStep(tx, input.stepId)
-    assertInPlant(step)
-    if (step.status !== 'PENDING' && step.status !== 'IN_PROGRESS') throw new FlowError('该步骤已完成')
-    const returned = await returnedQty(tx, step.id)
-    return applyReturn(tx, step, {
-      type: 'FINISH',
-      qty: Math.max(step.part.quantity - returned, 0),
-      source: input.source,
-      actorId: input.actorId,
-      occurredAt: new Date(),
-      forceDone: true,
-    })
   })
 }
 
@@ -183,12 +168,12 @@ export async function manualReturn(input: { stepId: string; qty: number; actorId
   return prisma.$transaction((tx) => recordReturn(tx, { ...input, occurredAt: new Date() }))
 }
 
-async function returnedQty(tx: Tx, stepId: string) {
+export async function returnedQty(tx: Tx, stepId: string) {
   const agg = await tx.flowEvent.aggregate({ where: { stepId, type: { in: RETURN_TYPES } }, _sum: { qty: true } })
   return agg._sum.qty ?? 0
 }
 
-async function applyReturn(
+export async function applyReturn(
   tx: Tx,
   step: RouteStep & { part: Part },
   e: {
@@ -199,6 +184,7 @@ async function applyReturn(
     actorId: string | null
     occurredAt: Date
     forceDone: boolean
+    note?: string | null
   },
 ): Promise<ReturnResult> {
   const prevCount = await tx.flowEvent.count({ where: { stepId: step.id, type: { in: RETURN_TYPES } } })
@@ -212,6 +198,7 @@ async function applyReturn(
       qmsInspectionId: e.qmsInspectionId ?? null,
       actorId: e.actorId,
       occurredAt: e.occurredAt,
+      note: e.note ?? null,
     },
   })
 

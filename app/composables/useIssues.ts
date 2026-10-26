@@ -5,7 +5,7 @@ export const ISSUE_STATUS_TEXT = { OPEN: '待受理', ACCEPTED: '处理中', RES
 export const ISSUE_STATUS_COLOR = { OPEN: 'orange', ACCEPTED: 'blue', RESOLVED: 'purple', CLOSED: 'default' } as const
 /** Vant 标签类型 */
 export const ISSUE_STATUS_TYPE = { OPEN: 'warning', ACCEPTED: 'primary', RESOLVED: 'success', CLOSED: 'default' } as const
-export const ISSUE_SOURCE_TEXT = { MANUAL: '手工上报', ALERT: '预警转入', QMS_NONCONFORMING: 'QMS 不合格' } as const
+export const ISSUE_SOURCE_TEXT = { MANUAL: '手工上报', ALERT: '预警转入', QMS_NONCONFORMING: 'QMS 不合格', SCRAP: '完工报废' } as const
 export const ISSUE_CATEGORY_TEXT = {
   DESIGN: '设计',
   CHANGE: '变更',

@@ -111,7 +111,7 @@ async function submitDone() {
   if (ok) doneOpen.value = false
 }
 
-// ───── 关联已有工序：同一工单的工序，已挂本节点的勾上且不能取消（取消挂靠在"工件与工序链"里改）─────
+// ───── 关联已有工序：同一工单的工序，已挂本节点的勾上且不能取消（取消挂靠在"生产管理"里改）─────
 interface StepOpt { id: string; partName: string; processName: string; mode: string; status: string; dueDate: string | null; planNodeId: string | null; planNodeName: string | null }
 const stepsOpen = ref(false)
 const stepList = ref<StepOpt[]>([])
@@ -230,9 +230,9 @@ const taskColumns = [
     </a-modal>
 
     <a-modal v-model:open="stepsOpen" :title="`关联工序到节点：${node.code} ${node.name}`" :width="760" :ok-text="stepNew.length ? `关联 ${stepNew.length} 道` : '关联'" @ok="saveSteps">
-      <p class="muted">勾选这个工单里要算在本节点下的工序（含外协工序）；已挂在别的节点的会改挂过来。取消关联请到“工件与工序链”里改。</p>
+      <p class="muted">勾选这个工单里要算在本节点下的工序（含外协工序）；已挂在别的节点的会改挂过来。取消关联请到“生产管理”里改。</p>
       <a-table class="ft-table" :columns="stepColumns" :data-source="stepList" :loading="stepsLoading" :row-selection="stepSelection" row-key="id" size="small" :pagination="false" :scroll="{ y: 400 }">
-        <template #emptyText><a-empty description="这个工单还没有工序（先在“工件与工序链”里建工件和工序）" /></template>
+        <template #emptyText><a-empty description="这个工单还没有工序（先在“生产管理”里建工件和工序）" /></template>
         <template #bodyCell="{ column: c, record: r }">
           <template v-if="c.key === 'due'">
             <span :class="{ late: !!r.dueDate && r.dueDate > node.planDate }">{{ r.dueDate ?? '未填' }}</span>

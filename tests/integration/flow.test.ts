@@ -12,6 +12,7 @@ const DB = process.env.TEST_DATABASE_URL
 type Services = {
   steps: typeof import('../../server/services/flow/steps')
   flow: typeof import('../../server/services/flow/flow')
+  finish: typeof import('../../server/services/flow/finish')
   match: typeof import('../../server/services/flow/match')
   todos: typeof import('../../server/services/flow/todos')
   errors: typeof import('../../server/services/flow/errors')
@@ -30,6 +31,7 @@ describe.skipIf(!DB)('外协主链路', () => {
     s = {
       steps: await import('../../server/services/flow/steps'),
       flow: await import('../../server/services/flow/flow'),
+      finish: await import('../../server/services/flow/finish'),
       match: await import('../../server/services/flow/match'),
       todos: await import('../../server/services/flow/todos'),
       errors: await import('../../server/services/flow/errors'),
@@ -276,7 +278,7 @@ describe.skipIf(!DB)('外协主链路', () => {
     await s.flow.startStep({ stepId: assy!.id, actorId: 'u-pm', source: 'MOBILE' })
     expect((await stepOf(assy!.id)).status).toBe('IN_PROGRESS')
     expect((await todosOf(assy!.id))[0]!.status).toBe('DONE')
-    await s.flow.finishStep({ stepId: assy!.id, actorId: 'u-pm', source: 'MOBILE' })
+    await s.finish.finishStep({ stepId: assy!.id, actorId: 'u-pm', source: 'MOBILE' })
     expect((await stepOf(assy!.id)).status).toBe('DONE')
     expect((await partOf(part.id)).status).toBe('DONE')
   })

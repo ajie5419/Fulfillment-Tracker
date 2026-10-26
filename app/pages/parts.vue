@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
- * 工件与工序链：选工单 → 工件列表 → 行内编辑工序链；可从同类工件复制。
+ * 生产管理：选工单 → 工件列表 → 行内编辑工序链；可从同类工件复制。
  * 权限方案 R13：建/改/删工件和工序、导入 BOM、套模板、复制路线 —— 生产部、外协专员、该工单项目经理、管理员；
  * 开工/完工/发出/补登返厂 —— 生产部、外协专员、该工序责任人、管理员。其他人只读（后端同样拦）。
  * R14：每道工序可选"所属总计划节点"（工单总计划已发布时手工添加的工序必选；BOM 导入、套模板、复制路线生成的不强制）。
  * 10-26：可只看"未排工序"（还没有工序链）的工件，地址栏 ?noRoute=1；图纸附 BOM 发放后提醒生产经理排工序时跳到这里。
+ * 10-26 生产管理补全：自制工序可派给厂内班组；每道工序有应开工日（待办截止日取它）；完工可部分完工或报废（报废自动转异常）。
  */
 const route = useRoute()
 const router = useRouter()
@@ -39,6 +40,10 @@ type StepRow = PartRow['steps'][number]
 
 const processOptions = computed(() => master.value.processes.map((p) => ({ value: p.id, label: p.name })))
 const supplierOptions = computed(() => master.value.suppliers.map((s) => ({ value: s.id, label: s.label })))
+/** 自制工序只能派给厂内班组 */
+const teamOptions = computed(() => master.value.suppliers.filter((s) => s.kind === 'TEAM').map((s) => ({ value: s.id, label: s.name })))
+const supplierOptionsFor = (mode: string) => (mode === 'SELF' ? teamOptions.value : supplierOptions.value)
+const supplierPlaceholder = (mode: string) => (mode === 'SELF' ? '派工班组（可空）' : '选择外协厂')
 const userOptions = computed(() => master.value.users.map((u) => ({ value: u.id, label: u.name })))
 const modeOptions = Object.entries(MODE_TEXT).map(([value, label]) => ({ value, label }))
 
@@ -100,13 +105,13 @@ async function doCopy() {
 }
 
 // ───── 步骤 ─────
-const newStep = reactive<Record<string, { processId?: string; mode: StepModeKey; supplierId?: string; ownerId?: string; dueDate?: string; planNodeId?: string }>>({})
+const newStep = reactive<Record<string, { processId?: string; mode: StepModeKey; supplierId?: string; ownerId?: string; planStartDate?: string; dueDate?: string; planNodeId?: string }>>({})
 const draftOf = (partId: string) => (newStep[partId] ??= { mode: 'EXTERNAL_OUTSOURCE' })
 async function addStep(p: PartRow) {
   const d = draftOf(p.id)
   if (!d.processId) return message.warning('请选择工序')
   if (planOpts.value.published && !d.planNodeId) return message.warning('该工单已发布总计划，请选择所属总计划节点')
-  await call(() => $fetch(`/api/parts/${p.id}/steps`, { method: 'POST', body: { ...d, supplierId: d.mode === 'SELF' ? null : d.supplierId ?? null, planNodeId: d.planNodeId ?? null } }))
+  await call(() => $fetch(`/api/parts/${p.id}/steps`, { method: 'POST', body: { ...d, supplierId: d.supplierId ?? null, planStartDate: d.planStartDate ?? null, planNodeId: d.planNodeId ?? null } }))
   newStep[p.id] = { mode: d.mode, planNodeId: d.planNodeId }
 }
 // 表格插槽里的 record 类型是 Record<string, any>，这里只要求用到的字段
@@ -115,10 +120,14 @@ const patchStep = (s: Pick<StepRow, 'id'>, body: Record<string, unknown>) => cal
 const moveStep = (s: Pick<StepRow, 'id'>, direction: 'up' | 'down') => call(() => $fetch(`/api/steps/${s.id}/move`, { method: 'POST', body: { direction } }))
 const removeStep = (s: Pick<StepRow, 'id'>) => call(() => $fetch(`/api/steps/${s.id}`, { method: 'DELETE' }), '已删除')
 const startStep = (s: Pick<StepRow, 'id'>) => call(() => $fetch(`/api/steps/${s.id}/start`, { method: 'POST', body: { source: 'PC' } }), '已开工')
-function finishStep(s: StepRef) {
-  Modal.confirm({ title: `确认"${s.processName}"完工？`, onOk: async () => {
-    await call(() => $fetch(`/api/steps/${s.id}/finish`, { method: 'POST', body: { source: 'PC' } }), '已完工')
-  } })
+const finishing = ref<{ id: string; title: string; quantity: number; doneQty: number } | null>(null)
+function finishStep(p: PartRow, s: StepRef & Pick<StepRow, 'returnedQty'>) {
+  finishing.value = { id: s.id, title: `${p.name} · ${s.processName}`, quantity: p.quantity, doneQty: s.returnedQty }
+}
+async function afterFinish() {
+  finishing.value = null
+  await refresh()
+  eventsCache.clear()
 }
 
 const sending = ref<{ id: string; supplierId: string | null; title: string } | null>(null)
@@ -172,6 +181,8 @@ const { data: planOpts } = await useFetch<PlanOpts>('/api/plan/options', {
 })
 const planNodeOptions = computed(() => planOpts.value.nodes.map((n) => ({ value: n.id, label: `${n.seq}. ${n.name}（${n.planDate}）` })))
 const planDayOf = (id: string | null | undefined) => planOpts.value.nodes.find((n) => n.id === id)?.planDate ?? null
+/** 应开工日已过还没开工 / 发出 */
+const startLate = (s: { planStartDate: string | Date | null; status: string }) => s.status === 'PENDING' && !!s.planStartDate && dayText(s.planStartDate) < dayAfter(0)
 /** 工序日期（外协看承诺返回日，否则要求完成日）晚于节点计划日：标红（照样保存） */
 const stepLate = (s: { planNodeId: string | null; dueDate: string | Date | null; promisedReturnDate: string | Date | null; mode: string; status: string }) => {
   const node = planDayOf(s.planNodeId)
@@ -181,13 +192,13 @@ const stepLate = (s: { planNodeId: string | null; dueDate: string | Date | null;
 
 const columns = [
   { title: '序', dataIndex: 'seq', width: 48 },
-  { title: '工序', key: 'process', width: 140 },
-  { title: '方式', key: 'mode', width: 120 },
-  { title: '外协厂', key: 'supplier', width: 160 },
-  { title: '负责人', key: 'owner', width: 130 },
-  { title: '要求完成日', key: 'dueDate', width: 150 },
+  { title: '工序', key: 'process', width: 120 },
+  { title: '方式', key: 'mode', width: 104 },
+  { title: '外协厂 / 班组', key: 'supplier', width: 150 },
+  { title: '负责人', key: 'owner', width: 120 },
+  { title: '应开工 / 要求完成', key: 'dueDate', width: 136 },
   { title: '总计划节点', key: 'planNode', width: 170 },
-  { title: '状态', key: 'status', width: 150 },
+  { title: '状态', key: 'status', width: 120 },
   { title: '操作', key: 'actions' },
 ]
 </script>
@@ -256,9 +267,9 @@ const columns = [
               allow-clear
               show-search
               option-filter-prop="label"
-              :options="supplierOptions"
-              :disabled="!canRoute || record.mode === 'SELF'"
-              :placeholder="record.mode === 'SELF' ? '—' : '选择外协厂'"
+              :options="supplierOptionsFor(record.mode)"
+              :disabled="!canRoute"
+              :placeholder="supplierPlaceholder(record.mode)"
               @change="(v: unknown) => patchStep(record as StepRow, { supplierId: v ?? null })"
             />
           </template>
@@ -266,7 +277,9 @@ const columns = [
             <a-select :value="record.ownerId ?? undefined" style="width: 100%" show-search option-filter-prop="label" placeholder="待补充" :options="userOptions" :disabled="!canRoute" @change="(v: unknown) => patchStep(record as StepRow, { ownerId: v })" />
           </template>
           <template v-else-if="column.key === 'dueDate'">
-            <a-date-picker :value="dayText(record.dueDate) || undefined" value-format="YYYY-MM-DD" style="width: 100%" :disabled="!canRoute" @change="(v: unknown) => patchStep(record as StepRow, { dueDate: v || null })" />
+            <a-date-picker :value="dayText(record.planStartDate) || undefined" value-format="YYYY-MM-DD" class="day" placeholder="应开工" :status="startLate(record as StepRow) ? 'warning' : undefined" :disabled="!canRoute" @change="(v: unknown) => patchStep(record as StepRow, { planStartDate: v || null })" />
+            <a-date-picker :value="dayText(record.dueDate) || undefined" value-format="YYYY-MM-DD" class="day" style="margin-top: 4px" placeholder="要求完成" :disabled="!canRoute" @change="(v: unknown) => patchStep(record as StepRow, { dueDate: v || null })" />
+            <div v-if="startLate(record as StepRow)" class="late-node">应开工日已过</div>
           </template>
           <template v-else-if="column.key === 'planNode'">
             <a-select
@@ -308,7 +321,7 @@ const columns = [
                 <a-button size="small" type="primary" @click="startStep(record as StepRow)">开工</a-button>
               </template>
               <template v-if="canStep(record as StepRow) && record.mode !== 'EXTERNAL_OUTSOURCE' && (record.status === 'PENDING' || record.status === 'IN_PROGRESS')">
-                <a-button size="small" @click="finishStep(record as StepRow)">完工</a-button>
+                <a-button size="small" @click="finishStep(p, record as StepRow)">完工</a-button>
               </template>
               <template v-if="canStep(record as StepRow) && (record.status === 'OUT' || (record.mode === 'IN_PLANT_OUTSOURCE' && record.status === 'IN_PROGRESS'))">
                 <a-button size="small" @click="openReturn(p, record as StepRow)">补登返厂</a-button>
@@ -322,6 +335,7 @@ const columns = [
           <a-timeline v-else style="margin-top: 8px">
             <a-timeline-item v-for="e in eventsCache.get(record.partId)!.filter((x) => x.stepId === record.id)" :key="e.id">
               {{ timeText(e.occurredAt) }}　{{ EVENT_TEXT[e.type] }} {{ e.qty }} 件　<span class="muted">来源：{{ SOURCE_TEXT[e.source] }}{{ e.actorName ? `，${e.actorName}` : '' }}{{ e.qmsInspectionId ? `，报检 ${e.qmsInspectionId}` : '' }}</span>
+              <div v-if="e.note" class="muted">{{ e.type === 'SEND' ? '随件发料' : '备注' }}：{{ e.note }}</div>
             </a-timeline-item>
           </a-timeline>
         </template>
@@ -329,9 +343,10 @@ const columns = [
 
       <a-space v-if="canRoute" class="add" wrap>
         <a-select v-model:value="draftOf(p.id).processId" placeholder="工序" style="width: 120px" :options="processOptions" />
-        <a-select v-model:value="draftOf(p.id).mode" style="width: 120px" :options="modeOptions" />
-        <a-select v-model:value="draftOf(p.id).supplierId" placeholder="外协厂" style="width: 160px" allow-clear show-search option-filter-prop="label" :options="supplierOptions" :disabled="draftOf(p.id).mode === 'SELF'" />
+        <a-select v-model:value="draftOf(p.id).mode" style="width: 120px" :options="modeOptions" @change="draftOf(p.id).supplierId = undefined" />
+        <a-select v-model:value="draftOf(p.id).supplierId" :placeholder="draftOf(p.id).mode === 'SELF' ? '班组（可空）' : '外协厂'" style="width: 160px" allow-clear show-search option-filter-prop="label" :options="supplierOptionsFor(draftOf(p.id).mode)" />
         <a-select v-model:value="draftOf(p.id).ownerId" placeholder="负责人（默认我）" style="width: 150px" allow-clear show-search option-filter-prop="label" :options="userOptions" />
+        <a-date-picker v-model:value="draftOf(p.id).planStartDate" placeholder="应开工日" value-format="YYYY-MM-DD" />
         <a-date-picker v-model:value="draftOf(p.id).dueDate" placeholder="要求完成日" value-format="YYYY-MM-DD" />
         <a-select
           v-if="planNodeOptions.length"
@@ -386,6 +401,7 @@ const columns = [
     <a-input-number v-model:value="returning.qty" :min="1" addon-after="件" />
   </a-modal>
 
+  <FinishStepModal :step="finishing" @close="finishing = null" @done="afterFinish" />
   <SendStepModal :step="sending" @close="sending = null" @done="sending = null; refresh(); eventsCache.clear()" />
   <IssueReportModal
     :open="!!reportingPartId"
@@ -403,4 +419,7 @@ const columns = [
 .issue-link { color: var(--ft-late); font-size: 12px; margin-right: 6px; }
 .late-node { color: var(--ft-upstream); font-size: 12px; }
 .node-link { font-size: 12px; }
+/* 两个日期叠在一列：去掉日历图标，留出日期文字的宽度 */
+.day { width: 100%; }
+.day :deep(.ant-picker-suffix) { display: none; }
 </style>

@@ -233,7 +233,8 @@ async function collectW10(now: Date, t: Thresholds, offDays: string[]): Promise<
   return steps.map((s) => {
     const r = judgeW10({ dueDate: s.dueDate!, now, offDays }, t.W10)
     const due = dateFieldDay(s.dueDate!)
-    const who = s.mode === 'IN_PLANT_OUTSOURCE' && s.supplierId ? `${names.supplier.get(s.supplierId) ?? s.supplierId}` : ''
+    // 厂内外协的班组、自制派工的班组都写上
+    const who = s.supplierId ? `${names.supplier.get(s.supplierId) ?? s.supplierId}` : ''
     const summary =
       r.overdueDays > 0
         ? `${who}超要求完成日 ${due} ${r.overdueDays} 天仍未完工`

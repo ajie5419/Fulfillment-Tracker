@@ -108,17 +108,20 @@ describe('routeFromTemplate（套用模板 = 复制）', () => {
     { processId: 'PRC-PAINT', mode: 'EXTERNAL_OUTSOURCE' as const, supplierId: null, defaultDays: 5 },
   ]
 
-  it('复制工序、方式、外协厂（自制不带外协厂）；不给开工日就不设要求完成日', () => {
+  it('复制工序、方式、外协厂 / 班组（自制可带派工班组，10-26 起）；不给开工日就不设日期', () => {
     expect(routeFromTemplate(steps)).toEqual([
-      { seq: 1, processId: 'PRC-CUT', mode: 'SELF', supplierId: null, dueDate: null },
-      { seq: 2, processId: 'PRC-WELD', mode: 'EXTERNAL_OUTSOURCE', supplierId: 'S-2', dueDate: null },
-      { seq: 3, processId: 'PRC-PAINT', mode: 'EXTERNAL_OUTSOURCE', supplierId: null, dueDate: null },
+      { seq: 1, processId: 'PRC-CUT', mode: 'SELF', supplierId: 'S-x', planStartDate: null, dueDate: null },
+      { seq: 2, processId: 'PRC-WELD', mode: 'EXTERNAL_OUTSOURCE', supplierId: 'S-2', planStartDate: null, dueDate: null },
+      { seq: 3, processId: 'PRC-PAINT', mode: 'EXTERNAL_OUTSOURCE', supplierId: null, planStartDate: null, dueDate: null },
     ])
   })
 
   it('给了开工日：按默认工期逐道累加日历天；没填工期的那道不设日期、也不占天数', () => {
     const due = routeFromTemplate(steps, '2026-10-30').map((r) => r.dueDate?.toISOString().slice(0, 10) ?? null)
     expect(due).toEqual(['2026-11-01', null, '2026-11-06'])
+    // 应开工日 = 上一道的要求完成日（没填工期的那道不占天数）
+    const start = routeFromTemplate(steps, '2026-10-30').map((r) => r.planStartDate?.toISOString().slice(0, 10) ?? null)
+    expect(start).toEqual(['2026-10-30', '2026-11-01', '2026-11-01'])
   })
 
   it('结果是新对象：之后改模板步骤不影响已生成的步骤', () => {
