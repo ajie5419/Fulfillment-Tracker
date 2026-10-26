@@ -210,7 +210,7 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
       [null, null, '减速机', 1],
     ])
     // 3 个工件都还没有工序链 → 提醒生产经理排工序（每张发放单每人一条），跳到工件页只看未排工序
-    expect(r1.bom).toEqual({ created: 2, matched: 1, revisionFilled: 1, skipped: 2, unrouted: 3 })
+    expect(r1.bom).toEqual({ created: 2, matched: 1, revisionFilled: 1, skipped: 2, unrouted: 3, unroutedNotified: true })
     expect(r1.drawing).toMatchObject({ status: 'DONE' })
     const routeReminders = await db.reminder.findMany({ where: { dedupeKey: { startsWith: `RELEASE_ROUTE:${r1.id}:` } } })
     expect(routeReminders.map((r) => [r.userId, r.kind, r.link])).toEqual([['u-prodhead', 'RELEASE', `/parts?wo=${BWO}&noRoute=1`]])
@@ -241,7 +241,7 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     // CJ-002 先排上工序：只提醒还没有工序链的 CJ-003
     await s.steps.addStep(parts.find((p) => p.drawingNo === 'CJ-002')!.id, { processId: 'P-CUT', mode: 'SELF', ownerId: 'u-worker' }, 'u-worker')
     const r2 = await send([['CJ-002', 'A', '端梁', 2], ['CJ-003', null, '横梁', 1]], { drawingTaskId: null })
-    expect(r2.bom).toEqual({ created: 1, matched: 1, revisionFilled: 0, skipped: 0, unrouted: 1 })
+    expect(r2.bom).toEqual({ created: 1, matched: 1, revisionFilled: 0, skipped: 0, unrouted: 1, unroutedNotified: true })
     expect((await db.reminder.findFirstOrThrow({ where: { dedupeKey: `RELEASE_ROUTE:${r2.id}:u-prodhead` } })).title).toContain('1 个工件还没有工序链')
     expect(await db.part.count({ where: { workOrderNumber: BWO, drawingNo: { not: null } } })).toBe(4)
 
@@ -256,6 +256,17 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     const [a, b] = await Promise.all([send([['CJ-010', 'A', '并发件', 1]], { drawingTaskId: null }), send([['CJ-010', 'A', '并发件', 1]], { drawingTaskId: null })])
     expect([a.bom!.created, b.bom!.created].sort()).toEqual([0, 1])
     expect(await db.part.count({ where: { workOrderNumber: BWO, drawingNo: 'CJ-010' } })).toBe(1)
+
+    // 没设生产部负责人：不建提醒，也不能告诉发放人"已提醒"
+    const heads = await db.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: '生产部' } })
+    await db.notifyRole.deleteMany({ where: { id: { in: heads.map((h) => h.id) } } })
+    try {
+      const r3 = await send([['CJ-011', null, '无人提醒件', 1]], { drawingTaskId: null })
+      expect(r3.bom).toMatchObject({ unrouted: 1, unroutedNotified: false })
+      expect(await db.reminder.count({ where: { dedupeKey: { startsWith: `RELEASE_ROUTE:${r3.id}:` } } })).toBe(0)
+    } finally {
+      await db.notifyRole.createMany({ data: heads })
+    }
   })
 
   it('客户确认是独立节点：发放后待客户确认，确认后才算完成；只挂设计任务的工件也会发"可以开工"', async () => {

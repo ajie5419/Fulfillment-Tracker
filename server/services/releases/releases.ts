@@ -187,9 +187,10 @@ export const unroutedPartsLink = (workOrderNumber: string) => `/parts?wo=${encod
  */
 async function notifyUnrouted(tx: Prisma.TransactionClient, release: Pick<Release, 'id' | 'releaseNo' | 'workOrderNumber'>, partIds: string[]) {
   const unrouted = await tx.part.count({ where: { id: { in: partIds }, steps: { none: {} } } })
-  if (!unrouted) return 0
+  if (!unrouted) return { unrouted: 0, notified: false }
   const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PRODUCTION_DEPT }, select: { userId: true } })
   const users = uniq(heads.map((h) => h.userId))
+  // 没设生产部负责人时不提醒，也不能告诉发放人"已提醒"：返回 notified=false，前端改说"请到设置→人员角色指定"
   if (users.length) {
     const title = `【待排工序】图纸发放 ${release.releaseNo} 有 ${unrouted} 个工件还没有工序链，请排工序（${release.workOrderNumber}）`
     await tx.reminder.createMany({
@@ -197,7 +198,7 @@ async function notifyUnrouted(tx: Prisma.TransactionClient, release: Pick<Releas
       skipDuplicates: true,
     })
   }
-  return unrouted
+  return { unrouted, notified: users.length > 0 }
 }
 
 /** 新建发放单：发出即生效（不审批）。附件只能用发放人自己刚上传、还没被用过的 */
@@ -266,8 +267,8 @@ export async function createRelease(input: NewReleaseInput, issuerId: string) {
     if (task && bomPartIds.length) await tx.drawingTaskPart.createMany({ data: bomPartIds.map((partId) => ({ taskId: task.id, partId })), skipDuplicates: true })
     const impact: ChangeImpact = input.type === 'CHANGE' && partIds.length ? await applyChangeImpact(tx, release, partIds) : { started: 0, held: 0, confirmers: [] }
     const drawing = task ? await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, task.id) : null
-    const unrouted = bomPartIds.length ? await notifyUnrouted(tx, release, bomPartIds) : 0
-    const bomSummary = bom ? { created: bom.created.length, matched: bom.matched.length, revisionFilled: bom.revisionFilled, skipped: bom.skipped, unrouted } : null
+    const { unrouted, notified } = bomPartIds.length ? await notifyUnrouted(tx, release, bomPartIds) : { unrouted: 0, notified: false }
+    const bomSummary = bom ? { created: bom.created.length, matched: bom.matched.length, revisionFilled: bom.revisionFilled, skipped: bom.skipped, unrouted, unroutedNotified: notified } : null
     return { id: release.id, releaseNo: release.releaseNo, recipients: receipts.length, impact, drawing, bom: bomSummary }
   }, !!taskId || !!bomInput)
 }

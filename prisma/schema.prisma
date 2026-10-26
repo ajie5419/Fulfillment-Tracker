@@ -475,8 +475,8 @@ model Reminder {
   /// 提醒种类：空 = 预警/待办类；DIGEST = 每日汇总；SYNC_FAIL = QMS 同步连续失败（发给管理员，未读时置顶）；
   /// RELEASE = 发放单的通知（接收人拒收时发给发放人），跳转地址在 link；PLAN = 总计划节点被部门退回（发给项目经理，R14），跳转地址在 link
   kind      String?    @db.VarChar(20)
-  /// 电脑端跳转地址（kind = RELEASE 时用；预警类按 alertId 现算）
-  link      String?    @db.VarChar(191)
+  /// 电脑端跳转地址（RELEASE / PLAN / COMMENT 用；预警类按 alertId 现算）。用 TEXT：工单号会被 URL 编码，中文工单号很快超过 191
+  link      String?    @db.Text
   /// 每日汇总的正文（前 5 项，一行一项）
   body      String?    @db.Text
   /// 防重复：每日汇总 "DIGEST:<YYYY-MM-DD>:<userId>"，同人同日只有一条；同步失败 "SYNC_FAIL:<故障开始时间>:<userId>"，同一轮故障只有一条；

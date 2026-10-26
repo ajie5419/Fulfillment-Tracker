@@ -78,6 +78,8 @@ async function openFromQuery() {
   if (!id) return
   try {
     const line = await fetchPurchase(id)
+    // 页面没离开时从别的工单的提醒跳过来：先切到该行所在工单，否则列表里找不到
+    if (filter.workOrderNumber && filter.workOrderNumber !== line.workOrderNumber) filter.workOrderNumber = line.workOrderNumber
     if (route.query.comments === '1') {
       keyword.value = line.materialName
       commenting.value = { id: line.id, name: line.materialName }
@@ -92,6 +94,12 @@ async function openFromQuery() {
 }
 onMounted(openFromQuery)
 watch(() => route.query.id, openFromQuery)
+function closeComments() {
+  commenting.value = null
+  refresh()
+  // 清掉定位参数，再点同一条留言提醒还能重新打开
+  if (route.query.id || route.query.comments) router.replace({ query: { ...route.query, id: undefined, comments: undefined } })
+}
 function closeEdit() {
   editOpen.value = false
   if (route.query.id) router.replace({ query: { ...route.query, id: undefined } })
@@ -342,7 +350,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
   </a-card>
   </div>
 
-  <a-drawer :open="!!commenting" :title="`留言：${commenting?.name ?? ''}`" :width="520" destroy-on-close @close="commenting = null; refresh()">
+  <a-drawer :open="!!commenting" :title="`留言：${commenting?.name ?? ''}`" :width="520" destroy-on-close @close="closeComments">
     <CommentPanel v-if="commenting" ref-type="purchase" :ref-id="commenting.id" />
   </a-drawer>
   <PurchaseEditModal :open="editOpen" :line="editing" :work-order-number="filter.workOrderNumber" @close="closeEdit" @done="saved" />

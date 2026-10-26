@@ -24,6 +24,11 @@ const routeFilter = ref<'all' | 'none'>(route.query.noRoute === '1' ? 'none' : '
 watch([workOrderNumber, routeFilter], ([wo, f]) => {
   if (import.meta.client) router.replace({ query: { ...(wo ? { wo } : {}), ...(f === 'none' ? { noRoute: '1' } : {}) } })
 })
+// 反过来：页面没离开时点了别的 /parts 链接（全局搜索、提醒），按新地址切工单和筛选
+watch(() => [route.query.wo, route.query.noRoute], ([wo, nr]) => {
+  if (typeof wo === 'string' && wo && wo !== workOrderNumber.value) workOrderNumber.value = wo
+  routeFilter.value = nr === '1' ? 'none' : 'all'
+})
 
 const { data: parts, pending, refresh } = await useFetch('/api/parts', {
   query: { workOrderNumber },
@@ -47,6 +52,11 @@ function openDrawer(p: { id: string; name: string }, tab: 'timeline' | 'comments
   drawerTab.value = tab
   drawerPart.value = { id: p.id, name: p.name }
 }
+function closeDrawer() {
+  drawerPart.value = null
+  // 清掉定位参数，再点同一条留言提醒还能重新打开
+  if (route.query.part || route.query.comments) router.replace({ query: { ...route.query, part: undefined, comments: undefined } })
+}
 const focusPartId = ref<string | null>(null)
 async function focusFromQuery() {
   const id = route.query.part as string | undefined
@@ -60,7 +70,7 @@ async function focusFromQuery() {
   if (route.query.comments === '1') openDrawer(p, 'comments')
 }
 onMounted(focusFromQuery)
-watch(() => [route.query.part, parts.value.length], focusFromQuery)
+watch(() => [route.query.part, route.query.comments, parts.value], focusFromQuery)
 /** 关联记录数：没有的不显示 */
 const relatedChips = (p: PartRow) => {
   const r = p.related
@@ -441,7 +451,7 @@ const columns = [
     <a-input-number v-model:value="returning.qty" :min="1" addon-after="件" />
   </a-modal>
 
-  <PartDrawer :part="drawerPart" :tab="drawerTab" @close="drawerPart = null" @commented="refresh()" />
+  <PartDrawer :part="drawerPart" :tab="drawerTab" @close="closeDrawer" @commented="refresh()" />
   <FinishStepModal :step="finishing" @close="finishing = null" @done="afterFinish" />
   <SendStepModal :step="sending" @close="sending = null" @done="sending = null; refresh(); eventsCache.clear()" />
   <IssueReportModal

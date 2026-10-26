@@ -12,6 +12,11 @@ const { data: master } = await useMaster()
 const wo = ref((route.query.wo as string) || '')
 const supplierId = ref((route.query.supplierId as string) || '')
 watch([wo, supplierId], ([w, s]) => router.replace({ query: { ...(w ? { wo: w } : {}), ...(s ? { supplierId: s } : {}) } }))
+// 页面没离开时点了别的 /workshop 链接（全局搜索搜班组 / 外协厂），按新地址切筛选
+watch(() => [route.query.wo, route.query.supplierId], ([w, s]) => {
+  wo.value = (w as string) || ''
+  supplierId.value = (s as string) || ''
+})
 
 const { data: columns, pending, refresh } = await useFetch('/api/workshop', {
   query: computed(() => ({ wo: wo.value || undefined, supplierId: supplierId.value || undefined })),

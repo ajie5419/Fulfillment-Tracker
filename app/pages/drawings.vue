@@ -101,6 +101,8 @@ async function openFromQuery() {
   if (!id) return
   try {
     const task = await fetchDrawing(id)
+    // 页面没离开时从别的工单的提醒跳过来：先切到该任务所在工单，否则列表里找不到
+    if (filter.workOrderNumber && filter.workOrderNumber !== task.workOrderNumber) filter.workOrderNumber = task.workOrderNumber
     // 没有编辑权限（如收到 W7 的项目经理）：不弹编辑框，只把列表筛到这一条，只读查看
     if (!canEditTask.value) keyword.value = task.componentName
     else openEdit(task)

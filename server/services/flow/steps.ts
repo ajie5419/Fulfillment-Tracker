@@ -234,7 +234,9 @@ export async function updateStep(stepId: string, input: Partial<StepInput>) {
     const mode = input.mode ?? step.mode
     if (mode !== step.mode && step.status !== 'PENDING') throw new FlowError('步骤已发出或已开工，不能再改加工方式')
     // 改成自制时原来的外协厂不一定是班组：没另外指定就清空
-    const supplierId = input.supplierId !== undefined ? input.supplierId : mode === 'SELF' && step.mode !== 'SELF' ? null : step.supplierId
+    // 只改方式不传外协厂时：自制 ↔ 外协切换要清掉原来的班组 / 外协厂（两边不通用），厂内 ↔ 厂外外协之间保留
+    const crossesSelf = mode !== step.mode && (mode === 'SELF' || step.mode === 'SELF')
+    const supplierId = input.supplierId !== undefined ? input.supplierId : crossesSelf ? null : step.supplierId
     if (input.supplierId !== undefined || mode !== step.mode) await assertSelfTeam(tx, mode, supplierId)
     assertDates(
       input.planStartDate !== undefined ? input.planStartDate : step.planStartDate,
