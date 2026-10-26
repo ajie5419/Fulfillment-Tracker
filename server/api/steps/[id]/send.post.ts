@@ -7,6 +7,8 @@ const body = z
     supplierId: z.string().max(64).nullish(),
     promisedReturnDate: day,
     qty: z.number().int().min(1).optional(),
+    /** 随件发料（外协带料）等备注 */
+    note: z.string().trim().max(500).nullish(),
     source,
   })
   .strict()

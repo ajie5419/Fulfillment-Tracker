@@ -56,7 +56,7 @@ node scripts/mock-identity-bridge.mjs         # 监听 4100，授权页上选择
 
 ## BOM 导入与路线模板（R8）
 
-- **从 QMS BOM 导入**（工件与工序链页）：服务端实时调 QMS `GET /api/integration/fulfillment/work-orders/<工单号>/bom`（复用 `NUXT_QMS_API_BASE` 与客户端凭据，不受 `NUXT_QMS_SYNC_ENABLED` 影响；浏览器不直连 QMS），勾选后整批一个事务导入：每个 BOM 行建一个工件（名称、图号、数量、QMS 零件 ID → 报检按它匹配），必经工序按顺序建步骤，方式默认"自制"、不带负责人，页面标"待补充"。
+- **从 QMS BOM 导入**（生产管理页）：服务端实时调 QMS `GET /api/integration/fulfillment/work-orders/<工单号>/bom`（复用 `NUXT_QMS_API_BASE` 与客户端凭据，不受 `NUXT_QMS_SYNC_ENABLED` 影响；浏览器不直连 QMS），勾选后整批一个事务导入：每个 BOM 行建一个工件（名称、图号、数量、QMS 零件 ID → 报检按它匹配），必经工序按顺序建步骤，方式默认"自制"、不带负责人，页面标"待补充"。
 - 重复导入按 BOM 行 ID（`part.qmsBomId`，同工单唯一）跳过，绝不修改已有工件；QMS 里没有工序 ID、或履约工序副本里还没有的工序跳过并提示（步骤只存工序 ID）。需要 QMS 先升级出 BOM 接口，否则提示"QMS 还没有 BOM 接口"。
 - **路线模板**（设置 → 工序路线模板；原菜单"路线模板"已并入设置）：工序 + 方式 + 默认外协厂 + 默认工期；管理员维护，可从工件"另存为模板"。没有工序的工件可"套用模板"（复制步骤，负责人默认操作人；填了开工日才按默认工期推算要求完成日）。改模板不影响已套用的工件。
 - 演示：写入演示数据后，`DEMO-WO-002` 的 BOM 导入读演示 BOM（不连 QMS），另带一个演示模板；清除演示数据一并删掉（含引用演示工序的模板）。本地模拟 QMS（`scripts/mock-identity-bridge.mjs`）的 `QMS-WO-2026-001` 也有 BOM。

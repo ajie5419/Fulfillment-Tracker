@@ -6,6 +6,7 @@ import type { Prisma, StepMode } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { openIssuesOfSteps } from '../issues/issues'
 import { FlowError } from './errors'
+import { RETURN_TYPES } from './flow'
 import { loadNames } from './names'
 import { planWarning, resolvePlanNode } from '../plan/links'
 
@@ -28,8 +29,21 @@ async function assertProcess(tx: Tx, processId: string) {
   if (!p) throw new FlowError('工序不存在或已停用')
 }
 
-/** 自制步骤不带外协厂 */
-const supplierFor = (mode: StepMode, supplierId: string | null | undefined) => (mode === 'SELF' ? null : supplierId || null)
+/** 外协步骤的外协厂 / 厂内班组；自制步骤可选派工班组（10-26 起，原来自制不带） */
+const supplierFor = (supplierId: string | null | undefined) => supplierId || null
+
+/** 自制步骤只能派给厂内班组（QMS 外协单位里 kind = TEAM 的） */
+export async function assertSelfTeam(tx: Tx, mode: StepMode, supplierId: string | null | undefined) {
+  if (mode !== 'SELF' || !supplierId) return
+  const team = await tx.qmsSupplier.findFirst({ where: { id: supplierId, isDeleted: false }, select: { kind: true } })
+  if (!team) throw new FlowError('班组不存在或已停用')
+  if (team.kind !== 'TEAM') throw new FlowError('自制工序只能派给厂内班组，外协厂请把方式改成外协')
+}
+
+/** 应开工日不能晚于要求完成日 */
+function assertDates(planStartDate: Date | null | undefined, dueDate: Date | null | undefined) {
+  if (planStartDate && dueDate && planStartDate.getTime() > dueDate.getTime()) throw new FlowError('应开工日不能晚于要求完成日')
+}
 
 // ───────────── 查询 ─────────────
 
@@ -51,7 +65,7 @@ export async function listParts(workOrderNumber: string) {
     loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId), user: steps.map((s) => s.ownerId) }),
     prisma.flowEvent.groupBy({
       by: ['stepId'],
-      where: { stepId: { in: stepIds }, type: { in: ['RETURN', 'RETURN_MANUAL', 'FINISH'] } },
+      where: { stepId: { in: stepIds }, type: { in: RETURN_TYPES } },
       _sum: { qty: true },
     }),
     prisma.flowEvent.groupBy({ by: ['stepId'], where: { stepId: { in: stepIds } }, _count: { _all: true } }),
@@ -166,6 +180,8 @@ export interface StepInput {
   supplierId?: string | null
   ownerId?: string | null
   dueDate?: Date | null
+  /** 应开工日 */
+  planStartDate?: Date | null
   /** 所属总计划节点（R14） */
   planNodeId?: string | null
 }
@@ -181,6 +197,8 @@ export async function addStep(partId: string, input: StepInput, actorId: string)
   return prisma.$transaction(async (tx) => {
     const part = await lockPart(tx, partId)
     await assertProcess(tx, input.processId)
+    await assertSelfTeam(tx, input.mode, input.supplierId)
+    assertDates(input.planStartDate, input.dueDate)
     const link = await resolvePlanNode(tx, part.workOrderNumber, input.planNodeId, { creating: true })
     const last = await tx.routeStep.findFirst({ where: { partId }, orderBy: { seq: 'desc' }, select: { seq: true } })
     const step = await tx.routeStep.create({
@@ -189,9 +207,10 @@ export async function addStep(partId: string, input: StepInput, actorId: string)
         seq: (last?.seq ?? 0) + 1,
         processId: input.processId,
         mode: input.mode,
-        supplierId: supplierFor(input.mode, input.supplierId),
+        supplierId: supplierFor(input.supplierId),
         ownerId: input.ownerId || actorId,
         dueDate: input.dueDate ?? null,
+        planStartDate: input.planStartDate ?? null,
         planNodeId: link.value ?? null,
       },
     })
@@ -210,16 +229,23 @@ export async function updateStep(stepId: string, input: Partial<StepInput>) {
     if (input.processId !== undefined) await assertProcess(tx, input.processId)
     const mode = input.mode ?? step.mode
     if (mode !== step.mode && step.status !== 'PENDING') throw new FlowError('步骤已发出或已开工，不能再改加工方式')
-    const supplierId = input.supplierId !== undefined ? input.supplierId : step.supplierId
+    // 改成自制时原来的外协厂不一定是班组：没另外指定就清空
+    const supplierId = input.supplierId !== undefined ? input.supplierId : mode === 'SELF' && step.mode !== 'SELF' ? null : step.supplierId
+    if (input.supplierId !== undefined || mode !== step.mode) await assertSelfTeam(tx, mode, supplierId)
+    assertDates(
+      input.planStartDate !== undefined ? input.planStartDate : step.planStartDate,
+      input.dueDate !== undefined ? input.dueDate : step.dueDate,
+    )
     const link = await resolvePlanNode(tx, part.workOrderNumber, input.planNodeId, { creating: false, oldNodeId: step.planNodeId })
     const updated = await tx.routeStep.update({
       where: { id: stepId },
       data: {
         ...(input.processId !== undefined ? { processId: input.processId } : {}),
         mode,
-        supplierId: supplierFor(mode, supplierId),
+        supplierId: supplierFor(supplierId),
         ...(input.ownerId !== undefined ? { ownerId: input.ownerId || null } : {}),
         ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
+        ...(input.planStartDate !== undefined ? { planStartDate: input.planStartDate } : {}),
         ...(link.value !== undefined ? { planNodeId: link.value } : {}),
       },
     })

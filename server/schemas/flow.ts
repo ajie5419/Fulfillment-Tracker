@@ -19,6 +19,8 @@ export const stepFields = {
   supplierId: z.string().max(64).nullish(),
   ownerId: z.string().max(64).nullish(),
   dueDate: day.nullish(),
+  /** 应开工日 */
+  planStartDate: day.nullish(),
   /** 所属总计划节点（R14）；工单已发布总计划时新加工序必填 */
   planNodeId: z.string().max(191).nullish(),
 }

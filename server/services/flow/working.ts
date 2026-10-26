@@ -4,6 +4,7 @@
  */
 import { prisma } from '../../utils/prisma'
 import { overdueDays } from './dates'
+import { RETURN_TYPES } from './flow'
 import { loadNames } from './names'
 
 /** ownerId：只看这个人负责的；visibleWorkOrders：可见工单（undefined = 全部，见 server/utils/auth.ts 的 getScope） */
@@ -19,7 +20,12 @@ export async function listWorking(filter: { ownerId?: string; visibleWorkOrders?
     // 要求完成日早的在前，没有要求完成日的排最后
     orderBy: [{ dueDate: { sort: 'asc', nulls: 'last' } }, { startedAt: 'asc' }],
   })
-  const names = await loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId), user: steps.map((s) => s.ownerId) })
+  const [names, sums] = await Promise.all([
+    loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId), user: steps.map((s) => s.ownerId) }),
+    // 部分完工（报工）已完成的数量
+    prisma.flowEvent.groupBy({ by: ['stepId'], where: { stepId: { in: steps.map((s) => s.id) }, type: { in: RETURN_TYPES } }, _sum: { qty: true } }),
+  ])
+  const done = new Map(sums.map((x) => [x.stepId, x._sum.qty ?? 0]))
   const now = new Date()
   return steps.map((s) => ({
     stepId: s.id,
@@ -27,8 +33,11 @@ export async function listWorking(filter: { ownerId?: string; visibleWorkOrders?
     partName: s.part.name,
     drawingNo: s.part.drawingNo,
     quantity: s.part.quantity,
+    doneQty: done.get(s.id) ?? 0,
     processName: names.process.get(s.processId) ?? s.processId,
     mode: s.mode,
+    /** 厂内外协的班组，或自制派工的班组 */
+    supplierId: s.supplierId,
     supplierName: s.supplierId ? (names.supplier.get(s.supplierId) ?? s.supplierId) : null,
     ownerId: s.ownerId,
     ownerName: s.ownerId ? (names.user.get(s.ownerId) ?? s.ownerId) : null,

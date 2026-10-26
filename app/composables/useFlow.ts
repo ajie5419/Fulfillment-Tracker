@@ -3,7 +3,7 @@
 export const STATUS_TEXT = { PENDING: '待开工', OUT: '在外加工', IN_PROGRESS: '加工中', DONE: '已完成', BLOCKED: '有异常' } as const
 export const STATUS_COLOR = { PENDING: 'default', OUT: 'processing', IN_PROGRESS: 'blue', DONE: 'success', BLOCKED: 'error' } as const
 export const MODE_TEXT = { SELF: '自制', IN_PLANT_OUTSOURCE: '厂内外协', EXTERNAL_OUTSOURCE: '厂外外协' } as const
-export const EVENT_TEXT = { SEND: '发出', RETURN: '返厂（QMS 报检）', RETURN_MANUAL: '补登返厂', START: '开工', FINISH: '完工' } as const
+export const EVENT_TEXT = { SEND: '发出', RETURN: '返厂（QMS 报检）', RETURN_MANUAL: '补登返厂', START: '开工', FINISH: '完工', REPORT: '部分完工', SCRAP: '报废' } as const
 export const SOURCE_TEXT = { MOBILE: '手机', QMS_INSPECTION: 'QMS', PC: '电脑' } as const
 export const REASON_TEXT = { NO_CANDIDATE: '没有对得上的步骤', MULTIPLE: '对上多个步骤', CANCELLED_AFTER_MATCH: '匹配后 QMS 撤销了报检' } as const
 

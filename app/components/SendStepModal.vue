@@ -1,11 +1,12 @@
 <script setup lang="ts">
-/** 电脑端发出登记弹窗：选外协厂（默认工序链里计划的，或上次用的）+ 承诺返回日 */
+/** 电脑端发出登记弹窗：选外协厂（默认工序链里计划的，或上次用的）+ 承诺返回日 + 随件发料（外协带料时写上发了什么，在途里能看到） */
 const props = defineProps<{ step: { id: string; supplierId: string | null; title: string } | null }>()
 const emit = defineEmits<{ close: []; done: [] }>()
 
 const { data: master } = await useMaster()
 const supplierId = ref<string | undefined>()
 const promisedReturnDate = ref<string | undefined>()
+const note = ref('')
 const saving = ref(false)
 
 watch(
@@ -13,6 +14,7 @@ watch(
   async (step) => {
     if (!step) return
     promisedReturnDate.value = dayAfter(7)
+    note.value = ''
     supplierId.value = step.supplierId ?? undefined
     if (!supplierId.value) supplierId.value = (await $fetch('/api/last-supplier')).supplierId ?? undefined
   },
@@ -26,7 +28,7 @@ async function submit() {
   try {
     await $fetch(`/api/steps/${props.step.id}/send`, {
       method: 'POST',
-      body: { supplierId: supplierId.value, promisedReturnDate: promisedReturnDate.value, source: 'PC' },
+      body: { supplierId: supplierId.value, promisedReturnDate: promisedReturnDate.value, note: note.value || null, source: 'PC' },
     })
     message.success('已登记发出')
     emit('done')
@@ -46,6 +48,9 @@ async function submit() {
       </a-form-item>
       <a-form-item label="承诺返回日" required>
         <a-date-picker v-model:value="promisedReturnDate" value-format="YYYY-MM-DD" style="width: 100%" />
+      </a-form-item>
+      <a-form-item label="随件发料" extra="外协厂需要我们供料时写上发了什么、多少，如：Q355 钢板 20mm × 2 张">
+        <a-input v-model:value="note" :maxlength="200" placeholder="不供料就空着" />
       </a-form-item>
     </a-form>
   </a-modal>

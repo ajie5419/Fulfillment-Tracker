@@ -15,6 +15,7 @@ const DAY = 86_400_000
 type Services = {
   steps: typeof import('../../server/services/flow/steps')
   flow: typeof import('../../server/services/flow/flow')
+  finish: typeof import('../../server/services/flow/finish')
   match: typeof import('../../server/services/flow/match')
   scan: typeof import('../../server/services/alerts/scan')
   rules: typeof import('../../server/services/alerts/rules')
@@ -34,6 +35,7 @@ describe.skipIf(!DB)('预警与提醒', () => {
     s = {
       steps: await import('../../server/services/flow/steps'),
       flow: await import('../../server/services/flow/flow'),
+      finish: await import('../../server/services/flow/finish'),
       match: await import('../../server/services/flow/match'),
       scan: await import('../../server/services/alerts/scan'),
       rules: await import('../../server/services/alerts/rules'),
@@ -402,9 +404,9 @@ describe.skipIf(!DB)('预警与提醒', () => {
     expect(issue).toMatchObject({ category: 'WORKSHOP', refType: 'STEP', refId: late.id })
 
     // 完工：预警立即消除，"加工中"里不再有
-    await s.flow.finishStep({ stepId: soon.id, actorId: 'u-out', source: 'MOBILE' })
+    await s.finish.finishStep({ stepId: soon.id, actorId: 'u-out', source: 'MOBILE' })
     expect((await db.alert.findUniqueOrThrow({ where: { id: r!.id } })).status).toBe('CLEARED')
-    await s.flow.finishStep({ stepId: late.id, actorId: 'u-out', source: 'MOBILE' })
+    await s.finish.finishStep({ stepId: late.id, actorId: 'u-out', source: 'MOBILE' })
     expect((await db.alert.findUniqueOrThrow({ where: { id: red!.id } })).activeKey).toBeNull()
     expect(await s.working.listWorking({ ownerId: 'u-out' })).toEqual([])
   })

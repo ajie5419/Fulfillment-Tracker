@@ -593,7 +593,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(await me(tech)).toMatchObject({ businessDept: 'TECH', menu: ['deptPlan', 'tech'] })
     expect(await me(buyer)).toMatchObject({ businessDept: 'PURCHASE', menu: ['deptPlan', 'purchase', 'kitting'], can: { purchase: true, seeAmount: true } })
     expect(await me(prod)).toMatchObject({ businessDept: 'PRODUCTION', menu: ['deptPlan', 'production', 'releases'], can: { route: true, stepAction: true, mobileSend: true } })
-    // 10-24 工艺部：工件与工序链（定工艺路线）、发放签收（只发工艺文件）；不能开工完工
+    // 10-24 工艺部：生产管理（定工艺路线）、发放签收（只发工艺文件）；不能开工完工
     const proc = await login('h-proc')
     expect(await me(proc)).toMatchObject({ businessDept: 'PROCESS', menu: ['deptPlan', 'production', 'releases'], can: { route: true, stepAction: false, release: true, releaseProcessOnly: true, drawing: false } })
     expect((await send(proc, 'POST', '/api/parts', { workOrderNumber: MINE, name: 'R13 工艺建的', quantity: 1 })).status).toBe(200)

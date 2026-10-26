@@ -217,9 +217,11 @@ model RouteStep {
   seq                Int
   processId          String      @db.VarChar(64) // QMS processes.id
   mode               StepMode
-  supplierId         String?     @db.VarChar(64) // QMS suppliers.id（外协时）
+  supplierId         String?     @db.VarChar(64) // QMS suppliers.id：外协时为外协厂 / 厂内班组；自制时可选派工班组（kind = TEAM）
   ownerId            String?     @db.VarChar(64) // 负责人，QMS 用户 ID
   dueDate            DateTime?
+  /// 应开工日（计划开工日，日期字段）：待办截止日优先取它
+  planStartDate      DateTime?
   promisedReturnDate DateTime?
   startedAt          DateTime?
   finishedAt         DateTime?
@@ -278,6 +280,8 @@ enum FlowEventType {
   RETURN_MANUAL // 补登返厂（漏报兜底）
   START // 开工
   FINISH // 完工
+  REPORT // 部分完工（报工）：计入已完成数量，步骤继续加工
+  SCRAP // 报废：不计入已完成数量
 }
 
 enum FlowSource {
@@ -294,6 +298,8 @@ model FlowEvent {
   qty             Int
   source          FlowSource
   qmsInspectionId String?       @unique @db.VarChar(64) // 同一报检重复同步时据此幂等跳过（T6）
+  /// 备注：发出时的随件发料（外协带料）、报废原因等
+  note            String?       @db.VarChar(500)
   actorId         String?       @db.VarChar(64)
   occurredAt      DateTime
   createdAt       DateTime      @default(now())
@@ -361,6 +367,7 @@ enum IssueSource {
   MANUAL
   ALERT
   QMS_NONCONFORMING
+  SCRAP // 完工时报废，需补料重做
 }
 
 enum IssueStatus {

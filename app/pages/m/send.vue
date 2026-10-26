@@ -14,6 +14,8 @@ const partId = ref<string>('')
 const stepId = ref<string>('')
 const supplierId = ref<string>('')
 const promisedReturnDate = ref<string>('')
+/** 随件发料（外协带料） */
+const note = ref('')
 const lastSupplierId = ref<string | null>(null)
 
 const { data: parts, refresh: refreshParts } = await useFetch('/api/parts', {
@@ -87,13 +89,14 @@ async function submit() {
   try {
     await $fetch(`/api/steps/${stepId.value}/send`, {
       method: 'POST',
-      body: { supplierId: supplierId.value, promisedReturnDate: promisedReturnDate.value, source: 'MOBILE' },
+      body: { supplierId: supplierId.value, promisedReturnDate: promisedReturnDate.value, note: note.value || null, source: 'MOBILE' },
     })
     showSuccessToast('已登记发出')
     lastSupplierId.value = supplierId.value
     partId.value = ''
     stepId.value = ''
     promisedReturnDate.value = ''
+    note.value = ''
     await Promise.all([refreshParts(), refreshNuxtData('todos')])
   } catch (e) {
     showFailToast(apiError(e))
@@ -166,6 +169,7 @@ async function submit() {
         <van-tag size="large" plain @click="showCalendar = true">选日期</van-tag>
       </div>
       <van-cell title="承诺返回日" :value="promisedReturnDate || '未选'" />
+      <van-field v-model="note" label="随件发料" placeholder="供料时写发了什么，不供料空着" maxlength="200" />
     </van-cell-group>
 
     <div class="m-submit">

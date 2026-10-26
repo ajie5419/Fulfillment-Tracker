@@ -36,7 +36,7 @@ const groups = computed(() => {
       { key: '/purchases', label: '采购到货', sections: ['purchase'] },
       { key: '/payments', label: '付款申请', sections: ['purchase', 'payments'] },
       { key: '/kitting', label: '齐套', sections: ['production', 'kitting'] },
-      { key: '/parts', label: '工件与工序链', sections: ['production'] },
+      { key: '/parts', label: '生产管理', sections: ['production'] },
       { key: '/unmatched', label: '待确认匹配', sections: ['production'] },
     ]) },
     { title: '其他', items: [
@@ -60,7 +60,7 @@ watch(() => route.path, () => {
   if (broken.value) collapsed.value = true
   contentEl.value?.scrollTo({ top: 0 })
 })
-/** 没有单独菜单项的页面算到哪一项下：工单详情 /wo/:no 属于项目总览；工序路线模板 /templates 属于工件与工序链 */
+/** 没有单独菜单项的页面算到哪一项下：工单详情 /wo/:no 属于项目总览；工序路线模板 /templates 属于生产管理 */
 const MENU_ALIAS: Record<string, string> = { '/wo': '/board', '/templates': '/parts' }
 const selected = computed(() => {
   const alias = Object.keys(MENU_ALIAS).find((k) => route.path === k || route.path.startsWith(`${k}/`))
