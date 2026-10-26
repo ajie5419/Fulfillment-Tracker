@@ -38,7 +38,6 @@ watch(() => route.query, () => {
   filter.wo = q('wo')
   filter.supplierId = q('supplierId')
   filter.mine = q('mine') === '1'
-  if (q('part')) openPart(q('part'))
 })
 
 const { data, pending, refresh } = await useFetch('/api/production', {
@@ -59,22 +58,19 @@ const boardColumns = computed(() => COLUMNS.map((key) => ({ key, cards: rows.val
 
 // ───── ?step=：提醒、预警跳过来定位那道工序 ─────
 const focusStep = ref('')
-function focusFromQuery() {
-  const id = q('step')
-  if (!id || pending.value || !import.meta.client) return
+// 只处理一次（useOneShotQuery）：处理完删掉 step，之后刷新数据、切页签都不会再被拉回这道
+useOneShotQuery(['step'], () => !pending.value, ({ step: id }) => {
   const row = rows.value.find((r) => r.stepId === id)
-  if (row) {
-    filter.view = 'list'
-    filter.tab = tabForRow(row, filter.tab)
-    focusStep.value = id
-    nextTick(() => document.querySelector('.focus-row')?.scrollIntoView({ block: 'center' }))
-  } else {
+  if (!row) {
     message.info('这道工序现在不在生产调度里（还在排队等上一道、完成超过 7 天或工单已关闭），可以到工序编排里看')
+    return
   }
-  router.replace({ query: { ...route.query, step: undefined, tab: filter.tab === 'ready' ? undefined : filter.tab, view: filter.view === 'board' ? 'board' : undefined } })
-}
-onMounted(focusFromQuery)
-watch(() => [route.query.step, pending.value], focusFromQuery)
+  filter.view = 'list'
+  filter.tab = tabForRow(row, filter.tab)
+  focusStep.value = id!
+  nextTick(() => document.querySelector('.focus-row')?.scrollIntoView({ block: 'center' }))
+  return { tab: filter.tab === 'ready' ? undefined : filter.tab, view: undefined }
+})
 // 没指定页签进来（如全局搜索点外协厂 / 班组）："可以开工"是空的就切到第一个有内容的页签，免得以为没有活
 // 挂载后再判断（服务端渲染时不改，免得水合后页签显示和数据对不上）
 let autoTabDone = false
@@ -121,9 +117,9 @@ function openPart(id: string) {
 }
 function closePart() {
   drawerPartId.value = null
-  if (route.query.part) router.replace({ query: { ...route.query, part: undefined } })
 }
-onMounted(() => { if (q('part')) openPart(q('part')) })
+// ?part=（只处理一次）：打开工件抽屉后从地址栏删掉，关掉抽屉、改筛选都不会再弹出来
+useOneShotQuery(['part'], () => true, ({ part }) => openPart(part!))
 
 const modeText = (r: Row) => (r.mode === 'SELF' ? `自制${r.supplierName ? ` · ${r.supplierName}` : ''}` : `${MODE_TEXT[r.mode]} · ${r.supplierName ?? '未选外协厂'}`)
 /** 日期一列：按所在列显示最要紧的那个日期 */
@@ -222,7 +218,7 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
                   <span class="wo">{{ c.workOrderNumber }}</span>
                   <UiStatusTag v-if="dateInfo(c).tone === 'late'" tone="late">{{ dateInfo(c).text }}</UiStatusTag>
                 </div>
-                <button type="button" class="link name" @click="openPart(c.partId)">{{ c.partName }} · {{ c.seq }}. {{ c.processName }}</button>
+                <button type="button" class="name-btn name" @click="openPart(c.partId)">{{ c.partName }} · {{ c.seq }}. {{ c.processName }}</button>
                 <div class="meta">{{ modeText(c) }} · {{ c.doneQty ? `${c.doneQty}/` : '' }}{{ c.quantity }} 件</div>
                 <div class="meta">{{ c.ownerName ?? '未指定负责人' }}{{ dateInfo(c).tone === 'late' ? '' : ` · ${dateInfo(c).text}` }}</div>
                 <div v-if="c.stuckText" class="stuck">{{ c.stuckText }}</div>

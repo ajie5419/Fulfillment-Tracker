@@ -4,7 +4,7 @@
  *   能开工：可以开工的工序（口径同电脑端生产调度）——自制 / 厂内外协点"开工"，厂外外协点"发出"（进发出登记页）；
  *   在做：已开工的自制 / 厂内外协，点"完工"（可部分完工、报废）；
  *   在外：厂外外协已发出没全部返回的，QMS 漏报检时点"登记返厂"。
- * 默认"我的"（我负责的），可切"全部"。地址栏 ?seg=ready|working|out、?mine=1|0、?stepId=（提醒跳过来定位到那一道，默认"全部"；用户切范围时清掉）、?wo=。
+ * 默认"我的"（我负责的），可切"全部"。地址栏 ?seg=ready|working|out、?mine=1|0、?stepId=（提醒跳过来定位到那一道，默认"全部"；只处理一次，处理完从地址栏删掉）、?wo=。
  * 能否操作与电脑端一致：生产部、外协专员、该工序负责人、管理员（后端同样拦）。
  */
 import { segOfColumn } from '#shared/production'
@@ -20,7 +20,8 @@ const q = (k: string) => (typeof route.query[k] === 'string' ? (route.query[k] a
 const segOf = (v: string): Seg => ((SEGS as string[]).includes(v) ? (v as Seg) : 'ready')
 // 地址栏是唯一来源（返回 / 前进、点提醒再进来都跟着变）：页签、范围都从 query 算，用户操作只改 query。
 // 范围：?mine=1 我的、?mine=0 全部；没写时带 stepId / wo（从提醒、工单跳来）默认"全部"，否则"我的"
-const focusId = computed(() => q('stepId'))
+// 定位那道（提醒跳过来的 ?stepId=）：处理一次后从地址栏删掉，这里记住用来标出和排在前面
+const focusId = ref('')
 const wo = computed(() => q('wo'))
 const seg = computed<Seg>(() => segOf(q('seg')))
 const scope = computed<'mine' | 'all'>(() => {
@@ -29,8 +30,10 @@ const scope = computed<'mine' | 'all'>(() => {
   if (m === '0') return 'all'
   return q('stepId') || q('wo') ? 'all' : 'mine'
 })
+/** 用户手动切分段：一次性的 stepId 一并清掉（不再被拉回定位的那道），范围写明，免得删了 stepId 范围跟着变 */
 function setSeg(s: Seg) {
-  router.replace({ query: { ...route.query, seg: s } })
+  const { stepId: _drop, ...rest } = route.query
+  router.replace({ query: { ...rest, seg: s, mine: scope.value === 'mine' ? '1' : '0' } })
 }
 /** 用户自己切了范围：一次性的 stepId（定位用）一并清掉，不然它会把范围又拉回"全部" */
 function setScope(m: 'mine' | 'all') {
@@ -49,19 +52,15 @@ const list = computed(() => {
   const l = rowsOf(seg.value)
   return focusId.value ? [...l].sort((a, b) => Number(b.stepId === focusId.value) - Number(a.stepId === focusId.value)) : l
 })
-// 提醒跳过来（?stepId=）：切到这道工序实际所在的分段；不在手机三段里（卡住、已完成、排队中）时提示一次
-const warned = ref('')
-watch([focusId, pending, () => data.value.rows], () => {
-  const id = focusId.value
-  if (!id || pending.value || !import.meta.client) return
+// 提醒跳过来（?stepId=）：只处理一次——切到这道工序实际所在的分段并标出；不在手机三段里（卡住、已完成、排队中）时提示。
+// 处理完删掉 stepId，并把当时的范围（带 stepId 默认"全部"）写成 mine=0 / 1，之后刷新、切分段都不会再被拉回来
+useOneShotQuery(['stepId'], () => !pending.value, ({ stepId: id }) => {
+  focusId.value = id!
   const row = data.value.rows.find((r) => r.stepId === id)
   const target = row ? segOfColumn(row.column) : null
-  if (target && target !== seg.value) return setSeg(target)
-  if (!target && warned.value !== id) {
-    warned.value = id
-    showToast(row?.column === 'stuck' ? `这道工序卡住了：${row.stuckText ?? '请到电脑端生产调度查看'}` : '这道工序现在不在能开工 / 在做 / 在外里，可能已完成或还在排队')
-  }
-}, { immediate: true })
+  if (!target) showToast(row?.column === 'stuck' ? `这道工序卡住了：${row.stuckText ?? '请到电脑端生产调度查看'}` : '这道工序现在不在能开工 / 在做 / 在外里，可能已完成或还在排队')
+  return { seg: target ?? seg.value, mine: scope.value === 'mine' ? '1' : '0' }
+})
 const segTitle = (s: Seg) => `${{ ready: '能开工', working: '在做', out: '在外' }[s]} ${rowsOf(s).length}`
 const canStep = (r: Row) => canDo(me.value, 'stepAction', { workOrderNumber: r.workOrderNumber, ownerId: r.ownerId })
 const late = (r: Row) => r.overdueDays > 0 || r.startLateDays > 0

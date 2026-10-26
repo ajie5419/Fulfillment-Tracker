@@ -23,7 +23,7 @@ watch(workOrders, (list) => {
   if (!workOrderNumber.value && list.length) workOrderNumber.value = list[0]!.workOrderNumber
 }, { immediate: true })
 const routeFilter = ref<RouteFilter>(route.query.noRoute === '1' ? 'none' : 'all')
-// 选中的工单、筛选记在地址栏（定位用的 part / comments / edit 只用一次，不保留）
+// 选中的工单、筛选记在地址栏（定位用的 part / comments / edit 由 useOneShotQuery 处理一次后删掉；这里照抄，免得"去编排"切工单时提前删掉 edit）
 watch([workOrderNumber, routeFilter], ([wo, f]) => {
   if (import.meta.client) router.replace({ query: { ...route.query, wo: wo || undefined, noRoute: f === 'none' ? '1' : undefined } })
 })
@@ -84,28 +84,24 @@ function openDetail(id: string, tab: 'info' | 'comments' = 'info') {
   detailTab.value = tab
   detailId.value = id
 }
-function clearOnce() {
-  if (route.query.part || route.query.comments || route.query.edit) router.replace({ query: { ...route.query, part: undefined, comments: undefined, edit: undefined } })
-}
-/** 地址栏定位：?part= 打开工件抽屉（comments=1 开留言），?edit= 打开编排抽屉；要等这个工单的工件加载完 */
-function focusFromQuery() {
-  if (!import.meta.client) return
-  const partId = route.query.part as string | undefined
-  const edit = route.query.edit as string | undefined
-  if (!partId && !edit) return
-  if (pending.value) return
-  // 刚切工单（如工件抽屉"去编排"跳到别的工单）：列表还是上一个工单的，等新列表回来再定位，不要把 ?edit= 提前清掉
-  if (typeof route.query.wo === 'string' && route.query.wo !== workOrderNumber.value) return
-  if (parts.value.some((p) => p.workOrderNumber !== workOrderNumber.value)) return
-  if (partId) openDetail(partId, route.query.comments === '1' ? 'comments' : 'info')
-  if (edit && parts.value.some((p) => p.id === edit)) {
-    routeFilter.value = 'all'
-    editId.value = edit
-  }
-  clearOnce()
-}
-onMounted(focusFromQuery)
-watch(() => [route.query.part, route.query.comments, route.query.edit, pending.value], focusFromQuery)
+/**
+ * 地址栏定位（只处理一次，useOneShotQuery）：?part= 打开工件抽屉（comments=1 开留言），?edit= 打开编排抽屉；处理完一起删掉。
+ * 要等这个工单的工件加载完：刚切工单（如工件抽屉"去编排"跳到别的工单）时列表还是上一个工单的，先不处理、不删
+ */
+useOneShotQuery(
+  ['part', 'comments', 'edit'],
+  () =>
+    !pending.value &&
+    !(typeof route.query.wo === 'string' && route.query.wo !== workOrderNumber.value) &&
+    !parts.value.some((p) => p.workOrderNumber !== workOrderNumber.value),
+  ({ part, comments, edit }) => {
+    if (part) openDetail(part, comments === '1' ? 'comments' : 'info')
+    if (edit && parts.value.some((p) => p.id === edit)) {
+      routeFilter.value = 'all'
+      editId.value = edit
+    }
+  },
+)
 function onDetailEdit(p: { id: string; workOrderNumber: string }) {
   detailId.value = null
   // 别的工单的工件（如从搜索、留言提醒打开）：先关详情抽屉，再切到那个工单并打开编排（?edit= 由下面的地址栏同步处理）

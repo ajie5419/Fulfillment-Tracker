@@ -65,20 +65,18 @@ const supplierOptions = computed(() => master.value.suppliers.filter((s) => s.ki
 
 // ───── ?step=：在外提醒跳过来定位那道工序 ─────
 const focusStep = ref('')
-function focusFromQuery() {
-  const id = q('step')
-  if (!id || transitPending.value || !import.meta.client) return
+// 只处理一次（useOneShotQuery）：处理完删掉 step，之后刷新、切页签都不会再被拉回
+useOneShotQuery(['step'], () => !transitPending.value, ({ step: id }) => {
   if (!transit.value.some((r) => r.stepId === id)) {
-    // 已经不在外了（返回了、被改了状态）：交给生产调度按它实际所在页签定位
-    return navigateTo({ path: '/production', query: { wo: filter.wo || undefined, step: id } }, { replace: true })
+    // 已经不在外了（返回了、被改了状态）：交给生产调度按它实际所在页签定位（参数带过去，这边不删）
+    navigateTo({ path: '/production', query: { wo: filter.wo || undefined, step: id } }, { replace: true })
+    return false
   }
   filter.tab = 'out'
-  focusStep.value = id
-  router.replace({ query: { ...route.query, step: undefined, tab: 'out' } })
+  focusStep.value = id!
   nextTick(() => document.querySelector('.focus-row')?.scrollIntoView({ block: 'center' }))
-}
-onMounted(focusFromQuery)
-watch(() => [route.query.step, transitPending.value], focusFromQuery)
+  return { tab: 'out' }
+})
 const rowClass = (r: { stepId: string }) => (r.stepId === focusStep.value ? 'focus-row' : '')
 
 function refreshAll() {
