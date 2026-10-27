@@ -4,7 +4,7 @@
  * 换了 / 清除班组长：这些班组里没指定负责人的待开工自制工序，没处理的待办按改前、改后的"谁负责"转交（同改负责人，steps.moveStepTodos）。
  */
 import type { Prisma } from '@prisma/client'
-import { prisma } from '../../utils/prisma'
+import { isDeadlock, prisma } from '../../utils/prisma'
 import { FlowError } from './errors'
 import { loadNames } from './names'
 import { lockParts } from '../purchases/purchases'
@@ -32,11 +32,6 @@ export async function listTeamLeaders() {
 
 /** 锁后发现又有工序进了这个班组（它的工件没锁上）：整个事务回滚重来 */
 class TeamStepsChanged extends Error {}
-
-const isDeadlock = (err: unknown) => {
-  const e = err as { code?: string; message?: string }
-  return e?.code === 'P2034' || /\b1213\b|deadlock/i.test(e?.message ?? '')
-}
 
 /**
  * 设置 / 清除班组长（userId = null 清除）。

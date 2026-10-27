@@ -16,3 +16,14 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({ transactionOptions: { isolationLevel: 'ReadCommitted' } })
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+
+/**
+ * 死锁 / 写冲突（数据库回滚了整个事务，可以整单重来）。
+ * Prisma 自己生成的语句报 P2034；$queryRaw 里的 FOR UPDATE 死锁报 P2010，MySQL 错误码 1213 在 meta.code 里。
+ */
+export function isDeadlock(err: unknown) {
+  const e = err as { code?: string; meta?: { code?: unknown }; message?: string }
+  if (e?.code === 'P2034') return true
+  if (e?.code === 'P2010' && String(e.meta?.code ?? '') === '1213') return true
+  return /\b1213\b|deadlock/i.test(e?.message ?? '')
+}

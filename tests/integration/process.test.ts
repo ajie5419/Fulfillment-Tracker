@@ -203,4 +203,26 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
     expect(rows.find((r) => r.componentName === '车桥')?.processText).toBe('料单修改中 · 工艺无')
     expect(rows.find((r) => r.componentName === '车架')?.processText).toBe('料单已下发 · 工艺已下发')
   })
+  it('FOR UPDATE 里撞上死锁（P2010 / 1213）也认作死锁，发放会整单重试', async () => {
+    const { isDeadlock } = await import('../../server/utils/prisma')
+    await db.$executeRawUnsafe('CREATE TABLE IF NOT EXISTS zz_deadlock (id INT PRIMARY KEY)')
+    await db.$executeRawUnsafe('INSERT IGNORE INTO zz_deadlock VALUES (1), (2)')
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+    const cross = (a: number, b: number) =>
+      db.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM zz_deadlock WHERE id = ${a} FOR UPDATE`
+        await wait(300)
+        await tx.$queryRaw`SELECT id FROM zz_deadlock WHERE id = ${b} FOR UPDATE`
+      }, { timeout: 20_000 })
+    try {
+      const results = await Promise.allSettled([cross(1, 2), cross(2, 1)])
+      const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      expect(failed).toHaveLength(1)
+      expect(failed[0]!.reason.code).toBe('P2010')
+      expect(isDeadlock(failed[0]!.reason)).toBe(true)
+    } finally {
+      await db.$executeRawUnsafe('DROP TABLE IF EXISTS zz_deadlock')
+    }
+    expect(isDeadlock({ code: 'P2002', meta: { target: 'releaseNo' }, message: 'Unique constraint failed' })).toBe(false)
+  })
 })

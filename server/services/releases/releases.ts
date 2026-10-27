@@ -19,7 +19,7 @@
  * 从设计任务发放时也挂到该设计任务。用 READ COMMITTED，加锁顺序 先工单行 → 该工单全部工件（按 ID）→ 设计任务 → 发放单。
  */
 import { Prisma, type ReceiptStatus, type Release, type ReleaseType } from '@prisma/client'
-import { prisma } from '../../utils/prisma'
+import { isDeadlock, prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
 import { FlowError, FlowForbidden } from '../flow/errors'
@@ -58,7 +58,7 @@ export interface Actor {
 const uniq = <T>(xs: T[]) => [...new Set(xs)]
 
 /**
- * 重试：①编号冲突——两个请求同时取到同一个当天序号时，后提交的撞唯一键；②死锁（P2034）——两张设计变更同时发、
+ * 重试：①编号冲突——两个请求同时取到同一个当天序号时，后提交的撞唯一键；②死锁（P2034，或 FOR UPDATE 里的 P2010/1213）——两张设计变更同时发、
  * 各自先锁了一个设计任务、再去锁对方的（工艺模块：料单改"修改中"），数据库回滚其中一个。整个事务重来，事务里只有数据库写入，重来不会重复发通知。
  */
 async function releaseTransaction<T>(fn: (tx: Tx) => Promise<T>, readCommitted = false): Promise<T> {
@@ -67,7 +67,7 @@ async function releaseTransaction<T>(fn: (tx: Tx) => Promise<T>, readCommitted =
       return await prisma.$transaction(fn, readCommitted ? { isolationLevel: 'ReadCommitted' } : undefined)
     } catch (err) {
       const e = err as { code?: string; meta?: { target?: unknown } }
-      const retryable = e?.code === 'P2034' || (e?.code === 'P2002' && String(e.meta?.target ?? '').includes('releaseNo'))
+      const retryable = isDeadlock(err) || (e?.code === 'P2002' && String(e.meta?.target ?? '').includes('releaseNo'))
       if (attempt < 5 && retryable) continue
       throw err
     }
