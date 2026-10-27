@@ -43,6 +43,8 @@ export interface Me {
     planTemplate: boolean
     /** 设置班组长（生产部、管理员） */
     teamLeader: boolean
+    /** 新建 / 修改 / 取消工单（项目部、项目部负责人、管理员；写入 QMS 工单库） */
+    workOrder: boolean
   }
 }
 

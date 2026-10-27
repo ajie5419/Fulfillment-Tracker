@@ -8,6 +8,8 @@
  * 地址 #node-<id> 定位并展开该节点（列表"总计划节点"列点过来）。日期全部用服务端给的 'YYYY-MM-DD'。
  * 总计划的编制、发布、调整、确认、分解在"项目计划"页 /plan?wo=（zhao 10-22 测试后定：工单详情只放概览，项目计划单独成菜单页）；
  *   旧地址 /wo/:no?tab=plan&node= 跳到 /plan?wo=&node=。
+ * 编辑 / 取消工单（履约新建工单 10-27，写入 QMS 工单库）：项目部、项目部负责人、管理员（me.can.workOrder）在顶栏看到"编辑工单""取消工单"；
+ *   取消要二次确认，只取消不删除；已取消的工单不再显示这两个按钮。手机端不加入口。
  */
 import type { WorkOrderDetail } from '~~/server/services/workorder/detail'
 import { BOARD_GROUP_TEXT, NODE_STATE_COLOR, NODE_STATE_TEXT, type NodeState, boardGroup, isClosedWorkOrder, woStatusText } from '#shared/status'
@@ -150,6 +152,43 @@ const showAllActions = ref(false)
 const actions = computed(() => (showAllActions.value ? d.value?.actions ?? [] : (d.value?.actions ?? []).slice(0, 8)))
 
 const enc = encodeURIComponent
+
+// ───── 编辑 / 取消工单（写入 QMS）─────
+const { data: me } = await useMe()
+const canManage = computed(() => !!me.value?.can.workOrder && !!d.value && d.value.workOrder.status !== 'CANCELLED')
+const editOpen = ref(false)
+async function onEdited() {
+  editOpen.value = false
+  await refresh()
+  void refreshNuxtData('work-orders')
+}
+const cancelling = ref(false)
+function confirmCancel() {
+  const x = d.value
+  if (!x) return
+  if (x.workOrder.edit.version == null) return message.warning('本地还没有同步到这个工单的版本号，请等下一轮 QMS 同步（约 5 分钟）后再取消')
+  Modal.confirm({
+    title: `取消工单 ${x.workOrder.workOrderNumber}？`,
+    content: 'QMS 里的工单状态会改成“已取消”（不删除），项目总览和工单下拉默认不再显示它。取消后不能再编辑。',
+    okText: '取消工单',
+    okType: 'danger',
+    cancelText: '不取消',
+    async onOk() {
+      cancelling.value = true
+      try {
+        // 带页面上看到的版本号（乐观锁）：别人在这期间改过，QMS 返回 409"请刷新后再改"
+        await $fetch(`/api/work-orders/${enc(x.workOrder.workOrderNumber)}/cancel`, { method: 'POST', body: { version: x.workOrder.edit.version } })
+        message.success('工单已取消')
+        await refresh()
+        void refreshNuxtData('work-orders')
+      } catch (e) {
+        message.error(apiError(e))
+      } finally {
+        cancelling.value = false
+      }
+    },
+  })
+}
 </script>
 
 <template>
@@ -158,7 +197,13 @@ const enc = encodeURIComponent
       <div class="crumbs">
         <NuxtLink to="/board">项目总览</NuxtLink><span class="sep">/</span><span>{{ no }}</span>
       </div>
-      <NuxtLink :to="planLink()">项目计划 ›</NuxtLink>
+      <div class="top-actions">
+        <template v-if="canManage">
+          <a-button size="small" @click="editOpen = true">编辑工单</a-button>
+          <a-button size="small" danger :loading="cancelling" @click="confirmCancel">取消工单</a-button>
+        </template>
+        <NuxtLink :to="planLink()">项目计划 ›</NuxtLink>
+      </div>
     </div>
 
 
@@ -349,12 +394,14 @@ const enc = encodeURIComponent
         </div>
       </template>
     </a-spin>
+    <WorkOrderEditModal v-if="canManage && d" :open="editOpen" :work-order="d.workOrder" @close="editOpen = false" @done="onEdited" />
   </div>
 </template>
 
 <style scoped>
 .page { display: flex; flex-direction: column; gap: 16px; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .crumbs { font-size: 12px; color: var(--ft-text-3); }
 .crumbs .sep { margin: 0 6px; }
 .head-card { margin-bottom: 16px; }
