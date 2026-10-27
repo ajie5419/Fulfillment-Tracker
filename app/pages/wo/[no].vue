@@ -176,7 +176,8 @@ function confirmCancel() {
     async onOk() {
       cancelling.value = true
       try {
-        await $fetch(`/api/work-orders/${enc(x.workOrder.workOrderNumber)}/cancel`, { method: 'POST' })
+        // 带页面上看到的版本号（乐观锁）：别人在这期间改过，QMS 返回 409"请刷新后再改"
+        await $fetch(`/api/work-orders/${enc(x.workOrder.workOrderNumber)}/cancel`, { method: 'POST', body: { version: x.workOrder.edit.version } })
         message.success('工单已取消')
         await refresh()
         void refreshNuxtData('work-orders')

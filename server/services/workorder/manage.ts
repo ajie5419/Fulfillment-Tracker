@@ -4,7 +4,8 @@
  *   权限（canOperate 'workOrder'：项目部、项目部负责人、管理员）→ 本地能先判断的先判断（工单号不能改、项目经理存在、已取消不能改）
  *   → 调 QMS → QMS 成功后在一个事务里写本地副本 qms_work_order（用 QMS 返回的对象，含 updatedAt、version）和 work_order_ext（项目经理、产品线、是否试点）。
  * QMS 没配置 / 连不上 / 拒绝时直接报错，本地什么都不写（不在本地先存、事后补发）。
- * 修改、取消带本地副本里的 version（乐观锁），QMS 409 → "工单已被别人修改，请刷新后再改"。只取消，不删除。
+ * 修改、取消带编辑者打开页面时看到的 version（由前端提交，乐观锁；不用保存时本地最新的 version，否则两人先后保存时后一个会悄悄覆盖前一个），
+ *   QMS 409 → "工单已被别人修改，请刷新后再改"。只取消，不删除。
  * actorUserId = 当前登录用户的 QMS 用户 ID（两边相同），QMS 审计日志记这个人。
  * 只改履约这边的扩展信息（项目经理、产品线、是否试点）时不调 QMS。
  */
@@ -14,7 +15,7 @@ import { OPERATION_DENIED, type RoleContext, canOperate } from '../auth/permissi
 import { FlowError, FlowForbidden, FlowHttpError } from '../flow/errors'
 import { type QmsWorkOrderRow, writeWorkOrderCopy } from '../sync/resources'
 import { type QmsWorkOrderApi, QmsRejected, type UpdateWorkOrderBody } from '../sync/write-client'
-import type { CreateWorkOrderInput, UpdateWorkOrderInput } from '../../schemas/work-order'
+import type { CancelWorkOrderInput, CreateWorkOrderInput, UpdateWorkOrderInput } from '../../schemas/work-order'
 
 export const CONFLICT_TEXT = '工单已被别人修改，请刷新后再改'
 export const NO_VERSION_TEXT = '本地还没有同步到这个工单的版本号，请等下一轮 QMS 同步（约 5 分钟）后再改'
@@ -79,6 +80,7 @@ async function loadLocal(db: ManageDb, workOrderNumber: string) {
   return wo
 }
 
+/** 编辑者看到的版本号；页面上没有（本地还没同步到新版 QMS 的版本号）时提示等同步 */
 function requireVersion(v: number | null | undefined): number {
   if (v === null || v === undefined) throw new FlowError(NO_VERSION_TEXT)
   return v
@@ -122,17 +124,17 @@ export async function updateWorkOrder(ctx: RoleContext, workOrderNumber: string,
 
   let row: QmsWorkOrderRow | null = null
   if (Object.keys(fields).length) {
-    const version = requireVersion(local.version)
+    const version = requireVersion(input.version)
     row = await withConflictText(qms.updateWorkOrder(workOrderNumber, { version, actorUserId: ctx.userId, ...fields }))
   }
   await saveLocal(db, workOrderNumber, row, extOf(input))
   return view(row ?? local)
 }
 
-export async function cancelWorkOrder(ctx: RoleContext, workOrderNumber: string, qms: QmsWorkOrderApi, db: ManageDb = prisma) {
+export async function cancelWorkOrder(ctx: RoleContext, workOrderNumber: string, input: CancelWorkOrderInput, qms: QmsWorkOrderApi, db: ManageDb = prisma) {
   assertCan(ctx)
-  const local = await loadLocal(db, workOrderNumber)
-  const version = requireVersion(local.version)
+  await loadLocal(db, workOrderNumber)
+  const version = requireVersion(input.version)
   const row = await withConflictText(qms.cancelWorkOrder(workOrderNumber, { version, actorUserId: ctx.userId }))
   await saveLocal(db, workOrderNumber, row, {})
   return view(row)

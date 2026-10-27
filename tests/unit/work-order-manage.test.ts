@@ -6,6 +6,7 @@ import { RESOURCES, type QmsWorkOrderRow, qmsWorkOrderSchema } from '../../serve
 import { QMS_UNAVAILABLE_TEXT, type QmsWorkOrderApi, QmsRejected, QmsUnavailable, qmsWorkOrderClient } from '../../server/services/sync/write-client'
 import { CONFLICT_TEXT, type ManageDb, NO_VERSION_TEXT, cancelWorkOrder, createWorkOrder, listCustomers, updateWorkOrder } from '../../server/services/workorder/manage'
 import { createWorkOrderBody, updateWorkOrderBody } from '../../server/schemas/work-order'
+import { defaultProjectManager, losesSightAfterCreate } from '../../shared/work-order-form'
 
 const ctx = (over: Partial<RoleContext> = {}): RoleContext => ({ userId: 'u-me', isAdmin: false, roles: [], deptHeadOf: [], businessDept: 'PROJECT', pmOf: new Set(), ...over })
 const project = ctx()
@@ -41,9 +42,25 @@ function fakeDb(seed: { wos?: Row[]; users?: string[] } = {}) {
   const tables = (w: Map<string, Row>, e: Map<string, Row>) => ({
     qmsWorkOrder: {
       findUnique: async ({ where }: { where: { workOrderNumber: string } }) => w.get(where.workOrderNumber) ?? null,
-      upsert: async ({ where, create, update }: { where: { workOrderNumber: string }; create: Row; update: Row }) => {
+      // 与 MySQL 语义一致：createMany skipDuplicates 主键已有就跳过；updateMany 只改满足条件的行
+      createMany: async ({ data, skipDuplicates }: { data: Row[]; skipDuplicates?: boolean }) => {
+        let count = 0
+        for (const d of data) {
+          const k = d.workOrderNumber as string
+          if (w.has(k)) {
+            if (!skipDuplicates) throw new Error('P2002')
+            continue
+          }
+          w.set(k, defined(d))
+          count++
+        }
+        return { count }
+      },
+      updateMany: async ({ where, data }: { where: { workOrderNumber: string; updatedAt: { lte: Date } }; data: Row }) => {
         const cur = w.get(where.workOrderNumber)
-        w.set(where.workOrderNumber, cur ? { ...cur, ...defined(update) } : defined(create))
+        if (!cur || (cur.updatedAt as Date) > where.updatedAt.lte) return { count: 0 }
+        w.set(where.workOrderNumber, { ...cur, ...defined(data) })
+        return { count: 1 }
       },
     },
     workOrderExt: {
@@ -142,7 +159,7 @@ describe('修改工单 updateWorkOrder', () => {
   it('带本地副本的 version 和改过的字段调 QMS，成功后写回新版本号和扩展信息', async () => {
     const { db, wos, exts } = fakeDb({ wos: [local({ version: 5 })] })
     const { api, calls } = fakeQms()
-    const r = await updateWorkOrder(project, 'WO-1', updateWorkOrderBody.parse({ quantity: 9, status: 'IN_PROGRESS', productLine: '环卫' }), api, db)
+    const r = await updateWorkOrder(project, 'WO-1', updateWorkOrderBody.parse({ version: 5, quantity: 9, status: 'IN_PROGRESS', productLine: '环卫' }), api, db)
     expect(calls[0]).toEqual({ op: 'updateWorkOrder', args: ['WO-1', { version: 5, actorUserId: 'u-me', quantity: 9, status: 'IN_PROGRESS' }] })
     expect(r.version).toBe(6)
     expect(wos.get('WO-1')).toMatchObject({ version: 6, quantity: 9, updatedAt: T1 })
@@ -156,7 +173,7 @@ describe('修改工单 updateWorkOrder', () => {
         throw new QmsRejected('数据已被修改', 409, 'OPTIMISTIC_LOCK_CONFLICT')
       },
     })
-    const err = await updateWorkOrder(project, 'WO-1', updateWorkOrderBody.parse({ quantity: 9, isPilot: true }), api, db).catch((e) => e)
+    const err = await updateWorkOrder(project, 'WO-1', updateWorkOrderBody.parse({ version: 5, quantity: 9, isPilot: true }), api, db).catch((e) => e)
     expect(err).toBeInstanceOf(FlowHttpError)
     expect(err.statusCode).toBe(409)
     expect(err.message).toBe(CONFLICT_TEXT)
@@ -171,15 +188,35 @@ describe('修改工单 updateWorkOrder', () => {
         throw new QmsRejected('事业部无效', 400, null)
       },
     })
-    await expect(updateWorkOrder(project, 'WO-1', updateWorkOrderBody.parse({ divisionId: 'bad' }), api, db)).rejects.toMatchObject({ message: '事业部无效', statusCode: 400 })
+    await expect(updateWorkOrder(project, 'WO-1', updateWorkOrderBody.parse({ version: 1, divisionId: 'bad' }), api, db)).rejects.toMatchObject({ message: '事业部无效', statusCode: 400 })
   })
 
   it('改工单号被拒，不调 QMS；带同一个工单号可以', async () => {
     const { db } = fakeDb({ wos: [local()] })
     const { api, calls } = fakeQms()
-    await expect(updateWorkOrder(project, 'WO-1', updateWorkOrderBody.parse({ workOrderNumber: 'WO-2', quantity: 3 }), api, db)).rejects.toThrow('工单号不能修改')
+    await expect(updateWorkOrder(project, 'WO-1', updateWorkOrderBody.parse({ workOrderNumber: 'WO-2', version: 1, quantity: 3 }), api, db)).rejects.toThrow('工单号不能修改')
     expect(calls).toHaveLength(0)
-    await expect(updateWorkOrder(project, 'WO-1', updateWorkOrderBody.parse({ workOrderNumber: 'WO-1', quantity: 3 }), api, db)).resolves.toMatchObject({ version: 2 })
+    await expect(updateWorkOrder(project, 'WO-1', updateWorkOrderBody.parse({ workOrderNumber: 'WO-1', version: 1, quantity: 3 }), api, db)).resolves.toMatchObject({ version: 2 })
+  })
+
+  it('用编辑者打开时看到的 version，不用保存时本地最新的：两人基于同一 version 先后提交，第二个得到 409 文案', async () => {
+    const { db, wos } = fakeDb({ wos: [local({ version: 5 })] })
+    // 有状态的假 QMS：version 不符就 409
+    let qmsVersion = 5
+    const { api, calls } = fakeQms({
+      updateWorkOrder: async (no, b) => {
+        if (b.version !== qmsVersion) throw new QmsRejected('数据已被他人修改', 409, 'OPTIMISTIC_LOCK_CONFLICT')
+        qmsVersion++
+        return qmsRow({ workOrderNumber: no, version: qmsVersion, quantity: b.quantity ?? 2, updatedAt: new Date(T1.getTime() + qmsVersion) })
+      },
+    })
+    // 甲、乙都在 version 5 时打开；甲先保存
+    await updateWorkOrder(project, 'WO-1', updateWorkOrderBody.parse({ version: 5, quantity: 7 }), api, db)
+    expect(wos.get('WO-1')).toMatchObject({ version: 6, quantity: 7 })
+    // 乙后保存：本地最新已是 6，但乙看到的是 5 → 409，不覆盖甲的修改
+    await expect(updateWorkOrder(project, 'WO-1', updateWorkOrderBody.parse({ version: 5, quantity: 8 }), api, db)).rejects.toMatchObject({ statusCode: 409, message: CONFLICT_TEXT })
+    expect((calls[1]!.args[1] as { version: number }).version).toBe(5)
+    expect(wos.get('WO-1')).toMatchObject({ version: 6, quantity: 7 })
   })
 
   it('只改项目经理 / 产品线 / 是否试点：不调 QMS，只写扩展信息', async () => {
@@ -193,11 +230,12 @@ describe('修改工单 updateWorkOrder', () => {
   it('工单不存在 404、已取消的不能改、本地没有版本号不能改、无权限 403', async () => {
     const { db } = fakeDb({ wos: [local({ workOrderNumber: 'WO-C', status: 'CANCELLED' }), local({ workOrderNumber: 'WO-NV', version: null }), local({ workOrderNumber: 'WO-D', isDeleted: true })] })
     const { api, calls } = fakeQms()
-    const body = updateWorkOrderBody.parse({ quantity: 3 })
+    const body = updateWorkOrderBody.parse({ version: 1, quantity: 3 })
     await expect(updateWorkOrder(project, 'NOPE', body, api, db)).rejects.toMatchObject({ statusCode: 404, message: '工单不存在' })
     await expect(updateWorkOrder(project, 'WO-D', body, api, db)).rejects.toMatchObject({ statusCode: 404 })
     await expect(updateWorkOrder(project, 'WO-C', body, api, db)).rejects.toThrow('已取消的工单不能修改')
-    await expect(updateWorkOrder(project, 'WO-NV', body, api, db)).rejects.toThrow(NO_VERSION_TEXT)
+    await expect(updateWorkOrder(project, 'WO-NV', updateWorkOrderBody.parse({ version: null, quantity: 3 }), api, db)).rejects.toThrow(NO_VERSION_TEXT)
+    await expect(updateWorkOrder(project, 'WO-NV', updateWorkOrderBody.parse({ quantity: 3 }), api, db)).rejects.toThrow(NO_VERSION_TEXT)
     await expect(updateWorkOrder(tech, 'WO-NV', body, api, db)).rejects.toBeInstanceOf(FlowForbidden)
     expect(calls).toHaveLength(0)
   })
@@ -207,7 +245,7 @@ describe('取消工单 cancelWorkOrder', () => {
   it('带 version 调 QMS 取消，本地副本改成已取消（不删除）', async () => {
     const { db, wos } = fakeDb({ wos: [local({ version: 3 })] })
     const { api, calls } = fakeQms()
-    const r = await cancelWorkOrder(project, 'WO-1', api, db)
+    const r = await cancelWorkOrder(project, 'WO-1', { version: 3 }, api, db)
     expect(calls[0]).toEqual({ op: 'cancelWorkOrder', args: ['WO-1', { version: 3, actorUserId: 'u-me' }] })
     expect(r).toMatchObject({ status: 'CANCELLED', version: 4 })
     expect(wos.get('WO-1')).toMatchObject({ status: 'CANCELLED', isDeleted: false, version: 4 })
@@ -220,15 +258,19 @@ describe('取消工单 cancelWorkOrder', () => {
         throw new QmsRejected('conflict', 409, null)
       },
     })
-    await expect(cancelWorkOrder(project, 'WO-1', conflict.api, db)).rejects.toMatchObject({ message: CONFLICT_TEXT, statusCode: 409 })
+    await expect(cancelWorkOrder(project, 'WO-1', { version: 0 }, conflict.api, db)).rejects.toMatchObject({ message: CONFLICT_TEXT, statusCode: 409 })
     const down = fakeQms({
       cancelWorkOrder: async () => {
         throw new QmsUnavailable('timeout')
       },
     })
-    await expect(cancelWorkOrder(project, 'WO-1', down.api, db)).rejects.toMatchObject({ message: QMS_UNAVAILABLE_TEXT, statusCode: 503 })
+    await expect(cancelWorkOrder(project, 'WO-1', { version: 1 }, down.api, db)).rejects.toMatchObject({ message: QMS_UNAVAILABLE_TEXT, statusCode: 503 })
     expect(wos.get('WO-1')).toMatchObject({ status: 'OPEN', version: 1 })
-    await expect(cancelWorkOrder(tech, 'WO-1', fakeQms().api, db)).rejects.toBeInstanceOf(FlowForbidden)
+    await expect(cancelWorkOrder(tech, 'WO-1', { version: 1 }, fakeQms().api, db)).rejects.toBeInstanceOf(FlowForbidden)
+    // 页面上没有版本号：不调 QMS，提示等同步
+    const none = fakeQms()
+    await expect(cancelWorkOrder(project, 'WO-1', { version: null }, none.api, db)).rejects.toThrow(NO_VERSION_TEXT)
+    expect(none.calls).toHaveLength(0)
   })
 })
 
@@ -342,11 +384,31 @@ describe('工单同步字段（契约新增，可选）', () => {
     expect(nul).toMatchObject({ customerNameId: null, division: null, divisionId: null, version: null })
   })
 
-  it('本地已有更新的副本时同步不覆盖（防止旧页晚落库把履约刚写的改回去）', async () => {
+  it('本地已有更新的副本时同步不覆盖（条件写，不先读）；没有就插入', async () => {
+    const { db: empty, wos: w0 } = fakeDb()
+    await empty.$transaction(async (tx) => RESOURCES['work-orders'].write(tx, [qmsWorkOrderSchema.parse({ ...base, version: 2 })]))
+    expect(w0.get('WO-1')).toMatchObject({ version: 2, customerName: '甲' })
     const { db, wos } = fakeDb({ wos: [local({ updatedAt: T1, version: 9 })] })
     await db.$transaction(async (tx) => RESOURCES['work-orders'].write(tx, [qmsWorkOrderSchema.parse({ ...base, version: 8, updatedAt: T0.toISOString() })]))
     expect(wos.get('WO-1')).toMatchObject({ version: 9 })
     await db.$transaction(async (tx) => RESOURCES['work-orders'].write(tx, [qmsWorkOrderSchema.parse({ ...base, version: 10, updatedAt: '2026-10-28T00:00:00Z' })]))
     expect(wos.get('WO-1')).toMatchObject({ version: 10, customerNameId: 'c1' })
+  })
+})
+
+describe('新建工单弹窗：项目经理默认值、看不到提示（shared/work-order-form）', () => {
+  it('默认填当前登录用户；拿不到当前用户时不填', () => {
+    expect(defaultProjectManager({ id: 'u-me' })).toBe('u-me')
+    expect(defaultProjectManager(null)).toBeUndefined()
+  })
+
+  it('可见范围受限的人把项目经理改成别人或清空 → 要确认；自己当项目经理、范围不受限、拿不到当前用户 → 不提示', () => {
+    const limited = { id: 'u-me', limited: true }
+    expect(losesSightAfterCreate(limited, 'u-other')).toBe(true)
+    expect(losesSightAfterCreate(limited, undefined)).toBe(true)
+    expect(losesSightAfterCreate(limited, null)).toBe(true)
+    expect(losesSightAfterCreate(limited, 'u-me')).toBe(false)
+    expect(losesSightAfterCreate({ id: 'u-me', limited: false }, 'u-other')).toBe(false)
+    expect(losesSightAfterCreate(undefined, 'u-other')).toBe(false)
   })
 })

@@ -3,9 +3,11 @@
  * 新建 / 编辑工单（履约新建工单 10-27：工单由履约维护，保存时实际写入 QMS 工单库）。项目总览"新建工单"、工单详情"编辑工单"共用。
  *   工单号（新建必填，编辑只读）、客户（QMS 客户字典现取，必选）、项目名称、事业部（本地已同步的 QMS 部门，可空）、数量（≥1）、交期、
  *   状态（仅编辑：未开工 / 进行中 / 已完工；取消走详情页"取消工单"）、项目经理、产品线、是否试点（后三项存履约 work_order_ext）。
+ * 新建时项目经理默认填当前登录用户；只看自己负责工单的人（me.limited）改成别人或清空时，提交前确认"建好后你将看不到这张工单"。
  * 编辑时只提交改过的字段；只改了项目经理 / 产品线 / 是否试点时后端不调 QMS。保存失败把后端的中文提示原样显示（QMS 连不上、版本冲突等）。
  */
 import { WO_STATUS_TEXT } from '#shared/status'
+import { defaultProjectManager, losesSightAfterCreate } from '#shared/work-order-form'
 
 export interface WorkOrderEditing {
   workOrderNumber: string
@@ -68,7 +70,8 @@ const { data: divisions, error: divisionsError, refresh: refreshDivisions } = aw
   immediate: false,
   watch: false,
 })
-const { data: master } = await useMaster()
+const { data: master, error: masterError, refresh: refreshMaster } = await useMaster()
+const { data: me } = await useMe()
 
 watch(
   () => props.open,
@@ -91,7 +94,7 @@ watch(
             productLine: w.edit.productLine ?? '',
             isPilot: w.edit.isPilot,
           }
-        : empty(),
+        : { ...empty(), projectManagerId: defaultProjectManager(me.value) },
     )
     void loadCustomers()
     void refreshDivisions()
@@ -131,6 +134,20 @@ function changedBody(w: WorkOrderEditing) {
   return body
 }
 
+/** 只看自己负责工单的人把项目经理改成别人或清空：建好后看不到，先确认 */
+function confirmLoseSight() {
+  return new Promise<boolean>((resolve) =>
+    Modal.confirm({
+      title: '建好后你将看不到这张工单',
+      content: '你只能看自己负责的工单。项目经理不是你时，建好后这张工单不会出现在你的列表里，也打不开详情。确定这样建吗？',
+      okText: '仍然新建',
+      cancelText: '回去改',
+      onOk: () => resolve(true),
+      onCancel: () => resolve(false),
+    }),
+  )
+}
+
 async function submit() {
   submitError.value = null
   if (!editing.value && !form.workOrderNumber.trim()) return message.warning('请填写工单号')
@@ -147,14 +164,19 @@ async function submit() {
         emit('close')
         return
       }
-      if (noVersion.value && Object.keys(body).some((k) => QMS_FIELDS.includes(k))) {
-        submitError.value = '本地还没有同步到这个工单的版本号，暂时只能改项目经理、产品线、是否试点'
-        return
+      if (Object.keys(body).some((k) => QMS_FIELDS.includes(k))) {
+        if (noVersion.value) {
+          submitError.value = '本地还没有同步到这个工单的版本号，暂时只能改项目经理、产品线、是否试点'
+          return
+        }
+        // 乐观锁：带打开弹窗时看到的版本号，别人在这期间改过 QMS 返回 409
+        body.version = w.edit.version
       }
       await $fetch(`/api/work-orders/${encodeURIComponent(w.workOrderNumber)}`, { method: 'PUT', body })
       message.success('已保存，QMS 工单已同步修改')
       emit('done', w.workOrderNumber)
     } else {
+      if (losesSightAfterCreate(me.value, form.projectManagerId) && !(await confirmLoseSight())) return
       const r = await $fetch<{ workOrderNumber: string }>('/api/work-orders', {
         method: 'POST',
         body: {
@@ -227,6 +249,7 @@ async function submit() {
       </a-form-item>
       <a-form-item label="项目经理">
         <a-select v-model:value="form.projectManagerId" allow-clear show-search option-filter-prop="label" :options="pmOptions" placeholder="可空，之后也能改" />
+        <div v-if="masterError" class="field-error">人员列表加载失败：{{ apiError(masterError) }} <a @click="refreshMaster()">重试</a></div>
       </a-form-item>
       <a-form-item label="产品线"><a-input v-model:value="form.productLine" :maxlength="191" placeholder="可空" /></a-form-item>
       <a-form-item label="是否试点"><a-switch v-model:checked="form.isPilot" checked-children="是" un-checked-children="否" /></a-form-item>

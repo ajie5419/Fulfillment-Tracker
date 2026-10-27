@@ -63,12 +63,13 @@ export type QmsWorkOrderRow = z.output<typeof qmsWorkOrderSchema>
 /**
  * 写一行工单副本。本地已有更新的（updatedAt 更晚，如履约刚写入 QMS 后存下的返回值）时不覆盖：
  * 防止同步早一步拉到的旧页在履约写入之后才落库，把新数据改回去。
+ * 用条件写保证原子（不先读后写，READ COMMITTED 下先读后写挡不住并发）：
+ *   没有就插（主键重复跳过）→ 再只在本地 updatedAt ≤ 新行时更新。
  */
 export async function writeWorkOrderCopy(tx: Tx, r: QmsWorkOrderRow) {
-  const cur = await tx.qmsWorkOrder.findUnique({ where: { workOrderNumber: r.workOrderNumber }, select: { updatedAt: true } })
-  if (cur && cur.updatedAt > r.updatedAt) return
   const data = { ...r, customerName: r.customerName ?? '' }
-  await tx.qmsWorkOrder.upsert({ where: { workOrderNumber: r.workOrderNumber }, create: data, update: data })
+  await tx.qmsWorkOrder.createMany({ data: [data], skipDuplicates: true })
+  await tx.qmsWorkOrder.updateMany({ where: { workOrderNumber: r.workOrderNumber, updatedAt: { lte: r.updatedAt } }, data })
 }
 
 const supplier = z.object({
