@@ -6,12 +6,13 @@
  *   POST {apiBase}/api/integration/fulfillment/work-orders/:workOrderNumber/cancel  取消（带 version；已取消再取消直接返回当前对象）
  *   GET  {apiBase}/api/integration/fulfillment/customers                         客户列表 [{ id, name }]
  *   请求头 X-Identity-Client-Id / X-Identity-Client-Secret；成功 HTTP 200 { code: 0, data }；
- *   失败 400 / 404 / 409（WORK_ORDER_EXISTS、OPTIMISTIC_LOCK_CONFLICT），body 带中文 message。
+ *   失败 400 / 404 / 409，body 为 { code: -1, data: null, error: { code: WORK_ORDER_EXISTS | OPTIMISTIC_LOCK_CONFLICT | BAD_REQUEST | NOT_FOUND }, message }。
  *
  * 错误分两类，都是 FlowHttpError（接口层按 statusCode 返回，message 直接给用户看）：
  *   - QmsUnavailable（503）：未配置、连不上、超时、5xx、凭据被拒、响应不是约定格式 → "QMS 暂时连不上，请稍后再试"。
  *     原因（不含密钥：密钥只在请求头里）放在 detail，接口层写服务器日志。
  *   - QmsRejected：QMS 明确拒绝（400 / 404 / 409），状态码和中文 message 原样透传，code 给服务层判断（如版本冲突换成固定文案）。
+ *     404 只有 body 里带了 message 或错误码才算（工单不存在）；否则多半是 QMS 还没有这个接口（没发版、网关页面），按连不上处理。
  * 写接口不看 NUXT_QMS_SYNC_ENABLED（那是后台同步任务的开关），只要地址和凭据配齐就能写。
  */
 import { z } from 'zod'
@@ -87,7 +88,7 @@ const customers = z.array(
     name: z.string(),
   }),
 )
-/** QMS 错误 body：{ code?, message }，错误码也可能叫 error / errorCode */
+/** QMS 错误 body：{ code: -1, error: { code }, message }；兼容错误码直接放在 code / errorCode / error 字符串里 */
 const errBody = z
   .object({ message: z.string().optional(), code: z.unknown().optional(), error: z.unknown().optional(), errorCode: z.unknown().optional() })
   .passthrough()
@@ -125,8 +126,10 @@ export function qmsWorkOrderClient(cfg: Pick<QmsSyncConfig, 'apiBase' | 'clientI
     }
     const e = errBody.safeParse(json)
     const msg = e.success ? e.data.message : undefined
-    if ([400, 404, 409].includes(res.status)) {
-      throw new QmsRejected(msg || DEFAULT_REJECT_TEXT[res.status]!, res.status, e.success ? errCode(e.data) : null)
+    const code = e.success ? errCode(e.data) : null
+    // 404 不带 message / 错误码（如 HTML 页面）：QMS 还没有这个接口，不当成"工单不存在"
+    if (res.status === 400 || res.status === 409 || (res.status === 404 && (msg || code))) {
+      throw new QmsRejected(msg || DEFAULT_REJECT_TEXT[res.status]!, res.status, code)
     }
     // 401 / 403（凭据不对）、5xx、其他：用户只看到"连不上"，原因进日志
     const hint = res.status === 401 ? '（客户端凭据不对）' : res.status === 404 ? '（QMS 还没有这个接口）' : ''
@@ -166,6 +169,7 @@ const DEFAULT_REJECT_TEXT: Record<number, string> = {
 }
 
 function errCode(b: { code?: unknown; error?: unknown; errorCode?: unknown }): string | null {
-  for (const v of [b.code, b.errorCode, b.error]) if (typeof v === 'string' && v) return v
+  const nested = b.error && typeof b.error === 'object' ? (b.error as { code?: unknown }).code : undefined
+  for (const v of [nested, b.errorCode, b.error, b.code]) if (typeof v === 'string' && v) return v
   return null
 }

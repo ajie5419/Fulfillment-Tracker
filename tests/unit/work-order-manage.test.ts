@@ -319,6 +319,11 @@ describe('QMS 写客户端 qmsWorkOrderClient', () => {
       [404, { message: '工单不存在或已删除' }, null],
       [409, { code: 'OPTIMISTIC_LOCK_CONFLICT', message: '数据已被他人修改' }, 'OPTIMISTIC_LOCK_CONFLICT'],
       [409, { errorCode: 'WORK_ORDER_EXISTS', message: '工单号已存在' }, 'WORK_ORDER_EXISTS'],
+      // QMS 实际的失败格式：错误码在 error.code 里，外层 code 是 -1
+      [409, { code: -1, data: null, error: { code: 'OPTIMISTIC_LOCK_CONFLICT' }, message: '数据已被他人修改' }, 'OPTIMISTIC_LOCK_CONFLICT'],
+      [409, { code: -1, data: null, error: { code: 'WORK_ORDER_EXISTS' }, message: '工单号已存在' }, 'WORK_ORDER_EXISTS'],
+      [400, { code: -1, data: null, error: { code: 'BAD_REQUEST' }, message: '客户不存在' }, 'BAD_REQUEST'],
+      [404, { code: -1, data: null, error: { code: 'NOT_FOUND' }, message: '工单不存在或已删除' }, 'NOT_FOUND'],
     ] as const) {
       const err = await qmsWorkOrderClient(cfg, async () => json(body, status))
         .updateWorkOrder('WO-1', { version: 0, actorUserId: 'u' })
@@ -342,6 +347,9 @@ describe('QMS 写客户端 qmsWorkOrderClient', () => {
       [cfg, async () => json({ message: 'bad client' }, 401)],
       [cfg, async () => json({ code: 0, data: { workOrderNumber: 'x' } })],
       [cfg, async () => new Response('<html>', { status: 200 })],
+      // 404 + HTML（QMS 还没有这个接口）：不当成"工单不存在"
+      [cfg, async () => new Response('<html>Not Found</html>', { status: 404, headers: { 'Content-Type': 'text/html' } })],
+      [cfg, async () => json({}, 404)],
     ]
     for (const [c, f] of cases) {
       let called = false
