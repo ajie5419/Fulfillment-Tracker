@@ -64,11 +64,12 @@ export function requireUser(event: H3Event): AuthUser {
 // 部门负责人"看本部门"不做硬限制，做成异常列表的默认筛选（可切换全部）。
 
 /** 按用户算可见范围（不依赖请求，后台任务如每日汇总也用它） */
-export async function resolveScope(userId: string, admin: boolean): Promise<Scope> {
+/** db：在事务里调用时传事务客户端（同一连接、看得到本事务未提交的写入） */
+export async function resolveScope(userId: string, admin: boolean, db: Pick<typeof prisma, 'notifyRole' | 'workOrderExt'> = prisma): Promise<Scope> {
   if (admin) return { all: true }
   const [role, managed] = await Promise.all([
-    prisma.notifyRole.findFirst({ where: { userId }, select: { id: true } }),
-    prisma.workOrderExt.findMany({ where: { projectManagerId: userId }, select: { workOrderNumber: true } }),
+    db.notifyRole.findFirst({ where: { userId }, select: { id: true } }),
+    db.workOrderExt.findMany({ where: { projectManagerId: userId }, select: { workOrderNumber: true } }),
   ])
   if (role || !managed.length) return { all: true }
   return { all: false, workOrders: new Set(managed.map((m) => m.workOrderNumber)) }

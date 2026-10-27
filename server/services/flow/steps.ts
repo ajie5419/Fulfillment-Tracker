@@ -420,7 +420,7 @@ export async function batchUpdateSteps(input: BatchStepInput) {
       if (!sup) throw new FlowError('班组 / 外协厂不存在或已停用')
       teamKind = sup.kind === 'TEAM'
     }
-    const names = await loadNames({ process: steps.map((s) => s.processId) })
+    const names = await loadNames({ process: steps.map((s) => s.processId) }, tx)
     let updated = 0
     let skipped = 0
     const warnings: string[] = []
