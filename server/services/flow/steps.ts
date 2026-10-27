@@ -349,10 +349,12 @@ async function moveTodos(tx: Tx, where: Prisma.TodoWhereInput, from: string[], t
   const open = await tx.todo.findMany({ where: { ...where, status: 'OPEN', ownerId: { in: stale } }, orderBy: { createdAt: 'asc' } })
   if (!open.length) return
   const now = new Date()
-  await tx.todo.updateMany({ where: { id: { in: open.map((t) => t.id) } }, data: { status: 'TRANSFERRED', doneAt: now } })
   // 同一对象同一类待办：to 里每人一条（原来发给多个兜底的人时合成一份）
   const seen = new Set<string>()
   for (const t of open) {
+    // 带 status = OPEN 条件逐条转：读完到这里之间被处理 / 手工转交掉的不再动，也不替它建新的
+    const moved = await tx.todo.updateMany({ where: { id: t.id, status: 'OPEN' }, data: { status: 'TRANSFERRED', doneAt: now } })
+    if (!moved.count) continue
     const key = `${t.refType}:${t.refId}:${t.action}`
     if (seen.has(key)) continue
     seen.add(key)

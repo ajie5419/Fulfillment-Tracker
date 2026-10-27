@@ -6,6 +6,7 @@
 import { prisma } from '../../utils/prisma'
 import { FlowError } from './errors'
 import { loadNames } from './names'
+import { lockParts } from '../purchases/purchases'
 import { moveStepTodos, stepTodoHolders } from './steps'
 
 /** 全部班组（未删除的）和班组长 */
@@ -39,9 +40,13 @@ export async function setTeamLeader(teamId: string, userId: string | null, actor
     }
     const old = await tx.teamLeader.findUnique({ where: { supplierId: teamId }, select: { userId: true } })
     if ((old?.userId ?? null) === userId) return { changed: false, moved: 0 }
-    // 这个班组里没指定负责人的待开工自制工序：改之前先算"待办现在按规则在谁手里"（原班组长看不到工单时是兜底的人）
+    // 这个班组里没指定负责人的待开工自制工序：先按统一锁顺序锁住它们的工件（工件 → 工序，见 purchases.refreshPartReady），
+    // 锁后重读（READ COMMITTED，看到最新状态：等锁期间已开工的不再算），再算"待办现在按规则在谁手里"（原班组长看不到工单时是兜底的人）
+    const where = { mode: 'SELF' as const, supplierId: teamId, ownerId: null, status: 'PENDING' as const }
+    const partIds = [...new Set((await tx.routeStep.findMany({ where, select: { partId: true } })).map((r) => r.partId))]
+    await lockParts(tx, partIds)
     const steps = await tx.routeStep.findMany({
-      where: { mode: 'SELF', supplierId: teamId, ownerId: null, status: 'PENDING' },
+      where: { ...where, partId: { in: partIds } },
       select: { id: true, partId: true, seq: true, ownerId: true, mode: true, supplierId: true, part: { select: { workOrderNumber: true } } },
     })
     const before = []
