@@ -18,6 +18,7 @@ import { dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { BUSINESS_DEPT_NAME } from '../auth/departments'
 import { type RoleContext, canOperate, isDeptHead } from '../auth/permissions'
 import { DRAWING_STATUS_TEXT, drawingLink } from '../drawings/constants'
+import { processSummary } from '../process/constants'
 import { FlowError } from '../flow/errors'
 import { cancelTaskTodos } from './tasks'
 import { MODE_TEXT, loadNames } from '../flow/names'
@@ -127,7 +128,8 @@ export async function loadPlans(filter: { workOrderNumbers?: string[]; published
       nodeId: d.planNodeId!,
       name: d.componentName,
       dateLabel: d.drawnDate && d.needsCustomerConfirm && !d.customerConfirmedDate && d.customerPlanDate ? '客户确认计划日' : '计划完成日',
-      statusText: DRAWING_STATUS_TEXT[d.status],
+      // 工艺模块（10-27）：设计任务后面带上料单、工艺状态，工单详情里一眼看到工艺跟上没有
+      statusText: d.status === 'CANCELLED' ? DRAWING_STATUS_TEXT[d.status] : `${DRAWING_STATUS_TEXT[d.status]} · ${processSummary(d)}`,
       link: drawingLink(d.id),
       facts: drawingFacts(d),
     })),

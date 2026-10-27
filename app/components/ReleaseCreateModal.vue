@@ -114,6 +114,8 @@ async function submit() {
       impact: { started: number; held: number; confirmers: string[] }
       drawing: { status: string; readySent: number } | null
       bom: { created: number; matched: number; revisionFilled: number; skipped: number; unrouted: number; unroutedNotified: boolean } | null
+      /** 工艺模块：设计变更涉及已下发的料单，改成了"修改中" */
+      material: { revising: number; notified: boolean }
     }>('/api/releases', {
       type: form.type,
       workOrderNumber: form.workOrderNumber,
@@ -135,7 +137,10 @@ async function submit() {
     const route = r.bom?.unrouted
       ? `；${r.bom.unrouted} 个工件还没有工序链，${r.bom.unroutedNotified ? '已提醒生产经理排工序' : '但还没设生产部负责人、没人收到提醒，请到"设置→人员与角色"指定'}`
       : ''
-    message.success(`已发放 ${r.releaseNo}，${r.recipients} 人待签收${bom}${route}${extra}${drawing}`, 6)
+    const material = r.material?.revising
+      ? `；${r.material.revising} 个部件的料单已下发，已改为"修改中"${r.material.notified ? '并提醒工艺部负责人' : '（还没设工艺部负责人，没人收到提醒，请到"设置→人员与角色"指定）'}`
+      : ''
+    message.success(`已发放 ${r.releaseNo}，${r.recipients} 人待签收${bom}${route}${extra}${drawing}${material}`, 6)
     emit('done', r.id)
   } catch (e) {
     message.error(apiError(e))

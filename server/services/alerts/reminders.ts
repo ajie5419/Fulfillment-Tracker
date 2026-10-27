@@ -142,8 +142,8 @@ const mobileOf = (link: string | null) => (link?.startsWith('/releases?id=') ? `
 
 /** 同步失败提醒（管理员）：点开去设置页的"QMS 同步状态" */
 const SYNC_FAIL_LINK = '/settings?tab=sync'
-/** 跳转地址存在提醒上的种类：发放单通知、总计划通知（R14 节点被退回）、留言 @ 我（10-26）。新增这类提醒只改这里 */
-const LINKED_KINDS = ['RELEASE', 'PLAN', 'COMMENT']
+/** 跳转地址存在提醒上的种类：发放单通知、总计划通知（R14 节点被退回）、留言 @ 我（10-26）、料单要改（工艺模块 10-27）。新增这类提醒只改这里 */
+const LINKED_KINDS = ['RELEASE', 'PLAN', 'COMMENT', 'PROCESS']
 const isLinked = (kind: string | null) => !!kind && LINKED_KINDS.includes(kind)
 /** 预警/待办类提醒、跳转地址存在提醒上的通知 + 已读的同步失败提醒（未读的置顶，不在分组里重复出现） */
 const LISTED = { OR: [{ kind: null }, { kind: { in: LINKED_KINDS } }, { kind: 'SYNC_FAIL', readAt: { not: null } }] }

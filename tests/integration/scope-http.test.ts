@@ -591,17 +591,30 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     const admin = await login('h-admin')
 
     // 业务部门：直接对照 / 随上级 / 按名称（没有对照）
-    expect(await me(tech)).toMatchObject({ businessDept: 'TECH', menu: ['deptPlan', 'tech'] })
+    expect(await me(tech)).toMatchObject({ businessDept: 'TECH', menu: ['deptPlan', 'tech', 'process'] })
     expect(await me(buyer)).toMatchObject({ businessDept: 'PURCHASE', menu: ['deptPlan', 'purchase', 'kitting'], can: { purchase: true, seeAmount: true } })
-    expect(await me(prod)).toMatchObject({ businessDept: 'PRODUCTION', menu: ['deptPlan', 'production', 'releases'], can: { route: true, stepAction: true, mobileSend: true } })
+    expect(await me(prod)).toMatchObject({ businessDept: 'PRODUCTION', menu: ['deptPlan', 'process', 'production', 'releases'], can: { route: true, stepAction: true, mobileSend: true } })
     // 10-24 工艺部：生产管理（定工艺路线）、发放签收（只发工艺文件）；不能开工完工
     const proc = await login('h-proc')
-    expect(await me(proc)).toMatchObject({ businessDept: 'PROCESS', menu: ['deptPlan', 'production', 'releases'], can: { route: true, stepAction: false, release: true, releaseProcessOnly: true, drawing: false } })
+    expect(await me(proc)).toMatchObject({ businessDept: 'PROCESS', menu: ['deptPlan', 'process', 'production', 'releases'], can: { route: true, stepAction: false, release: true, releaseProcessOnly: true, drawing: false, processDoc: true } })
     expect((await send(proc, 'POST', '/api/parts', { workOrderNumber: MINE, name: 'R13 工艺建的', quantity: 1 })).status).toBe(200)
     expect((await send(proc, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'] })).status).toBe(403)
     expect((await send(proc, 'POST', '/api/releases', { type: 'CHANGE', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'] })).status).toBe(403)
     expect((await send(proc, 'POST', '/api/releases', { type: 'PROCESS', workOrderNumber: MINE, description: '车架工艺卡', userIds: ['h-prod'] })).status).toBe(200)
-    expect(await me(tech)).toMatchObject({ can: { releaseProcessOnly: false } })
+    expect(await me(tech)).toMatchObject({ can: { releaseProcessOnly: false, processDoc: false } })
+    // 10-27 工艺模块：料单 / 工艺状态只有工艺部（和管理员）能改；技术部、生产部只读；设计任务不存在报错不放过
+    {
+      const t = await db.drawingTask.create({ data: { workOrderNumber: MINE, componentName: 'R13 工艺部件', planDate: new Date('2026-12-01') } })
+      const body = { kind: 'MATERIAL', action: 'start' }
+      expect((await send(tech, 'POST', `/api/process/${t.id}/action`, body)).status).toBe(403)
+      expect((await send(prod, 'POST', `/api/process/${t.id}/action`, body)).status).toBe(403)
+      expect((await send(proc, 'POST', `/api/process/${t.id}/action`, body)).status).toBe(200)
+      expect((await send(proc, 'POST', `/api/process/no-such-task/action`, body)).status).toBe(400)
+      const list = (await (await get(`/api/process?workOrderNumber=${encodeURIComponent(MINE)}&view=all`, tech)).json()) as { rows: { id: string; materialStatus: string; actions: { material: string[] } }[] }
+      expect(list.rows.find((r) => r.id === t.id)).toMatchObject({ materialStatus: 'DRAFTING', actions: { material: [] } })
+      expect((await get(`/api/process/${t.id}/logs`, tech)).status).toBe(200)
+      await db.drawingTask.delete({ where: { id: t.id } })
+    }
     // 10-24 图纸发放附 BOM：按 kind=bom 上传 .xlsx → 预览（能发图纸的人）→ 发放时按图号建工件；签收人能下载 BOM 表
     {
       const ExcelJS = (await import('exceljs')).default
@@ -671,8 +684,8 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       expect(((await rel2.json()) as { bom: unknown }).bom).toMatchObject({ created: 1, matched: 1 })
     }
     expect(await me(qa)).toMatchObject({ businessDept: 'QUALITY', menu: ['deptPlan', 'production'], can: { route: false, mobileSend: false } })
-    expect(await me(pm)).toMatchObject({ menu: ['tech', 'purchase', 'production'], pmOf: [MINE], can: { overview: false } })
-    expect(await me(lead)).toMatchObject({ menu: ['overview', 'deptPlan', 'tech', 'purchase', 'production'], can: { overview: true, seeAmount: true } })
+    expect(await me(pm)).toMatchObject({ menu: ['tech', 'process', 'purchase', 'production'], pmOf: [MINE], can: { overview: false } })
+    expect(await me(lead)).toMatchObject({ menu: ['overview', 'deptPlan', 'tech', 'process', 'purchase', 'production'], can: { overview: true, seeAmount: true } })
 
     // 主数据用户：department 仍是 QMS 原名称（给人看），businessDept 是换算出的编码（选人下拉按它排序）
     const master = (await (await get('/api/master', pm)).json()) as { users: { id: string; department: string; businessDept: string | null }[] }

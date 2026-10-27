@@ -47,6 +47,7 @@ export const leaderTeamOfStep = (s: { mode: string; supplierId: string | null })
 
 /**
  * drawing：建/改/删设计任务、录/撤客户确认 —— 技术部、管理员
+ * processDoc：改设计任务（部件）的料单状态、工艺状态（工艺模块 10-27）—— 工艺部、管理员；其他人只读
  * release：建发放单 —— 技术部、工艺部（只能发"工艺文件"）、管理员（作废仍限发放人或管理员，在发放服务里判断）
  * purchase：建/改/删采购行、Excel 导入、手工标到货/撤销 —— 采购部、该工单项目经理、管理员
  * payment：提付款申请 —— 采购部、该工单项目经理、管理员
@@ -63,7 +64,7 @@ export const leaderTeamOfStep = (s: { mode: string; supplierId: string | null })
  * planTask：在节点下分解"其他任务"（建 / 改 / 删 / 标完成）—— 该节点责任部门的人、该工单项目经理、项目部（含项目部负责人）、管理员；
  *   任务负责人本人可以标完成 / 撤销（接口层另外放行）
  */
-export type Operation = 'drawing' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction' | 'plan' | 'planTemplate' | 'teamLeader' | 'planConfirm' | 'planNodeDone' | 'planTask'
+export type Operation = 'drawing' | 'processDoc' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction' | 'plan' | 'planTemplate' | 'teamLeader' | 'planConfirm' | 'planNodeDone' | 'planTask'
 
 export interface OperationTarget {
   /** 所属工单（判断"该工单项目经理"） */
@@ -82,6 +83,7 @@ export interface OperationTarget {
 
 export const OPERATION_DENIED: Record<Operation, string> = {
   drawing: '只有技术部或管理员可以编辑设计任务',
+  processDoc: '只有工艺部或管理员可以修改料单、工艺状态',
   release: '只有技术部、管理员可以发放图纸和设计变更；工艺部可以发放工艺文件',
   purchase: '只有采购部、该工单项目经理或管理员可以修改采购行或登记到货',
   payment: '只有采购部、该工单项目经理或管理员可以提付款申请',
@@ -102,6 +104,8 @@ export function canOperate(ctx: RoleContext, op: Operation, target: OperationTar
   switch (op) {
     case 'drawing':
       return inDept(ctx, 'TECH')
+    case 'processDoc':
+      return inDept(ctx, 'PROCESS')
     case 'release':
       return inDept(ctx, 'TECH') || (inDept(ctx, 'PROCESS') && (!target.releaseType || target.releaseType === 'PROCESS'))
     case 'purchase':
@@ -154,16 +158,16 @@ export const canSeeOverview = isLeaderLike
 
 /**
  * 菜单分区（"每日"组人人都有，不在这里）：
- *   tech = 设计任务 + 发放签收；purchase = 采购到货 + 付款申请；production = 齐套 + 生产调度 + 工序编排 + 外协（含待确认匹配）；
+ *   tech = 设计任务 + 发放签收；process = 工艺（料单、工艺状态）；purchase = 采购到货 + 付款申请；production = 齐套 + 生产调度 + 工序编排 + 外协（含待确认匹配）；
  *   kitting = 齐套；releases = 发放签收；payments = 付款申请；overview = 领导总览。
  * 页面本身不拦，只是不在菜单里显示（从提醒链接点进去仍能只读查看）。
  */
-export type MenuSection = 'overview' | 'deptPlan' | 'tech' | 'purchase' | 'production' | 'kitting' | 'releases' | 'payments'
+export type MenuSection = 'overview' | 'deptPlan' | 'tech' | 'process' | 'purchase' | 'production' | 'kitting' | 'releases' | 'payments'
 
 /** 多角色取并集；返回固定顺序，便于比较 */
 export function menuSections(ctx: RoleContext): MenuSection[] {
   const out = new Set<MenuSection>()
-  const all = () => ['tech', 'purchase', 'production'].forEach((s) => out.add(s as MenuSection))
+  const all = () => ['tech', 'process', 'purchase', 'production'].forEach((s) => out.add(s as MenuSection))
   if (isLeaderLike(ctx)) {
     out.add('overview')
     all()
@@ -171,7 +175,11 @@ export function menuSections(ctx: RoleContext): MenuSection[] {
   // 部门计划（10-23）：有业务部门（或是某部门负责人）的人接收、分解本部门节点；领导类可切换看各部门
   if (isLeaderLike(ctx) || ctx.businessDept || ctx.deptHeadOf.length) out.add('deptPlan')
   if (ctx.pmOf.size) all()
-  if (inDept(ctx, 'TECH')) out.add('tech')
+  if (inDept(ctx, 'TECH')) {
+    out.add('tech')
+    // 工艺（料单、工艺状态）：技术部看图纸发出后工艺跟上没有
+    out.add('process')
+  }
   if (inDept(ctx, 'PURCHASE')) {
     out.add('purchase')
     out.add('kitting')
@@ -180,8 +188,11 @@ export function menuSections(ctx: RoleContext): MenuSection[] {
     out.add('production')
     out.add('releases')
   }
+  // 工艺（料单、工艺状态）：生产部看料单下发没有（下料车间按料单下料）
+  if (inDept(ctx, 'PRODUCTION')) out.add('process')
   // 工艺部：工序编排（定工序链）、发放签收（下发工艺文件）；生产调度、外协可看
   if (inDept(ctx, 'PROCESS')) {
+    out.add('process')
     out.add('production')
     out.add('releases')
   }
@@ -189,7 +200,7 @@ export function menuSections(ctx: RoleContext): MenuSection[] {
   // 班组长（生产管理重设计第二批）：看生产调度、工序编排、外协（本班组的活在生产调度里登记）
   if (ctx.leadOf?.length) out.add('production')
   if (isFinance(ctx)) out.add('payments')
-  const order: MenuSection[] = ['overview', 'deptPlan', 'tech', 'purchase', 'production', 'kitting', 'releases', 'payments']
+  const order: MenuSection[] = ['overview', 'deptPlan', 'tech', 'process', 'purchase', 'production', 'kitting', 'releases', 'payments']
   return order.filter((s) => out.has(s))
 }
 
@@ -197,6 +208,8 @@ export function menuSections(ctx: RoleContext): MenuSection[] {
 export function permissionFlags(ctx: RoleContext) {
   return {
     drawing: canOperate(ctx, 'drawing'),
+    /** 改料单、工艺状态（工艺部、管理员） */
+    processDoc: canOperate(ctx, 'processDoc'),
     release: canOperate(ctx, 'release'),
     /** 只能发工艺文件（工艺部，不是技术部、管理员） */
     releaseProcessOnly: canOperate(ctx, 'release') && !canOperate(ctx, 'release', { releaseType: 'DRAWING' }),

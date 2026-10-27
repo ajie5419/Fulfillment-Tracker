@@ -128,6 +128,8 @@ const NOTIFY_ROLES = [
   { id: `${P}ROLE-6`, role: 'DEPT_HEAD', userId: 'u-009', department: '采购部' },
   { id: `${P}ROLE-7`, role: 'FINANCE', userId: 'u-010', department: null },
   { id: `${P}ROLE-8`, role: 'DEPT_HEAD', userId: 'u-011', department: '技术部' },
+  // 工艺模块（10-27）：设计变更涉及已下发的料单时提醒工艺部负责人
+  { id: `${P}ROLE-9`, role: 'DEPT_HEAD', userId: 'u-015', department: '工艺部' },
 ] as const
 
 const PART_ID = `${P}PART-001`
@@ -179,13 +181,14 @@ const payments = (day: (offset: number) => Date) => [
  *   支腿零件图：明天到计划完成日 → W7 黄；
  *   液压系统原理图（不关联工件）：6 天前设计完成、需要客户确认，客户确认计划日已过 3 天 → W7 黄（再过 1 天红），还没发放；
  *   模具加热系统布置图（DEMO-WO-002，负责人 u-011）：8 天后到期，不预警。
+ * 工艺模块（10-27）：液压系统原理图料单编制中；模具加热系统布置图料单已下发、工艺编制中；其余料单未开始、工艺无。
  */
 const drawingTasks = (day: (offset: number) => Date) => {
   return [
-    { id: `${P}DT-001`, workOrderNumber: `${P}WO-001`, componentName: '主梁结构件总图', ownerId: 'u-008', planDate: day(-2), needsCustomerConfirm: false, customerPlanDate: null, drawnDate: null, status: 'PENDING', partIds: [PART_ID] },
-    { id: `${P}DT-002`, workOrderNumber: `${P}WO-001`, componentName: '支腿零件图', ownerId: 'u-008', planDate: day(1), needsCustomerConfirm: false, customerPlanDate: null, drawnDate: null, status: 'PENDING', partIds: [PART2_ID] },
-    { id: `${P}DT-003`, workOrderNumber: `${P}WO-001`, componentName: '液压系统原理图', ownerId: 'u-008', planDate: day(-8), needsCustomerConfirm: true, customerPlanDate: day(-3), drawnDate: day(-6), status: 'DRAWN', partIds: [] },
-    { id: `${P}DT-004`, workOrderNumber: `${P}WO-002`, componentName: '模具加热系统布置图', ownerId: 'u-011', planDate: day(8), needsCustomerConfirm: true, customerPlanDate: day(15), drawnDate: null, status: 'PENDING', partIds: [] },
+    { id: `${P}DT-001`, workOrderNumber: `${P}WO-001`, componentName: '主梁结构件总图', ownerId: 'u-008', planDate: day(-2), needsCustomerConfirm: false, customerPlanDate: null, drawnDate: null, status: 'PENDING', partIds: [PART_ID], materialStatus: 'NOT_STARTED', processStatus: 'NONE' },
+    { id: `${P}DT-002`, workOrderNumber: `${P}WO-001`, componentName: '支腿零件图', ownerId: 'u-008', planDate: day(1), needsCustomerConfirm: false, customerPlanDate: null, drawnDate: null, status: 'PENDING', partIds: [PART2_ID], materialStatus: 'NOT_STARTED', processStatus: 'NONE' },
+    { id: `${P}DT-003`, workOrderNumber: `${P}WO-001`, componentName: '液压系统原理图', ownerId: 'u-008', planDate: day(-8), needsCustomerConfirm: true, customerPlanDate: day(-3), drawnDate: day(-6), status: 'DRAWN', partIds: [], materialStatus: 'DRAFTING', processStatus: 'NONE' },
+    { id: `${P}DT-004`, workOrderNumber: `${P}WO-002`, componentName: '模具加热系统布置图', ownerId: 'u-011', planDate: day(8), needsCustomerConfirm: true, customerPlanDate: day(15), drawnDate: null, status: 'PENDING', partIds: [], materialStatus: 'ISSUED', processStatus: 'DRAFTING' },
   ] as const
 }
 
@@ -449,7 +452,7 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
     for (const { partIds, drawnDate, ...d } of drawingTasks(day)) {
       if (await tx.drawingTask.findUnique({ where: { id: d.id }, select: { id: true } })) continue
       await tx.drawingTask.create({
-        data: { ...d, drawnDate, drawnBy: drawnDate ? d.ownerId : null, createdBy: 'u-003', parts: { create: partIds.map((partId) => ({ partId })) } },
+        data: { ...d, drawnDate, drawnBy: drawnDate ? d.ownerId : null, ...(d.materialStatus !== 'NOT_STARTED' ? { materialAt: now, materialBy: 'u-015' } : {}), ...(d.processStatus !== 'NONE' ? { processAt: now, processBy: 'u-015' } : {}), createdBy: 'u-003', parts: { create: partIds.map((partId) => ({ partId })) } },
       })
     }
     // R12：已完工的工件"回转底座"（机加完工，记一条完工事件）和 3 个装配节点

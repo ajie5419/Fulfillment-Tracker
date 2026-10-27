@@ -13,17 +13,20 @@
  * 从设计任务一键发放（R11，drawingTaskId）：建单和作废都改用 READ COMMITTED，并按设计任务的顺序加锁
  * （先工件 → 设计任务 → 发放单），然后重算任务状态、重新评估"可以开工"（drawings.ts settleTask）。
  *
+ * 设计变更涉及已下发的料单（工艺模块 10-27）：同一事务里把料单改成"修改中"并提醒工艺部负责人（process/process.ts markRevisingByChange）。
+ *
  * 图纸发放单附 BOM 表（bom）：同一事务里按图号建工件（bom/excel.ts applyTechBom），新建的和 BOM 里已有的工件都关联到发放单，
  * 从设计任务发放时也挂到该设计任务。用 READ COMMITTED，加锁顺序 先工单行 → 该工单全部工件（按 ID）→ 设计任务 → 发放单。
  */
 import { Prisma, type ReceiptStatus, type Release, type ReleaseType } from '@prisma/client'
-import { prisma } from '../../utils/prisma'
+import { isDeadlock, prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
 import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadDeptIndex, resolveDeptName } from '../auth/departments'
 import { departmentNames, loadNames, userDepartmentNames } from '../flow/names'
 import { assertReleasable, lockTask, settleTask } from '../drawings/drawings'
+import { markRevisingByChange } from '../process/process'
 import { lockParts, refreshPartReady } from '../purchases/purchases'
 import { XLSX_MIME, applyTechBom, type RawBomRow, type TechBomResult } from '../bom/excel'
 import { formatIssueNo, nextSeq } from '../issues/constants'
@@ -54,14 +57,18 @@ export interface Actor {
 
 const uniq = <T>(xs: T[]) => [...new Set(xs)]
 
-/** 编号冲突重试：两个请求同时取到同一个当天序号时，后提交的撞唯一键，整个事务重来 */
+/**
+ * 重试：①编号冲突——两个请求同时取到同一个当天序号时，后提交的撞唯一键；②死锁（P2034，或 FOR UPDATE 里的 P2010/1213）——两张设计变更同时发、
+ * 各自先锁了一个设计任务、再去锁对方的（工艺模块：料单改"修改中"），数据库回滚其中一个。整个事务重来，事务里只有数据库写入，重来不会重复发通知。
+ */
 async function releaseTransaction<T>(fn: (tx: Tx) => Promise<T>, readCommitted = false): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await prisma.$transaction(fn, readCommitted ? { isolationLevel: 'ReadCommitted' } : undefined)
     } catch (err) {
       const e = err as { code?: string; meta?: { target?: unknown } }
-      if (attempt < 5 && e?.code === 'P2002' && String(e.meta?.target ?? '').includes('releaseNo')) continue
+      const retryable = isDeadlock(err) || (e?.code === 'P2002' && String(e.meta?.target ?? '').includes('releaseNo'))
+      if (attempt < 5 && retryable) continue
       throw err
     }
   }
@@ -299,10 +306,12 @@ export async function createRelease(input: NewReleaseInput, issuerId: string) {
     // 从设计任务发放：BOM 里的工件都挂到这个设计任务（原来挂着的不动）
     if (task && bomPartIds.length) await tx.drawingTaskPart.createMany({ data: bomPartIds.map((partId) => ({ taskId: task.id, partId })), skipDuplicates: true })
     const impact: ChangeImpact = input.type === 'CHANGE' && partIds.length ? await applyChangeImpact(tx, release, partIds) : { started: 0, held: 0, confirmers: [] }
+    // 工艺模块（10-27）：设计变更涉及已下发的料单 → 自动改"修改中"，提醒工艺部负责人
+    const material = input.type === 'CHANGE' ? await markRevisingByChange(tx, release, partIds, task?.id ?? null) : { revising: 0, notified: false }
     const drawing = task ? await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, task.id) : null
     const { unrouted, notified } = bomPartIds.length ? await notifyUnrouted(tx, release, bomPartIds) : { unrouted: 0, notified: false }
     const bomSummary = bom ? { created: bom.created.length, matched: bom.matched.length, revisionFilled: bom.revisionFilled, skipped: bom.skipped, unrouted, unroutedNotified: notified } : null
-    return { id: release.id, releaseNo: release.releaseNo, recipients: receipts.length, impact, drawing, bom: bomSummary }
+    return { id: release.id, releaseNo: release.releaseNo, recipients: receipts.length, impact, drawing, bom: bomSummary, material }
   }, !!taskId || !!bomInput)
 }
 

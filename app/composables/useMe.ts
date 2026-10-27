@@ -18,13 +18,15 @@ export interface Me {
   businessDeptName: string | null
   /** 担任项目经理的工单 */
   pmOf: string[]
-  /** 电脑端菜单可见分区（权限方案 R13 第二节）：overview / tech / purchase / production / kitting / releases / payments */
+  /** 电脑端菜单可见分区（权限方案 R13 第二节）：overview / tech / process / purchase / production / kitting / releases / payments */
   menu: string[]
   /** 担任班组长的班组：本班组的自制工序可以开工、完工、报工；生产调度可筛"本班组" */
   leadTeams: { id: string; name: string }[]
   /** 按角色的操作权限（不含"该工单项目经理""该工序责任人"，用 canDo 补上）。后端仍是最终判断 */
   can: {
     drawing: boolean
+    /** 改料单、工艺状态（工艺部） */
+    processDoc: boolean
     release: boolean
     /** 只能发工艺文件（工艺部） */
     releaseProcessOnly: boolean
@@ -48,7 +50,7 @@ export function useMe() {
   return useFetch<Me>('/api/me', { key: 'me' })
 }
 
-export type Operation = 'drawing' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction' | 'plan'
+export type Operation = 'drawing' | 'processDoc' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction' | 'plan'
 
 /**
  * 当前用户能不能做某个操作（只用来隐藏 / 禁用按钮，后端 403 才是最终判断）。
