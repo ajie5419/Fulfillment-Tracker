@@ -24,7 +24,7 @@ import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadDeptIndex, resolveDeptName } from '../auth/departments'
 import { departmentNames, loadNames, userDepartmentNames } from '../flow/names'
 import { assertReleasable, lockTask, settleTask } from '../drawings/drawings'
-import { refreshPartReady } from '../purchases/purchases'
+import { lockParts, refreshPartReady } from '../purchases/purchases'
 import { XLSX_MIME, applyTechBom, type RawBomRow, type TechBomResult } from '../bom/excel'
 import { formatIssueNo, nextSeq } from '../issues/constants'
 import {
@@ -85,6 +85,10 @@ async function lockRelease(tx: Tx, id: string): Promise<Release> {
  * sync：解除的工序里有第一道的，按统一口径重新评估"可以开工"待办（齐了就补发）；作废时还要把部分工序还给更早的变更单，由调用方最后再评估。
  */
 async function clearHolds(tx: Tx, releaseId: string, now: Date, sync = true) {
+  // 锁顺序：先锁工件再改工序（与改工序 / refreshPartReady 一致，见 purchases.refreshPartReady），避免死锁
+  const pre = await tx.routeStep.findMany({ where: { holdReleaseId: releaseId }, select: { partId: true } })
+  if (!pre.length) return { count: 0, stepIds: [] as string[] }
+  await lockParts(tx, pre.map((s) => s.partId))
   const ids = (await tx.routeStep.findMany({ where: { holdReleaseId: releaseId }, select: { id: true } })).map((s) => s.id)
   if (!ids.length) return { count: 0, stepIds: ids }
   const r = await tx.routeStep.updateMany({ where: { id: { in: ids }, holdReleaseId: releaseId }, data: { holdReleaseId: null, holdClearedAt: now } })
@@ -192,6 +196,8 @@ async function applyChangeImpact(tx: Tx, release: Release, partIds: string[]): P
   let held = 0
   if (hold.length) {
     const ids = hold.map((h) => h.id)
+    // 锁顺序：先锁工件再改工序（见 purchases.refreshPartReady），避免和改工序互相等锁
+    await lockParts(tx, partIds)
     held = (await tx.routeStep.updateMany({ where: { id: { in: ids }, status: 'PENDING' }, data: { holdReleaseId: release.id } })).count
     await clearAlertKeys(tx, ids.flatMap((id) => [alertKey('W2', 'step', id), alertKey('W3', 'step', id)]))
     // 第一道在"等变更"：不能开工，作废它的"可以开工"待办（生产调度里显示卡住·等变更）

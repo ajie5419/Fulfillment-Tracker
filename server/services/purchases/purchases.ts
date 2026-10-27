@@ -127,8 +127,8 @@ async function assertPart(tx: Tx, partId: string | null | undefined, workOrderNu
 
 // ───────────── 可以开工 ─────────────
 
-/** 第一道工序的负责人（负责人 → 班组长，见 flow/responsible.ts）；都没有时是生产部负责人 */
-async function readyOwners(tx: Tx, first: FirstStep, workOrderNumber: string): Promise<string[]> {
+/** 工件"可以开工"待办发给谁：第一道的负责人 → 班组长 → 生产部负责人。发待办和转交待办（steps.stepTodoHolders）共用 */
+export async function readyOwners(tx: Tx, first: Pick<FirstStep, 'ownerId' | 'mode' | 'supplierId'>, workOrderNumber: string): Promise<string[]> {
   const owner = await resolveStepResponsible(tx, { ...first, workOrderNumber })
   if (owner) return [owner]
   const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PRODUCTION_DEPT }, select: { userId: true } })
@@ -143,6 +143,10 @@ type FirstStep = { status: RouteStep['status']; ownerId: string | null; mode: Ro
  *   都齐了（至少挂着一项物料或一个设计任务）、且 notify（本次操作让最后一项缺口没了：到货、取消、删除、移走、设计完成并发放）
  *   → 没有打开的待办时发一条。
  * 只在状态变化的那一刻发（notify），改备注之类的保存不会重复发。返回 sent / revoked / null。
+ *
+ * 锁顺序（全系统统一）：先锁工件（part FOR UPDATE，多个按 ID 排序，lockParts），再锁 / 改工序、采购行、待办。
+ * 这里会锁工件：调用方如果要改工序（打 / 解"等变更"、建 / 调第一道），必须先 lockParts 再动工序，不能先改工序再进来，
+ * 否则会和改工序（steps.updateStep 先锁工件再改工序）互相等锁。
  */
 export async function refreshPartReady(tx: Tx, partId: string | null, notify: boolean): Promise<'sent' | 'revoked' | null> {
   if (!partId) return null

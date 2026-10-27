@@ -8,7 +8,7 @@ import { prisma } from '../../utils/prisma'
 import { parseDay } from '../flow/dates'
 import { FlowError } from '../flow/errors'
 import { loadNames } from '../flow/names'
-import { assertSelfTeam } from '../flow/steps'
+import { assertSelfTeam, syncFirstStep } from '../flow/steps'
 
 type Tx = Prisma.TransactionClient
 
@@ -159,7 +159,7 @@ export async function applyTemplateBatch(partIds: string[], templateId: string, 
 async function applyTemplateTx(tx: Prisma.TransactionClient, partId: string, templateId: string, actorId: string, startDay?: string | null) {
   {
     await tx.$queryRaw`SELECT id FROM part WHERE id = ${partId} FOR UPDATE`
-    const part = await tx.part.findUnique({ where: { id: partId }, select: { id: true, _count: { select: { steps: true } } } })
+    const part = await tx.part.findUnique({ where: { id: partId }, select: { id: true, workOrderNumber: true, _count: { select: { steps: true } } } })
     if (!part) throw new FlowError('工件不存在或已删除')
     if (part._count.steps) throw new FlowError('这个工件已经有工序链了，只能给还没有工序的工件套用模板')
     const template = await tx.routeTemplate.findUnique({ where: { id: templateId }, include: { steps: { orderBy: { seq: 'asc' } } } })
@@ -167,6 +167,8 @@ async function applyTemplateTx(tx: Prisma.TransactionClient, partId: string, tem
     await assertSteps(tx, template.steps)
     const rows = routeFromTemplate(template.steps, startDay)
     await tx.routeStep.createMany({ data: rows.map((r) => ({ ...r, partId, ownerId: actorId })) })
+    // 工件原来没有工序：物料图纸早就齐了的，现在补发"可以开工"
+    await syncFirstStep(tx, partId, part.workOrderNumber, null)
     return { copied: rows.length, template: template.name }
   }
 }

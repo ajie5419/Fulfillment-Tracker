@@ -1,13 +1,12 @@
 /**
  * 班组长（生产管理重设计第二批）：设置页"班组长"维护，一个班组一个班组长，一个人可以带多个班组。
  * 班组来自 QMS 同步（qms_supplier kind = TEAM）；班组长存在 team_leader，同步不碰它。
- * 换了班组长：这些班组里没指定负责人的待开工自制工序，原班组长手里没处理的待办转给新班组长（同改负责人，steps.moveStepTodos）。
+ * 换了 / 清除班组长：这些班组里没指定负责人的待开工自制工序，没处理的待办按改前、改后的"谁负责"转交（同改负责人，steps.moveStepTodos）。
  */
 import { prisma } from '../../utils/prisma'
 import { FlowError } from './errors'
 import { loadNames } from './names'
-import { resolveStepResponsibles } from './responsible'
-import { moveStepTodos } from './steps'
+import { moveStepTodos, stepTodoHolders } from './steps'
 
 /** 全部班组（未删除的）和班组长 */
 export async function listTeamLeaders() {
@@ -40,18 +39,20 @@ export async function setTeamLeader(teamId: string, userId: string | null, actor
     }
     const old = await tx.teamLeader.findUnique({ where: { supplierId: teamId }, select: { userId: true } })
     if ((old?.userId ?? null) === userId) return { changed: false, moved: 0 }
+    // 这个班组里没指定负责人的待开工自制工序：改之前先算"待办现在按规则在谁手里"（原班组长看不到工单时是兜底的人）
+    const steps = await tx.routeStep.findMany({
+      where: { mode: 'SELF', supplierId: teamId, ownerId: null, status: 'PENDING' },
+      select: { id: true, partId: true, seq: true, ownerId: true, mode: true, supplierId: true, part: { select: { workOrderNumber: true } } },
+    })
+    const before = []
+    for (const s of steps) before.push(await stepTodoHolders(tx, s, s.part.workOrderNumber))
     if (userId) {
       await tx.teamLeader.upsert({ where: { supplierId: teamId }, create: { supplierId: teamId, userId, updatedBy: actorId }, update: { userId, updatedBy: actorId } })
     } else {
       await tx.teamLeader.delete({ where: { supplierId: teamId } })
     }
-    // 这个班组里没指定负责人的待开工自制工序：待办跟着换人
-    const steps = await tx.routeStep.findMany({
-      where: { mode: 'SELF', supplierId: teamId, ownerId: null, status: 'PENDING' },
-      select: { id: true, partId: true, ownerId: true, mode: true, supplierId: true, part: { select: { workOrderNumber: true } } },
-    })
-    const now = await resolveStepResponsibles(tx, steps.map((s) => ({ ...s, workOrderNumber: s.part.workOrderNumber })))
-    for (const [i, s] of steps.entries()) await moveStepTodos(tx, s, old?.userId ?? null, now[i] ?? null)
+    // 改之后再算一次，按同一套规则转交（清除班组长时转回兜底的人）
+    for (const [i, s] of steps.entries()) await moveStepTodos(tx, s, before[i]!, await stepTodoHolders(tx, s, s.part.workOrderNumber))
     return { changed: true, moved: steps.length }
   })
 }

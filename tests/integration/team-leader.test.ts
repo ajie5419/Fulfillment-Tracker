@@ -21,6 +21,8 @@ type Services = {
   scan: typeof import('../../server/services/alerts/scan')
   rules: typeof import('../../server/services/alerts/rules')
   auth: typeof import('../../server/utils/auth')
+  todos: typeof import('../../server/services/flow/todos')
+  templates: typeof import('../../server/services/templates/templates')
 }
 
 describe.skipIf(!DB)('班组长（生产管理重设计第二批）', () => {
@@ -44,6 +46,8 @@ describe.skipIf(!DB)('班组长（生产管理重设计第二批）', () => {
       scan: await import('../../server/services/alerts/scan'),
       rules: await import('../../server/services/alerts/rules'),
       auth: await import('../../server/utils/auth'),
+      todos: await import('../../server/services/flow/todos'),
+      templates: await import('../../server/services/templates/templates'),
     }
     db = (await import('../../server/utils/prisma')).prisma
     const wos = [WO, OTHER_WO]
@@ -56,6 +60,7 @@ describe.skipIf(!DB)('班组长（生产管理重设计第二批）', () => {
     await db.qmsWorkOrder.deleteMany({ where: { workOrderNumber: { in: wos } } })
     await db.notifyRole.deleteMany({ where: { userId: { in: USERS } } })
     await db.qmsSupplier.deleteMany({ where: { id: { in: ['TL-TEAM', 'TL-TEAM2', 'TL-OUT'] } } })
+    await db.routeTemplate.deleteMany({ where: { name: 'TL-模板' } })
     await db.qmsProcess.deleteMany({ where: { id: { in: ['TL-CUT', 'TL-WELD'] } } })
     await db.qmsUser.deleteMany({ where: { id: { in: USERS } } })
 
@@ -137,17 +142,51 @@ describe.skipIf(!DB)('班组长（生产管理重设计第二批）', () => {
     await s.steps.updateStep(weld.id, { ownerId: null })
     expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-lead', action: 'ARRANGE_START' }])
 
-    // 批量编排改到没班组长的班：算不出新负责人，待办不动
+    // 批量编排改到没班组长的班：按同一口径回到兜底（上一道负责人）；再改回来又转给班组长
     const part = await db.routeStep.findUniqueOrThrow({ where: { id: weld.id }, select: { partId: true } })
     await s.steps.batchUpdateSteps({ partIds: [part.partId], processId: 'TL-WELD', set: { supplierId: 'TL-TEAM2' } })
-    expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-lead', action: 'ARRANGE_START' }])
+    expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-a', action: 'ARRANGE_START' }])
     await s.steps.batchUpdateSteps({ partIds: [part.partId], processId: 'TL-WELD', set: { supplierId: 'TL-TEAM' } })
+    expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-lead', action: 'ARRANGE_START' }])
 
     // 换班组长：没指定负责人的待开工工序，待办从原班组长转给新班组长
     expect(await s.leaders.setTeamLeader('TL-TEAM', 'tl-lead2', 'tl-head')).toMatchObject({ changed: true })
     expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-lead2', action: 'ARRANGE_START' }])
     await s.leaders.setTeamLeader('TL-TEAM', 'tl-lead', 'tl-head')
     expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-lead', action: 'ARRANGE_START' }])
+  })
+
+  it('换班组长按"实际在谁手里"转：原班组长看不到工单时待办在兜底的人手里，换成看得到的班组长要转过去；清除班组长转回兜底', async () => {
+    await s.leaders.setTeamLeader('TL-TEAM2', 'tl-pm', 'tl-head') // tl-pm 看不到 WO
+    const { weld, cut } = await chain('兜底件', 'TL-TEAM2', null)
+    await finish(cut.id)
+    expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-a', action: 'ARRANGE_START' }])
+
+    await s.leaders.setTeamLeader('TL-TEAM2', 'tl-lead2', 'tl-head')
+    expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-lead2', action: 'ARRANGE_START' }])
+    expect(await db.todo.count({ where: { refId: weld.id, ownerId: 'tl-a', status: 'TRANSFERRED' } })).toBe(1)
+
+    await s.leaders.setTeamLeader('TL-TEAM2', null, 'tl-head')
+    expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-a', action: 'ARRANGE_START' }])
+  })
+
+  it('手工转交出去的待办不被改负责人 / 换班组长抢回来', async () => {
+    const { weld, cut } = await chain('手工转交件', 'TL-TEAM2', null)
+    await finish(cut.id)
+    const [t] = await db.todo.findMany({ where: { refId: weld.id, status: 'OPEN' } })
+    expect(t!.ownerId).toBe('tl-a') // 兜底
+    await s.todos.transferTodo(t!.id, 'tl-b')
+    expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-b', action: 'ARRANGE_START' }])
+
+    // 改负责人：原来"按规则在谁手里"是 tl-a，tl-b 手里的是手工转交的，不动
+    await s.steps.updateStep(weld.id, { ownerId: 'tl-lead2' })
+    expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-b', action: 'ARRANGE_START' }])
+    await s.steps.updateStep(weld.id, { ownerId: null })
+    // 设班组长：同样不动
+    await s.leaders.setTeamLeader('TL-TEAM2', 'tl-lead2', 'tl-head')
+    expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-b', action: 'ARRANGE_START' }])
+    await s.leaders.setTeamLeader('TL-TEAM2', null, 'tl-head')
+    expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-b', action: 'ARRANGE_START' }])
   })
 
   it('"我的"（生产调度）= 本人负责的 + 本人当班组长的班组的自制工序；行上带班组长，主按钮不是"指定负责人"', async () => {
@@ -209,5 +248,38 @@ describe.skipIf(!DB)('班组长（生产管理重设计第二批）', () => {
     // 指定负责人：第一道的"可以开工"也跟着换人
     await s.steps.updateStep(first.id, { ownerId: 'tl-b' })
     expect(await openTodos(part.id)).toEqual([{ ownerId: 'tl-b', action: 'READY_TO_START' }])
+  })
+  it('物料早就齐了、后来才排第一道（加工序 / 复制工序链 / 套模板）：补发"可以开工"；调顺序、删第一道时跟着第一道换人', async () => {
+    const arrived = (partId: string) =>
+      db.purchaseLine.create({ data: { workOrderNumber: WO, partId, materialName: '方管', quantity: 1, needDate: day('2026-11-20'), status: 'ARRIVED', arrivedDate: day('2026-10-20') } })
+    // 加工序
+    const a = await s.steps.createPart(WO, { name: '先到料件', quantity: 1 })
+    await arrived(a.id)
+    await s.purchases.purchaseTx((tx) => s.purchases.refreshPartReady(tx, a.id, true))
+    expect(await openTodos(a.id)).toEqual([]) // 还没排工序
+    const first = await s.steps.addStep(a.id, { processId: 'TL-CUT', mode: 'SELF', ownerId: 'tl-b' }, 'tl-a')
+    expect(await openTodos(a.id)).toEqual([{ ownerId: 'tl-b', action: 'READY_TO_START' }])
+    // 追加第二道不影响
+    const second = await s.steps.addStep(a.id, { processId: 'TL-WELD', mode: 'SELF', ownerId: 'tl-a' }, 'tl-a')
+    expect(await openTodos(a.id)).toEqual([{ ownerId: 'tl-b', action: 'READY_TO_START' }])
+    // 调顺序：第二道成了第一道 → 转给它的负责人；删掉它 → 回到原第一道
+    await s.steps.moveStep(second.id, 'up')
+    expect(await openTodos(a.id)).toEqual([{ ownerId: 'tl-a', action: 'READY_TO_START' }])
+    await s.steps.deleteStep(second.id)
+    expect(await openTodos(a.id)).toEqual([{ ownerId: 'tl-b', action: 'READY_TO_START' }])
+    expect(first.id).toBeTruthy()
+
+    // 复制工序链
+    const b = await s.steps.createPart(WO, { name: '先到料件·复制', quantity: 1 })
+    await arrived(b.id)
+    await s.steps.copyRoute(b.id, a.id, 'tl-a')
+    expect(await openTodos(b.id)).toEqual([{ ownerId: 'tl-b', action: 'READY_TO_START' }])
+
+    // 套模板（负责人默认是操作人）
+    const tpl = await s.templates.createTemplate({ name: 'TL-模板', steps: [{ processId: 'TL-CUT', mode: 'SELF', supplierId: 'TL-TEAM' }] }, 'tl-a')
+    const c = await s.steps.createPart(WO, { name: '先到料件·模板', quantity: 1 })
+    await arrived(c.id)
+    await s.templates.applyTemplateBatch([c.id], tpl.id, 'tl-a')
+    expect(await openTodos(c.id)).toEqual([{ ownerId: 'tl-a', action: 'READY_TO_START' }])
   })
 })

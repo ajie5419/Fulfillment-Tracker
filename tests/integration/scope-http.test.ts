@@ -1062,7 +1062,10 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(all.rows.find((r) => r.stepId === other.id)).toMatchObject({ leaderId: null })
 
     // 清除班组长后又变回只读
+    // （用本班组一道新的待开工工序验证：原班组长对本班组的活也不能再开工）
+    const fresh = await part('本班自制·清除后', { mode: 'SELF', supplierId: 'H-TEAM-A' })
     expect((await send(prod, 'PUT', '/api/team-leaders/H-TEAM-A', { userId: null })).status).toBe(200)
+    expect((await send(leader, 'POST', `/api/steps/${fresh.id}/start`, { source: 'MOBILE' })).status).toBe(403)
     expect((await send(leader, 'POST', `/api/steps/${other.id}/start`, { source: 'MOBILE' })).status).toBe(403)
     await clean()
   })
