@@ -260,7 +260,7 @@ const whoWhen = (name: string | null, at: string | null) => (name && at ? `${nam
   <a-modal
     :open="!!acting"
     :title="acting ? `${actionLabel(acting.kind, acting.action)}：${acting.row.componentName}` : ''"
-    :ok-text="acting?.action === 'issue' ? '下发' : '改为修改中'"
+    :ok-text="acting?.action === 'issue' ? '下发' : acting?.kind === 'MATERIAL' ? '改为修改中' : '改回编制中'"
     :confirm-loading="busy"
     @ok="submitAct"
     @cancel="acting = null"
