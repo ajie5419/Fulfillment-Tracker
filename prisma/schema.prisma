@@ -32,15 +32,15 @@ model QmsWorkOrder {
 
 /// 外协单位：QMS 供应商（kind = SUPPLIER）和厂内外协班组（kind = TEAM，id 即报检上的 teamId）
 model QmsSupplier {
-  id              String   @id @db.VarChar(64)
+  id              String      @id @db.VarChar(64)
   name            String
   outsourcingMode String?
   category        String?
-  kind            String   @default("SUPPLIER") @db.VarChar(20) // SUPPLIER / TEAM
-  status          String?  @db.VarChar(40) // QMS suppliers.status，如 Qualified
-  isDeleted       Boolean  @default(false)
+  kind            String      @default("SUPPLIER") @db.VarChar(20) // SUPPLIER / TEAM
+  status          String?     @db.VarChar(40) // QMS suppliers.status，如 Qualified
+  isDeleted       Boolean     @default(false)
   updatedAt       DateTime
-  syncedAt        DateTime @default(now()) @updatedAt
+  syncedAt        DateTime    @default(now()) @updatedAt
   /// 班组长（只对 kind = TEAM 有意义）：单独一张表，QMS 同步只 upsert 本表的契约字段，碰不到它
   leader          TeamLeader?
 
@@ -75,17 +75,17 @@ model QmsDepartment {
 
 /// QMS 用户（不同步手机号、邮箱、企业微信 ID、密码相关字段）
 model QmsUser {
-  id           String   @id @db.VarChar(64)
+  id           String       @id @db.VarChar(64)
   username     String
   realName     String?
   /// QMS users.department 存的是部门 ID（departments.id），不是名称；要名称经 qms_department 查
-  departmentId String?  @db.VarChar(64)
-  roleId       String?  @db.VarChar(64) // 同步接口不输出；演示数据填
+  departmentId String?      @db.VarChar(64)
+  roleId       String?      @db.VarChar(64) // 同步接口不输出；演示数据填
   roleName     String?
-  status       String   @db.VarChar(20) // ACTIVE / INACTIVE（同步时由 isActive 换算）
-  isDeleted    Boolean  @default(false)
+  status       String       @db.VarChar(20) // ACTIVE / INACTIVE（同步时由 isActive 换算）
+  isDeleted    Boolean      @default(false)
   updatedAt    DateTime
-  syncedAt     DateTime @default(now()) @updatedAt
+  syncedAt     DateTime     @default(now()) @updatedAt
   /// 担任班组长的班组
   ledTeams     TeamLeader[]
 
@@ -477,7 +477,7 @@ model Reminder {
   title     String
   level     AlertLevel @default(REMIND)
   /// 提醒种类：空 = 预警/待办类；DIGEST = 每日汇总；SYNC_FAIL = QMS 同步连续失败（发给管理员，未读时置顶）；
-  /// RELEASE = 发放单的通知（接收人拒收时发给发放人），跳转地址在 link；PLAN = 总计划节点被部门退回（发给项目经理，R14），跳转地址在 link
+  /// RELEASE = 发放单的通知（接收人拒收时发给发放人），跳转地址在 link；PROCESS = 设计变更涉及已下发的料单（发给工艺部负责人），跳转地址在 link；PLAN = 总计划节点被部门退回（发给项目经理，R14），跳转地址在 link
   kind      String?    @db.VarChar(20)
   /// 电脑端跳转地址（RELEASE / PLAN / COMMENT 用；预警类按 alertId 现算）。用 TEXT：工单号会被 URL 编码，中文工单号很快超过 191
   link      String?    @db.Text
@@ -803,35 +803,82 @@ enum DrawingTaskStatus {
  * 关联工件存在未完成（未取消）的设计任务时，不发"可以开工"待办（purchases.ts refreshPartReady）。
  */
 model DrawingTask {
-  id                    String            @id @default(cuid())
-  workOrderNumber       String            @db.VarChar(64)
+  id                    String             @id @default(cuid())
+  workOrderNumber       String             @db.VarChar(64)
   /// 部件名称（如"主梁总图"、"液压系统"）
-  componentName         String            @db.VarChar(191)
-  ownerId               String?           @db.VarChar(64)
+  componentName         String             @db.VarChar(191)
+  ownerId               String?            @db.VarChar(64)
   /// 计划完成日（设计）、实际设计完成日；日期字段，存当天 UTC 零点
   planDate              DateTime
   drawnDate             DateTime?
-  drawnBy               String?           @db.VarChar(64)
+  drawnBy               String?            @db.VarChar(64)
   /// 客户确认：是否需要、计划日、实际确认日
-  needsCustomerConfirm  Boolean           @default(false)
+  needsCustomerConfirm  Boolean            @default(false)
   customerPlanDate      DateTime?
   customerConfirmedDate DateTime?
-  customerConfirmedBy   String?           @db.VarChar(64)
-  status                DrawingTaskStatus @default(PENDING)
-  note                  String?           @db.VarChar(500)
+  customerConfirmedBy   String?            @db.VarChar(64)
+  status                DrawingTaskStatus  @default(PENDING)
+  note                  String?            @db.VarChar(500)
   /// 所属总计划节点（R14，可空；老数据不挂）
   planNodeId            String?
-  createdBy             String?           @db.VarChar(64)
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
-  planNode              PlanNode?         @relation(fields: [planNodeId], references: [id], onDelete: SetNull)
+  /// 工艺模块（10-27）：料单状态、最近一次改状态的人和时间（工艺部改；设计变更涉及已下发的料单时自动改成"修改中"）
+  materialStatus        MaterialListStatus @default(NOT_STARTED)
+  materialAt            DateTime?
+  materialBy            String?            @db.VarChar(64)
+  /// 工艺模块（10-27）：工艺状态、最近一次改状态的人和时间（工艺部改）
+  processStatus         ProcessDocStatus   @default(NONE)
+  processAt             DateTime?
+  processBy             String?            @db.VarChar(64)
+  createdBy             String?            @db.VarChar(64)
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  planNode              PlanNode?          @relation(fields: [planNodeId], references: [id], onDelete: SetNull)
   parts                 DrawingTaskPart[]
+  processLogs           ProcessDocLog[]
 
   @@index([workOrderNumber, status])
   @@index([ownerId, status])
   @@index([status, planDate])
   @@index([planNodeId])
+  @@index([materialStatus])
   @@map("drawing_task")
+}
+
+/// 料单状态（工艺模块 10-27，zhao 定）
+enum MaterialListStatus {
+  NOT_STARTED // 未开始
+  DRAFTING // 编制中
+  REVISING // 修改中（已下发后要改）
+  ISSUED // 已下发
+}
+
+/// 工艺状态（工艺模块 10-27，zhao 定）
+enum ProcessDocStatus {
+  NONE // 无（还没开始或不需要）
+  DRAFTING // 编制中
+  ISSUED // 已下发
+}
+
+enum ProcessDocKind {
+  MATERIAL // 料单
+  PROCESS // 工艺
+}
+
+/// 料单 / 工艺状态的变更记录：每次改状态一条（谁、什么时候、从什么改成什么）；设计变更自动改的 actorId 为发放人，releaseId 为那张设计变更
+model ProcessDocLog {
+  id         String         @id @default(cuid())
+  taskId     String
+  kind       ProcessDocKind
+  fromStatus String         @db.VarChar(32)
+  toStatus   String         @db.VarChar(32)
+  note       String?        @db.VarChar(500)
+  releaseId  String?        @db.VarChar(64)
+  actorId    String         @db.VarChar(64)
+  createdAt  DateTime       @default(now())
+  task       DrawingTask    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@map("process_doc_log")
 }
 
 model DrawingTaskPart {

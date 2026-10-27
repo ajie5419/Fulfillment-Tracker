@@ -4,7 +4,7 @@ import { SESSION_COOKIE } from '../services/auth/session'
 import { userBusinessDept } from '../services/auth/departments'
 import { type Operation, type OperationTarget, OPERATION_DENIED, type RoleContext, canOperate, leaderTeamOfStep } from '../services/auth/permissions'
 import { teamsLedBy } from '../services/flow/responsible'
-import { FlowForbidden } from '../services/flow/errors'
+import { FlowError, FlowForbidden } from '../services/flow/errors'
 import { inspectionWorkOrders } from '../services/flow/inspection'
 import { CONFIRM_PLAN_NODE, PLAN_REF } from '../services/plan/constants'
 import { prisma } from './prisma'
@@ -125,6 +125,15 @@ export async function assertCanSeePurchase(event: H3Event, id: string) {
 export async function assertCanSeePayment(event: H3Event, id: string) {
   const p = await prisma.paymentRequest.findUnique({ where: { id }, select: { workOrderNumber: true } })
   if (p) await assertCanSee(event, p.workOrderNumber)
+}
+
+/**
+ * 工艺模块（料单、工艺状态）：按设计任务所属工单判断。设计任务不存在时直接报"不存在"，不跳过可见性校验（规则 10-26 #37）
+ */
+export async function assertCanSeeProcess(event: H3Event, id: string) {
+  const task = await prisma.drawingTask.findUnique({ where: { id }, select: { workOrderNumber: true } })
+  if (!task) throw new FlowError('设计任务不存在')
+  await assertCanSee(event, task.workOrderNumber)
 }
 
 /**

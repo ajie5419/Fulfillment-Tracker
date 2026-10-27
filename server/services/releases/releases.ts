@@ -13,6 +13,8 @@
  * 从设计任务一键发放（R11，drawingTaskId）：建单和作废都改用 READ COMMITTED，并按设计任务的顺序加锁
  * （先工件 → 设计任务 → 发放单），然后重算任务状态、重新评估"可以开工"（drawings.ts settleTask）。
  *
+ * 设计变更涉及已下发的料单（工艺模块 10-27）：同一事务里把料单改成"修改中"并提醒工艺部负责人（process/process.ts markRevisingByChange）。
+ *
  * 图纸发放单附 BOM 表（bom）：同一事务里按图号建工件（bom/excel.ts applyTechBom），新建的和 BOM 里已有的工件都关联到发放单，
  * 从设计任务发放时也挂到该设计任务。用 READ COMMITTED，加锁顺序 先工单行 → 该工单全部工件（按 ID）→ 设计任务 → 发放单。
  */
@@ -24,6 +26,7 @@ import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadDeptIndex, resolveDeptName } from '../auth/departments'
 import { departmentNames, loadNames, userDepartmentNames } from '../flow/names'
 import { assertReleasable, lockTask, settleTask } from '../drawings/drawings'
+import { markRevisingByChange } from '../process/process'
 import { lockParts, refreshPartReady } from '../purchases/purchases'
 import { XLSX_MIME, applyTechBom, type RawBomRow, type TechBomResult } from '../bom/excel'
 import { formatIssueNo, nextSeq } from '../issues/constants'
@@ -299,10 +302,12 @@ export async function createRelease(input: NewReleaseInput, issuerId: string) {
     // 从设计任务发放：BOM 里的工件都挂到这个设计任务（原来挂着的不动）
     if (task && bomPartIds.length) await tx.drawingTaskPart.createMany({ data: bomPartIds.map((partId) => ({ taskId: task.id, partId })), skipDuplicates: true })
     const impact: ChangeImpact = input.type === 'CHANGE' && partIds.length ? await applyChangeImpact(tx, release, partIds) : { started: 0, held: 0, confirmers: [] }
+    // 工艺模块（10-27）：设计变更涉及已下发的料单 → 自动改"修改中"，提醒工艺部负责人
+    const material = input.type === 'CHANGE' ? await markRevisingByChange(tx, release, partIds, task?.id ?? null) : { revising: 0, notified: false }
     const drawing = task ? await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, task.id) : null
     const { unrouted, notified } = bomPartIds.length ? await notifyUnrouted(tx, release, bomPartIds) : { unrouted: 0, notified: false }
     const bomSummary = bom ? { created: bom.created.length, matched: bom.matched.length, revisionFilled: bom.revisionFilled, skipped: bom.skipped, unrouted, unroutedNotified: notified } : null
-    return { id: release.id, releaseNo: release.releaseNo, recipients: receipts.length, impact, drawing, bom: bomSummary }
+    return { id: release.id, releaseNo: release.releaseNo, recipients: receipts.length, impact, drawing, bom: bomSummary, material }
   }, !!taskId || !!bomInput)
 }
 

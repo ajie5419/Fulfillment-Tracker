@@ -32,6 +32,8 @@ const groups = computed(() => {
       // 部门计划（zhao 10-23）：项目计划发布后，各部门在这里接收本部门节点、分解任务、委派责任人
       { key: '/dept-plan', label: '部门计划', sections: ['deptPlan'] },
       { key: '/drawings', label: '设计任务', sections: ['tech'] },
+      // 工艺（zhao 10-27）：按部件跟踪料单、工艺状态；工艺部改，技术部、生产部、项目经理、领导只读
+      { key: '/process', label: '工艺', sections: ['process'] },
       { key: '/releases', label: '发放签收', sections: ['tech', 'releases'] },
       { key: '/purchases', label: '采购到货', sections: ['purchase'] },
       { key: '/payments', label: '付款申请', sections: ['purchase', 'payments'] },

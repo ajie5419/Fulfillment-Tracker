@@ -164,11 +164,24 @@ describe('操作权限 canOperate', () => {
     expect(permissionFlags(process)).toMatchObject({ route: true, release: true, releaseProcessOnly: true, drawing: false })
     expect(permissionFlags(tech)).toMatchObject({ release: true, releaseProcessOnly: false })
     expect(permissionFlags(admin)).toMatchObject({ releaseProcessOnly: false })
-    expect(menuSections(process)).toEqual(['deptPlan', 'production', 'releases'])
+    expect(menuSections(process)).toEqual(['deptPlan', 'process', 'production', 'releases'])
+  })
+
+  it('工艺模块（10-27）：料单、工艺状态只有工艺部（含负责人）、管理员能改', () => {
+    const process = ctx({ businessDept: 'PROCESS' })
+    const processHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['工艺部'] })
+    expect(canOperate(process, 'processDoc')).toBe(true)
+    expect(canOperate(processHead, 'processDoc')).toBe(true)
+    expect(canOperate(admin, 'processDoc')).toBe(true)
+    expect(canOperate(tech, 'processDoc')).toBe(false)
+    expect(canOperate(ctx({ businessDept: 'PRODUCTION' }), 'processDoc')).toBe(false)
+    expect(canOperate(ctx({ pmOf: new Set(['WO-1']) }), 'processDoc', { workOrderNumber: 'WO-1' })).toBe(false)
+    expect(permissionFlags(process)).toMatchObject({ processDoc: true })
+    expect(permissionFlags(tech)).toMatchObject({ processDoc: false })
   })
 
   it('其他部门什么都改不了', () => {
-    for (const op of ['drawing', 'release', 'purchase', 'payment', 'route', 'stepAction'] as const) expect(canOperate(other, op, { workOrderNumber: 'WO-1' })).toBe(false)
+    for (const op of ['drawing', 'processDoc', 'release', 'purchase', 'payment', 'route', 'stepAction'] as const) expect(canOperate(other, op, { workOrderNumber: 'WO-1' })).toBe(false)
   })
 })
 
@@ -265,7 +278,7 @@ describe('付款金额可见 canSeeAmount', () => {
 })
 
 describe('电脑端菜单 menuSections', () => {
-  const ALL = ['tech', 'purchase', 'production']
+  const ALL = ['tech', 'process', 'purchase', 'production']
   it('领导、项目部负责人、管理员：全部 + 领导总览', () => {
     for (const c of [ctx({ roles: ['LEADER'] }), ctx({ roles: ['PROJECT_DEPT_HEAD'] }), ctx({ isAdmin: true })]) {
       expect(menuSections(c)).toEqual(['overview', 'deptPlan', ...ALL])
@@ -280,9 +293,9 @@ describe('电脑端菜单 menuSections', () => {
   })
 
   it('各部门（有业务部门的人都有"部门计划"）', () => {
-    expect(menuSections(ctx({ businessDept: 'TECH' }))).toEqual(['deptPlan', 'tech'])
+    expect(menuSections(ctx({ businessDept: 'TECH' }))).toEqual(['deptPlan', 'tech', 'process'])
     expect(menuSections(ctx({ businessDept: 'PURCHASE' }))).toEqual(['deptPlan', 'purchase', 'kitting'])
-    expect(menuSections(ctx({ businessDept: 'PRODUCTION' }))).toEqual(['deptPlan', 'production', 'releases'])
+    expect(menuSections(ctx({ businessDept: 'PRODUCTION' }))).toEqual(['deptPlan', 'process', 'production', 'releases'])
     expect(menuSections(ctx({ roles: ['OUTSOURCE_COORDINATOR'] }))).toEqual(['production', 'releases'])
     expect(menuSections(ctx({ businessDept: 'QUALITY' }))).toEqual(['deptPlan', 'production'])
     expect(menuSections(ctx({ roles: ['FINANCE'] }))).toEqual(['payments'])
@@ -291,7 +304,7 @@ describe('电脑端菜单 menuSections', () => {
   })
 
   it('多角色取并集；部门负责人按负责的部门', () => {
-    expect(menuSections(ctx({ businessDept: 'TECH', roles: ['FINANCE'] }))).toEqual(['deptPlan', 'tech', 'payments'])
+    expect(menuSections(ctx({ businessDept: 'TECH', roles: ['FINANCE'] }))).toEqual(['deptPlan', 'tech', 'process', 'payments'])
     expect(menuSections(ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['采购部', '质量部'] }))).toEqual(['deptPlan', 'purchase', 'production', 'kitting'])
   })
 

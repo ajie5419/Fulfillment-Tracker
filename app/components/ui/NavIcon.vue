@@ -13,6 +13,7 @@ const PATHS: Record<string, string[]> = {
   '/plan': ['M4 4v16h16', 'M8 8h6', 'M10 12h7', 'M8 16h4'],
   '/dept-plan': ['M10 6h10', 'M10 12h10', 'M10 18h10', 'M4 6l1.5 1.5L8 5', 'M4 12l1.5 1.5L8 11', 'M4 18h4'],
   '/drawings': ['M4 20l4-1 11-11-3-3L5 16l-1 4Z', 'M14 7l3 3'],
+  '/process': ['M6 3h9l4 4v14H6z', 'M14 3v5h5', 'M9 12h7', 'M9 16h7'],
   '/releases': ['M21 3 10 14', 'M21 3l-7 18-4-7-7-4 18-7Z'],
   '/purchases': ['M3 4h2l2.5 11h11L21 7H6.5', 'M9 20h.01', 'M18 20h.01'],
   '/payments': ['M3 6h18v12H3z', 'M3 10h18', 'M7 15h4'],

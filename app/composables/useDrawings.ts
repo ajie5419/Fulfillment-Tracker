@@ -24,6 +24,11 @@ export interface DrawingRow {
   customerConfirmedByName: string | null
   status: DrawingStatusKey
   statusText: string
+  /** 工艺模块：料单 / 工艺状态 */
+  materialStatus: 'NOT_STARTED' | 'DRAFTING' | 'REVISING' | 'ISSUED'
+  processStatus: 'NONE' | 'DRAFTING' | 'ISSUED'
+  /** 料单未开始 · 工艺无 */
+  processText: string
   note: string | null
   partIds: string[]
   parts: { id: string; name: string }[]

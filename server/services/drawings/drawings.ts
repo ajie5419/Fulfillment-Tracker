@@ -22,6 +22,7 @@ import { todayDate } from '../purchases/constants'
 import { lockParts, purchaseTx, refreshPartReady } from '../purchases/purchases'
 import { planNodeLabels, planWarning, resolvePlanNode } from '../plan/links'
 import { TYPE_TEXT } from '../releases/constants'
+import { processSummary } from '../process/constants'
 import { DRAWING_STATUS_TEXT, OPEN_DRAWING_STATUSES, TECH_DEPT, canReleaseFrom, deriveStatus, isOverdue, thisWeek } from './constants'
 
 type Tx = Prisma.TransactionClient
@@ -361,6 +362,8 @@ async function describeTasks(rows: TaskWithParts[], now: Date, viewer?: Actor) {
     return {
       ...t,
       statusText: DRAWING_STATUS_TEXT[t.status],
+      /** 工艺模块（10-27）：料单 / 工艺状态的一句话（列表状态列下面显示） */
+      processText: processSummary(t),
       partIds: links.map((p) => p.partId),
       parts: links.map((p) => {
         const part = partOf.get(p.partId)

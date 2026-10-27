@@ -288,6 +288,10 @@ const loadColumns = [
               <a-tag v-if="record.alertLevel === 'RED'" color="red">红</a-tag>
               <a-tag v-else-if="record.alertLevel === 'YELLOW'" color="orange">黄</a-tag>
               <div v-if="record.overdue" class="warn small">逾期</div>
+              <NuxtLink v-if="record.status !== 'CANCELLED'" class="proc" :to="`/process?wo=${encodeURIComponent(record.workOrderNumber)}&view=all`" :title="record.processText">
+                <div>料单{{ MATERIAL_STATUS_TEXT[record.materialStatus as MaterialStatusKey] }}</div>
+                <div>工艺{{ PROCESS_STATUS_TEXT[record.processStatus as ProcessStatusKey] }}</div>
+              </NuxtLink>
             </template>
             <template v-else-if="column.key === 'releases'">
               <div v-for="rel in record.releases" :key="rel.id">
@@ -364,5 +368,6 @@ const loadColumns = [
 .muted { color: var(--ft-text-2); font-size: 12px; }
 .warn { color: var(--ft-late); }
 .small { font-size: 12px; }
+.proc { display: block; font-size: 12px; white-space: nowrap; }
 .void { text-decoration: line-through; color: var(--ft-text-3); }
 </style>
