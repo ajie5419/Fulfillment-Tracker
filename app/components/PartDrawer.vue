@@ -106,7 +106,7 @@ const stepDates = (s: { planStartDate: string | Date | null; dueDate: string | D
             <span class="seq">{{ s.seq }}</span>
             <div class="step-main">
               <div class="step-name">{{ s.processName }}<span class="muted"> · {{ stepWhere(s) }}</span></div>
-              <div class="muted">{{ s.ownerName ?? '未指定负责人' }} · {{ stepDates(s) }}{{ s.returnedQty ? ` · 已完成 ${s.returnedQty}/${part.quantity}` : '' }}</div>
+              <div class="muted">{{ s.ownerName ?? (s.leaderName ? `班组长 ${s.leaderName}` : '未指定负责人') }} · {{ stepDates(s) }}{{ s.returnedQty ? ` · 已完成 ${s.returnedQty}/${part.quantity}` : '' }}</div>
               <div v-if="s.issues.length" class="muted">
                 异常：<NuxtLink v-for="x in s.issues" :key="x.id" :to="`/issues?id=${encodeURIComponent(x.id)}`" class="issue">{{ x.issueNo }}</NuxtLink>
               </div>

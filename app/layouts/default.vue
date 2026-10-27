@@ -43,8 +43,8 @@ const groups = computed(() => {
       { key: '/outsource', label: '外协', sections: ['production'] },
     ]) },
     { title: '其他', items: [
-      // 项目部负责人（总计划模板）也能进设置页，只看到"总计划模板"一页
-      ...(me.value?.isAdmin || me.value?.can?.planTemplate ? [{ key: '/settings', label: '设置' }] : []),
+      // 项目部负责人（总计划模板）、生产部（班组长）也能进设置页，只看到各自那一页
+      ...(me.value?.isAdmin || me.value?.can?.planTemplate || me.value?.can?.teamLeader ? [{ key: '/settings', label: '设置' }] : []),
       ...(me.value?.devTools ? [{ key: '/dev', label: '演示工具' }] : []),
     ] },
   ].filter((g) => g.items.length)

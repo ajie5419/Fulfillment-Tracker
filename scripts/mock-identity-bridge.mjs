@@ -180,6 +180,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       'u-013': { name: '测试检验员', active: true }, // R13 检验科（算质量部）：菜单 每日+生产，只读
       'u-014': { name: '测试行政', active: true }, // R13 行政部（其他部门）：菜单只有 每日
       'u-015': { name: '测试工艺员', active: true }, // 工艺部：工件与工序链、发放签收（只发工艺文件）
+      'u-016': { name: '测试班组长', active: true }, // 生产管理重设计第二批：装配一班班组长（没有别的角色，只能登记本班组自制工序）
     },
   })
   console.log(`mock identity bridge + QMS sync listening on ${url}`)

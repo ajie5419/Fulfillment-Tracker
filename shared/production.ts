@@ -25,6 +25,8 @@ export interface ProductionRowLike {
   status: StepStatus
   mode: StepMode
   ownerId: string | null
+  /** 没指定负责人时由班组长负责（自制派到班组的，服务端 flow/responsible.ts 算好）；不传 = 没有 */
+  leaderId?: string | null
   /** 要求完成日 / 承诺返回日已过几天 */
   overdueDays: number
   /** 应开工日已过几天（只算可以开工的） */
@@ -77,13 +79,13 @@ export function segOfColumn(c: ProductionColumn): MobileSeg | null {
   return c === 'ready' || c === 'working' || c === 'out' ? c : null
 }
 
-/** 每行唯一的主按钮：没有负责人先指定；可以开工 → 厂外"发出"、其余"开工"；加工中 → "完工"；在外 → "登记返厂"；其余没有 */
+/** 每行唯一的主按钮：没有负责人（也没有班组长）先指定；可以开工 → 厂外"发出"、其余"开工"；加工中 → "完工"；在外 → "登记返厂"；其余没有 */
 export type PrimaryAction = 'assign' | 'send' | 'start' | 'finish' | 'return' | null
 export const ACTION_TEXT: Readonly<Record<Exclude<PrimaryAction, null>, string>> = { assign: '指定负责人', send: '发出', start: '开工', finish: '完工', return: '登记返厂' }
 
-export function primaryAction(r: Pick<ProductionRowLike, 'column' | 'mode' | 'ownerId' | 'status'>): PrimaryAction {
+export function primaryAction(r: Pick<ProductionRowLike, 'column' | 'mode' | 'ownerId' | 'leaderId' | 'status'>): PrimaryAction {
   if (r.column === 'ready') {
-    if (!r.ownerId) return 'assign'
+    if (!r.ownerId && !r.leaderId) return 'assign'
     return r.mode === 'EXTERNAL_OUTSOURCE' ? 'send' : 'start'
   }
   if (r.column === 'working') return 'finish'
@@ -105,6 +107,9 @@ export interface ActionRow {
 
 /** 主按钮需要的权限：指定负责人是"改工序"（route），其余是"登记开工完工"（stepAction） */
 export const actionNeeds = (a: Exclude<PrimaryAction, null>): 'route' | 'stepAction' => (a === 'assign' ? 'route' : 'stepAction')
+
+/** 班组长能做的主按钮：本班组自制工序的开工、完工（完工里可报部分完工）；发出、登记返厂不行（与服务端 assertCanOperateStep teamLeader 一致） */
+export const leaderAction = (a: Exclude<PrimaryAction, null>) => a === 'start' || a === 'finish'
 
 // ───────────── 工序编排 ─────────────
 

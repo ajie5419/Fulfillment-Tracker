@@ -4,7 +4,7 @@ import { listProduction } from '../services/flow/workshop'
 const query = z.object({
   wo: z.string().max(64).optional(),
   supplierId: z.string().max(64).optional(),
-  /** 1 = 只看自己负责的 */
+  /** 1 = 只看我的：本人负责的 + 本人当班组长的班组的自制工序 */
   mine: z.enum(['1', '0']).optional(),
 })
 
@@ -16,7 +16,7 @@ export default defineFlowHandler(async (event, user) => {
   return listProduction({
     workOrderNumber: q.wo || undefined,
     supplierId: q.supplierId || undefined,
-    ownerId: q.mine === '1' ? user.qmsUserId : undefined,
+    mine: q.mine === '1' ? { userId: user.qmsUserId, teamIds: (await getRoleContext(event)).leadOf ?? [] } : undefined,
     visibleWorkOrders,
   })
 })

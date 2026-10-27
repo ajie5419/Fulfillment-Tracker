@@ -4,11 +4,11 @@ import { source } from '../../../schemas/flow'
 
 const body = z.object({ source }).strict()
 
-/** 开工（自制、厂内外协）：生产部、外协专员、该工序责任人、管理员 */
+/** 开工（自制、厂内外协）：生产部、外协专员、该工序责任人、本班组班组长（自制工序）、管理员 */
 export default defineFlowHandler(async (event, user) => {
   const input = await parseBody(event, body)
   const stepId = routeId(event)
   await assertCanSeeStep(event, stepId)
-  await assertCanOperateStep(event, 'stepAction', stepId)
+  await assertCanOperateStep(event, 'stepAction', stepId, { teamLeader: true })
   return startStep({ ...input, stepId, actorId: user.qmsUserId })
 })

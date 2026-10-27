@@ -102,7 +102,7 @@ describe.skipIf(!DB)('生产管理重设计（第一批）', () => {
   it('只看我的、已完工工单不列出、未排工序的工件计数', async () => {
     const { cut } = await makePart('乙的件')
     await s.steps.updateStep(cut.id, { ownerId: 'prd-b' })
-    const mine = await s.workshop.listProduction({ workOrderNumber: WO, ownerId: 'prd-b' })
+    const mine = await s.workshop.listProduction({ workOrderNumber: WO, mine: { userId: 'prd-b', teamIds: [] } })
     expect(mine.rows.map((r) => r.stepId)).toEqual([cut.id])
 
     const closed = await makePart('已完工工单的件', DONE_WO)

@@ -13,6 +13,7 @@ import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
 import { READY_TO_START } from '../purchases/constants'
 import { FlowError } from './errors'
+import { resolveStepResponsible } from './responsible'
 
 type Tx = Prisma.TransactionClient
 
@@ -211,7 +212,8 @@ export async function applyReturn(
   // 第一次返厂就给下一道发待办（结构件常常先回来先转）。下一道已经发出/开工的不再提醒
   let todoCreated = false
   if (prevCount === 0 && next && next.status === 'PENDING') {
-    const ownerId = next.ownerId ?? step.ownerId
+    // 负责人 → 班组长（自制派到班组的）→ 上一道的负责人（原来的兜底）
+    const ownerId = (await resolveStepResponsible(tx, { ...next, workOrderNumber: step.part.workOrderNumber })) ?? step.ownerId
     const action = next.mode === 'EXTERNAL_OUTSOURCE' ? ARRANGE_SEND : ARRANGE_START
     if (ownerId) {
       const open = await tx.todo.findFirst({ where: { refType: 'step', refId: next.id, action, status: 'OPEN' }, select: { id: true } })

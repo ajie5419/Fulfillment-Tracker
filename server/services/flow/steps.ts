@@ -7,7 +7,9 @@ import type { Prisma, StepMode } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { openIssuesOfSteps } from '../issues/issues'
 import { FlowError } from './errors'
-import { RETURN_TYPES } from './flow'
+import { ARRANGE_SEND, ARRANGE_START, RETURN_TYPES } from './flow'
+import { READY_TO_START } from '../purchases/constants'
+import { resolveStepResponsibles } from './responsible'
 import { partRelatedCounts } from './timeline'
 import { deleteCommentsOf } from '../comments/comments'
 import { loadNames } from './names'
@@ -50,9 +52,12 @@ function assertDates(planStartDate: Date | null | undefined, dueDate: Date | nul
 
 // ───────────── 查询 ─────────────
 
-/** 步骤还缺信息：待开工且没有负责人，或外协步骤没选外协厂。没有负责人时上一道完成后发不出待办 */
-export function needsFill(s: { status: string; ownerId: string | null; mode: StepMode; supplierId: string | null }) {
-  return s.status === 'PENDING' && (!s.ownerId || (s.mode !== 'SELF' && !s.supplierId))
+/**
+ * 步骤还缺信息：待开工且没有负责人（自制派到有班组长的班组也算有人负责，见 flow/responsible.ts），或外协步骤没选外协厂。
+ * 没有负责人时上一道完成后发不出待办。responsibleId：按统一口径算出的负责人（不传时只看 ownerId）
+ */
+export function needsFill(s: { status: string; ownerId: string | null; mode: StepMode; supplierId: string | null }, responsibleId: string | null = s.ownerId) {
+  return s.status === 'PENDING' && (!responsibleId || (s.mode !== 'SELF' && !s.supplierId))
 }
 
 /** 工单下的工件及其工序链（带名称、已返回数量），供页面直接展示 */
@@ -78,8 +83,11 @@ async function loadParts(where: Prisma.PartWhereInput) {
   })
   const steps = parts.flatMap((p) => p.steps)
   const stepIds = steps.map((s) => s.id)
+  const woOf = new Map(parts.map((p) => [p.id, p.workOrderNumber]))
+  const responsibles = await resolveStepResponsibles(prisma, steps.map((s) => ({ ...s, workOrderNumber: woOf.get(s.partId)! })))
+  const responsibleOf = new Map(steps.map((s, i) => [s.id, responsibles[i] ?? null]))
   const [names, sums, counts, issues, related] = await Promise.all([
-    loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId), user: steps.map((s) => s.ownerId) }),
+    loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId), user: [...steps.map((s) => s.ownerId), ...responsibles] }),
     prisma.flowEvent.groupBy({
       by: ['stepId'],
       where: { stepId: { in: stepIds }, type: { in: RETURN_TYPES } },
@@ -101,12 +109,14 @@ async function loadParts(where: Prisma.PartWhereInput) {
       processName: names.process.get(s.processId) ?? s.processId,
       supplierName: s.supplierId ? (names.supplier.get(s.supplierId) ?? s.supplierId) : null,
       ownerName: s.ownerId ? (names.user.get(s.ownerId) ?? s.ownerId) : null,
+      /** 没有负责人、派到班组时由班组长负责（flow/responsible.ts）；有负责人时为 null */
+      leaderName: !s.ownerId && responsibleOf.get(s.id) ? (names.user.get(responsibleOf.get(s.id)!) ?? responsibleOf.get(s.id)!) : null,
       returnedQty: returned.get(s.id) ?? 0,
       eventCount: eventCount.get(s.id) ?? 0,
       /** 该步骤上未关闭的异常（步骤"有异常"时） */
       issues: issues.get(s.id) ?? [],
       /** 待补充：还没开工、但缺负责人，或外协却没选外协厂（BOM 导入的步骤默认就是这样） */
-      needsFill: needsFill(s),
+      needsFill: needsFill(s, responsibleOf.get(s.id) ?? null),
     })),
   }))
 }
@@ -277,7 +287,49 @@ async function updateStepTx(tx: Tx, stepId: string, input: Partial<StepInput>) {
         ...(link.value !== undefined ? { planNodeId: link.value } : {}),
       },
     })
+    // 负责人 / 班组 / 方式变了：没处理的"安排发出 / 开工""可以开工"待办跟着换人（与改负责人同一个口径）
+    if (updated.status === 'PENDING' && (updated.ownerId !== step.ownerId || updated.supplierId !== step.supplierId || updated.mode !== step.mode)) {
+      await rerouteStepTodos(tx, step, updated, part.workOrderNumber)
+    }
     return { ...updated, planWarning: updated.status === 'DONE' ? null : stepWarning(updated, link.node) }
+  }
+}
+
+type RoutableStep = { id: string; partId: string; ownerId: string | null; mode: StepMode; supplierId: string | null }
+
+/**
+ * 工序换了负责人（含改班组、改方式带来的班组长变化）：把这道工序没处理的待办转给新负责人——
+ *   这道工序的"安排发出 / 开工"，以及它是第一道时工件的"可以开工"。
+ * 只转"原负责人手里的"（原来没人负责时，待办发给了兜底的人，也一起转）；被手工转交给别人的不动。
+ * 原待办标"已转交"、新建一条（W2 从最早一条起计时，转交不重新计时）。新负责人算不出来（都没指定）时不动。
+ */
+async function rerouteStepTodos(tx: Tx, before: RoutableStep, after: RoutableStep, workOrderNumber: string) {
+  const [from, to] = await resolveStepResponsibles(tx, [
+    { ...before, workOrderNumber },
+    { ...after, workOrderNumber },
+  ])
+  await moveStepTodos(tx, after, from ?? null, to ?? null)
+}
+
+/** 把这道工序没处理的待办从 from（null = 原来没人负责、发给了兜底的人）转给 to；改班组长（team-leaders.ts）也用 */
+export async function moveStepTodos(tx: Tx, after: Pick<RoutableStep, 'id' | 'partId'>, from: string | null, to: string | null) {
+  if (!to || from === to) return
+  const first = await tx.routeStep.findFirst({ where: { partId: after.partId }, orderBy: { seq: 'asc' }, select: { id: true } })
+  const refs = [
+    { refType: 'step', refId: after.id, action: { in: [ARRANGE_SEND, ARRANGE_START] } },
+    ...(first?.id === after.id ? [{ refType: 'part', refId: after.partId, action: READY_TO_START }] : []),
+  ]
+  const open = await tx.todo.findMany({ where: { status: 'OPEN', OR: refs, ...(from ? { ownerId: from } : { ownerId: { not: to } }) } })
+  const now = new Date()
+  // 同一对象同一类待办只给新负责人留一条（原来发给多个兜底的人时合成一条）
+  const done = new Set<string>()
+  for (const t of open) {
+    await tx.todo.update({ where: { id: t.id }, data: { status: 'TRANSFERRED', doneAt: now } })
+    const key = `${t.refType}:${t.refId}:${t.action}`
+    if (done.has(key)) continue
+    done.add(key)
+    const exists = await tx.todo.findFirst({ where: { ownerId: to, refType: t.refType, refId: t.refId, action: t.action, status: 'OPEN' }, select: { id: true } })
+    if (!exists) await tx.todo.create({ data: { ownerId: to, action: t.action, refType: t.refType, refId: t.refId, dueAt: t.dueAt } })
   }
 }
 

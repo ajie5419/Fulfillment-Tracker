@@ -8,6 +8,12 @@ import { departmentNames } from '../services/flow/names'
  * 权限方案 R13：businessDept 是 QMS 部门经"部门对照"换算出的业务部门（null = 其他）；menu 是电脑端可见的菜单分区；
  * can 是按角色的操作标志（"该工单项目经理""该工序责任人"由前端用 pmOf / id 补上，后端仍是最终判断）。
  */
+async function teamOptions(ids: string[]) {
+  if (!ids.length) return []
+  const rows = await prisma.qmsSupplier.findMany({ where: { id: { in: ids } }, select: { id: true, name: true }, orderBy: { name: 'asc' } })
+  return rows
+}
+
 export default defineEventHandler(async (event) => {
   const user = requireUser(event)
   const [qmsUser, scope, ctx] = await Promise.all([
@@ -30,5 +36,7 @@ export default defineEventHandler(async (event) => {
     pmOf: [...ctx.pmOf],
     menu: menuSections(ctx),
     can: permissionFlags(ctx),
+    /** 担任班组长的班组（生产调度"本班组"筛选、本班组自制工序的开工 / 完工按钮） */
+    leadTeams: await teamOptions(ctx.leadOf ?? []),
   }
 })

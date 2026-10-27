@@ -285,6 +285,25 @@ describe.skipIf(!DB)('QMS 数据同步', () => {
     qms.data.teams = qms.data.teams.filter((x: { id: string }) => x.id !== 'team-legacy')
   })
 
+  it('班组长（生产管理重设计第二批）：设置页维护的班组长单独成表，QMS 再同步同一个班组（改名、停用）和班组长用户时不被覆盖、不被清掉', async () => {
+    await db.teamLeader.upsert({ where: { supplierId: 'team-weld1' }, create: { supplierId: 'team-weld1', userId: 'u-002', updatedBy: ADMIN }, update: { userId: 'u-002', updatedBy: ADMIN } })
+    const team = qms.data.teams.find((x: { id: string }) => x.id === 'team-weld1')
+    const user = qms.data.users.find((x: { id: string }) => x.id === 'u-002')
+    qms.upsert('teams', { ...team, name: '组焊一班（改名）', status: 'INACTIVE', updatedAt: undefined })
+    qms.upsert('users', { ...user, realName: '生产经理（改名）', updatedAt: undefined })
+    await syncOnly({ only: ['teams', 'users'] })
+    expect(await db.qmsSupplier.findUniqueOrThrow({ where: { id: 'team-weld1' } })).toMatchObject({ name: '组焊一班（改名）', status: 'INACTIVE', kind: 'TEAM' })
+    expect(await db.teamLeader.findUniqueOrThrow({ where: { supplierId: 'team-weld1' } })).toMatchObject({ userId: 'u-002', updatedBy: ADMIN })
+    // 整轮任务再跑一次（含全部资源、匹配）也一样
+    await runJob()
+    expect(await db.teamLeader.findUnique({ where: { supplierId: 'team-weld1' } })).toMatchObject({ userId: 'u-002' })
+    // 还原，别影响后面的用例
+    qms.upsert('teams', { ...team, updatedAt: undefined })
+    qms.upsert('users', { ...user, updatedAt: undefined })
+    await syncOnly({ only: ['teams', 'users'] })
+    await db.teamLeader.delete({ where: { supplierId: 'team-weld1' } })
+  })
+
   // ───── 匹配 ─────
 
   let seq = 0

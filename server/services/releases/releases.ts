@@ -24,6 +24,7 @@ import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadDeptIndex, resolveDeptName } from '../auth/departments'
 import { departmentNames, loadNames, userDepartmentNames } from '../flow/names'
 import { assertReleasable, lockTask, settleTask } from '../drawings/drawings'
+import { refreshPartReady } from '../purchases/purchases'
 import { XLSX_MIME, applyTechBom, type RawBomRow, type TechBomResult } from '../bom/excel'
 import { formatIssueNo, nextSeq } from '../issues/constants'
 import {
@@ -79,10 +80,30 @@ async function lockRelease(tx: Tx, id: string): Promise<Release> {
   return tx.release.findUniqueOrThrow({ where: { id } })
 }
 
-/** 解除这张发放单打的"等变更"（被更新的变更单覆盖过的不动），记下解除时间供 W2 重新计时 */
-async function clearHolds(tx: Tx, releaseId: string, now: Date) {
-  const r = await tx.routeStep.updateMany({ where: { holdReleaseId: releaseId }, data: { holdReleaseId: null, holdClearedAt: now } })
-  return r.count
+/**
+ * 解除这张发放单打的"等变更"（被更新的变更单覆盖过的不动），记下解除时间供 W2 重新计时。
+ * sync：解除的工序里有第一道的，按统一口径重新评估"可以开工"待办（齐了就补发）；作废时还要把部分工序还给更早的变更单，由调用方最后再评估。
+ */
+async function clearHolds(tx: Tx, releaseId: string, now: Date, sync = true) {
+  const ids = (await tx.routeStep.findMany({ where: { holdReleaseId: releaseId }, select: { id: true } })).map((s) => s.id)
+  if (!ids.length) return { count: 0, stepIds: ids }
+  const r = await tx.routeStep.updateMany({ where: { id: { in: ids }, holdReleaseId: releaseId }, data: { holdReleaseId: null, holdClearedAt: now } })
+  if (sync) await syncFirstStepReady(tx, ids, true)
+  return { count: r.count, stepIds: ids }
+}
+
+/**
+ * "等变更"变了的工序里是第一道的：重新评估工件的"可以开工"待办（flow/readiness.ts firstStepTodoReady，与生产调度同一条规则）。
+ * 打上"等变更" → 作废没处理的待办（notify = false）；解除 → 物料图纸都齐了就补发（notify = true）。
+ */
+async function syncFirstStepReady(tx: Tx, stepIds: string[], notify: boolean) {
+  if (!stepIds.length) return
+  const changed = new Set(stepIds)
+  const parts = [...new Set((await tx.routeStep.findMany({ where: { id: { in: stepIds } }, select: { partId: true } })).map((s) => s.partId))].sort()
+  for (const partId of parts) {
+    const first = await tx.routeStep.findFirst({ where: { partId }, orderBy: { seq: 'asc' }, select: { id: true } })
+    if (first && changed.has(first.id)) await refreshPartReady(tx, partId, notify)
+  }
 }
 
 // ───────────── 接收人 ─────────────
@@ -173,6 +194,8 @@ async function applyChangeImpact(tx: Tx, release: Release, partIds: string[]): P
     const ids = hold.map((h) => h.id)
     held = (await tx.routeStep.updateMany({ where: { id: { in: ids }, status: 'PENDING' }, data: { holdReleaseId: release.id } })).count
     await clearAlertKeys(tx, ids.flatMap((id) => [alertKey('W2', 'step', id), alertKey('W3', 'step', id)]))
+    // 第一道在"等变更"：不能开工，作废它的"可以开工"待办（生产调度里显示卡住·等变更）
+    await syncFirstStepReady(tx, ids, false)
   }
   return { started: started.length, held, confirmers }
 }
@@ -326,7 +349,7 @@ async function autoClearHolds(tx: Tx, rel: Release, now: Date) {
   if (confirmTodos || notSigned || !held) return 0
   await tx.release.update({ where: { id: rel.id }, data: { changeConfirmedAt: now, changeConfirmedBy: null, changeConfirmNote: '接收人全部签收，自动解除等变更' } })
   await clearAlertKeys(tx, [alertKey('W5', 'release', rel.id)])
-  return clearHolds(tx, rel.id, now)
+  return (await clearHolds(tx, rel.id, now)).count
 }
 
 export const signReceipt = (receiptId: string, userId: string) => actOnReceipt(receiptId, userId, 'SIGNED', null)
@@ -385,10 +408,15 @@ export async function voidRelease(id: string, actor: Actor) {
     })
     await clearAlertKeys(tx, [...pendingIds.map((r) => alertKey('W5', 'receipt', r)), alertKey('W5', 'release', id)])
     const restoreTo = await olderHolds(tx, rel)
-    const holdsCleared = await clearHolds(tx, id, now)
+    const cleared = await clearHolds(tx, id, now, false)
+    const holdsCleared = cleared.count
+    const restored = new Set<string>()
     for (const [releaseId, stepIds] of restoreTo) {
       await tx.routeStep.updateMany({ where: { id: { in: stepIds }, holdReleaseId: null, status: 'PENDING' }, data: { holdReleaseId: releaseId } })
+      stepIds.forEach((x) => restored.add(x))
     }
+    // 真正解除的（没还给更早变更单的）第一道：齐了就补发"可以开工"
+    await syncFirstStepReady(tx, cleared.stepIds.filter((x) => !restored.has(x)), true)
     await tx.release.update({ where: { id }, data: { status: 'VOID' } })
     if (task) await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, task.id)
     return { cancelled: pendingIds.length, holdsCleared }
@@ -411,7 +439,7 @@ export async function confirmChange(id: string, actor: Actor, note: string | nul
     await tx.todo.updateMany({ where: { refType: 'release', refId: id, action: CONFIRM_CHANGE, status: 'OPEN' }, data: { status: 'DONE', doneAt: now } })
     await tx.release.update({ where: { id }, data: { changeConfirmedAt: now, changeConfirmedBy: actor.userId, changeConfirmNote: note?.trim() || null } })
     await clearAlertKeys(tx, [alertKey('W5', 'release', id)])
-    return { holdsCleared: await clearHolds(tx, id, now) }
+    return { holdsCleared: (await clearHolds(tx, id, now)).count }
   })
 }
 

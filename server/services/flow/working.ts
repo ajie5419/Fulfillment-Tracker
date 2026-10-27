@@ -6,14 +6,15 @@ import { prisma } from '../../utils/prisma'
 import { overdueDays } from './dates'
 import { RETURN_TYPES } from './flow'
 import { loadNames } from './names'
+import { mineWhere } from './workshop'
 
-/** ownerId：只看这个人负责的；visibleWorkOrders：可见工单（undefined = 全部，见 server/utils/auth.ts 的 getScope） */
-export async function listWorking(filter: { ownerId?: string; visibleWorkOrders?: string[] }) {
+/** mine：只看"我的"（本人负责的 + 本人当班组长的班组的自制工序，同生产调度）；visibleWorkOrders：可见工单（undefined = 全部，见 server/utils/auth.ts 的 getScope） */
+export async function listWorking(filter: { mine?: { userId: string; teamIds: string[] }; visibleWorkOrders?: string[] }) {
   const steps = await prisma.routeStep.findMany({
     where: {
       status: 'IN_PROGRESS',
       mode: { in: ['SELF', 'IN_PLANT_OUTSOURCE'] },
-      ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
+      ...(filter.mine ? mineWhere(filter.mine) : {}),
       ...(filter.visibleWorkOrders ? { part: { workOrderNumber: { in: filter.visibleWorkOrders } } } : {}),
     },
     include: { part: true },

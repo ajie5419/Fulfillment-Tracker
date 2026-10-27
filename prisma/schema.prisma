@@ -41,6 +41,8 @@ model QmsSupplier {
   isDeleted       Boolean  @default(false)
   updatedAt       DateTime
   syncedAt        DateTime @default(now()) @updatedAt
+  /// 班组长（只对 kind = TEAM 有意义）：单独一张表，QMS 同步只 upsert 本表的契约字段，碰不到它
+  leader          TeamLeader?
 
   @@map("qms_supplier")
 }
@@ -84,6 +86,8 @@ model QmsUser {
   isDeleted    Boolean  @default(false)
   updatedAt    DateTime
   syncedAt     DateTime @default(now()) @updatedAt
+  /// 担任班组长的班组
+  ledTeams     TeamLeader[]
 
   @@index([departmentId])
   @@map("qms_user")
@@ -536,6 +540,21 @@ enum BusinessDept {
   QUALITY // 质量部
   FINANCE // 财务部
   PROJECT // 项目部
+}
+
+/// 班组 → 班组长（生产管理重设计第二批）。一个班组一个班组长，一个人可以带多个班组。
+/// 班组来自 QMS 同步（qms_supplier kind = TEAM），班组长是本系统设置页维护的，单独成表，同步不会覆盖或清掉。
+/// 自制工序派到班组、没有指定负责人时，待办和提醒发给班组长（flow/responsible.ts）；班组长可以登记本班组自制工序的开工、完工、报工。
+model TeamLeader {
+  supplierId String      @id @db.VarChar(64)
+  userId     String      @db.VarChar(64)
+  updatedAt  DateTime    @updatedAt
+  updatedBy  String      @db.VarChar(64)
+  team       QmsSupplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  user       QmsUser     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("team_leader")
 }
 
 /// QMS 部门 → 业务部门对照（设置页"部门对照"维护，班组、科室都对到大部门）。
