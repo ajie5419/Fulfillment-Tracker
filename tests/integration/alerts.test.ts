@@ -394,10 +394,10 @@ describe.skipIf(!DB)('预警与提醒', () => {
     expect(list.find((a) => a.refId === late.id)).toMatchObject({ duration: null, summary: expect.stringContaining('仍未完工') })
 
     // 手机"加工中"：我负责的、已开工的厂内工序，逾期的在前并带超期天数；没开工的不在
-    const working = await s.working.listWorking({ ownerId: 'u-out' })
+    const working = await s.working.listWorking({ mine: { userId: 'u-out', teamIds: [] } })
     expect(working.map((w) => w.stepId)).toEqual([late.id, soon.id])
     expect(working[0]).toMatchObject({ overdueDays: 1, quantity: 2, mode: 'SELF' })
-    expect(await s.working.listWorking({ ownerId: 'u-head' })).toEqual([])
+    expect(await s.working.listWorking({ mine: { userId: 'u-head', teamIds: [] } })).toEqual([])
     expect(await s.working.listWorking({ visibleWorkOrders: [] })).toEqual([])
 
     // 超期 3 天红 → 自动转异常，自制归车间
@@ -412,6 +412,6 @@ describe.skipIf(!DB)('预警与提醒', () => {
     expect((await db.alert.findUniqueOrThrow({ where: { id: r!.id } })).status).toBe('CLEARED')
     await s.finish.finishStep({ stepId: late.id, actorId: 'u-out', source: 'MOBILE' })
     expect((await db.alert.findUniqueOrThrow({ where: { id: red!.id } })).activeKey).toBeNull()
-    expect(await s.working.listWorking({ ownerId: 'u-out' })).toEqual([])
+    expect(await s.working.listWorking({ mine: { userId: 'u-out', teamIds: [] } })).toEqual([])
   })
 })

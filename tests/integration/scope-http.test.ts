@@ -51,7 +51,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
   const OTHER = 'T-WO-PM-OTHER'
   let otherIssueId = ''
   let otherPartId = ''
-  const HTTP_USERS = ['h-pm', 'h-pm2', 'h-lead', 'h-worker', 'h-fin', 'h-tech', 'h-buyer', 'h-prod', 'h-qa', 'h-proc', 'h-admin']
+  const HTTP_USERS = ['h-pm', 'h-pm2', 'h-lead', 'h-worker', 'h-fin', 'h-tech', 'h-buyer', 'h-prod', 'h-qa', 'h-proc', 'h-admin', 'h-leader']
   // R13 部门对照：技术科 → 技术部（直接对照）；采购一组挂在供应部下（供应部 → 采购部，下级继承）；生产部没有对照（按名称）；检验科 → 质量部
   const DEPTS = [
     { id: 'T-DEPT-TECH', name: '技术科', parentId: '0' },
@@ -136,6 +136,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
         'h-qa': { name: '质检员', active: true },
         'h-proc': { name: '工艺员', active: true },
         'h-admin': { name: '管理员', active: true },
+        'h-leader': { name: '班组长', active: true },
       },
     })
     const port = await freePort()
@@ -707,7 +708,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     // 开工 / 完工：项目经理、技术员不行；工序责任人本人可以；生产部可以
     const startDenied = await send(pm, 'POST', `/api/steps/${stepId}/start`, {})
     expect(startDenied.status).toBe(403)
-    expect(((await startDenied.json()) as { message: string }).message).toBe('只有生产部、外协专员、该工序责任人或管理员可以登记开工、完工、发出、返厂')
+    expect(((await startDenied.json()) as { message: string }).message).toBe('只有生产部、外协专员、该工序责任人、本班组班组长（自制工序的开工、完工、报工）或管理员可以登记开工、完工、发出、返厂')
     expect((await send(tech, 'POST', `/api/steps/${stepId}/start`, {})).status).toBe(403)
     expect((await send(qa, 'POST', `/api/steps/${stepId}/start`, {})).status).toBe(200)
     expect((await send(prod, 'POST', `/api/steps/${stepId}/finish`, {})).status).toBe(200)
@@ -998,5 +999,74 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(leadHits.map((h) => h.type)).toEqual(['part'])
     await db.comment.deleteMany({ where: { refId: otherPartId } })
     await db.reminder.deleteMany({ where: { kind: 'COMMENT' } })
+  })
+  it('班组长（生产管理重设计第二批）：只能登记本班组自制工序的开工、完工、报工；别的班组、外协工序、改工序都不行；班组长只有生产部 / 管理员能设', async () => {
+    const send = (sess: Record<string, string>, method: string, path: string, body?: object) =>
+      fetch(`${base}${path}`, { method, headers: { cookie: cookieHeader(sess), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+    const TEAMS = ['H-TEAM-A', 'H-TEAM-B', 'H-OUT']
+    const clean = async () => {
+      const parts = await db.part.findMany({ where: { workOrderNumber: MINE, name: { startsWith: '班组长测试' } }, select: { id: true } })
+      await db.flowEvent.deleteMany({ where: { step: { partId: { in: parts.map((p) => p.id) } } } })
+      await db.todo.deleteMany({ where: { refId: { in: parts.map((p) => p.id) } } })
+      await db.part.deleteMany({ where: { id: { in: parts.map((p) => p.id) } } })
+      await db.qmsSupplier.deleteMany({ where: { id: { in: TEAMS } } }) // 班组长级联删除
+      await db.qmsProcess.deleteMany({ where: { id: 'H-PRC' } })
+    }
+    await clean()
+    const now = new Date()
+    await db.qmsSupplier.createMany({
+      data: [
+        { id: 'H-TEAM-A', name: '甲班', kind: 'TEAM', updatedAt: now },
+        { id: 'H-TEAM-B', name: '乙班', kind: 'TEAM', updatedAt: now },
+        { id: 'H-OUT', name: '外协厂', updatedAt: now },
+      ],
+    })
+    await db.qmsProcess.create({ data: { id: 'H-PRC', name: '下料', supplierSource: 'Supplier', updatedAt: now } })
+    const part = async (name: string, step: { mode: 'SELF' | 'IN_PLANT_OUTSOURCE' | 'EXTERNAL_OUTSOURCE'; supplierId: string }) => {
+      const p = await db.part.create({ data: { workOrderNumber: MINE, name: `班组长测试 ${name}`, quantity: 2 } })
+      return db.routeStep.create({ data: { partId: p.id, seq: 1, processId: 'H-PRC', ...step } })
+    }
+    const own = await part('本班自制', { mode: 'SELF', supplierId: 'H-TEAM-A' })
+    const other = await part('别班自制', { mode: 'SELF', supplierId: 'H-TEAM-B' })
+    const inPlant = await part('本班厂内外协', { mode: 'IN_PLANT_OUTSOURCE', supplierId: 'H-TEAM-A' })
+
+    const leader = await login('h-leader')
+    const prod = await login('h-prod')
+    // 还不是班组长：只读；自己不能给自己设班组长
+    expect((await send(leader, 'POST', `/api/steps/${own.id}/start`, { source: 'MOBILE' })).status).toBe(403)
+    expect((await send(leader, 'PUT', '/api/team-leaders/H-TEAM-A', { userId: 'h-leader' })).status).toBe(403)
+    // 生产部设班组长；同步不碰（见 sync.test.ts）
+    expect((await send(prod, 'PUT', '/api/team-leaders/H-TEAM-A', { userId: 'h-leader' })).status).toBe(200)
+    expect((await send(prod, 'PUT', '/api/team-leaders/H-OUT', { userId: 'h-leader' })).status).toBe(400) // 外协厂不是班组
+    const list = (await (await get('/api/team-leaders', leader)).json()) as { teamId: string; leaderId: string | null }[]
+    expect(list.find((t) => t.teamId === 'H-TEAM-A')).toMatchObject({ leaderId: 'h-leader' })
+
+    const me = (await (await get('/api/me', leader)).json()) as { menu: string[]; can: Record<string, boolean>; leadTeams: { id: string }[] }
+    expect(me.leadTeams.map((t) => t.id)).toEqual(['H-TEAM-A'])
+    expect(me.menu).toContain('production')
+    expect(me.can).toMatchObject({ stepAction: false, route: false, teamLeader: false })
+
+    // 本班组自制：开工、部分完工（报工）、完工
+    expect((await send(leader, 'POST', `/api/steps/${own.id}/start`, { source: 'MOBILE' })).status).toBe(200)
+    expect((await send(leader, 'POST', `/api/steps/${own.id}/finish`, { source: 'MOBILE', qty: 1, rest: 'CONTINUE' })).status).toBe(200)
+    expect((await send(leader, 'POST', `/api/steps/${own.id}/finish`, { source: 'MOBILE' })).status).toBe(200)
+    // 别的班组、厂内外协（supplierId 也是本班，但不是自制）、改工序：403
+    expect((await send(leader, 'POST', `/api/steps/${other.id}/start`, { source: 'MOBILE' })).status).toBe(403)
+    expect((await send(leader, 'POST', `/api/steps/${inPlant.id}/start`, { source: 'MOBILE' })).status).toBe(403)
+    expect((await send(leader, 'PATCH', `/api/steps/${other.id}`, { ownerId: 'h-leader' })).status).toBe(403)
+
+    // "我的"：本班组的自制工序（没指定负责人也算）；别的班组的不在
+    const mine = (await (await get(`/api/production?wo=${MINE}&mine=1`, leader)).json()) as { rows: { stepId: string; leaderId: string | null }[] }
+    expect(mine.rows.map((r) => r.stepId)).toEqual([own.id])
+    const all = (await (await get(`/api/production?wo=${MINE}`, leader)).json()) as { rows: { stepId: string; leaderId: string | null }[] }
+    expect(all.rows.find((r) => r.stepId === other.id)).toMatchObject({ leaderId: null })
+
+    // 清除班组长后又变回只读
+    // （用本班组一道新的待开工工序验证：原班组长对本班组的活也不能再开工）
+    const fresh = await part('本班自制·清除后', { mode: 'SELF', supplierId: 'H-TEAM-A' })
+    expect((await send(prod, 'PUT', '/api/team-leaders/H-TEAM-A', { userId: null })).status).toBe(200)
+    expect((await send(leader, 'POST', `/api/steps/${fresh.id}/start`, { source: 'MOBILE' })).status).toBe(403)
+    expect((await send(leader, 'POST', `/api/steps/${other.id}/start`, { source: 'MOBILE' })).status).toBe(403)
+    await clean()
   })
 })

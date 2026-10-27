@@ -2,7 +2,8 @@ import type { H3Event } from 'h3'
 import type { IdentityBridgeConfig } from '../services/auth/identity-bridge'
 import { SESSION_COOKIE } from '../services/auth/session'
 import { userBusinessDept } from '../services/auth/departments'
-import { type Operation, type OperationTarget, OPERATION_DENIED, type RoleContext, canOperate } from '../services/auth/permissions'
+import { type Operation, type OperationTarget, OPERATION_DENIED, type RoleContext, canOperate, leaderTeamOfStep } from '../services/auth/permissions'
+import { teamsLedBy } from '../services/flow/responsible'
 import { FlowForbidden } from '../services/flow/errors'
 import { inspectionWorkOrders } from '../services/flow/inspection'
 import { CONFIRM_PLAN_NODE, PLAN_REF } from '../services/plan/constants'
@@ -164,10 +165,11 @@ export async function assertCanSeeInspection(event: H3Event, inspectionId: strin
 
 /** 按用户算角色上下文（不依赖请求） */
 export async function loadRoleContext(userId: string, admin: boolean): Promise<RoleContext> {
-  const [roles, managed, businessDept] = await Promise.all([
+  const [roles, managed, businessDept, leadOf] = await Promise.all([
     prisma.notifyRole.findMany({ where: { userId }, select: { role: true, department: true } }),
     prisma.workOrderExt.findMany({ where: { projectManagerId: userId }, select: { workOrderNumber: true } }),
     userBusinessDept(userId),
+    teamsLedBy(prisma, userId),
   ])
   return {
     userId,
@@ -176,6 +178,7 @@ export async function loadRoleContext(userId: string, admin: boolean): Promise<R
     deptHeadOf: [...new Set(roles.filter((r) => r.role === 'DEPT_HEAD' && r.department).map((r) => r.department!))],
     businessDept,
     pmOf: new Set(managed.map((m) => m.workOrderNumber)),
+    leadOf,
   }
 }
 
@@ -199,10 +202,19 @@ export async function assertCanOperatePart(event: H3Event, op: Operation, partId
   if (part) await assertCanOperate(event, op, { workOrderNumber: part.workOrderNumber })
 }
 
-/** 工序上的操作：带上工序所属工单和工序责任人 */
-export async function assertCanOperateStep(event: H3Event, op: Operation, stepId: string) {
-  const step = await prisma.routeStep.findUnique({ where: { id: stepId }, select: { ownerId: true, part: { select: { workOrderNumber: true } } } })
-  if (step) await assertCanOperate(event, op, { workOrderNumber: step.part.workOrderNumber, ownerId: step.ownerId })
+/**
+ * 工序上的操作：带上工序所属工单和工序责任人。
+ * teamLeader：本班组班组长也可以（开工、完工、报工这几个接口传 true；发出、补登返厂不传）——只对自制工序生效。
+ */
+export async function assertCanOperateStep(event: H3Event, op: Operation, stepId: string, opts: { teamLeader?: boolean } = {}) {
+  const step = await prisma.routeStep.findUnique({ where: { id: stepId }, select: { ownerId: true, mode: true, supplierId: true, part: { select: { workOrderNumber: true } } } })
+  if (step) {
+    await assertCanOperate(event, op, {
+      workOrderNumber: step.part.workOrderNumber,
+      ownerId: step.ownerId,
+      teamId: opts.teamLeader ? leaderTeamOfStep(step) : null,
+    })
+  }
 }
 
 /** 采购行上的操作 */

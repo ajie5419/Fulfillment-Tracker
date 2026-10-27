@@ -12,6 +12,7 @@
 import type { Alert, AlertLevel, NotifyRole, StepMode } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { ARRANGE_SEND, ARRANGE_START } from '../flow/flow'
+import { resolveStepResponsibles } from '../flow/responsible'
 import { resolveDeptNames, userDeptNames } from '../auth/departments'
 import { loadNames } from '../flow/names'
 import { convertAlertInTx } from '../issues/convert'
@@ -187,12 +188,15 @@ async function collectW2(now: Date, t: Thresholds, offDays: string[]): Promise<T
   return out
 }
 
-/** W3：在外加工且有承诺返回日的步骤，责任人是步骤负责人。标了"等变更"的不计（变更影响确认后恢复） */
+/** W3：在外加工且有承诺返回日的步骤，责任人是步骤负责人（flow/responsible.ts；厂外外协没有班组长）。标了"等变更"的不计（变更影响确认后恢复） */
 async function collectW3(now: Date, t: Thresholds, offDays: string[]): Promise<Target[]> {
   const steps = await prisma.routeStep.findMany({ where: { status: 'OUT', promisedReturnDate: { not: null }, holdReleaseId: null }, include: { part: true } })
   if (!steps.length) return []
-  const names = await loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId) })
-  return steps.map((s) => {
+  const [names, owners] = await Promise.all([
+    loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId) }),
+    resolveStepResponsibles(prisma, steps.map((s) => ({ ...s, workOrderNumber: s.part.workOrderNumber }))),
+  ])
+  return steps.map((s, i) => {
     const r = judgeW3({ promisedReturnDate: s.promisedReturnDate!, dueDate: s.dueDate, now, offDays }, t.W3)
     const supplier = s.supplierId ? (names.supplier.get(s.supplierId) ?? s.supplierId) : '外协厂'
     const summary = r.dueDatePassed
@@ -208,7 +212,7 @@ async function collectW3(now: Date, t: Thresholds, offDays: string[]): Promise<T
       refId: s.id,
       key: alertKey('W3', 'step', s.id),
       workOrderNumber: s.part.workOrderNumber,
-      ownerIds: s.ownerId ? [s.ownerId] : [],
+      ownerIds: owners[i] ? [owners[i]!] : [],
       startAt: s.promisedReturnDate!,
       level: r.level,
       subject: `${s.part.name} · ${names.process.get(s.processId) ?? s.processId}`,
@@ -219,7 +223,7 @@ async function collectW3(now: Date, t: Thresholds, offDays: string[]): Promise<T
 }
 
 /**
- * W10 厂内工序逾期未完：自制 / 厂内外协已开工（加工中）、有要求完成日的工序，责任人是工序负责人，黄色起通知生产经理（生产部负责人）。
+ * W10 厂内工序逾期未完：自制 / 厂内外协已开工（加工中）、有要求完成日的工序，责任人是工序负责人（没有时自制的班组长），黄色起通知生产经理（生产部负责人）。
  * 之前 W2 只管"还没开工"、W3 只管厂外外协，开了工的厂内工序超期没人管（10-26 借鉴 ERPNext 评估时发现）。
  * "有异常"（QMS 不合格）的工序状态是 BLOCKED，不在这里，由异常跟进；完工后自动消除。
  */
@@ -229,8 +233,12 @@ async function collectW10(now: Date, t: Thresholds, offDays: string[]): Promise<
     include: { part: true },
   })
   if (!steps.length) return []
-  const names = await loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId) })
-  return steps.map((s) => {
+  // 责任人：工序负责人，没有时是自制工序派到的班组的班组长（flow/responsible.ts）
+  const [names, owners] = await Promise.all([
+    loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId) }),
+    resolveStepResponsibles(prisma, steps.map((s) => ({ ...s, workOrderNumber: s.part.workOrderNumber }))),
+  ])
+  return steps.map((s, i) => {
     const r = judgeW10({ dueDate: s.dueDate!, now, offDays }, t.W10)
     const due = dateFieldDay(s.dueDate!)
     // 厂内外协的班组、自制派工的班组都写上
@@ -249,7 +257,7 @@ async function collectW10(now: Date, t: Thresholds, offDays: string[]): Promise<
       refId: s.id,
       key: alertKey('W10', 'step', s.id),
       workOrderNumber: s.part.workOrderNumber,
-      ownerIds: s.ownerId ? [s.ownerId] : [],
+      ownerIds: owners[i] ? [owners[i]!] : [],
       deptNames: [PRODUCTION_DEPT],
       startAt: s.dueDate!,
       level: r.level,

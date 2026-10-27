@@ -19,6 +19,8 @@ export interface RoleContext {
   businessDept: BusinessDept | null
   /** 担任项目经理的工单 */
   pmOf: Set<string>
+  /** 担任班组长的班组（qms_supplier kind = TEAM 的 ID，设置页"班组长"维护）；不传 = 不是班组长 */
+  leadOf?: string[]
 }
 
 const has = (ctx: RoleContext, role: NotifyRoleKind) => ctx.roles.includes(role)
@@ -35,6 +37,12 @@ export function isLeaderLike(ctx: RoleContext): boolean {
 
 const isPM = (ctx: RoleContext, wo: string | null | undefined) => !!wo && ctx.pmOf.has(wo)
 
+/** 是这个班组的班组长 */
+export const leadsTeam = (ctx: Pick<RoleContext, 'leadOf'>, teamId: string | null | undefined) => !!teamId && !!ctx.leadOf?.includes(teamId)
+
+/** 班组长能登记的工序：自制、派到本班组的（厂内外协的 supplierId 也可能是班组，但那是外协单位，不算） */
+export const leaderTeamOfStep = (s: { mode: string; supplierId: string | null }) => (s.mode === 'SELF' ? s.supplierId : null)
+
 // ───────────── 操作（第三节 ★ 行）─────────────
 
 /**
@@ -43,17 +51,19 @@ const isPM = (ctx: RoleContext, wo: string | null | undefined) => !!wo && ctx.pm
  * purchase：建/改/删采购行、Excel 导入、手工标到货/撤销 —— 采购部、该工单项目经理、管理员
  * payment：提付款申请 —— 采购部、该工单项目经理、管理员
  * route：建/改/删工件和工序、调工序顺序、导入 BOM、套模板/复制路线、处理/忽略待确认匹配 —— 生产部、工艺部（定工艺路线）、外协专员、该工单项目经理、管理员
- * stepAction：开工/完工/发出/补登返厂 —— 生产部、外协专员、该工序责任人、管理员
+ * stepAction：开工/完工/发出/补登返厂 —— 生产部、外协专员、该工序责任人、管理员；
+ *   班组长（生产管理重设计第二批）：本班组的自制工序可以开工、完工、报工（target.teamId 只在这几种操作、且是自制工序时由接口层传入）
  *
  * 总计划（R14，总计划设计第 8 节）：
  * plan：建/改/发布总计划、调整日期、增删节点 —— 该工单项目经理、项目部（含项目部负责人）、管理员
  * planTemplate：维护总计划模板 —— 项目部负责人、管理员
+ * teamLeader：设置班组长（设置页"班组长"）—— 生产部、管理员
  * planConfirm：确认/退回节点 —— 该节点责任部门负责人、管理员（项目部的节点：项目部负责人也算）；手里有这条确认待办的人（转交来的）由服务层另外放行
  * planNodeDone：手动标记节点完成 / 撤销 —— 该节点责任部门的人、该工单项目经理、管理员
  * planTask：在节点下分解"其他任务"（建 / 改 / 删 / 标完成）—— 该节点责任部门的人、该工单项目经理、项目部（含项目部负责人）、管理员；
  *   任务负责人本人可以标完成 / 撤销（接口层另外放行）
  */
-export type Operation = 'drawing' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction' | 'plan' | 'planTemplate' | 'planConfirm' | 'planNodeDone' | 'planTask'
+export type Operation = 'drawing' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction' | 'plan' | 'planTemplate' | 'teamLeader' | 'planConfirm' | 'planNodeDone' | 'planTask'
 
 export interface OperationTarget {
   /** 所属工单（判断"该工单项目经理"） */
@@ -62,6 +72,8 @@ export interface OperationTarget {
   workOrderNumbers?: (string | null | undefined)[]
   /** 工序责任人（stepAction） */
   ownerId?: string | null
+  /** 工序所属班组（stepAction）：只有自制工序的开工、完工、报工才传，班组长据此放行 */
+  teamId?: string | null
   /** 总计划节点的责任部门（planConfirm、planNodeDone、planTask） */
   dept?: BusinessDept | null
   /** 发放单类型（release）：工艺部只能发工艺文件；不传时只看能不能发放 */
@@ -74,9 +86,10 @@ export const OPERATION_DENIED: Record<Operation, string> = {
   purchase: '只有采购部、该工单项目经理或管理员可以修改采购行或登记到货',
   payment: '只有采购部、该工单项目经理或管理员可以提付款申请',
   route: '只有生产部、工艺部、外协专员、该工单项目经理或管理员可以修改工件和工序',
-  stepAction: '只有生产部、外协专员、该工序责任人或管理员可以登记开工、完工、发出、返厂',
+  stepAction: '只有生产部、外协专员、该工序责任人、本班组班组长（自制工序的开工、完工、报工）或管理员可以登记开工、完工、发出、返厂',
   plan: '只有该工单项目经理、项目部或管理员可以编辑、发布总计划',
   planTemplate: '只有项目部负责人或管理员可以维护总计划模板',
+  teamLeader: '只有生产部或管理员可以设置班组长',
   planConfirm: '只有该节点责任部门的负责人或管理员可以接收、退回计划节点',
   planNodeDone: '只有该节点责任部门的人、该工单项目经理或管理员可以标记节点完成',
   planTask: '只有该节点责任部门的人、该工单项目经理、项目部或管理员可以分解这个节点',
@@ -97,11 +110,13 @@ export function canOperate(ctx: RoleContext, op: Operation, target: OperationTar
     case 'route':
       return inDept(ctx, 'PRODUCTION') || inDept(ctx, 'PROCESS') || outsource || pm
     case 'stepAction':
-      return inDept(ctx, 'PRODUCTION') || outsource || (!!target.ownerId && target.ownerId === ctx.userId)
+      return inDept(ctx, 'PRODUCTION') || outsource || (!!target.ownerId && target.ownerId === ctx.userId) || leadsTeam(ctx, target.teamId)
     case 'plan':
       return pm || inDept(ctx, 'PROJECT') || has(ctx, 'PROJECT_DEPT_HEAD')
     case 'planTemplate':
       return isProjectHead(ctx)
+    case 'teamLeader':
+      return inDept(ctx, 'PRODUCTION')
     case 'planConfirm':
       return !!target.dept && isDeptHead(ctx, target.dept)
     case 'planNodeDone':
@@ -171,6 +186,8 @@ export function menuSections(ctx: RoleContext): MenuSection[] {
     out.add('releases')
   }
   if (inDept(ctx, 'QUALITY')) out.add('production')
+  // 班组长（生产管理重设计第二批）：看生产调度、工序编排、外协（本班组的活在生产调度里登记）
+  if (ctx.leadOf?.length) out.add('production')
   if (isFinance(ctx)) out.add('payments')
   const order: MenuSection[] = ['overview', 'deptPlan', 'tech', 'purchase', 'production', 'kitting', 'releases', 'payments']
   return order.filter((s) => out.has(s))
@@ -193,5 +210,7 @@ export function permissionFlags(ctx: RoleContext) {
     /** 总计划：项目部、管理员（该工单项目经理由前端用 pmOf 补上） */
     plan: canOperate(ctx, 'plan'),
     planTemplate: canOperate(ctx, 'planTemplate'),
+    /** 设置班组长（生产部、管理员） */
+    teamLeader: canOperate(ctx, 'teamLeader'),
   }
 }

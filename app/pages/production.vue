@@ -7,7 +7,7 @@
  * 地址栏：?tab= ?view=board ?wo= ?supplierId= ?mine=1；旧地址 /workshop 跳到这里的看板视图。
  * ?step=（提醒、预警跳过来，只用一次）：找到这道工序后切到它实际所在的页签并标出来；不在生产调度里（排队中、工单已关闭等）时提示。
  */
-import { ACTION_TEXT, COLUMN_TEXT, COLUMN_TONE, PRODUCTION_TABS, TAB_TEXT, actionNeeds, inTab, isOverdue, primaryAction, tabCounts, tabForRow, type PrimaryAction, type ProductionColumn, type ProductionTab } from '#shared/production'
+import { ACTION_TEXT, COLUMN_TEXT, COLUMN_TONE, PRODUCTION_TABS, TAB_TEXT, actionNeeds, inTab, leaderAction, isOverdue, primaryAction, tabCounts, tabForRow, type PrimaryAction, type ProductionColumn, type ProductionTab } from '#shared/production'
 
 const route = useRoute()
 const router = useRouter()
@@ -94,10 +94,15 @@ const supplierOptions = computed(() => [
   ...master.value.suppliers.filter((s) => s.kind !== 'TEAM').map((s) => ({ value: s.id, label: s.name })),
 ])
 const supplierName = (id: string) => supplierOptions.value.find((o) => o.value === id)?.label ?? id
+/** 本人当班组长的班组（生产管理重设计第二批）：筛选里一键"本班组"，生效时条件显示成"本班组：X" */
+const myTeams = computed(() => me.value?.leadTeams ?? [])
+const myTeam = (id: string) => myTeams.value.find((t) => t.id === id)
 const chips = computed(() =>
   [
-    filter.supplierId ? { key: 'sup', text: `班组 / 外协厂：${supplierName(filter.supplierId)}`, clear: () => { filter.supplierId = '' } } : null,
-    filter.mine ? { key: 'mine', text: '只看我负责的', clear: () => { filter.mine = false } } : null,
+    filter.supplierId
+      ? { key: 'sup', text: myTeam(filter.supplierId) ? `本班组：${myTeam(filter.supplierId)!.name}` : `班组 / 外协厂：${supplierName(filter.supplierId)}`, clear: () => { filter.supplierId = '' } }
+      : null,
+    filter.mine ? { key: 'mine', text: myTeams.value.length ? '只看我的（含本班组）' : '只看我负责的', clear: () => { filter.mine = false } } : null,
   ].filter((x): x is { key: string; text: string; clear: () => void } => !!x),
 )
 function clearFilters() {
@@ -109,7 +114,9 @@ function clearFilters() {
 const host = ref<{ run: (a: Exclude<PrimaryAction, null>, r: Row) => void } | null>(null)
 const actionOf = (r: Row) => primaryAction(r)
 function canAct(r: Row, a: Exclude<PrimaryAction, null>) {
-  return actionNeeds(a) === 'route' ? canDo(me.value, 'route', { workOrderNumber: r.workOrderNumber }) : canDo(me.value, 'stepAction', { workOrderNumber: r.workOrderNumber, ownerId: r.ownerId })
+  return actionNeeds(a) === 'route'
+    ? canDo(me.value, 'route', { workOrderNumber: r.workOrderNumber })
+    : canDo(me.value, 'stepAction', { workOrderNumber: r.workOrderNumber, ownerId: r.ownerId, mode: r.mode, supplierId: r.supplierId, leaderAction: leaderAction(a) })
 }
 
 // ───── 工件抽屉（?part= 打开）─────
@@ -164,7 +171,10 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
         <a-select :value="filter.wo || undefined" allow-clear show-search option-filter-prop="label" placeholder="全部工单" :options="woOptions" class="filter-wo" @change="(v: unknown) => (filter.wo = (v as string) ?? '')" />
         <UiFilterButton :count="chips.length" @clear="clearFilters">
           <label class="ft-filter-row"><span>班组 / 外协厂</span><a-select :value="filter.supplierId || undefined" allow-clear show-search option-filter-prop="label" placeholder="全部" :options="supplierOptions" @change="(v: unknown) => (filter.supplierId = (v as string) ?? '')" /></label>
-          <a-checkbox v-model:checked="filter.mine">只看我负责的</a-checkbox>
+          <label v-if="myTeams.length" class="ft-filter-row"><span>本班组</span>
+            <span class="team-picks"><a-button v-for="t in myTeams" :key="t.id" size="small" :type="filter.supplierId === t.id ? 'primary' : 'default'" @click="filter.supplierId = filter.supplierId === t.id ? '' : t.id">{{ t.name }}</a-button></span>
+          </label>
+          <a-checkbox v-model:checked="filter.mine">{{ myTeams.length ? '只看我的（我负责的 + 本班组的）' : '只看我负责的' }}</a-checkbox>
         </UiFilterButton>
         <a-segmented v-model:value="filter.view" :options="[{ value: 'list', label: '列表' }, { value: 'board', label: '看板' }]" />
         <UiRefreshButton @click="refresh()" />
@@ -193,6 +203,7 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
               <template v-else-if="column.key === 'mode'"><span class="muted">{{ modeText(record as Row) }}</span></template>
               <template v-else-if="column.key === 'owner'">
                 <span v-if="record.ownerName">{{ record.ownerName }}</span>
+                <span v-else-if="record.leaderName" class="muted">班组长 {{ record.leaderName }}</span>
                 <UiStatusTag v-else tone="risk">未指定</UiStatusTag>
               </template>
               <template v-else-if="column.key === 'qty'"><span class="num">{{ record.doneQty ? `${record.doneQty}/` : '' }}{{ record.quantity }} 件</span></template>
@@ -226,7 +237,7 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
                 </div>
                 <button type="button" class="name-btn name" @click="openPart(c.partId)">{{ c.partName }} · {{ c.seq }}. {{ c.processName }}</button>
                 <div class="meta">{{ modeText(c) }} · {{ c.doneQty ? `${c.doneQty}/` : '' }}{{ c.quantity }} 件</div>
-                <div class="meta">{{ c.ownerName ?? '未指定负责人' }}{{ dateInfo(c).tone === 'late' ? '' : ` · ${dateInfo(c).text}` }}</div>
+                <div class="meta">{{ c.ownerName ?? (c.leaderName ? `班组长 ${c.leaderName}` : '未指定负责人') }}{{ dateInfo(c).tone === 'late' ? '' : ` · ${dateInfo(c).text}` }}</div>
                 <div v-if="c.stuckText" class="stuck">{{ c.stuckText }}</div>
                 <div v-if="actionOf(c) && canAct(c, actionOf(c)!)" class="card-foot">
                   <a-button size="small" :type="actionOf(c) === 'assign' ? 'default' : 'primary'" @click="host?.run(actionOf(c)!, c)">{{ ACTION_TEXT[actionOf(c)!] }}</a-button>
@@ -244,6 +255,7 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
 </template>
 
 <style scoped>
+.team-picks { display: flex; flex-wrap: wrap; gap: 8px; }
 /* 状态页签窄屏时在自己的框里横向滑，不撑破卡片 */
 .tabs-seg { max-width: 100%; overflow-x: auto; }
 /* 卡片右上角的切换和筛选：窄屏时换行、不超出卡片 */

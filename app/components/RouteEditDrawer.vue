@@ -17,6 +17,8 @@ interface StepRow {
   mode: StepModeKey
   supplierId: string | null
   ownerId: string | null
+  /** 没指定负责人、派到班组时的班组长（服务端算好） */
+  leaderName?: string | null
   planStartDate: string | Date | null
   dueDate: string | Date | null
   promisedReturnDate: string | Date | null
@@ -169,7 +171,7 @@ function removePart() {
             <label><span>{{ s.mode === 'SELF' ? '派工班组' : '外协厂' }}</span>
               <a-select :value="s.supplierId ?? undefined" allow-clear show-search option-filter-prop="label" :options="supplierOptionsFor(s.mode)" :disabled="!canRoute" :placeholder="s.mode === 'SELF' ? '可空' : '选择外协厂'" @change="(v: unknown) => patchStep(s, { supplierId: v ?? null })" />
             </label>
-            <label><span>负责人</span><a-select :value="s.ownerId ?? undefined" show-search option-filter-prop="label" placeholder="待补充" :options="userOptions" :disabled="!canRoute" @change="(v: unknown) => patchStep(s, { ownerId: v })" /></label>
+            <label><span>负责人</span><a-select :value="s.ownerId ?? undefined" show-search option-filter-prop="label" allow-clear :placeholder="s.leaderName ? `班组长 ${s.leaderName}` : '待补充'" :options="userOptions" :disabled="!canRoute" @change="(v: unknown) => patchStep(s, { ownerId: v ?? null })" /></label>
             <label><span>应开工</span><a-date-picker :value="dayText(s.planStartDate) || undefined" value-format="YYYY-MM-DD" :status="startLate(s) ? 'warning' : undefined" :disabled="!canRoute" @change="(v: unknown) => patchStep(s, { planStartDate: v || null })" /></label>
             <label><span>要求完成</span><a-date-picker :value="dayText(s.dueDate) || undefined" value-format="YYYY-MM-DD" :disabled="!canRoute" @change="(v: unknown) => patchStep(s, { dueDate: v || null })" /></label>
             <label class="wide"><span>总计划节点</span>

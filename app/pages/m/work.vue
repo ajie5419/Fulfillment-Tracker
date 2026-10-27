@@ -4,7 +4,7 @@
  *   能开工：可以开工的工序（口径同电脑端生产调度）——自制 / 厂内外协点"开工"，厂外外协点"发出"（进发出登记页）；
  *   在做：已开工的自制 / 厂内外协，点"完工"（可部分完工、报废）；
  *   在外：厂外外协已发出没全部返回的，QMS 漏报检时点"登记返厂"。
- * 默认"我的"（我负责的），可切"全部"。地址栏 ?seg=ready|working|out、?mine=1|0、?stepId=（提醒跳过来定位到那一道，默认"全部"；只处理一次，处理完从地址栏删掉）、?wo=。
+ * 默认"我的"（我负责的，以及我当班组长的班组的自制工序），可切"全部"。地址栏 ?seg=ready|working|out、?mine=1|0、?stepId=（提醒跳过来定位到那一道，默认"全部"；只处理一次，处理完从地址栏删掉）、?wo=。
  * 能否操作与电脑端一致：生产部、外协专员、该工序负责人、管理员（后端同样拦）。
  */
 import { segOfColumn } from '#shared/production'
@@ -62,7 +62,9 @@ useOneShotQuery(['stepId'], { fetches: [{ pending, error }] }, ({ stepId: id }) 
   return { seg: target ?? seg.value, mine: scope.value === 'mine' ? '1' : '0' }
 })
 const segTitle = (s: Seg) => `${{ ready: '能开工', working: '在做', out: '在外' }[s]} ${error.value ? '—' : rowsOf(s).length}`
-const canStep = (r: Row) => canDo(me.value, 'stepAction', { workOrderNumber: r.workOrderNumber, ownerId: r.ownerId })
+// 班组长：本班组自制工序的开工、完工（含报工）；发出、登记返厂不行
+const canStep = (r: Row) =>
+  canDo(me.value, 'stepAction', { workOrderNumber: r.workOrderNumber, ownerId: r.ownerId, mode: r.mode, supplierId: r.supplierId, leaderAction: r.column === 'ready' || r.column === 'working' })
 const late = (r: Row) => r.overdueDays > 0 || r.startLateDays > 0
 
 async function after() {
@@ -173,7 +175,7 @@ const EMPTY: Record<Seg, string> = { ready: '没有能开工的工序', working:
     <van-empty v-else-if="error" image="error" :description="`加载失败：${apiError(error)}`" image-size="80">
       <van-button size="small" plain type="primary" @click="refresh()">重试</van-button>
     </van-empty>
-    <van-empty v-else-if="!list.length" :description="scope === 'mine' ? `${EMPTY[seg]}（我负责的）` : EMPTY[seg]" image-size="80">
+    <van-empty v-else-if="!list.length" :description="scope === 'mine' ? `${EMPTY[seg]}（${me?.leadTeams?.length ? '我负责的和本班组的' : '我负责的'}）` : EMPTY[seg]" image-size="80">
       <van-button v-if="scope === 'mine'" size="small" plain @click="setScope('all')">看全部</van-button>
     </van-empty>
     <div v-else class="m-list">
@@ -188,7 +190,7 @@ const EMPTY: Record<Seg, string> = { ready: '没有能开工的工序', working:
           <span>{{ where(r) }} · {{ r.quantity }} 件</span>
           <span :class="{ 'm-text-late': late(r) }">{{ dateLine(r) }}</span>
         </div>
-        <div class="m-meta"><span>负责人 {{ r.ownerName ?? '未指定' }}</span></div>
+        <div class="m-meta"><span>负责人 {{ r.ownerName ?? (r.leaderName ? `班组长 ${r.leaderName}` : '未指定') }}</span></div>
         <div v-if="r.doneQty" class="m-progress">
           <van-progress :percentage="percent(r)" :show-pivot="false" :class="late(r) ? 'm-progress-late' : 'm-progress-primary'" />
           <span class="m-progress-text">{{ r.column === 'out' ? '已回' : '已完成' }} {{ r.doneQty }}/{{ r.quantity }}</span>

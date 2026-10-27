@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 设置（仅管理员）：阈值、停工日、人员与角色（原"通知对象"）、部门对照（R13）、工单项目经理、QMS 同步状态、总计划模板（R14）、工序路线模板（原独立页 /templates）。
- * 项目部负责人（can.planTemplate）也能进来，只看到"总计划模板"一页。
+ * 项目部负责人（can.planTemplate）也能进来，只看到"总计划模板"一页；生产部（can.teamLeader）也能进来，只看到"班组长"一页（生产管理重设计第二批）。
  * 接口也校验权限，这里只是不给没权限的人看
  */
 import dayjs, { type Dayjs } from 'dayjs'
@@ -12,7 +12,7 @@ const { data: master } = await useMaster()
 const { data, refresh, error } = await useFetch('/api/settings', { immediate: !!me.value?.isAdmin })
 // ?tab=sync 直接打开"QMS 同步状态"（同步失败提醒的跳转）
 const route = useRoute()
-const tab = ref(typeof route.query.tab === 'string' ? route.query.tab : me.value?.isAdmin ? 'thresholds' : 'plan-templates')
+const tab = ref(typeof route.query.tab === 'string' ? route.query.tab : me.value?.isAdmin ? 'thresholds' : me.value?.can?.planTemplate ? 'plan-templates' : 'team-leaders')
 
 // ───── QMS 同步状态 ─────
 const { data: sync, refresh: refreshSync, pending: syncPending } = await useFetch('/api/settings/sync', { immediate: !!me.value?.isAdmin })
@@ -138,9 +138,10 @@ const woColumns = [
 </script>
 
 <template>
-  <a-card v-if="me && !me.isAdmin && me.can?.planTemplate" title="设置">
-    <a-tabs active-key="plan-templates">
-      <a-tab-pane key="plan-templates" tab="总计划模板"><PlanTemplatesTab /></a-tab-pane>
+  <a-card v-if="me && !me.isAdmin && (me.can?.planTemplate || me.can?.teamLeader)" title="设置">
+    <a-tabs v-model:active-key="tab">
+      <a-tab-pane v-if="me.can?.planTemplate" key="plan-templates" tab="总计划模板"><PlanTemplatesTab /></a-tab-pane>
+      <a-tab-pane v-if="me.can?.teamLeader" key="team-leaders" tab="班组长"><TeamLeadersTab /></a-tab-pane>
     </a-tabs>
   </a-card>
   <a-result v-else-if="me && !me.isAdmin" status="403" title="仅管理员可用" sub-title="管理员由环境变量 NUXT_ADMIN_USER_IDS 指定" />
@@ -302,6 +303,7 @@ const woColumns = [
 
       <a-tab-pane key="plan-templates" tab="总计划模板"><PlanTemplatesTab /></a-tab-pane>
       <a-tab-pane key="route-templates" tab="工序路线模板"><RouteTemplatesTab /></a-tab-pane>
+      <a-tab-pane key="team-leaders" tab="班组长"><TeamLeadersTab /></a-tab-pane>
 
       <a-tab-pane key="work-orders" tab="工单项目经理">
         <p class="muted">黄色预警起通知该工单的项目经理。</p>

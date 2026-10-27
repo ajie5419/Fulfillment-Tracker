@@ -14,6 +14,7 @@ import { prisma } from '../../utils/prisma'
 import { openIssuesOfSteps } from '../issues/issues'
 import { closedWorkOrders } from '../workorder/active'
 import { overdueDays } from './dates'
+import { resolveStepResponsibles } from './responsible'
 import { RETURN_TYPES } from './flow'
 import { loadNames } from './names'
 import { type NotReadyReason, type PrereqState, prereqState, stepReadiness, stuckText } from './readiness'
@@ -26,8 +27,8 @@ export type StuckKind = 'BLOCKED' | Exclude<NotReadyReason, 'PREV_NOT_DONE'>
 export interface ProductionFilter {
   workOrderNumber?: string
   supplierId?: string
-  /** 只看这个人负责的 */
-  ownerId?: string
+  /** 只看"我的"：本人负责的，以及本人当班组长的班组的自制工序（生产管理重设计第二批） */
+  mine?: { userId: string; teamIds: string[] }
   visibleWorkOrders?: string[]
   now?: Date
 }
@@ -47,6 +48,11 @@ export async function loadPrereqs(partIds: string[]): Promise<Map<string, Prereq
   )
 }
 
+/** "我的"：本人负责的，或本人当班组长的班组的自制工序（不管指没指定负责人，班组长都要看到本班组的活） */
+export function mineWhere(mine: { userId: string; teamIds: string[] }): Prisma.RouteStepWhereInput {
+  return { OR: [{ ownerId: mine.userId }, ...(mine.teamIds.length ? [{ mode: 'SELF' as const, supplierId: { in: mine.teamIds } }] : [])] }
+}
+
 function woWhere(filter: ProductionFilter): Prisma.PartWhereInput | undefined {
   const wo = {
     ...(filter.workOrderNumber ? { equals: filter.workOrderNumber } : {}),
@@ -62,7 +68,7 @@ export async function listProduction(filter: ProductionFilter) {
   const steps = await prisma.routeStep.findMany({
     where: {
       ...(filter.supplierId ? { supplierId: filter.supplierId } : {}),
-      ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
+      ...(filter.mine ? { AND: [mineWhere(filter.mine)] } : {}),
       ...(partWhere ? { part: partWhere } : {}),
       OR: [{ status: { in: ['PENDING', 'IN_PROGRESS', 'OUT', 'BLOCKED'] } }, { status: 'DONE', finishedAt: { gte: new Date(+now - DONE_DAYS * 86_400_000) } }],
     },
@@ -110,11 +116,14 @@ export async function listProduction(filter: ProductionFilter) {
   }
 
   const shown = classified.map((c) => c.s)
+  // 谁负责（flow/responsible.ts）：没指定负责人、派到班组的由班组长负责，主按钮不再是"指定负责人"
+  const responsibles = await resolveStepResponsibles(prisma, shown.map((s) => ({ ...s, workOrderNumber: s.part.workOrderNumber })))
   const [names, issues] = await Promise.all([
-    loadNames({ process: shown.map((s) => s.processId), supplier: shown.map((s) => s.supplierId), user: shown.map((s) => s.ownerId) }),
+    loadNames({ process: shown.map((s) => s.processId), supplier: shown.map((s) => s.supplierId), user: [...shown.map((s) => s.ownerId), ...responsibles] }),
     openIssuesOfSteps(shown.filter((s) => s.status === 'BLOCKED').map((s) => s.id)),
   ])
-  const rows = classified.map(({ s, column, stuck, prereq }) => {
+  const rows = classified.map(({ s, column, stuck, prereq }, i) => {
+    const leaderId = s.ownerId ? null : (responsibles[i] ?? null)
     const late = s.status === 'DONE' ? 0 : overdueDays(s.status === 'OUT' && s.promisedReturnDate ? s.promisedReturnDate : s.dueDate, now)
     const startLateDays = s.status === 'PENDING' ? overdueDays(s.planStartDate, now) : 0
     return {
@@ -134,6 +143,9 @@ export async function listProduction(filter: ProductionFilter) {
       supplierName: s.supplierId ? (names.supplier.get(s.supplierId) ?? s.supplierId) : null,
       ownerId: s.ownerId,
       ownerName: s.ownerId ? (names.user.get(s.ownerId) ?? s.ownerId) : null,
+      /** 没指定负责人时由班组长负责（自制派到班组的） */
+      leaderId,
+      leaderName: leaderId ? (names.user.get(leaderId) ?? leaderId) : null,
       planStartDate: s.planStartDate,
       dueDate: s.dueDate,
       promisedReturnDate: s.promisedReturnDate,

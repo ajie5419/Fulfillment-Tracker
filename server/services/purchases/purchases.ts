@@ -15,8 +15,9 @@
  * 同一工件的几项同时到货时，"是否全部到货"的判断也串行，不会谁都不发"可以开工"。
  * 先锁工件是因为写采购行时外键检查会给工件行加共享锁，之后再要排他锁会和并发的另一项互相等（死锁）。
  */
-import type { DelayReason, DrawingTaskStatus, FlowSource, Prisma, PurchaseLine, PurchaseStatus } from '@prisma/client'
-import { prereqReadyForTodo, prereqState } from '../flow/readiness'
+import type { DelayReason, DrawingTaskStatus, FlowSource, Prisma, PurchaseLine, PurchaseStatus, RouteStep } from '@prisma/client'
+import { firstStepTodoReady, prereqState } from '../flow/readiness'
+import { resolveStepResponsible } from '../flow/responsible'
 import { prisma } from '../../utils/prisma'
 import { countComments, deleteCommentsOf } from '../comments/comments'
 import { clearAlertKeys } from '../alerts/clear'
@@ -126,33 +127,41 @@ async function assertPart(tx: Tx, partId: string | null | undefined, workOrderNu
 
 // ───────────── 可以开工 ─────────────
 
-/** 工件的第一道工序负责人；没有负责人时是生产部负责人 */
-async function readyOwners(tx: Tx, partId: string): Promise<string[]> {
-  const first = await tx.routeStep.findFirst({ where: { partId }, orderBy: { seq: 'asc' }, select: { status: true, ownerId: true } })
-  if (!first || first.status !== 'PENDING') return []
-  if (first.ownerId) return [first.ownerId]
+/** 工件"可以开工"待办发给谁：第一道的负责人 → 班组长 → 生产部负责人。发待办和转交待办（steps.stepTodoHolders）共用 */
+export async function readyOwners(tx: Tx, first: Pick<FirstStep, 'ownerId' | 'mode' | 'supplierId'>, workOrderNumber: string): Promise<string[]> {
+  const owner = await resolveStepResponsible(tx, { ...first, workOrderNumber }, { lock: true })
+  if (owner) return [owner]
   const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PRODUCTION_DEPT }, select: { userId: true } })
   return [...new Set(heads.map((h) => h.userId))]
 }
 
+type FirstStep = { status: RouteStep['status']; ownerId: string | null; mode: RouteStep['mode']; supplierId: string | null; holdReleaseId: string | null }
+
 /**
  * 按工件当前的关键物料和设计任务情况处理"可以开工"待办：
- *   还有未到货的物料，或未完成的设计任务（未取消的）→ 作废没处理的"可以开工"待办；
+ *   还有未到货的物料，或未完成的设计任务（未取消的），或第一道已不在待开工、正在"等变更" → 作废没处理的"可以开工"待办；
  *   都齐了（至少挂着一项物料或一个设计任务）、且 notify（本次操作让最后一项缺口没了：到货、取消、删除、移走、设计完成并发放）
  *   → 没有打开的待办时发一条。
  * 只在状态变化的那一刻发（notify），改备注之类的保存不会重复发。返回 sent / revoked / null。
+ *
+ * 锁顺序（全系统统一，见 server/utils/prisma.ts）：先锁工件（part FOR UPDATE，多个按 ID 排序，lockParts），再锁 / 改工序、采购行、待办，
+ * 班组行最后（这里发待办算"谁负责"时对班组行加共享锁）。
+ * 这里会锁工件：调用方如果要改工序（打 / 解"等变更"、建 / 调第一道），必须先 lockParts 再动工序，不能先改工序再进来，
+ * 否则会和改工序（steps.updateStep 先锁工件再改工序）互相等锁。
  */
 export async function refreshPartReady(tx: Tx, partId: string | null, notify: boolean): Promise<'sent' | 'revoked' | null> {
   if (!partId) return null
   // 串行化同一工件的判断（调用方通常已按顺序锁过，这里重入无害）；加锁读保证看到最新已提交数据
-  const part = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM part WHERE id = ${partId} FOR UPDATE`
+  const part = await tx.$queryRaw<{ id: string; workOrderNumber: string }[]>`SELECT id, workOrderNumber FROM part WHERE id = ${partId} FOR UPDATE`
   if (!part.length) return null
   const lines = await tx.$queryRaw<{ status: PurchaseStatus }[]>`SELECT status FROM purchase_line WHERE partId = ${partId} AND status <> 'CANCELLED' FOR SHARE`
   const drawings = await tx.$queryRaw<{ status: DrawingTaskStatus }[]>`
     SELECT t.status FROM drawing_task t JOIN drawing_task_part p ON p.taskId = t.id WHERE p.partId = ${partId} AND t.status <> 'CANCELLED' FOR SHARE`
   const now = new Date()
-  // 与生产调度、车间看板同一口径（flow/readiness.ts）：挂了东西且都齐了才发
-  const ready = prereqReadyForTodo(prereqState({ purchases: lines.map((l) => l.status), drawings: drawings.map((d) => d.status) }))
+  const first = await tx.routeStep.findFirst({ where: { partId }, orderBy: { seq: 'asc' }, select: { status: true, ownerId: true, mode: true, supplierId: true, holdReleaseId: true } })
+  // 与生产调度同一条规则（flow/readiness.ts firstStepTodoReady）：挂了东西、都齐了、第一道还在待开工且没在"等变更"
+  const prereq = prereqState({ purchases: lines.map((l) => l.status), drawings: drawings.map((d) => d.status) })
+  const ready = firstStepTodoReady(first && { status: first.status, held: !!first.holdReleaseId }, prereq)
   const where = { refType: 'part', refId: partId, action: READY_TO_START, status: 'OPEN' as const }
   if (!ready) {
     const r = await tx.todo.updateMany({ where, data: { status: 'CANCELLED', doneAt: now } })
@@ -161,7 +170,7 @@ export async function refreshPartReady(tx: Tx, partId: string | null, notify: bo
   if (!notify) return null
   const open = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM todo WHERE refType = 'part' AND refId = ${partId} AND action = ${READY_TO_START} AND status = 'OPEN' LIMIT 1 FOR SHARE`
   if (open.length) return null
-  const owners = await readyOwners(tx, partId)
+  const owners = await readyOwners(tx, first!, part[0]!.workOrderNumber)
   if (!owners.length) return null
   await tx.todo.createMany({ data: owners.map((ownerId) => ({ ownerId, action: READY_TO_START, refType: 'part', refId: partId })) })
   return 'sent'

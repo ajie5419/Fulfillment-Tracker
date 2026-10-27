@@ -7,14 +7,26 @@
  * 返厂（QMS 报检或手工补登）统一走 recordReturn：第一次返厂就给下一道生成待办，
  * 数量全部返回才算完成（方案 4.3 分批返厂）。flow_event 只新增，这里不提供修改和删除。
  */
-import type { FlowEventType, FlowSource, Part, Prisma, RouteStep } from '@prisma/client'
+import type { FlowEventType, FlowSource, Part, Prisma, RouteStep, StepMode } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
 import { READY_TO_START } from '../purchases/constants'
 import { FlowError } from './errors'
+import { type ResponsibleStep, resolveStepResponsible } from './responsible'
 
 type Tx = Prisma.TransactionClient
+
+/**
+ * 下一道的"安排发出 / 开工"待办发给谁：负责人 → 班组长（自制派到班组的）→ 上一道的负责人（原来的兜底）。
+ * 发待办（applyReturn）和转交待办（steps.stepTodoHolders）都用这一个，保证"现在谁拿着"算得和发的时候一样
+ */
+export async function arrangeOwner(tx: Tx, next: ResponsibleStep, prevOwnerId: string | null): Promise<string | null> {
+  return (await resolveStepResponsible(tx, next, { lock: true })) ?? prevOwnerId
+}
+
+/** 下一道的安排待办类型：厂外外协"安排发出"，其余"安排开工"。发待办和改方式时换类型（steps.updateStepTx）共用 */
+export const arrangeAction = (mode: StepMode) => (mode === 'EXTERNAL_OUTSOURCE' ? ARRANGE_SEND : ARRANGE_START)
 
 /** 计入"已返回 / 已完成数量"的事件类型。完工、部分完工（报工）也计入；报废（SCRAP）不计入 */
 export const RETURN_TYPES: FlowEventType[] = ['RETURN', 'RETURN_MANUAL', 'FINISH', 'REPORT']
@@ -22,8 +34,15 @@ export const RETURN_TYPES: FlowEventType[] = ['RETURN', 'RETURN_MANUAL', 'FINISH
 export const ARRANGE_SEND = 'ARRANGE_SEND'
 export const ARRANGE_START = 'ARRANGE_START'
 
-/** 锁住步骤行再读，保证同一步骤的返厂、发出串行执行（判断"第一次返厂"、累计数量不会算重） */
+/**
+ * 锁住步骤行再读，保证同一步骤的返厂、发出串行执行（判断"第一次返厂"、累计数量不会算重）。
+ * 锁顺序（全系统统一，见 purchases.refreshPartReady）：先锁所属工件，再锁工序——开工 / 发出 / 返厂后面要改工件行，
+ * 改工序（steps.updateStep）、打 / 解"等变更"都是先锁工件，这里反过来会互相等锁。
+ */
 export async function lockStep(tx: Tx, stepId: string): Promise<RouteStep & { part: Part }> {
+  const pre = await tx.routeStep.findUnique({ where: { id: stepId }, select: { partId: true } })
+  if (!pre) throw new FlowError('步骤不存在或已删除')
+  await tx.$queryRaw`SELECT id FROM part WHERE id = ${pre.partId} FOR UPDATE`
   // 状态取自加锁读：事务里之前若有过普通读，普通读用的是旧快照，可能是过期状态
   const [locked] = await tx.$queryRaw<{ status: RouteStep['status'] }[]>`SELECT status FROM route_step WHERE id = ${stepId} FOR UPDATE`
   if (!locked) throw new FlowError('步骤不存在或已删除')
@@ -211,8 +230,8 @@ export async function applyReturn(
   // 第一次返厂就给下一道发待办（结构件常常先回来先转）。下一道已经发出/开工的不再提醒
   let todoCreated = false
   if (prevCount === 0 && next && next.status === 'PENDING') {
-    const ownerId = next.ownerId ?? step.ownerId
-    const action = next.mode === 'EXTERNAL_OUTSOURCE' ? ARRANGE_SEND : ARRANGE_START
+    const ownerId = await arrangeOwner(tx, { ...next, workOrderNumber: step.part.workOrderNumber }, step.ownerId)
+    const action = arrangeAction(next.mode)
     if (ownerId) {
       const open = await tx.todo.findFirst({ where: { refType: 'step', refId: next.id, action, status: 'OPEN' }, select: { id: true } })
       if (!open) {

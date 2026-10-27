@@ -72,6 +72,16 @@ export function stepReadiness(s: ReadinessInput): Readiness {
   return { ready: true, reason: null }
 }
 
+/**
+ * 第一道的"可以开工"待办该不该有（生产管理重设计第二批：待办与生产调度同一条规则）：
+ * 工件挂了物料 / 设计任务（没挂的不发，原规则不变），且第一道按 stepReadiness 能开工——还在待开工、物料图纸都齐、没在"等变更"。
+ * 厂外外协的第一道同样走这条待办（页面上按方式显示"登记发出"或"开工"），缺料缺图时不发，生产调度里显示"卡住"。
+ */
+export function firstStepTodoReady(first: { status: StepStatus; held: boolean } | null, prereq: PrereqState): boolean {
+  if (!first || !prereq.tracked) return false
+  return stepReadiness({ status: first.status, held: first.held, prev: null, prereq }).ready
+}
+
 /** 卡住原因的文字（生产调度"卡住"、工件抽屉用） */
 export function stuckText(reason: 'BLOCKED' | Exclude<NotReadyReason, 'PREV_NOT_DONE'>, prereq?: PrereqState): string {
   switch (reason) {

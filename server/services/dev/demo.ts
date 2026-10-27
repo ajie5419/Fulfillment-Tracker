@@ -54,6 +54,8 @@ const DEPARTMENTS = [
   { id: `${P}DEPT-WELD`, name: '组焊班', parentId: `${P}DEPT-PROD` },
   { id: `${P}DEPT-QC`, name: '检验科', parentId: `${P}DEPT-QA` },
   { id: `${P}DEPT-ADMIN`, name: '行政部' },
+  // 生产管理重设计第二批：班组长演示。装配班不对应业务部门（算"其他"），只凭"班组长"身份登记本班组自制工序
+  { id: `${P}DEPT-ASSY`, name: '装配班' },
 ]
 
 /** R13 部门对照：大部门对到业务部门（演示各部门视角；班组、科室不单独对照，沿上级继承） */
@@ -76,7 +78,12 @@ const SUPPLIERS = [
   // R10 关键物料供应商
   { id: `${P}SUP-06`, name: '演示轴承厂', outsourcingMode: null },
   { id: `${P}SUP-07`, name: '演示液压件公司', outsourcingMode: null },
+  // 生产管理重设计第二批：自制派工的班组，班组长 u-016（TEAM_LEADERS）
+  { id: `${P}SUP-08`, name: '装配一班', outsourcingMode: null, kind: 'TEAM' },
 ]
+
+/** 班组长（设置页"班组长"维护；QMS 同步不碰）：装配一班 → u-016 测试班组长 */
+const TEAM_LEADERS = [{ supplierId: `${P}SUP-08`, userId: 'u-016' }] as const
 
 const PROCESSES = [
   { id: `${P}PRC-CUT`, name: '下料' },
@@ -107,6 +114,8 @@ const USERS = [
   { id: 'u-014', username: `${P}u-014`, realName: '测试行政', departmentId: `${P}DEPT-ADMIN`, roleId: `${P}ROLE-ADMIN`, roleName: '行政' },
   // 工艺部（10-24）：分解料单、编制下发工艺文件、定工艺路线
   { id: 'u-015', username: `${P}u-015`, realName: '测试工艺员', departmentId: `${P}DEPT-PROC`, roleId: `${P}ROLE-PROCESS`, roleName: '工艺员' },
+  // 生产管理重设计第二批：班组长（装配一班），没有别的角色——只能登记本班组自制工序的开工、完工、报工，其余只读
+  { id: 'u-016', username: `${P}u-016`, realName: '测试班组长', departmentId: `${P}DEPT-ASSY`, roleId: `${P}ROLE-TEAM-LEADER`, roleName: '班组长' },
 ]
 
 // 预警升级阶梯的通知对象（方案 6.2）
@@ -135,7 +144,8 @@ const STEPS = [
  */
 const PART2_ID = `${P}PART-002`
 const STEPS2 = [
-  { id: `${P}STEP-201`, seq: 1, processId: `${P}PRC-CUT`, mode: 'SELF', supplierId: null, ownerId: 'u-002', status: 'IN_PROGRESS' },
+  // 派到装配一班、没指定负责人：由班组长 u-016 负责（手机"生产 · 我的"里看到、可以完工）
+  { id: `${P}STEP-201`, seq: 1, processId: `${P}PRC-CUT`, mode: 'SELF', supplierId: `${P}SUP-08`, ownerId: null, status: 'IN_PROGRESS' },
   { id: `${P}STEP-202`, seq: 2, processId: `${P}PRC-MACH`, mode: 'EXTERNAL_OUTSOURCE', supplierId: `${P}SUP-03`, ownerId: 'u-001', status: 'PENDING' },
 ] as const
 
@@ -372,6 +382,11 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
     for (const r of NOTIFY_ROLES) {
       await tx.notifyRole.upsert({ where: { id: r.id }, update: {}, create: r })
     }
+    // 班组长：班组长用户存在时才写（连着 QMS、没写演示用户时跳过）；设置页改过的不覆盖
+    for (const l of TEAM_LEADERS) {
+      if (!(await tx.qmsUser.findUnique({ where: { id: l.userId }, select: { id: true } }))) continue
+      await tx.teamLeader.upsert({ where: { supplierId: l.supplierId }, update: {}, create: { ...l, updatedBy: 'u-002' } })
+    }
     // 演示工单 001、002 的项目经理是 u-003；003 不设项目经理
     for (const workOrderNumber of WORK_ORDER_NUMBERS) {
       const pm = PM_WORK_ORDERS.includes(workOrderNumber) ? 'u-003' : null
@@ -459,12 +474,8 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
         },
       })
     }
-    // 第一道没有上一道触发待办，演示时直接给外协专员一条"安排发出"
-    await tx.todo.upsert({
-      where: { id: `${P}TODO-001` },
-      update: {},
-      create: { id: `${P}TODO-001`, ownerId: 'u-001', action: 'ARRANGE_SEND', refType: 'step', refId: `${P}STEP-001` },
-    })
+    // 第一道的待办只走"可以开工"（flow/readiness.ts firstStepTodoReady）：主梁结构件还缺料缺图，生产调度显示"卡住"，不发待办。
+    // 以前这里直接塞了一条"安排发出"，和生产调度的"卡住·缺料"对不上（生产管理重设计第二批去掉）
   })
   const releases = await seedDemoReleases()
   const planNodes = await seedDemoPlan(day, now)
