@@ -63,8 +63,26 @@ export const leaderTeamOfStep = (s: { mode: string; supplierId: string | null })
  * planNodeDone：手动标记节点完成 / 撤销 —— 该节点责任部门的人、该工单项目经理、管理员
  * planTask：在节点下分解"其他任务"（建 / 改 / 删 / 标完成）—— 该节点责任部门的人、该工单项目经理、项目部（含项目部负责人）、管理员；
  *   任务负责人本人可以标完成 / 撤销（接口层另外放行）
+ *
+ * 工单（履约新建工单 10-27，写入 QMS 工单库）：
+ * workOrder：新建 / 修改 / 取消工单 —— 项目部（含项目部负责人）、管理员；其他人（含该工单项目经理）只读。
+ *   设置页"设项目经理"（PUT /api/settings/work-orders/:wo）仍只限管理员，不走这里
  */
-export type Operation = 'drawing' | 'processDoc' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction' | 'plan' | 'planTemplate' | 'teamLeader' | 'planConfirm' | 'planNodeDone' | 'planTask'
+export type Operation =
+  | 'drawing'
+  | 'processDoc'
+  | 'release'
+  | 'purchase'
+  | 'payment'
+  | 'route'
+  | 'stepAction'
+  | 'plan'
+  | 'planTemplate'
+  | 'teamLeader'
+  | 'planConfirm'
+  | 'planNodeDone'
+  | 'planTask'
+  | 'workOrder'
 
 export interface OperationTarget {
   /** 所属工单（判断"该工单项目经理"） */
@@ -95,6 +113,7 @@ export const OPERATION_DENIED: Record<Operation, string> = {
   planConfirm: '只有该节点责任部门的负责人或管理员可以接收、退回计划节点',
   planNodeDone: '只有该节点责任部门的人、该工单项目经理或管理员可以标记节点完成',
   planTask: '只有该节点责任部门的人、该工单项目经理、项目部或管理员可以分解这个节点',
+  workOrder: '只有项目部或管理员可以新建、修改、取消工单',
 }
 
 export function canOperate(ctx: RoleContext, op: Operation, target: OperationTarget = {}): boolean {
@@ -127,6 +146,8 @@ export function canOperate(ctx: RoleContext, op: Operation, target: OperationTar
       return pm || (!!target.dept && inDept(ctx, target.dept))
     case 'planTask':
       return pm || inDept(ctx, 'PROJECT') || has(ctx, 'PROJECT_DEPT_HEAD') || (!!target.dept && inDept(ctx, target.dept))
+    case 'workOrder':
+      return inDept(ctx, 'PROJECT') || has(ctx, 'PROJECT_DEPT_HEAD')
   }
 }
 
@@ -225,5 +246,7 @@ export function permissionFlags(ctx: RoleContext) {
     planTemplate: canOperate(ctx, 'planTemplate'),
     /** 设置班组长（生产部、管理员） */
     teamLeader: canOperate(ctx, 'teamLeader'),
+    /** 新建 / 修改 / 取消工单（项目部、项目部负责人、管理员；项目经理不算） */
+    workOrder: canOperate(ctx, 'workOrder'),
   }
 }

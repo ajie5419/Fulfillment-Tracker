@@ -24,12 +24,13 @@ export async function getWorkOrderDetail(workOrderNumber: string, ctx: RoleConte
   const wo = await prisma.qmsWorkOrder.findUnique({ where: { workOrderNumber } })
   if (!wo) return null
   const today = shanghaiDay(now)
-  const [plan, planRow, alerts, issues, assemblies] = await Promise.all([
+  const [plan, planRow, alerts, issues, assemblies, ext] = await Promise.all([
     getPlan(workOrderNumber, ctx, now),
     prisma.workOrderPlan.findUnique({ where: { workOrderNumber }, select: { createdAt: true, publishedAt: true } }),
     listAlerts({ workOrderNumber, visibleWorkOrders, viewer }, now),
     listIssues({ status: 'UNCLOSED', workOrderNumber, visibleWorkOrders }, viewer, now),
     prisma.assemblyNode.findMany({ where: { workOrderNumber }, include: NODE_LINKS }),
+    prisma.workOrderExt.findUnique({ where: { workOrderNumber } }),
   ])
 
   // 采购行的付款情况（只要状态）
@@ -137,6 +138,15 @@ export async function getWorkOrderDetail(workOrderNumber: string, ctx: RoleConte
       status: wo.status,
       deliveryDate: dateFieldDay(wo.deliveryDate),
       projectManagerName: plan.workOrder.projectManagerName,
+      /** 编辑工单弹窗的初始值（履约新建工单 10-27）；version 为空 = 还没同步到新版 QMS 的版本号，暂时不能改 */
+      edit: {
+        customerNameId: wo.customerNameId,
+        divisionId: wo.divisionId,
+        version: wo.version,
+        projectManagerId: ext?.projectManagerId ?? null,
+        productLine: ext?.productLine ?? null,
+        isPilot: ext?.isPilot ?? false,
+      },
     },
     plan: plan.plan ? { status: plan.plan.status, templateName: plan.plan.templateName, publishedByName: plan.plan.publishedByName, startDate: planStart } : null,
     published,

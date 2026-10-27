@@ -253,6 +253,31 @@ describe('总计划权限（R14）', () => {
   })
 })
 
+describe('工单新建 / 修改 / 取消 workOrder（写入 QMS 工单库）', () => {
+  const project = ctx({ businessDept: 'PROJECT' })
+  const projectHead = ctx({ roles: ['PROJECT_DEPT_HEAD'] })
+  const projectDeptHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['项目部'] })
+  const admin = ctx({ isAdmin: true })
+  const pm = ctx({ pmOf: new Set(['WO-1']) })
+  const leader = ctx({ roles: ['LEADER'] })
+  const techHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['技术部'] })
+  const others = [pm, leader, techHead, ctx({ businessDept: 'TECH' }), ctx({ businessDept: 'PURCHASE' }), ctx({ roles: ['OUTSOURCE_COORDINATOR'] }), ctx()]
+
+  it('项目部（含项目部负责人角色、项目部的部门负责人）、管理员可以', () => {
+    for (const c of [project, projectHead, projectDeptHead, admin]) expect(canOperate(c, 'workOrder')).toBe(true)
+  })
+
+  it('其他人只读：该工单项目经理、领导、别的部门（含负责人）都不行', () => {
+    for (const c of others) expect(canOperate(c, 'workOrder', { workOrderNumber: 'WO-1' })).toBe(false)
+  })
+
+  it('permissionFlags 带 workOrder', () => {
+    expect(permissionFlags(project)).toMatchObject({ workOrder: true })
+    expect(permissionFlags(admin)).toMatchObject({ workOrder: true })
+    expect(permissionFlags(pm)).toMatchObject({ workOrder: false })
+  })
+})
+
 describe('付款金额可见 canSeeAmount', () => {
   it('财务、采购部、领导、项目部负责人、管理员能看', () => {
     expect(canSeeAmount(ctx({ roles: ['FINANCE'] }), 'WO-1')).toBe(true)
