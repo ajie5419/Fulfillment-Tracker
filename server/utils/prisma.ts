@@ -6,6 +6,8 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
  * 事务默认 READ COMMITTED：本系统的并发控制靠"先按顺序加锁（工件 → 工序 / 采购行 / 待办），锁后再读"，
  * 锁后的普通读必须看到最新已提交数据。MySQL 默认的 REPEATABLE READ 会沿用加锁前第一次读建立的快照，
  * 读到等锁期间别人已提交前的旧数据（重复发第一次返厂待办、数量算错）。采购 / 发放原来就单独指定了 READ COMMITTED。
+ * 注意：READ COMMITTED 下 InnoDB 不加间隙锁 / 临键锁，"锁一个范围（可能 0 行）挡住别人插入，再查有没有、没有就建"不再成立。
+ * 防重复只能靠唯一索引（撞 P2002 时按已存在处理），或先锁一行确实存在的父行（工件、工单、发放单、预警行等）再查再建。
  */
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({ transactionOptions: { isolationLevel: 'ReadCommitted' } })
 
