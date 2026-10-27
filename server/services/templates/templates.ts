@@ -141,8 +141,10 @@ export async function applyTemplateBatch(partIds: string[], templateId: string, 
     let applied = 0
     let skipped = 0
     let template = ''
-    for (const id of [...new Set(partIds)].sort()) {
-      await tx.$queryRaw`SELECT id FROM part WHERE id = ${id} FOR UPDATE`
+    // 先按 ID 顺序锁住全部工件，再逐个套用：套用时会锁班组行（发"可以开工"），锁顺序 工件 → 班组行，不能交替
+    const ids = [...new Set(partIds)].sort()
+    for (const id of ids) await tx.$queryRaw`SELECT id FROM part WHERE id = ${id} FOR UPDATE`
+    for (const id of ids) {
       const n = await tx.routeStep.count({ where: { partId: id } })
       if (n) {
         skipped++

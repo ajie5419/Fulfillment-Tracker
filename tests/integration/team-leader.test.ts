@@ -294,4 +294,45 @@ describe.skipIf(!DB)('班组长（生产管理重设计第二批）', () => {
     expect(await s.purchases.purchaseTx((tx) => s.flow.returnedQty(tx, out.id))).toBe(4)
     expect(await db.routeStep.findUniqueOrThrow({ where: { id: out.id }, select: { status: true } })).toEqual({ status: 'DONE' })
   })
+  it('换班组长和发待办并发：上一道完工给下一道（派到班组）发待办的事务，在班组行上等换班组长提交，发给新班组长', async () => {
+    await s.leaders.setTeamLeader('TL-TEAM', 'tl-lead', 'tl-head')
+    const { weld, cut } = await chain('并发发待办件', 'TL-TEAM', null)
+
+    // 模拟正在换 TL-TEAM 班组长的事务：拿着班组行排他锁
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    let locked!: () => void
+    const isLocked = new Promise<void>((r) => (locked = r))
+    const changing = db.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM qms_supplier WHERE id = 'TL-TEAM' FOR UPDATE`
+        locked()
+        await gate
+        await tx.teamLeader.update({ where: { supplierId: 'TL-TEAM' }, data: { userId: 'tl-lead2' } })
+      },
+      { timeout: 20_000 },
+    )
+    await isLocked
+    // 这时上一道完工：给下一道发"安排开工"要先读班组长，等上面提交
+    let done = false
+    const finishing = finish(cut.id).then(() => (done = true))
+    await new Promise((r) => setTimeout(r, 1000)) // 不加班组行共享锁时，这段时间早就按旧班组长发完了
+    expect(done).toBe(false)
+    release()
+    await changing
+    await finishing
+    expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-lead2', action: 'ARRANGE_START' }])
+    await s.leaders.setTeamLeader('TL-TEAM', 'tl-lead', 'tl-head')
+  })
+
+  it('改加工方式（厂外外协 ↔ 自制）：没处理的"安排开工 / 安排发出"换成对应的一类，手工转交的保留负责人', async () => {
+    const { weld, cut } = await chain('改方式件', null, 'tl-b')
+    await finish(cut.id)
+    const [t] = await db.todo.findMany({ where: { refId: weld.id, status: 'OPEN' } })
+    await s.todos.transferTodo(t!.id, 'tl-lead2')
+    await s.steps.updateStep(weld.id, { mode: 'EXTERNAL_OUTSOURCE', supplierId: 'TL-OUT' })
+    expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-lead2', action: 'ARRANGE_SEND' }])
+    await s.steps.updateStep(weld.id, { mode: 'SELF' })
+    expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-lead2', action: 'ARRANGE_START' }])
+  })
 })

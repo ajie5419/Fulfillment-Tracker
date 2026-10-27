@@ -129,7 +129,7 @@ async function assertPart(tx: Tx, partId: string | null | undefined, workOrderNu
 
 /** 工件"可以开工"待办发给谁：第一道的负责人 → 班组长 → 生产部负责人。发待办和转交待办（steps.stepTodoHolders）共用 */
 export async function readyOwners(tx: Tx, first: Pick<FirstStep, 'ownerId' | 'mode' | 'supplierId'>, workOrderNumber: string): Promise<string[]> {
-  const owner = await resolveStepResponsible(tx, { ...first, workOrderNumber })
+  const owner = await resolveStepResponsible(tx, { ...first, workOrderNumber }, { lock: true })
   if (owner) return [owner]
   const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PRODUCTION_DEPT }, select: { userId: true } })
   return [...new Set(heads.map((h) => h.userId))]
@@ -144,7 +144,8 @@ type FirstStep = { status: RouteStep['status']; ownerId: string | null; mode: Ro
  *   → 没有打开的待办时发一条。
  * 只在状态变化的那一刻发（notify），改备注之类的保存不会重复发。返回 sent / revoked / null。
  *
- * 锁顺序（全系统统一）：先锁工件（part FOR UPDATE，多个按 ID 排序，lockParts），再锁 / 改工序、采购行、待办。
+ * 锁顺序（全系统统一，见 server/utils/prisma.ts）：先锁工件（part FOR UPDATE，多个按 ID 排序，lockParts），再锁 / 改工序、采购行、待办，
+ * 班组行最后（这里发待办算"谁负责"时对班组行加共享锁）。
  * 这里会锁工件：调用方如果要改工序（打 / 解"等变更"、建 / 调第一道），必须先 lockParts 再动工序，不能先改工序再进来，
  * 否则会和改工序（steps.updateStep 先锁工件再改工序）互相等锁。
  */

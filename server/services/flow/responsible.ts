@@ -10,7 +10,7 @@
  * 下一道的"安排发出 / 开工"（flow.applyReturn）、第一道的"可以开工"（purchases.refreshPartReady）、
  * W3 / W10 预警、改负责人 / 班组时转交待办（steps.updateStepTx）都走这里。W2 的接收人是待办负责人，待办本身已按这里发。
  */
-import type { Prisma, StepMode } from '@prisma/client'
+import { Prisma, type StepMode } from '@prisma/client'
 import { canSee, resolveScope } from '../../utils/auth'
 import { prisma } from '../../utils/prisma'
 
@@ -55,15 +55,21 @@ export async function teamsLedBy(db: Db, userId: string): Promise<string[]> {
   return rows.map((r) => r.supplierId)
 }
 
-/** 批量：每道工序的负责人（顺序同入参），没有为 null */
-export async function resolveStepResponsibles(db: Db, steps: ResponsibleStep[]): Promise<(string | null)[]> {
-  const leaders = await leadersOf(db, steps.filter((s) => !s.ownerId).map(teamOfStep))
+/**
+ * 批量：每道工序的负责人（顺序同入参），没有为 null。
+ * lock：在事务里要按结果发 / 转待办时传 true——先对涉及的班组行加共享锁再读班组长，和换班组长（team-leaders.ts，排他锁）串行。
+ * 锁顺序：调用方已锁工件（和工序），班组行最后锁（工件 → 工序 → 班组行，见 server/utils/prisma.ts）。只读展示（列表、预警扫描）不用锁。
+ */
+export async function resolveStepResponsibles(db: Db, steps: ResponsibleStep[], opts: { lock?: boolean } = {}): Promise<(string | null)[]> {
+  const teams = [...new Set(steps.filter((s) => !s.ownerId).map(teamOfStep).filter((x): x is string => !!x))].sort()
+  if (opts.lock && teams.length) await db.$queryRaw`SELECT id FROM qms_supplier WHERE id IN (${Prisma.join(teams)}) ORDER BY id FOR SHARE`
+  const leaders = await leadersOf(db, teams)
   // 班组长的可见范围（每人只算一次）。后台流程没有请求上下文，不按管理员放宽：班组长同时是"只看本人工单的项目经理"时按项目经理算
   const scopes = new Map<string, Awaited<ReturnType<typeof resolveScope>>>()
   for (const id of new Set(leaders.values())) scopes.set(id, await resolveScope(id, false))
   return steps.map((s) => pickResponsible(s, leaders, (uid, wo) => canSee(scopes.get(uid)!, wo)))
 }
 
-export async function resolveStepResponsible(db: Db, step: ResponsibleStep): Promise<string | null> {
-  return (await resolveStepResponsibles(db, [step]))[0] ?? null
+export async function resolveStepResponsible(db: Db, step: ResponsibleStep, opts: { lock?: boolean } = {}): Promise<string | null> {
+  return (await resolveStepResponsibles(db, [step], opts))[0] ?? null
 }

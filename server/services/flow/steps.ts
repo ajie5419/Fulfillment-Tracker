@@ -7,7 +7,7 @@ import type { Prisma, StepMode } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { openIssuesOfSteps } from '../issues/issues'
 import { FlowError } from './errors'
-import { ARRANGE_SEND, ARRANGE_START, RETURN_TYPES, arrangeOwner } from './flow'
+import { ARRANGE_SEND, ARRANGE_START, RETURN_TYPES, arrangeAction, arrangeOwner } from './flow'
 import { READY_TO_START } from '../purchases/constants'
 import { readyOwners, refreshPartReady } from '../purchases/purchases'
 import { resolveStepResponsibles } from './responsible'
@@ -290,6 +290,13 @@ async function updateStepTx(tx: Tx, stepId: string, input: Partial<StepInput>) {
         ...(link.value !== undefined ? { planNodeId: link.value } : {}),
       },
     })
+    // 厂外外协 ↔ 自制 / 厂内外协：没处理的"安排发出 / 安排开工"换成新方式对应的那一类（原地改，负责人和计时不变，手工转交的也一样）
+    if (updated.status === 'PENDING' && arrangeAction(updated.mode) !== arrangeAction(step.mode)) {
+      await tx.todo.updateMany({
+        where: { refType: 'step', refId: stepId, action: arrangeAction(step.mode), status: 'OPEN' },
+        data: { action: arrangeAction(updated.mode) },
+      })
+    }
     // 负责人 / 班组 / 方式变了：没处理的"安排发出 / 开工""可以开工"待办跟着换人（与改负责人同一个口径）
     if (updated.status === 'PENDING' && (updated.ownerId !== step.ownerId || updated.supplierId !== step.supplierId || updated.mode !== step.mode)) {
       await rerouteStepTodos(tx, step, updated, part.workOrderNumber)

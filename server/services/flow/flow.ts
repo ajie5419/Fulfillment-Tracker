@@ -7,7 +7,7 @@
  * 返厂（QMS 报检或手工补登）统一走 recordReturn：第一次返厂就给下一道生成待办，
  * 数量全部返回才算完成（方案 4.3 分批返厂）。flow_event 只新增，这里不提供修改和删除。
  */
-import type { FlowEventType, FlowSource, Part, Prisma, RouteStep } from '@prisma/client'
+import type { FlowEventType, FlowSource, Part, Prisma, RouteStep, StepMode } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
@@ -22,8 +22,11 @@ type Tx = Prisma.TransactionClient
  * 发待办（applyReturn）和转交待办（steps.stepTodoHolders）都用这一个，保证"现在谁拿着"算得和发的时候一样
  */
 export async function arrangeOwner(tx: Tx, next: ResponsibleStep, prevOwnerId: string | null): Promise<string | null> {
-  return (await resolveStepResponsible(tx, next)) ?? prevOwnerId
+  return (await resolveStepResponsible(tx, next, { lock: true })) ?? prevOwnerId
 }
+
+/** 下一道的安排待办类型：厂外外协"安排发出"，其余"安排开工"。发待办和改方式时换类型（steps.updateStepTx）共用 */
+export const arrangeAction = (mode: StepMode) => (mode === 'EXTERNAL_OUTSOURCE' ? ARRANGE_SEND : ARRANGE_START)
 
 /** 计入"已返回 / 已完成数量"的事件类型。完工、部分完工（报工）也计入；报废（SCRAP）不计入 */
 export const RETURN_TYPES: FlowEventType[] = ['RETURN', 'RETURN_MANUAL', 'FINISH', 'REPORT']
@@ -228,7 +231,7 @@ export async function applyReturn(
   let todoCreated = false
   if (prevCount === 0 && next && next.status === 'PENDING') {
     const ownerId = await arrangeOwner(tx, { ...next, workOrderNumber: step.part.workOrderNumber }, step.ownerId)
-    const action = next.mode === 'EXTERNAL_OUTSOURCE' ? ARRANGE_SEND : ARRANGE_START
+    const action = arrangeAction(next.mode)
     if (ownerId) {
       const open = await tx.todo.findFirst({ where: { refType: 'step', refId: next.id, action, status: 'OPEN' }, select: { id: true } })
       if (!open) {
