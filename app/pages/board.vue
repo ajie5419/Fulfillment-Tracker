@@ -29,7 +29,12 @@ const showClosed = computed({
   set: (v: boolean) => void router.replace({ query: { ...route.query, closed: v ? '1' : undefined } }),
 })
 const closedQuery = computed(() => (showClosed.value ? { closed: '1' } : {}))
-const { data: workOrders } = await useFetch('/api/work-orders', { query: closedQuery, default: () => [] })
+// 不含已完工时与全站工单下拉同一个缓存 key（'work-orders'），新建后一起刷新；含已完工时另用一个 key，不把已完工的混进别处的下拉
+const { data: workOrders, refresh: refreshWorkOrders } = await useFetch('/api/work-orders', {
+  key: computed(() => (showClosed.value ? 'work-orders:closed' : 'work-orders')),
+  query: closedQuery,
+  default: () => [],
+})
 const woOptions = computed(() =>
   workOrders.value.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName ?? ''}` })),
 )
@@ -78,7 +83,8 @@ const deptItems = computed(() => data.value.sourceByDept.map((d) => ({ key: d.de
 const createOpen = ref(false)
 async function onCreated(no: string) {
   createOpen.value = false
-  void refreshNuxtData('work-orders')
+  // 工单下拉、看板一起刷新（回到总览时能看到新工单）；全站下拉的缓存也刷新
+  await Promise.all([refreshWorkOrders(), refresh(), showClosed.value ? refreshNuxtData('work-orders') : undefined])
   await navigateTo(`/wo/${encodeURIComponent(no)}`)
   Modal.confirm({
     title: '是否现在套模板生成总计划？',
