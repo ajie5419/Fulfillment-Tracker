@@ -6,12 +6,12 @@
 import { matchPendingInspections } from '../flow/match'
 import { syncNonconforming } from '../issues/nonconforming'
 import { matchIncomingInspections } from '../purchases/incoming'
-import { withLease } from '../jobs/lease'
+import { LeaseLostError, withLease } from '../jobs/lease'
 import { syncConfigured } from './client'
 import { type SyncOptions, type SyncResult, syncQms } from './sync'
 
 const LOCK_NAME = 'sync-qms'
-/** 租约：远大于一轮同步的耗时（每次请求最多 15 秒超时）；进程崩溃后最多这么久自动失效 */
+/** Renewed by each write transaction; a stalled worker loses permission to write after this interval. */
 const LEASE_MS = 15 * 60_000
 
 export interface SyncJobResult {
@@ -27,6 +27,7 @@ async function step<T>(name: string, fn: () => Promise<T>): Promise<T | { error:
   try {
     return await fn()
   } catch (err) {
+    if (err instanceof LeaseLostError) throw err
     console.error(`[sync-qms] ${name} 失败`, err)
     return { error: String((err as Error)?.message ?? err) }
   }
@@ -34,22 +35,22 @@ async function step<T>(name: string, fn: () => Promise<T>): Promise<T | { error:
 
 export async function runSyncJob(opts: SyncOptions): Promise<SyncJobResult> {
   if (!syncConfigured(opts.config)) return { skipped: 'not-configured' }
-  const r = await withLease(LOCK_NAME, LEASE_MS, async (): Promise<SyncJobResult> => {
-    const sync = await syncQms(opts)
+  const r = await withLease(LOCK_NAME, LEASE_MS, async (lease): Promise<SyncJobResult> => {
+    const sync = await syncQms({ ...opts, lease })
     if (!sync.inspectionsOk) return { sync }
     const match = await step('返厂匹配', async () => {
-      const results = await matchPendingInspections()
+      const results = await matchPendingInspections(lease)
       const matched = results.filter((x) => x.status === 'matched').length
       const unmatched = results.filter((x) => x.status === 'unmatched').length
       return { matched, unmatched, other: results.length - matched - unmatched }
     })
     const incoming = await step('进货检验确认到货', async () => {
-      const results = await matchIncomingInspections()
+      const results = await matchIncomingInspections(lease)
       const arrived = results.filter((x) => x.result === 'MATCHED').length
       return { arrived, other: results.length - arrived }
     })
     const nonconforming = await step('QMS 不合格转异常', async () => {
-      const n = await syncNonconforming()
+      const n = await syncNonconforming(lease)
       return { created: n.created.length, existed: n.existed }
     })
     return { sync, match, incoming, nonconforming }

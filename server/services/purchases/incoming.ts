@@ -10,6 +10,7 @@
  * 只按"报检提交"认定到货，不看检验结论、不看数量（关键物料一般整批到，分批到的以第一批为准）。
  */
 import { prisma } from '../../utils/prisma'
+import type { LeaseGuard } from '../jobs/lease'
 import { FlowError } from '../flow/errors'
 import { inspectionWorkOrders } from '../flow/inspection'
 import { findPurchaseCandidates, isIncomingInspection, todayDate } from './constants'
@@ -24,9 +25,10 @@ export interface IncomingResult {
 const isUniqueViolation = (err: unknown) => (err as { code?: string })?.code === 'P2002'
 
 /** 处理一条进货检验（自带事务）。已处理过、不是进货检验、已撤销的返回 SKIPPED */
-export async function matchIncoming(inspectionId: string): Promise<IncomingResult> {
+export async function matchIncoming(inspectionId: string, lease?: LeaseGuard): Promise<IncomingResult> {
   try {
     return await purchaseTx(async (tx): Promise<IncomingResult> => {
+      await lease?.(tx)
       // 先占住这条报检：并发的另一轮处理同一条时，后到的撞主键直接跳过
       const done = await tx.incomingCheck.findUnique({ where: { qmsInspectionId: inspectionId } })
       if (done) return { inspectionId, result: 'SKIPPED' }
@@ -70,7 +72,7 @@ class SkipMatch extends Error {}
  * 处理所有还没处理过的进货检验：未删除、未撤销、还没记过结果，且主工单或任一关联工单上有采购行。
  * 按提交时间先后处理（同一行对上两条报检时，先到的那条确认到货）。
  */
-export async function matchIncomingInspections(): Promise<IncomingResult[]> {
+export async function matchIncomingInspections(lease?: LeaseGuard): Promise<IncomingResult[]> {
   const rows = await prisma.$queryRaw<{ id: string }[]>`
     SELECT i.id FROM qms_inspection i
     LEFT JOIN incoming_check c ON c.qmsInspectionId = i.id
@@ -84,6 +86,6 @@ export async function matchIncomingInspections(): Promise<IncomingResult[]> {
           OR (i.workOrderNumbers IS NOT NULL AND JSON_CONTAINS(i.workOrderNumbers, JSON_QUOTE(p.workOrderNumber))))
     ORDER BY i.submittedAt, i.id`
   const out: IncomingResult[] = []
-  for (const { id } of rows) out.push(await matchIncoming(id))
+  for (const { id } of rows) out.push(await matchIncoming(id, lease))
   return out
 }
