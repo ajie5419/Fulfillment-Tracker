@@ -207,6 +207,8 @@ export const RESOURCES: Record<SyncResource, ResourceDef<{ updatedAt: Date }>> =
       for (const { isActive, ...r } of rows) {
         const data = { ...r, status: isActive ? 'ACTIVE' : 'INACTIVE' }
         await tx.qmsUser.upsert({ where: { id: r.id }, create: data, update: data })
+        // Revoke every device in the same transaction as the account change; reactivation must not revive old tokens.
+        if (!isActive || r.isDeleted) await tx.session.deleteMany({ where: { qmsUserId: r.id } })
       }
     },
   }),
