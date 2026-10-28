@@ -71,11 +71,14 @@ const MAX_LIST_ROWS = 300
 
 /**
  * 未齐套：清单里有没完成的工件，或有未到货（未取消）的物料。
- * 与 isIncomplete（应有项 > 0 且 已就绪 < 应有项）等价：物料只有 未到货 / 已到货 / 已取消 三种状态，工件就绪 = DONE。
+ * Match the in-memory readiness check, including legacy DONE parts with unfinished steps.
  */
 export function incompleteWhere(): Prisma.AssemblyNodeWhereInput {
   return {
-    OR: [{ parts: { some: { part: { status: { not: 'DONE' } } } } }, { purchases: { some: { purchase: { status: 'OPEN' } } } }],
+    OR: [
+      { parts: { some: { part: { OR: [{ status: { not: 'DONE' } }, { steps: { some: { status: { not: 'DONE' } } } }] } } } },
+      { purchases: { some: { purchase: { status: 'OPEN' } } } },
+    ],
   }
 }
 
@@ -131,7 +134,7 @@ async function assertItems(db: Db, workOrderNumber: string, partIds: string[], p
 /** 只读这个节点清单里各项的状态，算应有项 / 已就绪（事务里用，判断要不要立即消除 W8） */
 async function kitCountOf(db: Db, nodeId: string): Promise<KitCount> {
   const [parts, lines] = await Promise.all([
-    db.assemblyNodePart.findMany({ where: { nodeId }, select: { part: { select: { status: true } } } }),
+    db.assemblyNodePart.findMany({ where: { nodeId }, select: { part: { select: { status: true, steps: { select: { status: true } } } } } }),
     db.assemblyNodePurchase.findMany({ where: { nodeId }, select: { purchase: { select: { status: true } } } }),
   ])
   return countKit(
@@ -261,7 +264,7 @@ export async function loadKitCounts(nodes: NodeWithLinks[]): Promise<Map<string,
   const partIds = uniq(nodes.flatMap((n) => n.parts.map((p) => p.partId)))
   const lineIds = uniq(nodes.flatMap((n) => n.purchases.map((p) => p.purchaseLineId)))
   const [parts, lines] = await Promise.all([
-    partIds.length ? prisma.part.findMany({ where: { id: { in: partIds } }, select: { id: true, status: true, statusSince: true } }) : [],
+    partIds.length ? prisma.part.findMany({ where: { id: { in: partIds } }, select: { id: true, status: true, statusSince: true, steps: { select: { status: true } } } }) : [],
     lineIds.length ? prisma.purchaseLine.findMany({ where: { id: { in: lineIds } }, select: { id: true, status: true, arrivedDate: true } }) : [],
   ])
   const partOf = new Map(parts.map((p) => [p.id, p]))
@@ -484,7 +487,7 @@ export async function getNode(id: string, actor: Actor, now = new Date()) {
 /** 编辑弹窗的选项：该工单的工件（带是否已完成）和关键物料（带状态；已取消的标出来） */
 export async function nodeOptions(workOrderNumber: string) {
   const [parts, lines] = await Promise.all([
-    prisma.part.findMany({ where: { workOrderNumber }, orderBy: { createdAt: 'asc' }, select: { id: true, name: true, drawingNo: true, status: true } }),
+    prisma.part.findMany({ where: { workOrderNumber }, orderBy: { createdAt: 'asc' }, select: { id: true, name: true, drawingNo: true, status: true, steps: { select: { status: true } } } }),
     prisma.purchaseLine.findMany({
       where: { workOrderNumber },
       orderBy: [{ needDate: 'asc' }, { createdAt: 'asc' }],
