@@ -41,17 +41,22 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
   let app: ChildProcess
   let base: string
   let bridge: { url: string; close: () => Promise<void> }
+  let db: PrismaClient
+  const USERS = ['u-001', 'u-002', 'u-003']
 
   beforeAll(async () => {
     if (!existsSync(SERVER_ENTRY)) throw new Error('先运行 pnpm build')
     // 专用测试库：建表到最新迁移，再清空会话表
     execFileSync('npx', ['prisma', 'migrate', 'deploy'], { env: { ...process.env, DATABASE_URL: DB }, stdio: 'ignore' })
-    const db = new PrismaClient({ datasourceUrl: DB })
+    db = new PrismaClient({ datasourceUrl: DB })
     await db.session.deleteMany()
     await db.loginAttempt.deleteMany()
-    await db.$disconnect()
+    for (const id of USERS) {
+      const data = { username: id, realName: id, status: id === 'u-002' ? 'INACTIVE' : 'ACTIVE', isDeleted: false, updatedAt: new Date() }
+      await db.qmsUser.upsert({ where: { id }, create: { id, ...data }, update: data })
+    }
     bridge = await startMockIdentityBridge({
-      users: { 'u-001': { name: '测试外协专员', active: true }, 'u-002': { name: '已停用', active: false }, 'u-003': { name: '测试项目经理', active: true } },
+      users: { 'u-001': { name: '测试外协专员', active: true }, 'u-002': { name: '已停用', active: false }, 'u-003': { name: '测试项目经理', active: true }, 'u-unsynced': { name: 'Unsynced account', active: true } },
     })
     const port = await freePort()
     base = `http://127.0.0.1:${port}`
@@ -82,6 +87,11 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
   afterAll(async () => {
     app?.kill()
     await bridge?.close()
+    if (db) {
+      await db.session.deleteMany({ where: { qmsUserId: { in: USERS } } })
+      await db.qmsUser.deleteMany({ where: { id: { in: USERS } } })
+      await db.$disconnect()
+    }
   })
 
   const get = (path: string, cookies: Record<string, string> = {}) =>
@@ -193,6 +203,40 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
     const out = await fetch(`${base}/auth/logout`, { method: 'POST', headers: { cookie: cookieHeader(session) } })
     expect(out.status).toBe(200)
     expect((await get('/api/me', session)).status).toBe(401)
+  })
+
+  it.each(['INACTIVE', 'deleted', 'missing'])('rejects an existing %s account session, clears cookies, and revokes every device', async (state) => {
+    const first = cookiesFrom((await login('/m')).res)
+    const second = cookiesFrom((await login('/m')).res)
+    const other = cookiesFrom((await login('/m', 'u-003')).res)
+    const account = await db.qmsUser.findUniqueOrThrow({ where: { id: 'u-001' } })
+    try {
+      await db.session.updateMany({ where: { qmsUserId: 'u-001' }, data: { expiresAt: new Date(Date.now() + 10 * 86400_000) } })
+      if (state === 'missing') await db.qmsUser.delete({ where: { id: 'u-001' } })
+      else await db.qmsUser.update({ where: { id: 'u-001' }, data: state === 'deleted' ? { isDeleted: true } : { status: state } })
+      const blockedLogin = (await login('/m')).res
+      expect(blockedLogin.status).toBe(state === 'missing' ? 503 : 403)
+      expect(blockedLogin.headers.getSetCookie().some((cookie) => cookie.startsWith('ft_session='))).toBe(false)
+      const denied = await get('/api/me', first)
+      expect(denied.status).toBe(401)
+      expect(denied.headers.getSetCookie().some((cookie) => cookie.startsWith('ft_session=;'))).toBe(true)
+      expect(await db.session.count({ where: { qmsUserId: 'u-001' } })).toBe(0)
+      const page = await get('/m', second)
+      expect(page.status).toBe(302)
+      expect(page.headers.get('location')).toBe('/auth/login?redirect=%2Fm')
+      expect((await get('/api/me', other)).status).toBe(200)
+    } finally {
+      await db.qmsUser.upsert({ where: { id: account.id }, create: account, update: { status: 'ACTIVE', isDeleted: false } })
+    }
+    expect((await get('/api/me', second)).status).toBe(401)
+    expect((await get('/api/me', cookiesFrom((await login('/m')).res))).status).toBe(200)
+  })
+
+  it('returns a clear error instead of a redirect loop when the verified account has not synced', async () => {
+    const { res } = await login('/m', 'u-unsynced')
+    expect(res.status).toBe(503)
+    expect(res.headers.getSetCookie().some((cookie) => cookie.startsWith('ft_session='))).toBe(false)
+    expect(await db.session.count({ where: { qmsUserId: 'u-unsynced' } })).toBe(0)
   })
 
   it('设置页接口只给管理员（NUXT_ADMIN_USER_IDS）：非管理员 403', async () => {

@@ -16,12 +16,15 @@ export default defineEventHandler(async (event) => {
   const path = event.path.split('?')[0] ?? '/'
   if (isPublic(path)) return
 
-  const resolved = await resolveSession(prisma, getCookie(event, SESSION_COOKIE))
+  const token = getCookie(event, SESSION_COOKIE)
+  const resolved = await resolveSession(prisma, token)
   if (resolved) {
     event.context.user = { qmsUserId: resolved.session.qmsUserId, name: resolved.session.userName }
-    if (resolved.renewedExpiresAt) setSessionCookie(event, getCookie(event, SESSION_COOKIE)!, resolved.renewedExpiresAt)
+    if (resolved.renewedExpiresAt) setSessionCookie(event, token!, resolved.renewedExpiresAt)
     return
   }
+
+  if (token) deleteCookie(event, SESSION_COOKIE, { path: '/' })
 
   if (path.startsWith('/api/')) {
     throw createError({ statusCode: 401, statusMessage: '未登录' })

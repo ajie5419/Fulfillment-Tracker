@@ -507,4 +507,29 @@ describe.skipIf(!DB)('QMS 数据同步', () => {
     const r = await syncOnly()
     expect(r.resources.every((x) => x.status === 'ok' && x.rows === 0)).toBe(true)
   })
+
+  it.each([{ isActive: false, isDeleted: false }, { isActive: true, isDeleted: true }])('user sync revokes every session before recovery: %o', async (state) => {
+    const { createSession, resolveSession } = await import('../../server/services/auth/session')
+    const id = `AUTH-REVOKE-${state.isDeleted ? 'deleted' : 'inactive'}`
+    const otherId = `${id}-other`
+    for (const userId of [id, otherId]) qms.upsert('users', { id: userId, username: userId, isActive: true, isDeleted: false })
+    expect((await syncOnly({ only: ['users'] })).resources[0]?.status).toBe('ok')
+    try {
+      const first = await createSession(db, { qmsUserId: id, userName: id })
+      const second = await createSession(db, { qmsUserId: id, userName: id })
+      const other = await createSession(db, { qmsUserId: otherId, userName: otherId })
+      qms.upsert('users', { id, ...state })
+      expect((await syncOnly({ only: ['users'] })).resources[0]?.status).toBe('ok')
+      expect(await db.session.count({ where: { qmsUserId: id } })).toBe(0)
+      qms.upsert('users', { id, isActive: true, isDeleted: false })
+      expect((await syncOnly({ only: ['users'] })).resources[0]?.status).toBe('ok')
+      expect(await resolveSession(db, first.token)).toBeNull()
+      expect(await resolveSession(db, second.token)).toBeNull()
+      expect(await resolveSession(db, other.token)).not.toBeNull()
+      expect(await createSession(db, { qmsUserId: id, userName: id })).toHaveProperty('token')
+    } finally {
+      await db.session.deleteMany({ where: { qmsUserId: { in: [id, otherId] } } })
+      await db.qmsUser.deleteMany({ where: { id: { in: [id, otherId] } } })
+    }
+  })
 })

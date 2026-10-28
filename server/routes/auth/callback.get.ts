@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { IdentityBridgeError, exchangeCode, revokeCredential, verifyIdentity } from '../../services/auth/identity-bridge'
 import { LOGIN_STATE_COOKIE, consumeLogin } from '../../services/auth/login-attempt'
 import { safeRedirectPath } from '../../services/auth/redirect'
-import { createSession } from '../../services/auth/session'
+import { SessionAccountUnavailable, createSession } from '../../services/auth/session'
 
 function sameString(a: string, b: string) {
   const ab = Buffer.from(a)
@@ -48,7 +48,14 @@ export default defineEventHandler(async (event) => {
   }
   if (!identity.active) throw createError({ statusCode: 403, statusMessage: '该 QMS 账号不可用或已停用' })
 
-  const { token, expiresAt } = await createSession(prisma, { qmsUserId: identity.id, userName: identity.name })
-  setSessionCookie(event, token, expiresAt)
+  try {
+    const { token, expiresAt } = await createSession(prisma, { qmsUserId: identity.id, userName: identity.name })
+    setSessionCookie(event, token, expiresAt)
+  } catch (err) {
+    if (err instanceof SessionAccountUnavailable) {
+      throw createError({ statusCode: err.unsynced ? 503 : 403, statusMessage: 'Login unavailable', message: err.message })
+    }
+    throw err
+  }
   return sendRedirect(event, safeRedirectPath(pending.redirect), 302)
 })
