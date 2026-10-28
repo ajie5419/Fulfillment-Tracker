@@ -12,6 +12,7 @@
  * 幂等：issue.sourceKey = "QMS:<报检 ID>" 唯一，重复扫描、并发扫描撞唯一键都当作已存在。
  */
 import { prisma } from '../../utils/prisma'
+import type { LeaseGuard } from '../jobs/lease'
 import { blockStep } from '../flow/flow'
 import { inspectionSupplierId } from '../flow/inspection'
 import { loadNames } from '../flow/names'
@@ -24,7 +25,7 @@ export interface NonconformingResult {
   existed: number
 }
 
-export async function syncNonconforming(): Promise<NonconformingResult> {
+export async function syncNonconforming(lease?: LeaseGuard): Promise<NonconformingResult> {
   const rows = await prisma.$queryRaw<{ id: string; stepId: string }[]>`
     SELECT i.id, f.stepId FROM qms_inspection i
     JOIN flow_event f ON f.qmsInspectionId = i.id
@@ -36,6 +37,7 @@ export async function syncNonconforming(): Promise<NonconformingResult> {
   for (const row of rows) {
     try {
       const issue = await issueTransaction(async (tx) => {
+        await lease?.(tx)
         const ins = await tx.qmsInspection.findUniqueOrThrow({ where: { id: row.id } })
         const step = await tx.routeStep.findUniqueOrThrow({ where: { id: row.stepId }, include: { part: true } })
         const supplierId = inspectionSupplierId(ins) ?? step.supplierId

@@ -11,6 +11,7 @@
  */
 import type { Prisma, QmsInspection, StepMode, StepStatus } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
+import type { LeaseGuard } from '../jobs/lease'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
 import { isIncomingInspection } from '../purchases/constants'
@@ -106,9 +107,10 @@ export type MatchResult =
 /** 并发下两边同时写同一条报检：唯一约束冲突当作"已处理"*/
 const isUniqueViolation = (err: unknown) => (err as { code?: string })?.code === 'P2002'
 
-export async function matchInspection(inspectionId: string): Promise<MatchResult> {
+export async function matchInspection(inspectionId: string, lease?: LeaseGuard): Promise<MatchResult> {
   try {
     return await prisma.$transaction(async (tx): Promise<MatchResult> => {
+      await lease?.(tx)
       const ins = await tx.qmsInspection.findUnique({ where: { id: inspectionId } })
       if (!ins || ins.isDeleted) return { inspectionId, status: 'ignored' }
       const unmatched = await tx.unmatchedInspection.findUnique({ where: { qmsInspectionId: inspectionId } })
@@ -163,7 +165,7 @@ export async function matchInspection(inspectionId: string): Promise<MatchResult
  * 不进"待确认匹配"（否则上线首次同步会把历史报检全堆进去）；之后该工单建了工件，下一轮自然会处理。
  * 并且只看工件登记之后提交的报检：登记前的历史报检不可能是这次外协的返厂，避免误匹配到正在外协的步骤。
  */
-export async function matchPendingInspections(): Promise<MatchResult[]> {
+export async function matchPendingInspections(lease?: LeaseGuard): Promise<MatchResult[]> {
   const rows = await prisma.$queryRaw<{ id: string }[]>`
     SELECT i.id FROM qms_inspection i
     LEFT JOIN unmatched_inspection u ON u.qmsInspectionId = i.id
@@ -179,7 +181,7 @@ export async function matchPendingInspections(): Promise<MatchResult[]> {
           AND p.createdAt <= i.submittedAt))
     ORDER BY i.submittedAt, i.id`
   const results: MatchResult[] = []
-  for (const { id } of rows) results.push(await matchInspection(id))
+  for (const { id } of rows) results.push(await matchInspection(id, lease))
   return results
 }
 
