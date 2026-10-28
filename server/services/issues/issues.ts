@@ -454,7 +454,7 @@ export interface IssueFilter {
   visibleWorkOrders?: string[]
 }
 
-const PAGE_LIMIT = 500
+const READ_BATCH_SIZE = 500
 
 /** 给异常补上名称、关联对象文字、超期情况和当前用户可做的操作 */
 async function decorate(issues: Issue[], actor: Actor, now: Date) {
@@ -541,10 +541,28 @@ export async function listIssues(filter: IssueFilter, actor: Actor, now = new Da
   if (filter.mine === 'responsible') where.responsibleUserId = actor.userId
   if (filter.mine === 'reported') where.reporterId = actor.userId
   if (filter.mine === 'todo' && !where.status) where.status = { in: OPEN_STATUSES }
-  const issues = await prisma.issue.findMany({ where, orderBy: [{ createdAt: 'desc' }], take: PAGE_LIMIT })
-  let rows = await decorate(issues, actor, now)
-  if (filter.mine === 'todo') rows = rows.filter((r) => r.can.accept || r.can.resolve || r.can.close)
-  if (filter.overdue) rows = rows.filter((r) => r.overdue)
+  const rows: IssueRow[] = []
+  let after: Pick<Issue, 'createdAt' | 'id'> | undefined
+  // Consumers use the complete array for totals and local paging. A read batch is not a result limit:
+  // even an empty filtered batch may have actionable/overdue records behind it. ID breaks timestamp ties.
+  for (;;) {
+    const issues = await prisma.issue.findMany({
+      where: after ? { AND: [where, { OR: [
+        { createdAt: { lt: after.createdAt } },
+        { createdAt: after.createdAt, id: { lt: after.id } },
+      ] }] } : where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: READ_BATCH_SIZE,
+    })
+    if (!issues.length) break
+    let batch = await decorate(issues, actor, now)
+    if (filter.mine === 'todo') batch = batch.filter((r) => r.can.accept || r.can.resolve || r.can.close)
+    if (filter.overdue) batch = batch.filter((r) => r.overdue)
+    rows.push(...batch)
+    if (issues.length < READ_BATCH_SIZE) break
+    const last = issues[issues.length - 1]!
+    after = { createdAt: last.createdAt, id: last.id }
+  }
   // 未关闭在前，其中超期在前
   const rank = (r: IssueRow) => (r.status === 'CLOSED' ? 2 : r.overdue ? 0 : 1)
   return rows.sort((a, b) => rank(a) - rank(b) || +b.createdAt - +a.createdAt)
