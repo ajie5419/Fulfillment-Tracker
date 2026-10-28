@@ -1,5 +1,6 @@
 /** 关键物料与付款（R10）接口的 zod 片段。日期一律用 schemas/flow.ts 的 day（拒绝 2026-02-30 这类不存在的日期） */
 import { z } from 'zod'
+import { paginationFields, safePageOffset } from './pagination'
 import { MAX_PAYMENT_LINES } from '../services/purchases/constants'
 import { day, source } from './flow'
 
@@ -69,11 +70,20 @@ export const arriveBody = z
   .strict()
 
 export const listQuery = z.object({
+  ...paginationFields,
   workOrderNumber: z.string().max(64).optional(),
   partId: z.string().max(191).optional(),
   view: z.enum(['open', 'shortage', 'late', 'blocked', 'arrived', 'cancelled', 'all']).optional(),
   q: z.string().max(100).optional(),
-})
+}).superRefine(safePageOffset)
+
+export const purchaseOptionsQuery = z.object({
+  ...paginationFields,
+  workOrderNumber: z.string().min(1).max(64),
+  q: z.string().max(100).optional(),
+  ids: z.union([z.string(), z.array(z.string())]).transform((v) => typeof v === 'string' ? [v] : v)
+    .pipe(z.array(z.string().min(1).max(191)).min(1).max(MAX_PAYMENT_LINES)).optional(),
+}).superRefine(safePageOffset)
 
 export const paymentStatus = z.enum(['PENDING', 'PAID', 'ON_HOLD'], { message: '状态只能是 待付 / 已付 / 暂缓' })
 

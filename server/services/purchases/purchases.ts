@@ -19,6 +19,7 @@ import type { DelayReason, DrawingTaskStatus, FlowSource, Prisma, PurchaseLine, 
 import { firstStepTodoReady, prereqState } from '../flow/readiness'
 import { resolveStepResponsible } from '../flow/responsible'
 import { prisma } from '../../utils/prisma'
+import { DEFAULT_PAGE_SIZE } from '../../../shared/pagination'
 import { countComments, deleteCommentsOf } from '../comments/comments'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey, dateFieldDay, shanghaiDay } from '../alerts/rules'
@@ -343,6 +344,8 @@ export async function undoArrival(id: string) {
 export type LineView = 'open' | 'shortage' | 'late' | 'blocked' | 'arrived' | 'cancelled' | 'all'
 
 export interface LineFilter {
+  page?: number
+  pageSize?: number
   workOrderNumber?: string
   partId?: string
   view?: LineView
@@ -411,9 +414,6 @@ async function describeLines(rows: LineWithPayments[], now: Date, amountVisible:
 
 const PAYMENTS_INCLUDE = { payments: { select: { payment: { select: { id: true, status: true, blocksDelivery: true, amount: true } } } } } as const
 
-/** 每次最多返回的行数（按视图在数据库里先筛选、排序后再截断） */
-const MAX_LIST_ROWS = 500
-
 /** 延误（与 lineProgress 的 late 一致；日期都存为当天 UTC 零点，可以直接比较） */
 function lateWhere(today: Date): Prisma.PurchaseLineWhereInput {
   const F = prisma.purchaseLine.fields
@@ -470,7 +470,7 @@ async function lineStats(scope: Prisma.PurchaseLineWhereInput[], today: Date) {
 }
 
 /**
- * 采购行列表 + 统计。视图、关键字在数据库里筛选，再按顺序截断到 500 行（total 是筛选后的总数）。
+ * Paginate the complete filtered result; statistics retain their work-order scope.
  * 排序：未到货的按需求日从近到远在前；已到货的按到货日从近到远；已取消的最后。
  */
 export async function listLines(filter: LineFilter, now = new Date()) {
@@ -486,20 +486,68 @@ export async function listLines(filter: LineFilter, now = new Date()) {
     ? [{ OR: [{ materialName: { contains: q } }, { spec: { contains: q } }, { supplierName: { contains: q } }, { workOrderNumber: { contains: q } }] }]
     : []
   const where: Prisma.PurchaseLineWhereInput = { AND: [...scope, viewWhere(view, today), ...search] }
-  // 状态枚举顺序就是 未到货 → 已到货 → 已取消
-  const orderBy: Prisma.PurchaseLineOrderByWithRelationInput[] =
-    view === 'arrived' ? [{ arrivedDate: 'desc' }, { id: 'asc' }] : [{ status: 'asc' }, { needDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }]
-  const [found, total, stats] = await Promise.all([
-    prisma.purchaseLine.findMany({ where, include: PAYMENTS_INCLUDE, orderBy, take: MAX_LIST_ROWS }),
-    prisma.purchaseLine.count({ where }),
+  const [counts, stats] = await Promise.all([
+    prisma.purchaseLine.groupBy({ by: ['status'], where, _count: { _all: true } }),
     lineStats(scope, today),
   ])
+  const total = counts.reduce((n, row) => n + row._count._all, 0)
+  const pageSize = filter.pageSize ?? DEFAULT_PAGE_SIZE
+  const page = Math.min(filter.page ?? 1, Math.max(1, Math.ceil(total / pageSize)))
+  let skip = (page - 1) * pageSize
+  let remaining = pageSize
+  const reads: Promise<LineWithPayments[]>[] = []
+  /** Each status has a different date order. Slice its global block before reading
+   * details so an arrival cannot move across pages after an in-memory re-sort. */
+  for (const status of ['OPEN', 'ARRIVED', 'CANCELLED'] as const) {
+    const count = counts.find((r) => r.status === status)?._count._all ?? 0
+    if (skip >= count) { skip -= count; continue }
+    const take = Math.min(remaining, count - skip)
+    const orderBy: Prisma.PurchaseLineOrderByWithRelationInput[] = status === 'ARRIVED'
+      ? [{ arrivedDate: 'desc' }, { id: 'asc' }]
+      : [{ needDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }]
+    reads.push(prisma.purchaseLine.findMany({ where: { AND: [where, { status }] }, include: PAYMENTS_INCLUDE, orderBy, skip, take }))
+    remaining -= take
+    skip = 0
+    if (!remaining) break
+  }
+  const found = (await Promise.all(reads)).flat()
+  const grouped = found.length ? await prisma.purchaseLine.groupBy({
+    by: ['workOrderNumber', 'status'],
+    where: { AND: [where, { workOrderNumber: { in: [...new Set(found.map((r) => r.workOrderNumber))] } }] },
+    _count: { _all: true },
+  }) : []
+  const groups: Record<string, { done: number; total: number; count: number }> = Object.create(null)
+  for (const r of grouped) {
+    const g = groups[r.workOrderNumber] ??= { done: 0, total: 0, count: 0 }
+    g.count += r._count._all
+    if (r.status !== 'CANCELLED') g.total += r._count._all
+    if (r.status === 'ARRIVED') g.done += r._count._all
+  }
   const [described, comments] = await Promise.all([describeLines(found, now, filter.amountVisible), countComments('purchase', found.map((l) => l.id))])
   // 留言条数（列表上"留言 N"，10-26）
   const rows = described.map((r) => ({ ...r, commentCount: comments.get(r.id) ?? 0 }))
-  const rank = { OPEN: 0, ARRIVED: 1, CANCELLED: 2 } as const
-  rows.sort((a, b) => rank[a.status] - rank[b.status] || (a.status === 'ARRIVED' ? +(b.arrivedDate ?? 0) - +(a.arrivedDate ?? 0) : +a.needDate - +b.needDate))
-  return { rows, total, stats }
+  return { rows, total, page, pageSize, stats, groups }
+}
+
+/** Lightweight choices keep search and selected-ID hydration inside the same scope. */
+export async function listLineOptions(filter: { workOrderNumber: string; q?: string; ids?: string[]; page: number; pageSize: number; visibleWorkOrders?: string[] }) {
+  const q = filter.q?.trim()
+  const where: Prisma.PurchaseLineWhereInput = {
+    workOrderNumber: filter.workOrderNumber,
+    status: { not: 'CANCELLED' },
+    AND: [
+      ...(filter.visibleWorkOrders ? [{ workOrderNumber: { in: filter.visibleWorkOrders } }] : []),
+      ...(filter.ids ? [{ id: { in: filter.ids } }] : []),
+      ...(q ? [{ OR: [{ materialName: { contains: q } }, { spec: { contains: q } }, { supplierName: { contains: q } }] }] : []),
+    ],
+  }
+  const total = await prisma.purchaseLine.count({ where })
+  const page = Math.min(filter.page, Math.max(1, Math.ceil(total / filter.pageSize)))
+  const rows = await prisma.purchaseLine.findMany({
+    where, select: { id: true, workOrderNumber: true, materialName: true, spec: true, supplierName: true, needDate: true },
+    orderBy: [{ needDate: 'asc' }, { id: 'asc' }], skip: (page - 1) * filter.pageSize, take: filter.pageSize,
+  })
+  return { rows, total, page, pageSize: filter.pageSize }
 }
 
 /** 单行详情（手机到货确认页、电脑详情） */

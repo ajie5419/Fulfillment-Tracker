@@ -19,7 +19,7 @@ export const PAYMENT_STATUS_TEXT: Record<PaymentStatus, string> = { PENDING: '�
 
 /** 一次导入最多多少行；一张付款申请最多关联多少采购行 */
 export const MAX_IMPORT_ROWS = 500
-export const MAX_PAYMENT_LINES = 50
+export { MAX_PAYMENT_LINES } from '../../../shared/purchases'
 
 export const purchaseLink = (id: string) => `/purchases?id=${encodeURIComponent(id)}`
 export const purchaseMobileLink = (id: string) => `/m/arrival?id=${encodeURIComponent(id)}`

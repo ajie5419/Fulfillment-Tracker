@@ -12,6 +12,7 @@ const props = withDefaults(
     /** 完成度的说法：到货、设计完成、已签收、已付 */
     label: string
     count: number
+    matchedCount?: number
     unit?: string
   }>(),
   { nodes: () => [], unit: '项' },
@@ -31,7 +32,7 @@ const pct = computed(() => (props.total ? Math.round((props.done / props.total) 
       <span class="track"><span class="fill" :class="{ full: total && done === total }" :style="{ width: `${pct}%` }" /></span>
       <span class="txt">{{ label }} {{ done }}/{{ total }}</span>
     </span>
-    <span class="count">{{ count }} {{ unit }}</span>
+    <span class="count">{{ matchedCount == null ? `${count} ${unit}` : `本页 ${count} / 匹配共 ${matchedCount} ${unit}` }}</span>
   </div>
 </template>
 
