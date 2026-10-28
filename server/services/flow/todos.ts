@@ -3,8 +3,10 @@ import { READY_TO_START } from '../purchases/constants'
 import { describeReadyTodos } from '../purchases/purchases'
 import { prisma } from '../../utils/prisma'
 import { CONFIRM_CHANGE, SIGN_RELEASE } from '../releases/constants'
-import { describeReleaseTodos } from '../releases/releases'
-import { FlowError } from './errors'
+import { describeReleaseTodos, type Actor } from '../releases/releases'
+import { FlowError, FlowForbidden } from './errors'
+import type { Prisma, Todo } from '@prisma/client'
+import { canSee, resolveScope } from '../../utils/auth'
 import { ARRANGE_SEND, ARRANGE_START } from './flow'
 import { MODE_TEXT, loadNames } from './names'
 import { CONFIRM_PLAN_NODE, DO_PLAN_TASK, PLAN_REF, PLAN_TASK_REF } from '../plan/constants'
@@ -171,18 +173,58 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[], 
   })
 }
 
-/** 转交：原待办标记已转交，给新负责人建一条同样的待办 */
-export async function transferTodo(todoId: string, toUserId: string) {
+/** Resolve the business object before delegation; orphaned or unknown references must not grant access. */
+async function transferWorkOrder(tx: Prisma.TransactionClient, todo: Todo): Promise<string> {
+  let workOrderNumber: string | undefined
+  switch (todo.refType) {
+    case 'step':
+      workOrderNumber = (await tx.routeStep.findUnique({ where: { id: todo.refId }, select: { part: { select: { workOrderNumber: true } } } }))?.part.workOrderNumber
+      break
+    case 'part':
+      workOrderNumber = (await tx.part.findUnique({ where: { id: todo.refId }, select: { workOrderNumber: true } }))?.workOrderNumber
+      break
+    case 'release':
+      workOrderNumber = (await tx.release.findUnique({ where: { id: todo.refId }, select: { workOrderNumber: true } }))?.workOrderNumber
+      break
+    case PLAN_REF:
+      workOrderNumber = (await tx.planNode.findUnique({ where: { id: todo.refId }, select: { workOrderNumber: true } }))?.workOrderNumber
+      break
+    case PLAN_TASK_REF:
+      workOrderNumber = (await tx.planTask.findUnique({ where: { id: todo.refId }, select: { workOrderNumber: true } }))?.workOrderNumber
+      break
+    default:
+      throw new FlowError('这类待办不支持转交')
+  }
+  if (!workOrderNumber) throw new FlowError('待办关联对象不存在，不能转交')
+  return workOrderNumber
+}
+
+/**
+ * Only the current owner can delegate, including when the caller is an administrator.
+ * Assigned release and plan duties retain their existing owner visibility exceptions;
+ * recipients must already have work-order visibility so delegation cannot expand their data scope.
+ * Read scope through the active transaction to avoid borrowing another connection while holding the todo lock.
+ */
+export async function transferTodo(todoId: string, toUserId: string, actor: Actor, recipientIsAdmin = false) {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM todo WHERE id = ${todoId} FOR UPDATE`
     const todo = await tx.todo.findUnique({ where: { id: todoId } })
     if (!todo) throw new FlowError('待办不存在')
+    if (todo.ownerId !== actor.userId) throw new FlowForbidden('只有当前负责人可以转交这条待办')
     if (todo.status !== 'OPEN') throw new FlowError('这条待办已处理或已转交')
     if (todo.ownerId === toUserId) throw new FlowError('不能转交给当前负责人')
     // 签收是本人确认收到，转给别人就失去意义了；发错人请发放人作废后重发
     if (todo.action === SIGN_RELEASE) throw new FlowError('签收待办不能转交：不是发给你的请拒收并写原因')
-    const user = await tx.qmsUser.findFirst({ where: { id: toUserId, isDeleted: false }, select: { id: true } })
-    if (!user) throw new FlowError('转交对象不存在')
+    const user = await tx.qmsUser.findFirst({ where: { id: toUserId, isDeleted: false, status: 'ACTIVE' }, select: { id: true } })
+    if (!user) throw new FlowError('转交对象不存在或已停用')
+    const workOrderNumber = await transferWorkOrder(tx, todo)
+    const assignedVisibility = todo.refType === 'release' || todo.refType === PLAN_REF || todo.refType === PLAN_TASK_REF
+    if (!assignedVisibility && !canSee(await resolveScope(actor.userId, actor.isAdmin, tx), workOrderNumber)) {
+      throw new FlowForbidden('无权查看该工单的数据，不能转交待办')
+    }
+    if (!canSee(await resolveScope(toUserId, recipientIsAdmin, tx), workOrderNumber)) {
+      throw new FlowForbidden('转交对象无权查看该工单的数据')
+    }
     await tx.todo.update({ where: { id: todoId }, data: { status: 'TRANSFERRED', doneAt: new Date() } })
     // 部门任务转交 = 换负责人（总计划里显示新负责人）
     if (todo.refType === PLAN_TASK_REF) await transferPlanTaskOwner(tx, todo.refId, toUserId)

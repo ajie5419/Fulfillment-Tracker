@@ -1,4 +1,5 @@
 import type { H3Event } from 'h3'
+import type { Prisma } from '@prisma/client'
 import type { IdentityBridgeConfig } from '../services/auth/identity-bridge'
 import { SESSION_COOKIE } from '../services/auth/session'
 import { userBusinessDept } from '../services/auth/departments'
@@ -64,11 +65,11 @@ export function requireUser(event: H3Event): AuthUser {
 // 部门负责人"看本部门"不做硬限制，做成异常列表的默认筛选（可切换全部）。
 
 /** 按用户算可见范围（不依赖请求，后台任务如每日汇总也用它） */
-export async function resolveScope(userId: string, admin: boolean): Promise<Scope> {
+export async function resolveScope(userId: string, admin: boolean, db: Pick<Prisma.TransactionClient, 'notifyRole' | 'workOrderExt'> = prisma): Promise<Scope> {
   if (admin) return { all: true }
   const [role, managed] = await Promise.all([
-    prisma.notifyRole.findFirst({ where: { userId }, select: { id: true } }),
-    prisma.workOrderExt.findMany({ where: { projectManagerId: userId }, select: { workOrderNumber: true } }),
+    db.notifyRole.findFirst({ where: { userId }, select: { id: true } }),
+    db.workOrderExt.findMany({ where: { projectManagerId: userId }, select: { workOrderNumber: true } }),
   ])
   if (role || !managed.length) return { all: true }
   return { all: false, workOrders: new Set(managed.map((m) => m.workOrderNumber)) }

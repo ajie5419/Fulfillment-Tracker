@@ -193,7 +193,7 @@ describe.skipIf(!DB)('部门计划二次分解', () => {
     expect(w.planWarning).toBeNull()
     todos = await taskTodos(task.id)
     expect(todos.at(-1)!.dueAt!.toISOString().slice(0, 10)).toBe(dayStr(9))
-    await s.todos.transferTodo(todos.at(-1)!.id, 'u-pdh')
+    await s.todos.transferTodo(todos.at(-1)!.id, 'u-pdh', { userId: 'u-pm', isAdmin: false })
     expect((await db.planTask.findUniqueOrThrow({ where: { id: task.id } })).ownerId).toBe('u-pdh')
     expect((await taskTodos(task.id)).filter((t) => t.status === 'OPEN').map((t) => t.ownerId)).toEqual(['u-pdh'])
     await expect(s.tasks.updatePlanTask(task.id, { ownerId: 'nobody' })).rejects.toThrow('负责人不存在')

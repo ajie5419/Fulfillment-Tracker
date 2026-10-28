@@ -160,7 +160,7 @@ describe.skipIf(!DB)('发放签收与设计变更（R9）', () => {
     const h = await receiptOf(r.id, 'u-head')
     await expect(s.rel.signReceipt(w.id, 'u-head')).rejects.toBeInstanceOf(s.errors.FlowForbidden)
     const todo = await db.todo.findFirstOrThrow({ where: { refType: 'receipt', refId: w.id } })
-    await expect(s.todos.transferTodo(todo.id, 'u-pm')).rejects.toThrow('签收待办不能转交')
+    await expect(s.todos.transferTodo(todo.id, 'u-pm', { userId: 'u-worker', isAdmin: false })).rejects.toThrow('签收待办不能转交')
 
     await s.rel.signReceipt(w.id, 'u-worker')
     expect(await db.releaseReceipt.findUniqueOrThrow({ where: { id: w.id } })).toMatchObject({ status: 'SIGNED', actedAt: expect.any(Date) })
