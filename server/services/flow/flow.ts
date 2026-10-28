@@ -194,12 +194,12 @@ export async function returnedQty(tx: Tx, stepId: string) {
 
 /**
  * Reconcile completion under the caller's part lock: later work may finish before an earlier rejection is cleared.
- * Only a transition changes the completion date, so repeated scans cannot move the recorded ready day.
+ * Call after a process transition so recovery records a fresh ready day even if a legacy part flag was already DONE.
  */
-async function refreshPartCompletion(tx: Tx, partId: string, now: Date) {
-  const unfinished = await tx.routeStep.count({ where: { partId, status: { not: 'DONE' } } })
-  const status = unfinished ? 'ACTIVE' : 'DONE'
-  await tx.part.updateMany({ where: { id: partId, status: { not: status } }, data: { status, statusSince: now } })
+export async function refreshPartCompletion(tx: Tx, partId: string, now: Date) {
+  const steps = await tx.routeStep.findMany({ where: { partId }, select: { status: true } })
+  const status = steps.length && steps.every((s) => s.status === 'DONE') ? 'DONE' : 'ACTIVE'
+  await tx.part.update({ where: { id: partId }, data: { status, statusSince: now } })
 }
 
 export async function applyReturn(
@@ -294,7 +294,8 @@ export async function applyReturn(
 export async function blockStep(tx: Tx, stepId: string) {
   const step = await lockStep(tx, stepId)
   if (step.status === 'BLOCKED') {
-    await refreshPartCompletion(tx, step.partId, new Date())
+    // Repair a stale flag without moving dates again on an unchanged, already-blocked part.
+    await tx.part.updateMany({ where: { id: step.partId, status: 'DONE' }, data: { status: 'ACTIVE', statusSince: new Date() } })
     return false
   }
   await tx.routeStep.update({ where: { id: step.id }, data: { status: 'BLOCKED' } })

@@ -450,6 +450,26 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     }
   })
 
+  it('reconciles completion after deleting unused processes or appending a new one', async () => {
+    const part = await s.steps.createPart(WO, { name: 'Route edit regression', quantity: 2 })
+    const first = await s.steps.addStep(part.id, { processId: 'P-WELD', mode: 'SELF' }, 'u-head')
+    const last = await s.steps.addStep(part.id, { processId: 'P-PAINT', mode: 'EXTERNAL_OUTSOURCE', supplierId: 'S-PAINT' }, 'u-out')
+    const state = async () => (await db.part.findUniqueOrThrow({ where: { id: part.id } })).status
+    await send(last.id)
+    await s.flow.manualReturn({ stepId: last.id, qty: 2, actorId: 'u-out', source: 'PC' })
+    expect(await state()).toBe('ACTIVE')
+    await s.steps.deleteStep(first.id)
+    expect(await state()).toBe('DONE')
+    const appended = await s.steps.addStep(part.id, { processId: 'P-WELD', mode: 'SELF' }, 'u-head')
+    expect(await state()).toBe('ACTIVE')
+    await s.steps.deleteStep(appended.id)
+    expect(await state()).toBe('DONE')
+    const empty = await s.steps.createPart(WO, { name: 'Empty route regression', quantity: 1 })
+    const unused = await s.steps.addStep(empty.id, { processId: 'P-WELD', mode: 'SELF' }, 'u-head')
+    await s.steps.deleteStep(unused.id)
+    expect((await db.part.findUniqueOrThrow({ where: { id: empty.id } })).status).toBe('ACTIVE')
+  })
+
   it('红色自动转异常（A4）：同事务生成异常、预警已转异常；不再重复生成预警、不再通知', async () => {
     const p = await makePart()
     await send(p.weld.id)
