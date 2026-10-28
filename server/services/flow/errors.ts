@@ -13,3 +13,14 @@ export class FlowForbidden extends FlowError {
     this.name = 'FlowForbidden'
   }
 }
+
+/** 需要指定 HTTP 状态的业务错误（如 QMS 写接口透传的 404 / 409、连不上的 503）。接口层按 statusCode 返回，message 照样给用户看 */
+export class FlowHttpError extends FlowError {
+  constructor(
+    message: string,
+    readonly statusCode: number,
+  ) {
+    super(message)
+    this.name = 'FlowHttpError'
+  }
+}

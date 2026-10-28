@@ -17,9 +17,16 @@ datasource db {
 model QmsWorkOrder {
   workOrderNumber String   @id @db.VarChar(64)
   customerName    String
+  /// QMS 字典 customer_name 的 ID（履约新建 / 修改工单时选客户用）；旧 QMS 同步不输出时为空
+  customerNameId  String?  @db.VarChar(64)
   projectName     String?
+  /// 事业部名称（QMS departments.name）
   division        String?
+  /// 事业部 ID（QMS departments.id）
+  divisionId      String?  @db.VarChar(64)
   quantity        Int
+  /// QMS 乐观锁版本号：履约修改 / 取消工单时原样带回，不符 QMS 返回 409；旧 QMS 同步不输出时为空
+  version         Int?
   deliveryDate    DateTime
   status          String   @db.VarChar(20) // OPEN / IN_PROGRESS / COMPLETED / CANCELLED
   isDeleted       Boolean  @default(false)

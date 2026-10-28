@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3'
 import type { QmsSyncConfig } from '../services/sync/client'
+import { qmsWorkOrderClient } from '../services/sync/write-client'
 
 /**
  * QMS 同步配置：复用身份桥的 apiBase、clientId、clientSecret（同一组客户端凭据）。
@@ -14,4 +15,9 @@ export function qmsSyncConfig(event?: H3Event): QmsSyncConfig {
     clientSecret: qms.clientSecret,
     enabled: !['0', 'false', 'off', 'no', ''].includes(flag),
   }
+}
+
+/** QMS 工单写接口客户端（同一组地址和凭据；不看同步开关） */
+export function qmsWorkOrderApi(event?: H3Event) {
+  return qmsWorkOrderClient(qmsSyncConfig(event))
 }

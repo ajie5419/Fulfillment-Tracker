@@ -14,6 +14,8 @@
  *   去掉"其余工单"卡和"按项目经理 / 表格视图"切换（zhao 10-22），只保留按状态分组。
  * 已完工 / 已取消的工单（zhao 10-22）：默认不显示；工具栏"显示已完工"打开后（?closed=1）在最下面单列一组，表格 / 按项目经理里也列出，
  *   但不进 4 个分组、汇总卡和"源头延误在哪个部门"。工单搜索默认也只搜在做的，打开开关后连已完工的一起搜。
+ * 新建工单（履约新建工单 10-27）：工具栏蓝色主按钮，只有项目部、项目部负责人、管理员看得到（me.can.workOrder）；保存时写入 QMS 工单库。
+ *   建好后跳到该工单详情，并问"是否现在套模板生成总计划"，点"生成"去项目计划页（/plan?wo=，现有的按模板生成入口）。
  */
 import { BOARD_GROUP_TEXT, type BoardGroup, boardGroup } from '#shared/status'
 
@@ -27,7 +29,12 @@ const showClosed = computed({
   set: (v: boolean) => void router.replace({ query: { ...route.query, closed: v ? '1' : undefined } }),
 })
 const closedQuery = computed(() => (showClosed.value ? { closed: '1' } : {}))
-const { data: workOrders } = await useFetch('/api/work-orders', { query: closedQuery, default: () => [] })
+// 不含已完工时与全站工单下拉同一个缓存 key（'work-orders'），新建后一起刷新；含已完工时另用一个 key，不把已完工的混进别处的下拉
+const { data: workOrders, refresh: refreshWorkOrders } = await useFetch('/api/work-orders', {
+  key: computed(() => (showClosed.value ? 'work-orders:closed' : 'work-orders')),
+  query: closedQuery,
+  default: () => [],
+})
 const woOptions = computed(() =>
   workOrders.value.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName ?? ''}` })),
 )
@@ -71,6 +78,22 @@ const COLUMNS: { key: 'LATE' | 'RISK'; icon: 'alert' | 'warn'; tone: 'late' | 'r
   { key: 'RISK', icon: 'warn', tone: 'risk' },
 ]
 const deptItems = computed(() => data.value.sourceByDept.map((d) => ({ key: d.dept, label: d.deptText, value: d.nodes })))
+
+// ───── 新建工单 ─────
+const createOpen = ref(false)
+async function onCreated(no: string) {
+  createOpen.value = false
+  // 工单下拉、看板一起刷新（回到总览时能看到新工单）；全站下拉的缓存也刷新
+  await Promise.all([refreshWorkOrders(), refresh(), showClosed.value ? refreshNuxtData('work-orders') : undefined])
+  await navigateTo(`/wo/${encodeURIComponent(no)}`)
+  Modal.confirm({
+    title: '是否现在套模板生成总计划？',
+    content: `工单 ${no} 已建好。点“生成”去项目计划页，选模板后按模板生成。`,
+    okText: '生成',
+    cancelText: '稍后',
+    onOk: () => navigateTo({ path: '/plan', query: { wo: no } }),
+  })
+}
 </script>
 
 <template>
@@ -92,6 +115,7 @@ const deptItems = computed(() => data.value.sourceByDept.map((d) => ({ key: d.de
         />
         <label class="closed-switch"><a-switch v-model:checked="showClosed" size="small" />显示已完工</label>
         <UiRefreshButton @click="refreshAll()" />
+        <a-button v-if="me?.can.workOrder" type="primary" @click="createOpen = true">新建工单</a-button>
       </div>
     </div>
     <a-alert v-if="data.syncErrors.length" type="error" show-icon class="sync-error" message="QMS 同步出错，数据可能不是最新" :description="syncErrorText" />
@@ -124,6 +148,7 @@ const deptItems = computed(() => data.value.sourceByDept.map((d) => ({ key: d.de
           </div>
         </section>
     </a-spin>
+    <WorkOrderEditModal v-if="me?.can.workOrder" :open="createOpen" :work-order="null" @close="createOpen = false" @done="onCreated" />
   </div>
 </template>
 

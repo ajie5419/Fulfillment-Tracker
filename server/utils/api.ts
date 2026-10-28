@@ -1,10 +1,10 @@
 import type { H3Event } from 'h3'
 import type { z } from 'zod'
-import { FlowError, FlowForbidden } from '../services/flow/errors'
+import { FlowError, FlowForbidden, FlowHttpError } from '../services/flow/errors'
 
 /**
  * 业务接口统一入口：要求登录 + canSee（先算好本请求的可见范围），并把服务层的业务错误转成中文提示：
- * FlowForbidden → 403，其余 FlowError → 400。
+ * FlowForbidden → 403，FlowHttpError → 它带的状态码（如 QMS 透传的 404 / 409、连不上 503），其余 FlowError → 400。
  * 路由只做三件事：zod 校验 → 调服务 → 返回。
  */
 export function defineFlowHandler<T>(handler: (event: H3Event, user: AuthUser) => Promise<T>) {
@@ -25,6 +25,12 @@ async function runFlow<T>(event: H3Event, user: AuthUser, handler: (event: H3Eve
     return await handler(event, user)
   } catch (err) {
     if (err instanceof FlowForbidden) throw createError({ statusCode: 403, statusMessage: 'Forbidden', message: err.message })
+    if (err instanceof FlowHttpError) {
+      // 带 detail 的（QMS 连不上）把原因写进服务器日志；detail 里不含密钥
+      const detail = (err as { detail?: unknown }).detail
+      if (detail) console.error(`[qms-write] ${String(detail)}`)
+      throw createError({ statusCode: err.statusCode, message: err.message })
+    }
     if (err instanceof FlowError) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: err.message })
     throw err
   }
