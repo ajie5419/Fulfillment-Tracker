@@ -11,8 +11,9 @@
  * 连续失败 3 次：给管理员（NUXT_ADMIN_USER_IDS）发一条"我的提醒"（置顶），同一轮故障只发一次；
  * 恢复（该资源同步成功）后清除标记，之后再连续失败 3 次会再发。
  */
-import type { SyncCursor } from '@prisma/client'
+import type { Prisma, SyncCursor } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
+import { LeaseLostError, type LeaseGuard } from '../jobs/lease'
 import { type QmsSyncConfig, QmsSyncError, RESOURCE_TEXT, SYNC_RESOURCES, type SyncResource, fetchSyncPage, formatIssues } from './client'
 import { RESOURCES } from './resources'
 
@@ -52,6 +53,8 @@ export interface SyncOptions {
   pageLimit?: number
   /** 只同步这些资源（测试用），默认全部 */
   only?: SyncResource[]
+  /** Supplied by runSyncJob; standalone service callers retain their existing behavior. */
+  lease?: LeaseGuard
 }
 
 const errorText = (err: unknown) => {
@@ -60,19 +63,24 @@ const errorText = (err: unknown) => {
   return `写入失败：${msg}`.slice(0, 1000)
 }
 
-async function loadCursor(resource: SyncResource): Promise<SyncCursor> {
-  return prisma.syncCursor.upsert({ where: { resource }, create: { resource }, update: {} })
+/** Cursor metadata and failure bookkeeping need the same fence as copied QMS rows. */
+function syncTransaction<T>(opts: Pick<SyncOptions, 'lease'>, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+  return prisma.$transaction(async (tx) => {
+    await opts.lease?.(tx)
+    return fn(tx)
+  })
 }
 
 /** 同步一类资源：翻页直到追平或到页数上限；出错时记录并返回 failed */
 export async function syncResource(resource: SyncResource, opts: SyncOptions): Promise<ResourceResult> {
   const def = RESOURCES[resource]
   const maxPages = opts.maxPages ?? DEFAULT_MAX_PAGES
-  const cursor = await loadCursor(resource)
+  const cursor = await syncTransaction(opts, (tx) => tx.syncCursor.upsert({
+    where: { resource }, create: { resource, lastRunAt: new Date() }, update: { lastRunAt: new Date() },
+  }))
   let since = cursor.since
   let afterId = cursor.afterId
   const result: ResourceResult = { resource, status: 'ok', pages: 0, rows: 0 }
-  await prisma.syncCursor.update({ where: { resource }, data: { lastRunAt: new Date() } })
   try {
     for (;;) {
       if (result.pages >= maxPages) {
@@ -92,7 +100,7 @@ export async function syncResource(resource: SyncResource, opts: SyncOptions): P
         throw new QmsSyncError('QMS 返回的游标没有前进，已停止本轮同步以免死循环')
       }
       const caughtUp = !page.nextCursor
-      await prisma.$transaction(async (tx) => {
+      await syncTransaction(opts, async (tx) => {
         await def.write(tx, rows)
         await tx.syncCursor.update({
           where: { resource },
@@ -111,10 +119,11 @@ export async function syncResource(resource: SyncResource, opts: SyncOptions): P
       if (caughtUp) break
     }
     // 整轮跑完（追平或到页数上限）才清零失败计数：前几页成功、后面某页失败时，失败次数要能连续累加到提醒阈值
-    await prisma.syncCursor.update({ where: { resource }, data: { lastError: null, failCount: 0, alertedAt: null } })
+    await syncTransaction(opts, (tx) => tx.syncCursor.update({ where: { resource }, data: { lastError: null, failCount: 0, alertedAt: null } }))
   } catch (err) {
+    if (err instanceof LeaseLostError) throw err
     const error = errorText(err)
-    await prisma.syncCursor.update({ where: { resource }, data: { lastError: error, failCount: { increment: 1 } } })
+    await syncTransaction(opts, (tx) => tx.syncCursor.update({ where: { resource }, data: { lastError: error, failCount: { increment: 1 } } }))
     return { ...result, status: 'failed', error }
   }
   return result
@@ -137,7 +146,7 @@ export async function syncQms(opts: SyncOptions): Promise<SyncResult> {
     results.push(r)
   }
   const ins = results.find((r) => r.resource === 'inspections')
-  const alerted = await alertAdminsIfNeeded(opts.adminIds)
+  const alerted = await alertAdminsIfNeeded(opts.adminIds, new Date(), opts.lease)
   return { resources: results, inspectionsOk: !!ins && (ins.status === 'ok' || ins.status === 'partial'), alerted }
 }
 
@@ -148,7 +157,7 @@ export const syncFailKey = (incidentAt: Date, userId: string) => `SYNC_FAIL:${in
  * 发出后给所有正在失败的资源打上 alertedAt：同一轮故障里别的资源后来也到 3 次不再重复发；
  * 资源恢复时清掉自己的 alertedAt，全部恢复后再失败就是新一轮故障。
  */
-export async function alertAdminsIfNeeded(adminIds: string[], now = new Date()): Promise<number> {
+export async function alertAdminsIfNeeded(adminIds: string[], now = new Date(), lease?: LeaseGuard): Promise<number> {
   const order = (c: SyncCursor) => SYNC_RESOURCES.indexOf(c.resource as SyncResource)
   const cursors = (await prisma.syncCursor.findMany()).sort((a, b) => order(a) - order(b))
   const failing = cursors.filter((c) => c.failCount > 0)
@@ -157,7 +166,7 @@ export async function alertAdminsIfNeeded(adminIds: string[], now = new Date()):
   const label = (c: SyncCursor) => RESOURCE_TEXT[c.resource as SyncResource] ?? c.resource
   const title = `QMS 同步连续失败 ${Math.max(...over.map((c) => c.failCount))} 次：${over.map(label).join('、')}`
   const body = failing.map((c) => `${label(c)}：连续失败 ${c.failCount} 次，${c.lastError ?? ''}`).join('\n')
-  return prisma.$transaction(async (tx) => {
+  return syncTransaction({ lease }, async (tx) => {
     const r = await tx.reminder.createMany({
       data: adminIds.map((userId) => ({ userId, title, body, level: 'RED' as const, kind: 'SYNC_FAIL', dedupeKey: syncFailKey(now, userId) })),
       skipDuplicates: true,

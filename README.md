@@ -44,6 +44,7 @@ node scripts/mock-identity-bridge.mjs         # 监听 4100，授权页上选择
 `sync-qms` 每 5 分钟按游标（`sync_cursor`）增量拉取 QMS 的工单、外协单位、厂内外协班组（`teams`，与外协单位同存 `qms_supplier`，kind = TEAM）、工序、部门、用户、报检，写入 `qms_*` 只读副本，然后对新报检做返厂匹配（只看工件登记之后提交的报检；多工单报检任一工单命中即候选）、QMS 不合格转异常（`inspectionResult = FAIL` 或关联了 QMS 问题单）。接口契约：`GET /api/integration/fulfillment/<resource>`，认证用身份桥同一组客户端凭据（`server/services/sync/client.ts` 顶部注释）。
 
 - 每页写入与推进游标在同一事务里，中断后下一轮续跑，不重复、不丢；单次运行每类最多 200 页
+- 同步任务在每次写入事务开始时锁住租约行、核对持有人与有效期，并续租 15 分钟；保护范围含副本、游标、失败记录、管理员提醒和同步后的自动匹配 / 到货 / 不合格转异常。租约过期或被接管后抛出 `LeaseLostError`，结束整轮任务，已提交的页保留；迟到的 QMS 响应不能继续落库。没有后台续租定时器；等待接口期间仍按现有超时处理，返回后必须重新通过租约检查
 - 某类失败记在 `sync_cursor.lastError`、连续失败次数 +1；连续 3 次给管理员发一条置顶的"我的提醒"（同一轮故障只发一次）
 - 看板显示"QMS 最后同步"（各类资源里最旧的那类），有报错时显示错误；设置页"QMS 同步状态"列出每类的游标、最近错误、连续失败次数
 - `NUXT_QMS_SYNC_ENABLED=0`，或 QMS 地址、客户端凭据为空时任务跳过不报错
@@ -169,6 +170,6 @@ docker compose up -d
 | `NUXT_QMS_SYNC_ENABLED` | QMS 数据同步开关，默认开启；`0` 关闭（复用 `NUXT_QMS_API_BASE` 与客户端凭据） |
 | `NUXT_ADMIN_USER_IDS` | 管理员（设置页：阈值、停工日、通知对象、工单项目经理），逗号分隔的 QMS 用户 ID；演示时用 `u-001` |
 
-QMS 同步 `sync-qms` 每 5 分钟（`server/tasks/sync-qms.ts`）、预警扫描 `scan-rules` 每 15 分钟由 Nitro scheduledTasks 执行（`server/tasks/scan-rules.ts`），`pnpm dev` 和构建产物都会跑；用 `job_lock` 表上的租约锁防重叠（进程崩溃后租约到期自动失效：扫描 10 分钟、同步 15 分钟）。
+QMS 同步 `sync-qms` 每 5 分钟（`server/tasks/sync-qms.ts`）、预警扫描 `scan-rules` 每 15 分钟由 Nitro scheduledTasks 执行（`server/tasks/scan-rules.ts`），`pnpm dev` 和构建产物都会跑；用 `job_lock` 表上的租约锁防重叠（扫描为固定 10 分钟；同步每次写事务核验并续租 15 分钟，进程崩溃后租约到期自动失效）。本次保护只接入同步任务，预警扫描的固定租约行为保持原样。`tests/unit/sync-lease.test.ts` 覆盖失锁、续租及各写入入口；`tests/integration/job-lease.test.ts` 验证真实 MySQL 事务锁与回滚，需要独立 `TEST_DATABASE_URL`，缺库时跳过不能算通过。
 
 缺少必填项时服务启动即报错退出。
