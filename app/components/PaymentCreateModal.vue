@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { MAX_PAYMENT_LINES } from '#shared/purchases'
+import type { PageResult } from '#shared/pagination'
 /**
  * 新建付款申请（R10）：关联同一工单的采购行、金额、申请日、是否卡交期、说明。不审批，财务标记已付 / 暂缓。
  * 从采购到货页勾选几行进来时预先选好；从付款申请页进来时先选工单再选采购行。
@@ -17,35 +19,65 @@ const form = reactive({
 })
 const saving = ref(false)
 
-const { data: list, refresh } = await useFetch('/api/purchases', {
-  query: computed(() => ({ workOrderNumber: form.workOrderNumber, view: 'all' })),
-  default: () => ({ rows: [] as PurchaseRow[], total: 0, stats: null }),
-  immediate: false,
-  watch: false,
+const search = ref('')
+const picked = ref(new Map<string, PurchaseOption>())
+const choices = usePagedList<PurchaseOption>('/api/purchases/options', {
+  key: 'payment-material-options', mode: 'append', pageSize: ref(20),
+  enabled: computed(() => props.open && !!form.workOrderNumber),
+  query: computed(() => ({ workOrderNumber: form.workOrderNumber, q: search.value.trim() || undefined })),
 })
+const { rows: choiceRows, pending: choiceLoading, error: choiceError, finished: choicesFinished } = choices
+let opening = 0
+
+/** Selected records may be on any page. Hydrate them separately without widening
+ * the work-order scope, and discard results from a closed or replaced dialog. */
+async function hydrate(ids: string[], wo: string, version: number) {
+  try {
+    const read = $fetch as unknown as (url: string, opts: { query: object }) => Promise<PageResult<PurchaseOption>>
+    const result = await read('/api/purchases/options', { query: { workOrderNumber: wo, ids, pageSize: MAX_PAYMENT_LINES } })
+    if (version !== opening || !props.open || wo !== form.workOrderNumber) return
+    picked.value = new Map([...picked.value.values(), ...result.rows]
+      .filter((row) => form.purchaseLineIds.includes(row.id)).map((row) => [row.id, row]))
+  } catch (e) {
+    if (version === opening && props.open) message.error(`已选物料加载失败：${apiError(e)}`)
+  }
+}
 
 watch(
   () => props.open,
   (open) => {
+    const version = ++opening
     if (!open) return
     const pre = props.lines ?? []
     Object.assign(form, { workOrderNumber: pre[0]?.workOrderNumber, purchaseLineIds: pre.map((l) => l.id), amount: undefined, requestDate: dayAfter(0), blocksDelivery: false, note: '' })
-    if (form.workOrderNumber) refresh()
+    search.value = ''
+    picked.value.clear()
+    if (form.workOrderNumber && pre.length) void hydrate(form.purchaseLineIds, form.workOrderNumber, version)
   },
+  { immediate: true },
 )
 /** 只有用户手动换工单时才清空已选采购行（打开弹窗时预选的不受影响） */
 function onWorkOrderChange() {
+  opening++
   form.purchaseLineIds = []
-  if (form.workOrderNumber) refresh()
+  picked.value.clear()
+  search.value = ''
 }
-const lineOptions = computed(() =>
-  (list.value.rows as PurchaseRow[])
-    .filter((l) => l.status !== 'CANCELLED')
-    .map((l) => ({ value: l.id, label: `${l.materialName}${l.spec ? `（${l.spec}）` : ''} · ${l.supplierName ?? '未填供应商'} · 需求日 ${dayText(l.needDate)} · ${l.progressText}` })),
-)
+watch(() => form.purchaseLineIds, (ids) => {
+  for (const row of choiceRows.value) if (ids.includes(row.id)) picked.value.set(row.id, row)
+  for (const id of picked.value.keys()) if (!ids.includes(id)) picked.value.delete(id)
+})
+const lineOptions = computed(() => [...new Map([...picked.value.values(), ...choiceRows.value].map((row) => [row.id, row])).values()]
+  .map((l) => ({ value: l.id, label: `${l.materialName}${l.spec ? `（${l.spec}）` : ''} · ${l.supplierName ?? '未填供应商'} · 需求日 ${dayText(l.needDate)}` })))
+function onOptionsScroll(event: UIEvent) {
+  const target = event.target as HTMLElement
+  if (target.scrollHeight - target.scrollTop - target.clientHeight < 40) void choices.next()
+}
+onBeforeUnmount(() => { opening++ })
 
 async function submit() {
   if (!form.purchaseLineIds.length) return message.warning('请选择关联的采购行')
+  if (form.purchaseLineIds.length > MAX_PAYMENT_LINES) return message.warning(`最多关联 ${MAX_PAYMENT_LINES} 项`)
   if (!form.amount || form.amount <= 0) return message.warning('请填写金额')
   saving.value = true
   try {
@@ -80,7 +112,13 @@ async function submit() {
         />
       </a-form-item>
       <a-form-item label="关联物料" required>
-        <a-select v-model:value="form.purchaseLineIds" mode="multiple" option-filter-prop="label" :placeholder="form.workOrderNumber ? '选这笔钱付的是哪些物料' : '先选工单'" :options="lineOptions" />
+        <a-select v-model:value="form.purchaseLineIds" mode="multiple" show-search :filter-option="false" :loading="choiceLoading"
+          :disabled="!form.workOrderNumber" :placeholder="form.workOrderNumber ? '搜索这笔钱付的是哪些物料' : '先选工单'"
+          :options="lineOptions" @search="(value: string) => search = value" @popup-scroll="onOptionsScroll" />
+        <div v-if="form.workOrderNumber" class="muted">
+          已加载 {{ choiceRows.length }} / {{ choices.total.value }} 项
+          <a-button v-if="choiceError || !choicesFinished" type="link" size="small" :loading="choiceLoading" @click="choices.next()">{{ choiceError ? '加载失败，重试' : '加载更多' }}</a-button>
+        </div>
       </a-form-item>
       <a-form-item label="金额（元）" required>
         <a-input-number v-model:value="form.amount" :min="0.01" :max="1000000000000" :precision="2" :controls="false" style="width: 200px" />

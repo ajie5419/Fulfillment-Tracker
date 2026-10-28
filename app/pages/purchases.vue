@@ -7,7 +7,8 @@
  * 前端改版第二轮：顶部统计卡（未到货 / 缺料 / 延误 / 卡付款，点了套用对应视图，数字是接口 stats，与视图同一口径）；
  * 列表默认按工单分组（?layout=group|table），组标题带本组到货完成度。
  */
-import { distinctPlanNodes, groupByWorkOrder, groupProgress } from '#shared/workbench'
+import { distinctPlanNodes, groupByWorkOrder } from '#shared/workbench'
+import { MAX_PAYMENT_LINES } from '#shared/purchases'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,28 +26,42 @@ const VIEWS = [
 ] as const
 /** 只由统计卡套用的视图（不在上面的单选里）：卡付款 */
 const CARD_VIEWS = ['blocked']
+function changeQuery(values: Record<string, string | undefined>, reset = true) {
+  return router.replace({ query: { ...route.query, ...(reset ? { page: undefined } : {}), ...values } })
+}
 const filter = reactive({
-  workOrderNumber: (route.query.wo as string) || undefined,
-  view: VIEWS.some((v) => v.value === route.query.view) || CARD_VIEWS.includes(route.query.view as string) ? (route.query.view as string) : route.query.id ? 'all' : 'open',
-  q: '',
+  get workOrderNumber() { return typeof route.query.wo === 'string' ? route.query.wo : undefined },
+  set workOrderNumber(value: string | undefined) { void changeQuery({ wo: value }) },
+  get view() { return VIEWS.some((v) => v.value === route.query.view) || CARD_VIEWS.includes(route.query.view as string) ? route.query.view as string : route.query.id ? 'all' : 'open' },
+  set view(value: string) { void changeQuery({ view: value }) },
+  get q() { return typeof route.query.q === 'string' ? route.query.q : '' },
 })
-const keyword = ref('')
+const keyword = ref(filter.q)
 let timer: ReturnType<typeof setTimeout> | undefined
 watch(keyword, (v) => {
   clearTimeout(timer)
-  timer = setTimeout(() => (filter.q = v.trim()), 300)
+  timer = setTimeout(() => { if (v.trim() !== filter.q) void changeQuery({ q: v.trim() || undefined }) }, 300)
 })
-watch(
-  () => [filter.workOrderNumber, filter.view],
-  () => router.replace({ query: { ...route.query, wo: filter.workOrderNumber || undefined, view: filter.view } }),
-)
-
-const { data, pending, refresh } = await useFetch('/api/purchases', {
+watch(() => filter.q, (q) => { keyword.value = q })
+onBeforeUnmount(() => clearTimeout(timer))
+const page = computed({
+  get: () => Math.max(1, Number(route.query.page) || 1),
+  set: (value: number) => { void changeQuery({ page: value === 1 ? undefined : String(value) }, false) },
+})
+const pageSize = computed({
+  get: () => [20, 50, 100].includes(Number(route.query.pageSize)) ? Number(route.query.pageSize) : 50,
+  set: (value: number) => { void changeQuery({ pageSize: String(value) }) },
+})
+const list = usePagedList<PurchaseRow, PurchasePage>('/api/purchases', {
+  key: 'purchase-desktop', page, pageSize,
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber, view: filter.view, q: filter.q || undefined })),
-  default: () => ({ rows: [] as PurchaseRow[], total: 0, stats: null as PurchaseStats | null }),
 })
-const rows = computed(() => data.value.rows as PurchaseRow[])
-const stats = computed(() => data.value.stats as PurchaseStats | null)
+await list.ready
+const { rows, pending, error, total, refresh } = list
+const stats = computed(() => list.data.value?.stats)
+function changePage(p: number, size: number) {
+  void changeQuery({ page: size === pageSize.value && p !== 1 ? String(p) : undefined, pageSize: String(size) }, false)
+}
 
 // ───── 统计卡、按工单分组 ─────
 /** 点统计卡：套用对应视图；再点一次回到"未到货" */
@@ -56,7 +71,7 @@ const layout = useListLayout()
 const tables = computed(() =>
   layout.value === 'group' ? groupByWorkOrder(rows.value).map((g) => ({ key: g.workOrderNumber, ...g })) : [{ key: '__all', workOrderNumber: '', rows: rows.value }],
 )
-const arrivedOf = (g: { rows: PurchaseRow[] }) => groupProgress(g.rows, (r) => r.status === 'ARRIVED', (r) => r.status !== 'CANCELLED')
+const arrivedOf = (g: { workOrderNumber: string }) => list.data.value?.groups[g.workOrderNumber] ?? { done: 0, total: 0, count: 0 }
 
 // ───── 新建 / 编辑 ─────
 const editing = ref<PurchaseRow | null>(null)
@@ -189,7 +204,14 @@ function remove(r: PurchaseRow) {
 
 // ───── 申请付款（勾选同一工单的几行）─────
 const selectedKeys = ref<string[]>([])
-const selectedRows = computed(() => rows.value.filter((r) => selectedKeys.value.includes(r.id)))
+const selection = ref(new Map<string, PurchaseRow>())
+const selectedRows = computed(() => selectedKeys.value.map((id) => selection.value.get(id)).filter((r): r is PurchaseRow => !!r))
+watch(rows, (value) => { for (const row of value) if (selectedKeys.value.includes(row.id)) selection.value.set(row.id, row) })
+watch([() => filter.workOrderNumber, () => filter.view, () => filter.q], () => {
+  if (selectedKeys.value.length) message.info('筛选已改变，已清空勾选的物料')
+  selectedKeys.value = []
+  selection.value.clear()
+})
 const paying = ref(false)
 function openPay() {
   const wos = new Set(selectedRows.value.map((r) => r.workOrderNumber))
@@ -199,14 +221,20 @@ function openPay() {
 async function paid() {
   paying.value = false
   selectedKeys.value = []
+  selection.value.clear()
   await refresh()
 }
 /** 勾选：分组时每张小表各自勾选，合并成一份（换掉这张表里的勾选，别的表不动） */
 function rowSelectionFor(list: PurchaseRow[]) {
-  const ids = new Set(list.map((r) => r.id))
   return {
-    selectedRowKeys: selectedKeys.value.filter((k) => ids.has(k)),
-    onChange: (keys: (string | number)[]) => (selectedKeys.value = [...selectedKeys.value.filter((k) => !ids.has(k)), ...keys.map(String)]),
+    preserveSelectedRowKeys: true,
+    selectedRowKeys: selectedKeys.value,
+    onChange: (keys: (string | number)[]) => {
+      if (keys.length > MAX_PAYMENT_LINES) return message.warning(`一张付款申请最多关联 ${MAX_PAYMENT_LINES} 项`)
+      selectedKeys.value = keys.map(String)
+      for (const row of list) if (selectedKeys.value.includes(row.id)) selection.value.set(row.id, row)
+      for (const id of selection.value.keys()) if (!selectedKeys.value.includes(id)) selection.value.delete(id)
+    },
     getCheckboxProps: (r: PurchaseRow) => ({ disabled: r.status === 'CANCELLED' || !canDo(me.value, 'payment', { workOrderNumber: r.workOrderNumber }) }),
   }
 }
@@ -280,9 +308,10 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
     <p v-if="stats?.delay.late" class="muted">
       延误 {{ stats.delay.late }} 项：付款原因 <b>{{ stats.delay.payment }}</b> · 管理原因 <b>{{ stats.delay.management }}</b>（供应商 {{ stats.delay.byReason.SUPPLIER }}、我方需求变化 {{ stats.delay.byReason.DEMAND_CHANGE }}、其他 {{ stats.delay.byReason.OTHER }}）；已到货 {{ stats.arrived }} 项
     </p>
-    <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty :description="filter.view === 'open' ? '没有未到货的关键物料' : '没有记录'" /></a-spin>
-    <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
-    <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" :nodes="distinctPlanNodes(t.rows)" v-bind="arrivedOf(t)" label="到货" :count="t.rows.length" />
+    <a-alert v-if="error" type="error" show-icon :message="`加载失败：${apiError(error)}`"><template #action><a-button @click="refresh()">重试</a-button></template></a-alert>
+    <a-spin v-else-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty :description="filter.view === 'open' ? '没有未到货的关键物料' : '没有记录'" /></a-spin>
+    <div v-for="t in error ? [] : tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
+    <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" :nodes="distinctPlanNodes(t.rows)" :done="arrivedOf(t).done" :total="arrivedOf(t).total" :matched-count="arrivedOf(t).count" label="到货" :count="t.rows.length" />
     <a-table
       :columns="layout === 'group' ? groupColumns : columns"
       :data-source="t.rows"
@@ -291,7 +320,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
       size="small"
       :row-selection="rowSelectionFor(t.rows)"
       :scroll="{ x: layout === 'group' ? groupWidth : tableWidth }"
-      :pagination="layout === 'group' ? false : { pageSize: 50, hideOnSinglePage: true }"
+      :pagination="false"
     >
       <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未到货的关键物料' : '没有记录'" /></template>
       <template #bodyCell="{ column, record }">
@@ -355,6 +384,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
       </template>
     </a-table>
     </div>
+    <UiListPager v-if="!error" :page="page" :page-size="pageSize" :total="total" :loading="pending" @change="changePage" />
   </a-card>
   </div>
 

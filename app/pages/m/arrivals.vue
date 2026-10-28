@@ -2,23 +2,31 @@
 import { toneOfVant } from '#shared/mobile-todo'
 
 /** 手机：到货确认（R10）。未到货的关键物料（缺料、超期的在前）/ 已到货；点一条进入确认页。仓库、使用部门、采购都可以确认 */
-definePageMeta({ layout: 'mobile' })
+definePageMeta({ layout: 'mobile', keepalive: true })
 const route = useRoute()
 const router = useRouter()
-const tab = ref<'open' | 'arrived'>(route.query.tab === 'arrived' ? 'arrived' : 'open')
-watch(tab, (t) => router.replace({ query: { ...route.query, tab: t } }))
-const keyword = ref('')
-const q = ref('')
+const tab = computed({
+  get: () => route.query.tab === 'arrived' ? 'arrived' : 'open',
+  set: (value: string) => { void router.replace({ query: { ...route.query, tab: value } }) },
+})
+const keyword = ref(typeof route.query.q === 'string' ? route.query.q : '')
+const q = computed(() => typeof route.query.q === 'string' ? route.query.q : '')
 let timer: ReturnType<typeof setTimeout> | undefined
 watch(keyword, (v) => {
   clearTimeout(timer)
-  timer = setTimeout(() => (q.value = v.trim()), 300)
+  timer = setTimeout(() => { if (v.trim() !== q.value) void router.replace({ query: { ...route.query, q: v.trim() || undefined } }) }, 300)
 })
-const { data, pending } = await useFetch('/api/purchases', {
+watch(q, (value) => { keyword.value = value })
+onBeforeUnmount(() => clearTimeout(timer))
+const list = usePagedList<PurchaseRow>('/api/purchases', {
+  key: 'purchase-mobile', mode: 'append', pageSize: ref(20),
   query: computed(() => ({ view: tab.value, q: q.value || undefined })),
-  default: () => ({ rows: [] as PurchaseRow[], total: 0, stats: null }),
 })
-const rows = computed(() => data.value.rows as PurchaseRow[])
+await list.ready
+const { rows, pending, error, total, finished, next } = list
+const scroll = ref(0)
+onBeforeRouteLeave(() => { scroll.value = window.scrollY })
+onActivated(() => nextTick(() => window.scrollTo(0, scroll.value)))
 </script>
 
 <template>
@@ -29,9 +37,11 @@ const rows = computed(() => data.value.rows as PurchaseRow[])
       <van-tab title="已到货" name="arrived" />
     </van-tabs>
     <van-search v-model="keyword" placeholder="物料、规格、供应商、工单" shape="round" />
-    <van-loading v-if="pending" class="m-center" />
+    <van-loading v-if="pending && !rows.length" class="m-center" />
+    <van-empty v-else-if="error && !rows.length" image="error" description="加载失败，请重试" image-size="80"><van-button size="small" @click="next()">重试</van-button></van-empty>
     <van-empty v-else-if="!rows.length" :description="tab === 'open' ? '没有未到货的关键物料' : '还没有到货记录'" image-size="80" />
-    <div v-else class="m-list">
+    <UiLoadMoreList v-else :loading="pending" :finished="finished" :error="!!error" :loaded="rows.length" :total="total" @load="next()">
+    <div class="m-list">
       <MCard v-for="r in rows" :key="r.id" :tone="toneOfVant(PURCHASE_PROGRESS_TYPE[r.progressText])" link @click="navigateTo(`/m/arrival?id=${encodeURIComponent(r.id)}`)">
         <div class="m-row">
           <van-tag :type="PURCHASE_PROGRESS_TYPE[r.progressText] ?? 'default'">{{ r.progressText }}</van-tag>
@@ -48,6 +58,7 @@ const rows = computed(() => data.value.rows as PurchaseRow[])
         </div>
       </MCard>
     </div>
+    </UiLoadMoreList>
     <div class="m-foot" />
   </div>
 </template>

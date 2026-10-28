@@ -71,6 +71,24 @@ export interface PurchaseRow {
   customerName?: string | null
 }
 
+export interface PurchasePage {
+  rows: PurchaseRow[]
+  total: number
+  page: number
+  pageSize: number
+  stats: PurchaseStats
+  groups: Record<string, { done: number; total: number; count: number }>
+}
+
+export interface PurchaseOption {
+  id: string
+  workOrderNumber: string
+  materialName: string
+  spec: string | null
+  supplierName: string | null
+  needDate: string
+}
+
 export interface PurchaseStats {
   open: number
   shortage: number

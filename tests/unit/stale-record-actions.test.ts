@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Vue from 'vue'
 import * as workbench from '../../shared/workbench'
+import * as purchases from '../../shared/purchases'
 import { deferred, flushVue, mountScript } from '../helpers/vue-script'
 
 const cleanups: (() => void)[] = []
-const message = { success: vi.fn(), warning: vi.fn(), error: vi.fn() }
+const message = { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() }
 const send = vi.fn()
 const fetchRelease = vi.fn()
 const fetchApi = vi.fn()
@@ -16,6 +17,7 @@ beforeEach(() => {
   vi.stubGlobal('useWorkOrders', async () => ({ data: Vue.ref([{ workOrderNumber: 'WO-A' }, { workOrderNumber: 'WO-B' }]) }))
   vi.stubGlobal('useMaster', async () => ({ data: Vue.ref({ suppliers: [], users: [] }) }))
   vi.stubGlobal('useFetch', async () => ({ data: parts, refresh: vi.fn() }))
+  vi.stubGlobal('usePagedList', () => ({ ready: Promise.resolve(), data: Vue.ref({ rows: [], stats: null, groups: {} }), rows: Vue.ref([]), total: Vue.ref(0), pending: Vue.ref(false), error: Vue.ref(null), finished: Vue.ref(false), refresh: vi.fn() }))
   vi.stubGlobal('message', message)
   vi.stubGlobal('apiError', (e: Error) => e.message)
   vi.stubGlobal('dayText', (s: string) => s?.slice(0, 10) ?? '')
@@ -42,7 +44,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 async function mount(file: string, props: Record<string, unknown> = {}) {
-  const result = await mountScript(file, props, { '#shared/workbench': workbench })
+  const result = await mountScript(file, props, { '#shared/workbench': workbench, '#shared/purchases': purchases })
   cleanups.push(result.unmount)
   return result
 }
@@ -133,6 +135,56 @@ describe.each([
     await saving
     expect(events).toEqual([])
     expect(message.success).not.toHaveBeenCalled()
+  })
+})
+
+describe('purchase pagination selection', () => {
+  it('preserves cross-page selections and clears them only when filters change', async () => {
+    const route = Vue.reactive({ query: { page: '1', view: 'open' } })
+    vi.stubGlobal('useRoute', () => route)
+    vi.stubGlobal('useRouter', () => ({ replace: vi.fn() }))
+    vi.stubGlobal('useMe', async () => ({ data: Vue.ref({}) }))
+    vi.stubGlobal('useListLayout', () => Vue.ref('table'))
+    const { state } = await mount('app/pages/purchases.vue')
+    state.rowSelectionFor([record('A')]).onChange(['A'])
+    route.query = { page: '2', view: 'open' }
+    await flushVue()
+    expect(state.selectedKeys).toEqual(['A'])
+    state.rowSelectionFor([record('B')]).onChange(['A', 'B'])
+    expect(state.selectedRows.map((r: any) => r.id)).toEqual(['A', 'B'])
+    state.rowSelectionFor([]).onChange(Array.from({ length: 51 }, (_, i) => String(i)))
+    expect(state.selectedKeys).toEqual(['A', 'B'])
+    expect(message.warning).toHaveBeenCalledWith('一张付款申请最多关联 50 项')
+    route.query = { page: '1', view: 'arrived' }
+    await flushVue()
+    expect(state.selectedKeys).toEqual([])
+    expect(state.selection.size).toBe(0)
+  })
+})
+
+describe('payment material hydration', () => {
+  it('keeps a newly selected option when preselected records arrive later', async () => {
+    const request = deferred()
+    fetchApi.mockReturnValue(request.promise)
+    const { state } = await mount('app/components/PaymentCreateModal.vue', { open: true, lines: [record('A')] })
+    state.choiceRows = [{ ...record('B'), workOrderNumber: 'WO-A' }]
+    state.form.purchaseLineIds = ['A', 'B']
+    await flushVue()
+    request.resolve({ rows: [record('A')] })
+    await flushVue()
+    expect(state.lineOptions.map((r: any) => r.value).sort()).toEqual(['A', 'B'])
+  })
+
+  it('ignores hydration from the previous work order', async () => {
+    const request = deferred()
+    fetchApi.mockReturnValue(request.promise)
+    const { state } = await mount('app/components/PaymentCreateModal.vue', { open: true, lines: [record('A')] })
+    state.form.workOrderNumber = 'WO-B'
+    state.onWorkOrderChange()
+    request.resolve({ rows: [record('A')] })
+    await flushVue()
+    expect(state.form.purchaseLineIds).toEqual([])
+    expect(state.picked.size).toBe(0)
   })
 })
 

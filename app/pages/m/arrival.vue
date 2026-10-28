@@ -60,6 +60,7 @@ async function confirm() {
     })
     confirming.value = false
     showSuccessToast(r.readySent ? '已确认到货，工件物料已齐' : '已确认到货')
+    invalidatePagedList('purchase-mobile')
     await load()
     await refreshNuxtData(['todos', 'reminders'])
   } catch (e) {
@@ -81,6 +82,7 @@ async function undo() {
   try {
     await purchaseSend(`/api/purchases/${l.id}/undo-arrival`, 'POST')
     showSuccessToast('已撤销')
+    invalidatePagedList('purchase-mobile')
     await load()
     await refreshNuxtData(['todos', 'reminders']) // 撤销会作废没处理的"可以开工"待办
   } catch (e) {

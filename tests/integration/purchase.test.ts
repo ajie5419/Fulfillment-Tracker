@@ -529,7 +529,7 @@ describe.skipIf(!DB)('关键物料到货与付款（R10）', () => {
     }
   })
 
-  it('列表截断：大量已到货的旧行不会把未到货的挤出去；统计、延误分类不受截断影响；关键字在数据库里筛', async () => {
+  it('paginates after filtering and ordering while keeping full-scope statistics', async () => {
     await db.paymentRequest.deleteMany()
     await db.purchaseLine.deleteMany()
     await db.purchaseLine.createMany({
@@ -549,7 +549,12 @@ describe.skipIf(!DB)('关键物料到货与付款（R10）', () => {
     await s.pur.updateLine(late.id, { delayReason: 'PAYMENT' })
     const all = await s.pur.listLines({ view: 'all' })
     expect(all.total).toBe(522)
-    expect(all.rows).toHaveLength(500)
+    expect(all.rows).toHaveLength(50)
+    expect(all).toMatchObject({ page: 1, pageSize: 50 })
+    const pages = await Promise.all(Array.from({ length: 11 }, (_, i) => s.pur.listLines({ view: 'all', page: i + 1 })))
+    expect(new Set(pages.flatMap((p) => p.rows.map((r) => r.id))).size).toBe(522)
+    expect(pages[10]!.rows).toHaveLength(22)
+    expect(pages.every((p) => p.stats.arrived === 520)).toBe(true)
     expect(all.rows.slice(0, 2).map((r) => r.id).sort()).toEqual([open.id, late.id].sort()) // 未到货的在前
     expect((await s.pur.listLines({ view: 'open' })).rows.map((r) => r.id).sort()).toEqual([open.id, late.id].sort())
     const { stats } = all
@@ -563,5 +568,54 @@ describe.skipIf(!DB)('关键物料到货与付款（R10）', () => {
     // 关键字不区分大小写，在截断前筛
     expect((await s.pur.listLines({ view: 'all', q: 'late-ITEM' })).rows.map((r) => r.id)).toEqual([late.id])
     expect((await s.pur.listLines({ view: 'arrived', q: '旧物料519' })).rows.map((r) => r.materialName)).toEqual(['旧物料519'])
+  })
+
+  async function seedPagination() {
+    await db.paymentRequest.deleteMany()
+    await db.purchaseLine.deleteMany()
+    await db.purchaseLine.createMany({ data: Array.from({ length: 1001 }, (_, i) => ({
+      id: `pagination-${String(i).padStart(4, '0')}`, workOrderNumber: WO,
+      materialName: `Paged material ${i}`, quantity: 1, createdBy: 'u-buyer',
+      createdAt: new Date('2026-10-28T00:00:00Z'), needDate: dayOff(i < 520 ? 1 : 2),
+      status: i < 520 ? 'OPEN' as const : i < 1000 ? 'ARRIVED' as const : 'CANCELLED' as const,
+      arrivedDate: i >= 520 && i < 1000 ? dayOff(i % 3) : null,
+    })) })
+    return line({ workOrderNumber: OTHER_WO, materialName: 'Hidden material' })
+  }
+
+  it('covers 1001 records, ties, status boundaries, group totals and visibility on every page', async () => {
+    const hidden = await seedPagination()
+    const results = []
+    for (let page = 1; page <= 11; page++) results.push(await s.pur.listLines({ view: 'all', page, pageSize: 100, visibleWorkOrders: [WO] }))
+    const ids = results.flatMap((p) => p.rows.map((r) => r.id))
+    expect(ids).toHaveLength(1001)
+    expect(new Set(ids).size).toBe(1001)
+    expect(ids).not.toContain(hidden.id)
+    expect(results.every((p) => p.total === 1001 && p.groups[WO]?.count === 1001 && p.groups[WO]?.total === 1000 && p.groups[WO]?.done === 480)).toBe(true)
+    expect(ids.slice(0, 520)).toEqual(Array.from({ length: 520 }, (_, i) => `pagination-${String(i).padStart(4, '0')}`))
+    const arrivals = results.flatMap((p) => p.rows).filter((r) => r.status === 'ARRIVED')
+    expect(arrivals.every((r, i) => !i || +arrivals[i - 1]!.arrivedDate! >= +r.arrivedDate!)).toBe(true)
+    expect((await s.pur.listLines({ view: 'all', visibleWorkOrders: [] })).total).toBe(0)
+    const found = await s.pur.listLines({ view: 'all', q: 'Paged material 999', visibleWorkOrders: [WO] })
+    expect(found.rows.map((r) => r.id)).toEqual(['pagination-0999'])
+    expect(found.groups[WO]).toEqual({ done: 1, total: 1, count: 1 })
+    const last = await s.pur.listLines({ view: 'all', page: 9999, pageSize: 100, visibleWorkOrders: [WO] })
+    expect(last).toMatchObject({ page: 11, total: 1001 })
+    await db.purchaseLine.delete({ where: { id: 'pagination-1000' } })
+    expect(await s.pur.listLines({ view: 'all', page: 11, pageSize: 100, visibleWorkOrders: [WO] })).toMatchObject({ page: 10, total: 1000 })
+  })
+
+  it('searches and hydrates material choices beyond 500 within the selected visible work order', async () => {
+    await seedPagination()
+    const base = { workOrderNumber: WO, visibleWorkOrders: [WO], page: 1, pageSize: 20 }
+    const first = await s.pur.listLineOptions(base)
+    expect(first.rows).toHaveLength(20)
+    expect(first.total).toBe(1000)
+    expect((await s.pur.listLineOptions({ ...base, q: 'material 999' })).rows.map((r) => r.id)).toEqual(['pagination-0999'])
+    expect((await s.pur.listLineOptions({ ...base, ids: ['pagination-0999'] })).rows.map((r) => r.id)).toEqual(['pagination-0999'])
+    expect((await s.pur.listLineOptions({ ...base, visibleWorkOrders: [] })).rows).toEqual([])
+    expect((await s.pur.listLineOptions({ ...base, workOrderNumber: OTHER_WO })).rows).toEqual([])
+    await db.purchaseLine.update({ where: { id: 'pagination-0999' }, data: { status: 'CANCELLED' } })
+    expect((await s.pur.listLineOptions({ ...base, ids: ['pagination-0999'] })).rows).toEqual([])
   })
 })
