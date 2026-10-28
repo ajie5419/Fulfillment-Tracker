@@ -26,6 +26,7 @@ type Services = {
   digest: typeof import('../../server/services/alerts/digest')
   issues: typeof import('../../server/services/issues/issues')
   nonconforming: typeof import('../../server/services/issues/nonconforming')
+  kit: typeof import('../../server/services/kitting/kitting')
   board: typeof import('../../server/services/issues/board')
   uploads: typeof import('../../server/services/issues/uploads')
   auth: typeof import('../../server/utils/auth')
@@ -54,6 +55,7 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
       digest: await import('../../server/services/alerts/digest'),
       issues: await import('../../server/services/issues/issues'),
       nonconforming: await import('../../server/services/issues/nonconforming'),
+      kit: await import('../../server/services/kitting/kitting'),
       board: await import('../../server/services/issues/board'),
       uploads: await import('../../server/services/issues/uploads'),
       auth: await import('../../server/utils/auth'),
@@ -395,6 +397,77 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     const results = await Promise.all(created.map((c) => s.issues.closeIssue(c.issueId, admin)))
     expect(results.filter((r) => r.stepRestored === 'DONE')).toHaveLength(1)
     expect((await db.routeStep.findUniqueOrThrow({ where: { id: p.weld.id } })).status).toBe('DONE')
+  })
+
+  it('final-step rejection withdraws kitting until every related issue is closed, including legacy DONE flags', async () => {
+    const part = await s.steps.createPart(WO, { name: 'Final rejection regression', quantity: 2, qmsPartId: `FINAL-${randomBytes(4).toString('hex')}` })
+    const step = await s.steps.addStep(part.id, { processId: 'P-WELD', mode: 'EXTERNAL_OUTSOURCE', supplierId: 'S-WELD' }, 'u-out')
+    const node = await db.assemblyNode.create({
+      data: { workOrderNumber: WO, name: 'Rejected part kit', needDate: today(), parts: { create: { partId: part.id } } }, include: s.kit.NODE_LINKS,
+    })
+    const view = async () => (await s.kit.loadKits([node], new Date())).get(node.id)!
+    try {
+      await send(step.id)
+      const inspectionId = `FINAL-INS-${randomBytes(4).toString('hex')}`
+      await db.qmsInspection.create({ data: {
+        id: inspectionId, requestNo: inspectionId, workOrderNumber: WO, partId: part.qmsPartId, partName: part.name,
+        processId: 'P-WELD', processName: '组焊', supplierId: 'S-WELD', quantity: 2, status: 'INSPECTING',
+        inspectionResult: 'FAIL', unqualifiedQuantity: 1, submittedAt: new Date(Date.now() + 1000), updatedAt: new Date(),
+      } })
+      expect((await s.match.matchInspection(inspectionId)).status).toBe('matched')
+      expect((await db.part.findUniqueOrThrow({ where: { id: part.id } })).status).toBe('DONE')
+      expect(await view()).toMatchObject({ ready: 1, percent: 100 })
+      const created = (await s.nonconforming.syncNonconforming()).created.find((r) => r.inspectionId === inspectionId)!
+      expect(created).toBeDefined()
+      expect((await db.part.findUniqueOrThrow({ where: { id: part.id } })).status).toBe('ACTIVE')
+      expect(await view()).toMatchObject({ ready: 0, percent: 0, shortages: [{ reasonCode: 'BLOCKED' }] })
+      expect((await s.nonconforming.syncNonconforming()).created).toHaveLength(0)
+
+      // Existing inconsistent rows must be excluded even before any repair/write has touched them.
+      await db.part.update({ where: { id: part.id }, data: { status: 'DONE' } })
+      expect((await s.kit.loadKitCounts([node])).get(node.id)).toMatchObject({ ready: 0, readyDay: null })
+      expect(await view()).toMatchObject({ ready: 0, shortages: [{ reasonCode: 'BLOCKED' }] })
+      expect(await db.assemblyNode.count({ where: { AND: [{ id: node.id }, s.kit.incompleteWhere()] } })).toBe(1)
+      expect((await s.kit.nodeOptions(WO)).parts.find((p) => p.id === part.id)?.ready).toBe(false)
+
+      const second = await s.issues.issueTransaction((tx) => s.issues.createSystemIssue(tx, {
+        sourceKey: `TEST-REJECTION:${step.id}`, source: 'QMS_NONCONFORMING', workOrderNumber: WO,
+        category: 'OUTSOURCE_QUALITY', refType: 'STEP', refId: step.id, description: 'Second rejection', note: 'Second rejection',
+      }))
+      const close = async (id: string) => {
+        await s.issues.acceptIssue(id, admin)
+        await s.issues.resolveIssue(id, admin, 'Reinspection accepted')
+        return s.issues.closeIssue(id, admin)
+      }
+      expect((await close(created.issueId)).stepRestored).toBeNull()
+      expect(await view()).toMatchObject({ ready: 0 })
+      expect((await close(second.id)).stepRestored).toBe('DONE')
+      expect((await db.part.findUniqueOrThrow({ where: { id: part.id } })).status).toBe('DONE')
+      expect(await view()).toMatchObject({ ready: 1, percent: 100, shortages: [] })
+      expect(await db.assemblyNode.count({ where: { AND: [{ id: node.id }, s.kit.incompleteWhere()] } })).toBe(0)
+    } finally {
+      await db.assemblyNode.delete({ where: { id: node.id } })
+    }
+  })
+
+  it('reconciles completion after deleting unused processes or appending a new one', async () => {
+    const part = await s.steps.createPart(WO, { name: 'Route edit regression', quantity: 2 })
+    const first = await s.steps.addStep(part.id, { processId: 'P-WELD', mode: 'SELF' }, 'u-head')
+    const last = await s.steps.addStep(part.id, { processId: 'P-PAINT', mode: 'EXTERNAL_OUTSOURCE', supplierId: 'S-PAINT' }, 'u-out')
+    const state = async () => (await db.part.findUniqueOrThrow({ where: { id: part.id } })).status
+    await send(last.id)
+    await s.flow.manualReturn({ stepId: last.id, qty: 2, actorId: 'u-out', source: 'PC' })
+    expect(await state()).toBe('ACTIVE')
+    await s.steps.deleteStep(first.id)
+    expect(await state()).toBe('DONE')
+    const appended = await s.steps.addStep(part.id, { processId: 'P-WELD', mode: 'SELF' }, 'u-head')
+    expect(await state()).toBe('ACTIVE')
+    await s.steps.deleteStep(appended.id)
+    expect(await state()).toBe('DONE')
+    const empty = await s.steps.createPart(WO, { name: 'Empty route regression', quantity: 1 })
+    const unused = await s.steps.addStep(empty.id, { processId: 'P-WELD', mode: 'SELF' }, 'u-head')
+    await s.steps.deleteStep(unused.id)
+    expect((await db.part.findUniqueOrThrow({ where: { id: empty.id } })).status).toBe('ACTIVE')
   })
 
   it('红色自动转异常（A4）：同事务生成异常、预警已转异常；不再重复生成预警、不再通知', async () => {

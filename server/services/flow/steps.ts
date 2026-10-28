@@ -7,7 +7,7 @@ import type { Prisma, StepMode } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { openIssuesOfSteps } from '../issues/issues'
 import { FlowError } from './errors'
-import { ARRANGE_SEND, ARRANGE_START, RETURN_TYPES, arrangeAction, arrangeOwner } from './flow'
+import { ARRANGE_SEND, ARRANGE_START, RETURN_TYPES, arrangeAction, arrangeOwner, refreshPartCompletion } from './flow'
 import { READY_TO_START } from '../purchases/constants'
 import { readyOwners, refreshPartReady } from '../purchases/purchases'
 import { resolveStepResponsibles } from './responsible'
@@ -380,8 +380,10 @@ export const firstStepOf = (tx: Tx, partId: string) => tx.routeStep.findFirst({ 
  *   原来已发的待办从原第一道的负责人转给新第一道的负责人（同 moveStepTodos，手工转交的不动）；
  *   物料图纸早就齐了、还没发过的，现在补发（refreshPartReady notify）；新第一道不能开工的作废。
  * 调用方已锁住工件（锁顺序：工件 → 工序，见 purchases.refreshPartReady）。
+ * Reconcile completion after every route edit, including appends that leave the first process unchanged.
  */
 export async function syncFirstStep(tx: Tx, partId: string, workOrderNumber: string, before: RoutableStep | null) {
+  await refreshPartCompletion(tx, partId, new Date())
   const after = await firstStepOf(tx, partId)
   if ((after?.id ?? null) === (before?.id ?? null)) return
   if (before && after) {

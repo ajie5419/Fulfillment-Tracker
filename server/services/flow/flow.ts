@@ -192,6 +192,16 @@ export async function returnedQty(tx: Tx, stepId: string) {
   return agg._sum.qty ?? 0
 }
 
+/**
+ * Reconcile completion under the caller's part lock: later work may finish before an earlier rejection is cleared.
+ * Call after a process transition so recovery records a fresh ready day even if a legacy part flag was already DONE.
+ */
+export async function refreshPartCompletion(tx: Tx, partId: string, now: Date) {
+  const steps = await tx.routeStep.findMany({ where: { partId }, select: { status: true } })
+  const status = steps.length && steps.every((s) => s.status === 'DONE') ? 'DONE' : 'ACTIVE'
+  await tx.part.update({ where: { id: partId }, data: { status, statusSince: now } })
+}
+
 export async function applyReturn(
   tx: Tx,
   step: RouteStep & { part: Part },
@@ -262,8 +272,9 @@ export async function applyReturn(
   if (done) {
     await tx.part.update({
       where: { id: step.partId },
-      data: next ? { currentStepId: next.id, statusSince: now } : { status: 'DONE', statusSince: now },
+      data: next ? { currentStepId: next.id, statusSince: now } : { statusSince: now },
     })
+    await refreshPartCompletion(tx, step.partId, now)
   } else if (wasPending) {
     await tx.part.update({ where: { id: step.partId }, data: { currentStepId: step.id, statusSince: now } })
   }
@@ -282,8 +293,13 @@ export async function applyReturn(
  */
 export async function blockStep(tx: Tx, stepId: string) {
   const step = await lockStep(tx, stepId)
-  if (step.status === 'BLOCKED') return false
+  if (step.status === 'BLOCKED') {
+    // Repair a stale flag without moving dates again on an unchanged, already-blocked part.
+    await tx.part.updateMany({ where: { id: step.partId, status: 'DONE' }, data: { status: 'ACTIVE', statusSince: new Date() } })
+    return false
+  }
   await tx.routeStep.update({ where: { id: step.id }, data: { status: 'BLOCKED' } })
+  await refreshPartCompletion(tx, step.partId, new Date())
   // 步骤不再"在外"/"加工中"，W3、W10（逾期）没有意义了，由异常跟进；W2 只看待开工的步骤，不受影响
   await clearStepAlerts(tx, step.id, ['W3', 'W10'])
   return true
@@ -307,8 +323,9 @@ export async function restoreBlockedStep(tx: Tx, stepId: string) {
     const next = await tx.routeStep.findFirst({ where: { partId: step.partId, seq: { gt: step.seq } }, orderBy: { seq: 'asc' } })
     await tx.part.update({
       where: { id: step.partId },
-      data: next ? { currentStepId: next.id, statusSince: now } : { status: 'DONE', statusSince: now },
+      data: next ? { currentStepId: next.id, statusSince: now } : { statusSince: now },
     })
   }
+  await refreshPartCompletion(tx, step.partId, now)
   return status
 }

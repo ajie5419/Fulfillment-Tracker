@@ -3,7 +3,7 @@
  *
  * 规则从简：
  *   齐套率 = 已就绪项 ÷ 应有项；已取消的物料不计入应有项；清单为空的节点没有齐套率（不算未齐套，也不预警）。
- *   工件就绪 = 工件已完成（part.status = DONE：最后一道工序完成时 flow.ts 置 DONE，沿用系统现有的工件完成判定）。
+ *   工件就绪 = 工件已完成且没有未完成工序；flow.ts 在所有工序完成后置 DONE，异常会撤销完成状态。
  *   物料就绪 = 已到货（ARRIVED）。
  */
 import type { AlertLevel, PartStatus, PurchaseStatus, StepStatus } from '@prisma/client'
@@ -20,8 +20,8 @@ export const kittingMobileLink = (id: string) => `/m/kitting?id=${encodeURICompo
 
 // ───────────── 就绪判定 ─────────────
 
-/** 工件就绪：沿用系统现有的工件完成判定（part.status = DONE） */
-export const isPartReady = (p: { status: PartStatus }) => p.status === 'DONE'
+/** Check steps as well as the stored flag so legacy DONE/BLOCKED records cannot appear ready. */
+export const isPartReady = (p: { status: PartStatus; steps?: { status: StepStatus }[] }) => p.status === 'DONE' && (!p.steps || p.steps.every((s) => s.status === 'DONE'))
 
 /** 物料是否计入应有项：已取消的不计 */
 export const isPurchaseCounted = (l: { status: PurchaseStatus }) => l.status !== 'CANCELLED'
@@ -51,7 +51,7 @@ export const isIncomplete = (c: KitCount) => c.total > 0 && c.ready < c.total
 
 /** 节点清单计数 */
 export function countKit(
-  parts: { status: PartStatus; statusSince?: Date }[],
+  parts: { status: PartStatus; statusSince?: Date; steps?: { status: StepStatus }[] }[],
   purchases: { status: PurchaseStatus; arrivedDate?: Date | null }[],
 ): KitCount {
   const counted = purchases.filter(isPurchaseCounted)
