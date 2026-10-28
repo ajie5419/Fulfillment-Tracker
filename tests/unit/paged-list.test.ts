@@ -1,14 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, effectScope, nextTick, ref, shallowRef, toValue, watch, type EffectScope } from 'vue'
-import { usePagedList } from '../../app/composables/usePagedList'
+import { invalidatePagedList, usePagedList } from '../../app/composables/usePagedList'
 
 type Row = { id: string }
-const reads: { query: Record<string, unknown>; resolve: (rows: Row[], total?: number) => void; reject: () => void }[] = []
+const reads: { query: Record<string, unknown>; resolve: (rows: Row[], total?: number, page?: number) => void; reject: () => void }[] = []
 let scope: EffectScope
+let activate: () => void
+let deactivate: () => void
 
 async function settle() { await nextTick(); await Promise.resolve(); await nextTick() }
 
 beforeEach(() => {
+  vi.stubGlobal('onActivated', (fn: () => void) => { activate = fn })
+  vi.stubGlobal('onDeactivated', (fn: () => void) => { deactivate = fn })
   reads.length = 0
   scope = effectScope()
   const states = new Map()
@@ -17,7 +21,7 @@ beforeEach(() => {
     return states.get(key)
   })
   vi.stubGlobal('useRequestFetch', () => (_url: string, { query }: { query: Record<string, unknown> }) => new Promise((resolve, reject) => {
-    reads.push({ query, resolve: (rows, total = 100) => resolve({ rows, total, page: query.page, pageSize: query.pageSize }), reject: () => reject(new Error('offline')) })
+    reads.push({ query, resolve: (rows, total = 100, page = query.page as number) => resolve({ rows, total, page, pageSize: query.pageSize }), reject: () => reject(new Error('offline')) })
   }))
   /** The Nuxt seam only supplies keyed request refs. Tests exercise our adapter's
    * accumulation and reset behavior, not Nuxt's request implementation. */
@@ -47,6 +51,64 @@ beforeEach(() => {
 afterEach(() => { scope.stop(); vi.unstubAllGlobals() })
 
 describe('shared paged list adapter', () => {
+  it('rebuilds loaded pages after inactive invalidation and continues at the aligned page', async () => {
+    const list = scope.run(() => usePagedList<Row>('/api/list', { key: 'test', query: { view: 'open', q: 'steel' }, mode: 'append', pageSize: ref(2) }))!
+    reads[0]!.resolve([{ id: 'a' }, { id: 'b' }], 6); await settle()
+    list.next(); await settle()
+    reads[1]!.resolve([{ id: 'c' }, { id: 'd' }], 6); await settle()
+    deactivate()
+    invalidatePagedList('test'); await settle()
+    expect(reads).toHaveLength(2)
+    activate(); await settle()
+    expect(reads[2]!.query).toEqual({ view: 'open', q: 'steel', page: 1, pageSize: 2 })
+    reads[2]!.resolve([{ id: 'b' }, { id: 'c' }], 5); await settle()
+    expect(list.rows.value.map(r => r.id)).toEqual(['a', 'b', 'c', 'd'])
+    reads[3]!.resolve([{ id: 'd' }, { id: 'e' }], 5); await settle()
+    expect(list.rows.value.map(r => r.id)).toEqual(['b', 'c', 'd', 'e'])
+    expect(list.total.value).toBe(5)
+    list.next(); await settle()
+    expect(reads[4]!.query.page).toBe(3)
+    reads[4]!.resolve([{ id: 'f' }], 5); await settle()
+    expect(list.finished.value).toBe(true)
+  })
+
+  it('preserves the snapshot on reconciliation failure and retries without clearing rows', async () => {
+    const list = scope.run(() => usePagedList<Row>('/api/list', { key: 'test', query: {}, mode: 'append', pageSize: ref(1) }))!
+    reads[0]!.resolve([{ id: 'a' }], 3); await settle()
+    list.next(); await settle()
+    reads[1]!.resolve([{ id: 'b' }], 3); await settle()
+    invalidatePagedList('test'); await settle()
+    reads[2]!.resolve([{ id: 'b' }], 2); await settle()
+    reads[3]!.reject(); await settle()
+    expect(list.rows.value.map(r => r.id)).toEqual(['a', 'b'])
+    expect(list.total.value).toBe(3)
+    expect(list.error.value).toBeTruthy()
+    void list.next(); await settle()
+    reads[4]!.resolve([{ id: 'b' }], 1); await settle()
+    expect(list.rows.value).toEqual([{ id: 'b' }])
+    expect(list.total.value).toBe(1)
+    expect(list.page.value).toBe(1)
+    expect(list.finished.value).toBe(true)
+  })
+
+  it('accepts a clamped page while rebuilding a shrinking collection', async () => {
+    const list = scope.run(() => usePagedList<Row>('/api/list', { key: 'test', query: {}, mode: 'append', pageSize: ref(1) }))!
+    reads[0]!.resolve([{ id: 'a' }], 3); await settle()
+    list.next(); await settle()
+    reads[1]!.resolve([{ id: 'b' }], 3); await settle()
+    invalidatePagedList('test'); await settle()
+    reads[2]!.resolve([{ id: 'b' }], 2); await settle()
+    reads[3]!.resolve([{ id: 'c' }], 1, 1); await settle()
+    expect(list.rows.value).toEqual([{ id: 'c' }])
+    expect(list.total.value).toBe(1)
+    expect(list.page.value).toBe(1)
+    expect(list.finished.value).toBe(true)
+    await settle()
+    expect(reads[4]!.query.page).toBe(1)
+    reads[4]!.resolve([{ id: 'c' }], 1); await settle()
+    expect(list.rows.value).toEqual([{ id: 'c' }])
+  })
+
   it('retains successful rows on next-page failure and retries the same page', async () => {
     const list = scope.run(() => usePagedList<Row>('/api/list', { key: 'test', query: {}, mode: 'append', pageSize: ref(20) }))!
     reads[0]!.resolve([{ id: 'first' }]); await settle()
