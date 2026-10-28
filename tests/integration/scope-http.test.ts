@@ -360,6 +360,42 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await post(worker, `/api/todos/${signTodo.id}/transfer`, { toUserId: 'h-lead' })).status).toBe(400)
   })
 
+  it('todo delegation rejects theft and cross-scope recipients while preserving authorized change confirmation', async () => {
+    const post = (session: Record<string, string>, path: string, body: object) =>
+      fetch(`${base}${path}`, { method: 'POST', headers: { cookie: cookieHeader(session), 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const pm = await login('h-pm')
+    const pm2 = await login('h-pm2')
+    const prod = await login('h-prod')
+    const admin = await login('h-admin')
+    const release = await db.release.create({ data: { releaseNo: `FF-T-${Date.now()}`, type: 'CHANGE', workOrderNumber: OTHER, description: 'Delegation authorization', issuerId: 'h-tech' } })
+    const todo = await db.todo.create({ data: { ownerId: 'h-prod', action: 'CONFIRM_CHANGE', refType: 'release', refId: release.id } })
+    const transferUrl = `/api/todos/${todo.id}/transfer`
+    try {
+      expect((await get(`/api/releases/${release.id}`, pm)).status).toBe(403)
+      expect((await post(pm, transferUrl, { toUserId: 'h-pm' })).status).toBe(403)
+      expect((await post(admin, transferUrl, { toUserId: 'h-pm2' })).status).toBe(403)
+      expect((await post(prod, transferUrl, { toUserId: 'h-pm' })).status).toBe(403)
+      expect((await post(prod, transferUrl, { toUserId: 'h-pm', recipientIsAdmin: true })).status).toBe(400)
+      expect(await db.todo.findUniqueOrThrow({ where: { id: todo.id } })).toMatchObject({ status: 'OPEN', ownerId: 'h-prod' })
+      expect(await db.todo.count({ where: { refType: 'release', refId: release.id, ownerId: 'h-pm' } })).toBe(0)
+      expect((await get(`/api/releases/${release.id}`, pm)).status).toBe(403)
+      expect((await post(pm, `/api/releases/${release.id}/confirm-change`, {})).status).toBe(403)
+
+      await db.qmsUser.update({ where: { id: 'h-pm2' }, data: { status: 'INACTIVE' } })
+      expect((await post(prod, transferUrl, { toUserId: 'h-pm2' })).status).toBe(400)
+      await db.qmsUser.update({ where: { id: 'h-pm2' }, data: { status: 'ACTIVE' } })
+      expect((await post(prod, transferUrl, { toUserId: 'h-pm2' })).status).toBe(200)
+      expect(await db.todo.findUniqueOrThrow({ where: { id: todo.id } })).toMatchObject({ status: 'TRANSFERRED' })
+      expect((await get(`/api/releases/${release.id}`, pm2)).status).toBe(200)
+      expect((await post(pm2, `/api/releases/${release.id}/confirm-change`, {})).status).toBe(200)
+      expect(await db.release.findUniqueOrThrow({ where: { id: release.id } })).toMatchObject({ changeConfirmedBy: 'h-pm2' })
+    } finally {
+      await db.qmsUser.update({ where: { id: 'h-pm2' }, data: { status: 'ACTIVE' } })
+      await db.todo.deleteMany({ where: { refType: 'release', refId: release.id } })
+      await db.release.delete({ where: { id: release.id } })
+    }
+  })
+
   it('采购到货与付款（R10）：按工单可见范围增查改、确认到货；模板下载 + 批量导入；只有财务能标记已付', async () => {
     const pm = await login('h-pm')
     const lead = await login('h-lead')

@@ -175,7 +175,7 @@ describe.skipIf(!DB)('班组长（生产管理重设计第二批）', () => {
     await finish(cut.id)
     const [t] = await db.todo.findMany({ where: { refId: weld.id, status: 'OPEN' } })
     expect(t!.ownerId).toBe('tl-a') // 兜底
-    await s.todos.transferTodo(t!.id, 'tl-b')
+    await s.todos.transferTodo(t!.id, 'tl-b', { userId: 'tl-a', isAdmin: false })
     expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-b', action: 'ARRANGE_START' }])
 
     // 改负责人：原来"按规则在谁手里"是 tl-a，tl-b 手里的是手工转交的，不动
@@ -329,7 +329,7 @@ describe.skipIf(!DB)('班组长（生产管理重设计第二批）', () => {
     const { weld, cut } = await chain('改方式件', null, 'tl-b')
     await finish(cut.id)
     const [t] = await db.todo.findMany({ where: { refId: weld.id, status: 'OPEN' } })
-    await s.todos.transferTodo(t!.id, 'tl-lead2')
+    await s.todos.transferTodo(t!.id, 'tl-lead2', { userId: 'tl-b', isAdmin: false })
     await s.steps.updateStep(weld.id, { mode: 'EXTERNAL_OUTSOURCE', supplierId: 'TL-OUT' })
     expect(await openTodos(weld.id)).toEqual([{ ownerId: 'tl-lead2', action: 'ARRANGE_SEND' }])
     await s.steps.updateStep(weld.id, { mode: 'SELF' })

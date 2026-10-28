@@ -357,9 +357,10 @@ describe.skipIf(!DB)('外协主链路', () => {
     await send(steps[0]!.id, 'S-WELD')
     await s.match.matchInspection(await inspect({ partId: part.qmsPartId }))
     const [todo] = await todosOf(steps[1]!.id)
-    const moved = await s.todos.transferTodo(todo!.id, 'u-out')
+    const actor = { userId: todo!.ownerId, isAdmin: false }
+    const moved = await s.todos.transferTodo(todo!.id, 'u-out', actor)
     expect(moved).toMatchObject({ ownerId: 'u-out', action: 'ARRANGE_SEND', refId: steps[1]!.id, status: 'OPEN' })
     expect((await db.todo.findUniqueOrThrow({ where: { id: todo!.id } })).status).toBe('TRANSFERRED')
-    await expect(s.todos.transferTodo(todo!.id, 'u-pm')).rejects.toBeInstanceOf(s.errors.FlowError)
+    await expect(s.todos.transferTodo(todo!.id, 'u-pm', actor)).rejects.toBeInstanceOf(s.errors.FlowError)
   })
 })
