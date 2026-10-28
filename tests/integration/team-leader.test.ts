@@ -103,6 +103,59 @@ describe.skipIf(!DB)('班组长（生产管理重设计第二批）', () => {
   const openTodos = (refId: string) => db.todo.findMany({ where: { refId, status: 'OPEN' }, select: { ownerId: true, action: true } })
   const finish = (stepId: string) => s.finish.finishStep({ stepId, actorId: 'tl-a', source: 'PC' })
 
+  it('换班组长等锁期间有工序转入：TeamStepsChanged 回滚重试并只转交一次', async () => {
+    await s.leaders.setTeamLeader('TL-TEAM', 'tl-lead', 'tl-head')
+    await s.leaders.setTeamLeader('TL-TEAM2', null, 'tl-head')
+    const a = await chain('重试件 A', 'TL-TEAM', null)
+    const b = await chain('重试件 B', 'TL-TEAM2', null)
+    await finish(a.cut.id)
+    await finish(b.cut.id)
+    expect(await openTodos(a.weld.id)).toEqual([{ ownerId: 'tl-lead', action: 'ARRANGE_START' }])
+    expect(await openTodos(b.weld.id)).toEqual([{ ownerId: 'tl-a', action: 'ARRANGE_START' }])
+
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    let ready!: () => void
+    let failed!: (error: unknown) => void
+    const isReady = new Promise<void>((resolve, reject) => { ready = resolve; failed = reject })
+    const moving = db.$transaction(async (tx) => {
+      await s.purchases.lockParts(tx, [b.part.id])
+      const step = await tx.routeStep.findUniqueOrThrow({ where: { id: b.weld.id } })
+      const before = await s.steps.stepTodoHolders(tx, step, WO)
+      const updated = await tx.routeStep.update({ where: { id: step.id }, data: { supplierId: 'TL-TEAM' } })
+      const after = await s.steps.stepTodoHolders(tx, updated, WO)
+      await s.steps.moveStepTodos(tx, updated, before, after)
+      ready()
+      await gate // 持有班组 FOR SHARE；B 的转入尚未提交
+    }, { timeout: 20_000 })
+    void moving.catch(failed)
+    let changing: ReturnType<Services['leaders']['setTeamLeader']> | undefined
+    try {
+      await isReady
+      let done = false
+      changing = s.leaders.setTeamLeader('TL-TEAM', 'tl-lead2', 'tl-head')
+      void changing.then(() => { done = true }, () => { done = true })
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      expect(done).toBe(false)
+      release()
+      await moving
+      // 首次只锁到 A；锁后读到 B 必须回滚重试，才能把两道都纳入。
+      expect(await changing).toEqual({ changed: true, moved: 2 })
+      expect(await db.teamLeader.findUniqueOrThrow({ where: { supplierId: 'TL-TEAM' } })).toMatchObject({ userId: 'tl-lead2' })
+      for (const item of [a, b]) {
+        expect(await openTodos(item.weld.id)).toEqual([{ ownerId: 'tl-lead2', action: 'ARRANGE_START' }])
+        expect(await db.todo.count({ where: { refId: item.weld.id, ownerId: 'tl-lead', status: 'TRANSFERRED' } })).toBe(1)
+      }
+      expect(await db.todo.count({ where: { refId: b.weld.id, ownerId: 'tl-a', status: 'TRANSFERRED' } })).toBe(1)
+      expect(await db.todo.count({ where: { refId: a.weld.id } })).toBe(2)
+      expect(await db.todo.count({ where: { refId: b.weld.id } })).toBe(3)
+    } finally {
+      release()
+      await Promise.allSettled([moving, ...(changing ? [changing] : [])])
+      await s.leaders.setTeamLeader('TL-TEAM', 'tl-lead', 'tl-head')
+    }
+  }, 30_000)
+
   it('下一道没指定负责人、派到班组：上一道完工后"安排开工"发给班组长；指定了负责人时负责人优先', async () => {
     const a = await chain('班组长件', 'TL-TEAM', null)
     await finish(a.cut.id)
