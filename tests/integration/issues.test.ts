@@ -616,6 +616,40 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     expect(board.rows.map((r) => r.workOrderNumber)).toEqual([WO2])
   })
 
+  it('异常列表分批读取：相同时间的第 501 条待办与超期记录不遗漏，可见范围仍有效', async () => {
+    const workOrderNumber = `${WO}-LIST`
+    const time = new Date('2026-10-28T04:00:00Z')
+    const prefix = `list-${randomBytes(5).toString('hex')}`
+    await db.qmsWorkOrder.create({ data: { workOrderNumber, customerName: '列表完整性测试', quantity: 1, deliveryDate: new Date('2026-12-31'), status: 'IN_PROGRESS', updatedAt: time } })
+    try {
+      await db.issue.createMany({ data: Array.from({ length: 501 }, (_, i) => ({
+        id: `${prefix}-${String(500 - i).padStart(3, '0')}`,
+        issueNo: `${prefix}-${i}`,
+        workOrderNumber,
+        category: 'OTHER' as const,
+        description: 'List completeness regression',
+        source: 'MANUAL' as const,
+        status: 'ACCEPTED' as const,
+        responsibleUserId: i === 500 ? 'u-worker' : 'u-out',
+        dueDate: i === 500 ? new Date('2026-10-25') : null,
+        createdAt: time,
+        updatedAt: time,
+      })) })
+      const targetId = `${prefix}-000`
+      const filter = { workOrderNumber, visibleWorkOrders: [workOrderNumber] }
+      const all = await s.issues.listIssues(filter, as('u-worker'), time)
+      expect(all).toHaveLength(501)
+      expect(new Set(all.map((r) => r.id)).size).toBe(501)
+      expect(all[0]!.id).toBe(targetId) // Globally prioritize overdue records, including later batches.
+      expect((await s.issues.listIssues({ ...filter, mine: 'todo' }, as('u-worker'), time)).map((r) => r.id)).toEqual([targetId])
+      expect((await s.issues.listIssues({ ...filter, overdue: true }, as('u-worker'), time)).map((r) => r.id)).toEqual([targetId])
+      expect(await s.issues.listIssues({ ...filter, visibleWorkOrders: [WO] }, admin, time)).toEqual([])
+    } finally {
+      await db.issue.deleteMany({ where: { workOrderNumber } })
+      await db.qmsWorkOrder.delete({ where: { workOrderNumber } })
+    }
+  })
+
   it('每日汇总：07:30 前不生成；同人同日只一条；按可见范围统计；旧汇总自动已读', async () => {
     const day = s.rules.shanghaiDay(new Date())
     const bj = (hhmm: string) => new Date(`${day}T${hhmm}:00+08:00`)
