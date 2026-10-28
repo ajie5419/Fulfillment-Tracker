@@ -25,13 +25,24 @@ const empty = () => ({
 const form = reactive(empty())
 const saving = ref(false)
 const editing = computed(() => !!props.task)
+/** A save belongs to the form session that started it, even if the same ID is reopened. */
+let formVersion = 0
+let loadingForm = false
 
-/** 打开时装入的工单：工单 watch 碰到它不清工件（编辑时要保留原来的关联工件） */
-let loadedWo: string | undefined | null = null
+const { data: parts, refresh: refreshParts } = await useFetch('/api/parts', {
+  query: computed(() => ({ workOrderNumber: form.workOrderNumber })),
+  default: () => [],
+  immediate: false,
+  watch: false,
+})
+
 watch(
-  () => props.open,
-  (open) => {
+  [() => props.open, () => props.task?.id, () => props.workOrderNumber, () => props.presetNode?.id, () => props.presetNode?.planDate],
+  ([open]) => {
+    formVersion++
+    saving.value = false
     if (!open) return
+    loadingForm = true
     const t = props.task
     Object.assign(
       form,
@@ -50,29 +61,23 @@ watch(
           }
         : { ...empty(), workOrderNumber: props.workOrderNumber, planNodeId: props.presetNode?.id ?? null, planDate: props.presetNode?.planDate },
     )
-    loadedWo = form.workOrderNumber
+    loadingForm = false
     if (form.workOrderNumber) refreshParts()
   },
+  { immediate: true, flush: 'sync' },
 )
+onBeforeUnmount(() => { formVersion++ })
 
-const { data: parts, refresh: refreshParts } = await useFetch('/api/parts', {
-  query: computed(() => ({ workOrderNumber: form.workOrderNumber })),
-  default: () => [],
-  immediate: false,
-  watch: false,
-})
 watch(
   () => form.workOrderNumber,
   (wo) => {
-    if (wo === loadedWo) {
-      loadedWo = null
-      return
-    }
-    loadedWo = null
+    parts.value = []
+    if (loadingForm) return
     form.partIds = []
     form.planNodeId = null
     if (wo) refreshParts()
   },
+  { flush: 'sync' },
 )
 const partOptions = computed(() => (form.workOrderNumber ? parts.value : []).map((p) => ({ value: p.id, label: p.drawingNo ? `${p.name}（${p.drawingNo}）` : p.name })))
 /** 技术部的人排前面（按部门对照换算出的业务部门，班组、科室对到技术部的也算） */
@@ -90,11 +95,14 @@ watch(
 )
 
 async function submit() {
+  if (!props.open || saving.value) return
+  const version = formVersion
+  const task = props.task
   if (!form.workOrderNumber) return message.warning('请选择工单')
   if (!form.componentName.trim()) return message.warning('请填写部件名称')
   if (!form.planDate) return message.warning('请选择计划完成日')
   const body: Record<string, unknown> = {
-    partIds: form.partIds,
+    partIds: [...form.partIds],
     componentName: form.componentName.trim(),
     ownerId: form.ownerId ?? null,
     planDate: form.planDate,
@@ -105,21 +113,23 @@ async function submit() {
   }
   saving.value = true
   try {
-    if (props.task) {
-      const r = await drawingSend<DrawingResult & { planWarning?: string | null }>(`/api/drawings/${props.task.id}`, 'PATCH', { ...body, cancelled: form.cancelled })
+    if (task) {
+      const r = await drawingSend<DrawingResult & { planWarning?: string | null }>(`/api/drawings/${task.id}`, 'PATCH', { ...body, cancelled: form.cancelled })
+      if (version !== formVersion) return
       message.success(drawingResultText(r, '已保存'))
       if (r.planWarning) message.warning(r.planWarning)
-      emit('done', props.task.id)
+      emit('done', task.id)
     } else {
       const r = await drawingSend<{ id: string; planWarning?: string | null }>('/api/drawings', 'POST', { ...body, workOrderNumber: form.workOrderNumber })
+      if (version !== formVersion) return
       message.success('已新建设计任务')
       if (r.planWarning) message.warning(r.planWarning)
       emit('done', r.id)
     }
   } catch (e) {
-    message.error(apiError(e))
+    if (version === formVersion) message.error(apiError(e))
   } finally {
-    saving.value = false
+    if (version === formVersion) saving.value = false
   }
 }
 </script>

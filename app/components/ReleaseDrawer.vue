@@ -6,56 +6,86 @@ const emit = defineEmits<{ close: []; changed: [] }>()
 const detail = ref<ReleaseDetail | null>(null)
 const loading = ref(false)
 const loadError = ref('')
+let loadSeq = 0
+let contextVersion = 0
 
 async function load() {
-  if (!props.id) return
-  loading.value = true
+  const seq = ++loadSeq
+  const id = props.id
+  detail.value = null
   loadError.value = ''
+  loading.value = !!id
+  if (!id) return
   try {
-    detail.value = await fetchRelease(props.id)
+    const result = await fetchRelease(id)
+    if (seq === loadSeq && props.id === id) detail.value = result
   } catch (e) {
-    detail.value = null
-    loadError.value = apiError(e)
+    if (seq === loadSeq && props.id === id) loadError.value = apiError(e)
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
-watch(() => props.id, load, { immediate: true })
 
 const busy = ref(false)
-async function act(url: string, body: object, ok: string) {
+const rejecting = ref(false)
+const reason = ref('')
+const confirming = ref(false)
+const note = ref('')
+watch(() => props.id, () => {
+  contextVersion++
+  busy.value = false
+  rejecting.value = false
+  confirming.value = false
+  reason.value = ''
+  note.value = ''
+  void load()
+}, { immediate: true, flush: 'sync' })
+onBeforeUnmount(() => {
+  contextVersion++
+  loadSeq++
+})
+
+async function act(url: string, body: object, ok: string, version = contextVersion) {
+  if (version !== contextVersion || !detail.value || detail.value.id !== props.id || loading.value || busy.value) return false
   busy.value = true
   try {
     await releasePost(url, body)
+    if (version !== contextVersion) return false
     message.success(ok)
     await load()
+    if (version !== contextVersion) return false
     await refreshNuxtData(['todos', 'reminders'])
+    if (version !== contextVersion) return false
     emit('changed')
     return true
   } catch (e) {
-    message.error(apiError(e))
+    if (version === contextVersion) message.error(apiError(e))
     return false
   } finally {
-    busy.value = false
+    if (version === contextVersion) busy.value = false
   }
 }
 
-const sign = () => detail.value?.myReceipt && act(`/api/receipts/${detail.value.myReceipt.id}/sign`, {}, '已签收')
+const sign = () => detail.value?.permissions.sign && detail.value.myReceipt && act(`/api/receipts/${detail.value.myReceipt.id}/sign`, {}, '已签收')
 
-const rejecting = ref(false)
-const reason = ref('')
 async function reject() {
+  const version = contextVersion
+  const d = detail.value
+  if (!d?.permissions.sign || !d.myReceipt) return
   if (!reason.value.trim()) return message.warning('请填写拒收原因')
-  if (detail.value?.myReceipt && (await act(`/api/receipts/${detail.value.myReceipt.id}/reject`, { reason: reason.value.trim() }, '已拒收，已通知发放人'))) {
+  const saved = await act(`/api/receipts/${d.myReceipt.id}/reject`, { reason: reason.value.trim() }, '已拒收，已通知发放人')
+  if (saved && version === contextVersion) {
     rejecting.value = false
     reason.value = ''
   }
 }
 
-const confirming = ref(false)
-const note = ref('')
 async function confirmChange() {
-  if (detail.value && (await act(`/api/releases/${detail.value.id}/confirm-change`, { note: note.value.trim() || null }, '已确认变更影响，"等变更"已解除'))) {
+  const version = contextVersion
+  const d = detail.value
+  if (!d?.permissions.confirmChange) return
+  const saved = await act(`/api/releases/${d.id}/confirm-change`, { note: note.value.trim() || null }, '已确认变更影响，"等变更"已解除')
+  if (saved && version === contextVersion) {
     confirming.value = false
     note.value = ''
   }
@@ -63,13 +93,15 @@ async function confirmChange() {
 
 function voidIt() {
   const d = detail.value
-  if (!d) return
+  const version = contextVersion
+  if (!d?.permissions.void || d.id !== props.id || loading.value || busy.value) return
   Modal.confirm({
     title: `作废 ${d.releaseNo}？`,
     content: '未签收的签收记录和待办一并作废，"等变更"解除。已签收的记录保留。',
     okText: '作废',
     okType: 'danger',
-    onOk: () => act(`/api/releases/${d.id}/void`, {}, '已作废'),
+    // A confirmation opened for another drawer session must never submit later.
+    onOk: () => act(`/api/releases/${d.id}/void`, {}, '已作废', version),
   })
 }
 

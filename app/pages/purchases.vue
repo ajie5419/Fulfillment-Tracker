@@ -61,11 +61,14 @@ const arrivedOf = (g: { rows: PurchaseRow[] }) => groupProgress(g.rows, (r) => r
 // ───── 新建 / 编辑 ─────
 const editing = ref<PurchaseRow | null>(null)
 const editOpen = ref(false)
+let openSeq = 0
 function openEdit(r: PurchaseRow | null) {
+  openSeq++
   editing.value = r
   editOpen.value = true
 }
 async function saved() {
+  openSeq++
   editOpen.value = false
   await refresh()
 }
@@ -73,7 +76,6 @@ async function saved() {
 const commenting = ref<{ id: string; name: string } | null>(null)
 
 // ?id= 打开该行（从 W6 提醒跳过来）；再带 comments=1 打开留言（留言 @ 提醒跳过来）
-let openSeq = 0
 async function openFromQuery() {
   const my = ++openSeq
   const id = route.query.id as string | undefined
@@ -92,18 +94,21 @@ async function openFromQuery() {
     if (!canEdit(line)) keyword.value = line.materialName
     else openEdit(line)
   } catch (e) {
-    message.error(apiError(e))
+    if (my === openSeq) message.error(apiError(e))
   }
 }
 onMounted(openFromQuery)
-watch(() => [route.query.id, route.query.comments], openFromQuery)
+watch([() => route.query.id, () => route.query.comments], openFromQuery, { flush: 'sync' })
+onBeforeUnmount(() => { openSeq++ })
 function closeComments() {
+  openSeq++
   commenting.value = null
   refresh()
   // 清掉定位参数，再点同一条留言提醒还能重新打开
   if (route.query.id || route.query.comments) router.replace({ query: { ...route.query, id: undefined, comments: undefined } })
 }
 function closeEdit() {
+  openSeq++
   editOpen.value = false
   if (route.query.id) router.replace({ query: { ...route.query, id: undefined } })
 }
