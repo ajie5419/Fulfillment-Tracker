@@ -9,11 +9,15 @@ export interface NameMaps {
 
 const uniq = (ids: (string | null | undefined)[]) => [...new Set(ids.filter((x): x is string => !!x))]
 
-export async function loadNames(ids: { process?: (string | null)[]; supplier?: (string | null)[]; user?: (string | null)[] }): Promise<NameMaps> {
+/** db：在事务里调用时传事务客户端 */
+export async function loadNames(
+  ids: { process?: (string | null)[]; supplier?: (string | null)[]; user?: (string | null)[] },
+  db: Pick<typeof prisma, 'qmsProcess' | 'qmsSupplier' | 'qmsUser'> = prisma,
+): Promise<NameMaps> {
   const [processes, suppliers, users] = await Promise.all([
-    ids.process?.length ? prisma.qmsProcess.findMany({ where: { id: { in: uniq(ids.process) } }, select: { id: true, name: true } }) : [],
-    ids.supplier?.length ? prisma.qmsSupplier.findMany({ where: { id: { in: uniq(ids.supplier) } }, select: { id: true, name: true } }) : [],
-    ids.user?.length ? prisma.qmsUser.findMany({ where: { id: { in: uniq(ids.user) } }, select: { id: true, realName: true, username: true } }) : [],
+    ids.process?.length ? db.qmsProcess.findMany({ where: { id: { in: uniq(ids.process) } }, select: { id: true, name: true } }) : [],
+    ids.supplier?.length ? db.qmsSupplier.findMany({ where: { id: { in: uniq(ids.supplier) } }, select: { id: true, name: true } }) : [],
+    ids.user?.length ? db.qmsUser.findMany({ where: { id: { in: uniq(ids.user) } }, select: { id: true, realName: true, username: true } }) : [],
   ])
   return {
     process: new Map(processes.map((p) => [p.id, p.name])),

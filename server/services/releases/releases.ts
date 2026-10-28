@@ -338,7 +338,7 @@ async function actOnReceipt(receiptId: string, userId: string, to: Extract<Recei
     await clearAlertKeys(tx, [alertKey('W5', 'receipt', receipt.id)])
     const rel = receipt.release
     if (to === 'REJECTED') {
-      const who = (await loadNames({ user: [userId] })).user.get(userId) ?? userId
+      const who = (await loadNames({ user: [userId] }, tx)).user.get(userId) ?? userId
       const title = `【拒收】${who} 拒收了${TYPE_TEXT[rel.type]} ${rel.releaseNo}：${reason}`
       await tx.reminder.createMany({
         data: [{ userId: rel.issuerId, kind: 'RELEASE', level: 'YELLOW', title: title.length > 190 ? `${title.slice(0, 189)}…` : title, link: releaseLink(rel.id), dedupeKey: `RELEASE_REJECT:${receipt.id}` }],
