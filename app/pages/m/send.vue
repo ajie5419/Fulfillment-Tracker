@@ -18,43 +18,64 @@ const promisedReturnDate = ref<string>('')
 const note = ref('')
 const lastSupplierId = ref<string | null>(null)
 
-const { data: parts, refresh: refreshParts } = await useFetch('/api/parts', {
-  query: computed(() => ({ workOrderNumber: workOrderNumber.value })),
-  default: () => [],
-  immediate: false,
-  watch: false, // 换工单时手动刷新，避免清空工单时发出空查询
-})
-type PartRow = (typeof parts.value)[number]
+const fetchParts = (wo: string) => $fetch('/api/parts', { query: { workOrderNumber: wo } })
+type PartRow = Awaited<ReturnType<typeof fetchParts>>[number]
+const parts = ref<PartRow[]>([])
+let partsSeq = 0
+let selectionVersion = 0
+async function refreshParts() {
+  const seq = ++partsSeq
+  const wo = workOrderNumber.value
+  if (!wo) return false
+  try {
+    const result = await fetchParts(wo)
+    if (seq !== partsSeq || wo !== workOrderNumber.value) return false
+    parts.value = result
+    return true
+  } catch (e) {
+    if (seq === partsSeq && wo === workOrderNumber.value) showFailToast(apiError(e))
+    return false
+  }
+}
 const pendingSteps = (p: PartRow) => p.steps.filter((s) => s.mode === 'EXTERNAL_OUTSOURCE' && s.status === 'PENDING')
 const sendableParts = computed(() => parts.value.filter((p) => pendingSteps(p).length))
-const part = computed(() => parts.value.find((p) => p.id === partId.value))
+const part = computed(() => parts.value.find((p) => p.id === partId.value && p.workOrderNumber === workOrderNumber.value))
 const step = computed(() => part.value?.steps.find((s) => s.id === stepId.value))
 const supplierName = computed(() => master.value.suppliers.find((s) => s.id === supplierId.value)?.label ?? '')
 const workOrder = computed(() => workOrders.value.find((w) => w.workOrderNumber === workOrderNumber.value))
 
 onMounted(async () => {
-  lastSupplierId.value = (await $fetch('/api/last-supplier')).supplierId
+  const version = selectionVersion
+  try {
+    lastSupplierId.value = (await $fetch('/api/last-supplier')).supplierId
+  } catch (e) {
+    if (version === selectionVersion) showFailToast(apiError(e))
+  }
+  if (version !== selectionVersion) return
   const fromTodo = route.query.stepId
   if (typeof fromTodo === 'string' && fromTodo) {
     try {
       const s = await $fetch(`/api/steps/${encodeURIComponent(fromTodo)}`)
+      if (version !== selectionVersion) return
       workOrderNumber.value = s.part.workOrderNumber
-      await refreshParts()
-      choosePart(s.partId, s.id)
+      if (await refreshParts() && version === selectionVersion) choosePart(s.partId, s.id)
     } catch (e) {
-      showFailToast(apiError(e))
+      if (version === selectionVersion) showFailToast(apiError(e))
     }
   }
 })
 
 function chooseWorkOrder(wo: string) {
+  selectionVersion++
+  partsSeq++
   workOrderNumber.value = wo
-  partId.value = ''
-  stepId.value = ''
-  if (wo) refreshParts()
+  parts.value = []
+  choosePart('')
+  if (wo) void refreshParts()
 }
 
 function choosePart(id: string, preferStepId?: string) {
+  selectionVersion++
   partId.value = id
   const p = parts.value.find((x) => x.id === id)
   const steps = p ? pendingSteps(p) : []
@@ -63,11 +84,16 @@ function choosePart(id: string, preferStepId?: string) {
 }
 
 function chooseStep(id: string) {
-  // 换了工序，随件发料要重填，不能把上一道写的带过去
-  if (id !== stepId.value) note.value = ''
-  stepId.value = id
-  const s = part.value?.steps.find((x) => x.id === id)
-  supplierId.value = s?.supplierId ?? lastSupplierId.value ?? ''
+  if (id && id === stepId.value) return
+  selectionVersion++
+  // Dates and material notes belong to this step, never the previous selection.
+  promisedReturnDate.value = ''
+  note.value = ''
+  showCalendar.value = false
+  showSupplier.value = false
+  const s = part.value && pendingSteps(part.value).find((x) => x.id === id)
+  stepId.value = s?.id ?? ''
+  supplierId.value = s ? s.supplierId ?? lastSupplierId.value ?? '' : ''
 }
 
 const quickDays = [3, 7, 10, 15]
@@ -84,28 +110,33 @@ function onSupplier({ selectedValues }: { selectedValues: (string | number)[] })
 }
 
 const submitting = ref(false)
-const canSubmit = computed(() => !!stepId.value && !!supplierId.value && !!promisedReturnDate.value)
+const canSubmit = computed(() => !!workOrder.value && !!part.value && step.value?.mode === 'EXTERNAL_OUTSOURCE' && step.value.status === 'PENDING' && !!supplierId.value && !!promisedReturnDate.value)
 async function submit() {
+  if (submitting.value) return
   if (!canSubmit.value) return showToast('请选好工件、外协厂和承诺返回日')
+  const version = selectionVersion
+  const submittedSupplier = supplierId.value
   submitting.value = true
   try {
     await $fetch(`/api/steps/${stepId.value}/send`, {
       method: 'POST',
       body: { supplierId: supplierId.value, promisedReturnDate: promisedReturnDate.value, note: note.value || null, source: 'MOBILE' },
     })
+    lastSupplierId.value = submittedSupplier
+    if (version !== selectionVersion) return
     showSuccessToast('已登记发出')
-    lastSupplierId.value = supplierId.value
-    partId.value = ''
-    stepId.value = ''
-    promisedReturnDate.value = ''
-    note.value = ''
+    choosePart('')
     await Promise.all([refreshParts(), refreshNuxtData('todos')])
   } catch (e) {
-    showFailToast(apiError(e))
+    if (version === selectionVersion) showFailToast(apiError(e))
   } finally {
     submitting.value = false
   }
 }
+onBeforeUnmount(() => {
+  selectionVersion++
+  partsSeq++
+})
 </script>
 
 <template>
@@ -128,7 +159,7 @@ async function submit() {
     </van-cell-group>
 
     <van-cell-group v-if="workOrderNumber" inset title="2. 工件（只列有待发出外协的）">
-      <van-cell v-if="part" :title="part.name" :label="`数量 ${part.quantity}`" is-link value="换一个" @click="partId = ''" />
+      <van-cell v-if="part" :title="part.name" :label="`数量 ${part.quantity}`" is-link value="换一个" @click="choosePart('')" />
       <template v-else>
         <van-empty v-if="!sendableParts.length" description="这个工单没有待发出的外协工序" image-size="60" />
         <van-cell

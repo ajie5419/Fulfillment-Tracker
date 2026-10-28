@@ -87,16 +87,18 @@ const ownerOptions = computed(() =>
 // ───── 新建 / 编辑 ─────
 const editing = ref<DrawingRow | null>(null)
 const editOpen = ref(false)
+let openSeq = 0
 function openEdit(r: DrawingRow | null) {
+  openSeq++
   editing.value = r
   editOpen.value = true
 }
 async function saved() {
+  openSeq++
   editOpen.value = false
   await reload()
 }
 // ?id= 打开该任务（从 W7 提醒跳过来）
-let openSeq = 0
 async function openFromQuery() {
   const my = ++openSeq
   const id = route.query.id as string | undefined
@@ -110,12 +112,14 @@ async function openFromQuery() {
     if (!canEditTask.value) keyword.value = task.componentName
     else openEdit(task)
   } catch (e) {
-    message.error(apiError(e))
+    if (my === openSeq) message.error(apiError(e))
   }
 }
 onMounted(openFromQuery)
-watch(() => route.query.id, openFromQuery)
+watch(() => route.query.id, openFromQuery, { flush: 'sync' })
+onBeforeUnmount(() => { openSeq++ })
 function closeEdit() {
+  openSeq++
   editOpen.value = false
   if (route.query.id) router.replace({ query: { ...route.query, id: undefined } })
 }

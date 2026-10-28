@@ -31,11 +31,24 @@ const empty = () => ({
 const form = reactive(empty())
 const saving = ref(false)
 const editing = computed(() => !!props.line)
+/** A save belongs to the form session that started it, even if the same ID is reopened. */
+let formVersion = 0
+let loadingForm = false
+
+const { data: parts, refresh: refreshParts } = await useFetch('/api/parts', {
+  query: computed(() => ({ workOrderNumber: form.workOrderNumber })),
+  default: () => [],
+  immediate: false,
+  watch: false,
+})
 
 watch(
-  () => props.open,
-  (open) => {
+  [() => props.open, () => props.line?.id, () => props.workOrderNumber, () => props.presetNode?.id, () => props.presetNode?.planDate],
+  ([open]) => {
+    formVersion++
+    saving.value = false
     if (!open) return
+    loadingForm = true
     const l = props.line
     Object.assign(
       form,
@@ -60,26 +73,25 @@ watch(
           }
         : { ...empty(), workOrderNumber: props.workOrderNumber, planNodeId: props.presetNode?.id ?? null, needDate: props.presetNode?.planDate },
     )
+    loadingForm = false
     if (form.workOrderNumber) refreshParts()
   },
+  { immediate: true, flush: 'sync' },
 )
+onBeforeUnmount(() => { formVersion++ })
 
-const { data: parts, refresh: refreshParts } = await useFetch('/api/parts', {
-  query: computed(() => ({ workOrderNumber: form.workOrderNumber })),
-  default: () => [],
-  immediate: false,
-  watch: false,
-})
 watch(
   () => form.workOrderNumber,
   (wo, old) => {
-    // 编辑时工单不能改；这里的变化来自打开弹窗时装入另一行，不能清掉它的工件（否则保存会解绑工件）
-    if (!editing.value && old !== undefined && wo !== old) {
+    parts.value = []
+    if (loadingForm) return
+    if (!editing.value && wo !== old) {
       form.partId = undefined
       form.planNodeId = null
     }
     if (wo) refreshParts()
   },
+  { flush: 'sync' },
 )
 const partOptions = computed(() => (form.workOrderNumber ? parts.value : []).map((p) => ({ value: p.id, label: p.drawingNo ? `${p.name}（${p.drawingNo}）` : p.name })))
 /** 关键物料供应商：QMS 供应商（不含厂内班组）；也可以手填 */
@@ -101,6 +113,9 @@ const late = computed(() => {
 })
 
 async function submit() {
+  if (!props.open || saving.value) return
+  const version = formVersion
+  const line = props.line
   if (!form.workOrderNumber) return message.warning('请选择工单')
   if (!form.materialName.trim()) return message.warning('请填写物料名称')
   if (!form.quantity || form.quantity <= 0) return message.warning('数量要大于 0')
@@ -122,29 +137,31 @@ async function submit() {
   }
   saving.value = true
   try {
-    if (props.line) {
+    if (line) {
       // 供应商没改就不提交（原来关联的 QMS 供应商后来停用了，也不影响改别的）
-      if (form.supplier.trim() === (props.line.supplierName ?? '')) {
+      if (form.supplier.trim() === (line.supplierName ?? '')) {
         delete body.supplierId
         delete body.supplierName
       }
       Object.assign(body, { delayReason: form.delayReason ?? null, delayNote: form.delayNote.trim() || null })
-      if (props.line.status !== 'ARRIVED') body.status = form.cancelled ? 'CANCELLED' : 'OPEN'
+      if (line.status !== 'ARRIVED') body.status = form.cancelled ? 'CANCELLED' : 'OPEN'
       else if (form.arrivedDate) body.arrivedDate = form.arrivedDate
-      const r = await purchaseSend<{ planWarning?: string | null }>(`/api/purchases/${props.line.id}`, 'PATCH', body)
+      const r = await purchaseSend<{ planWarning?: string | null }>(`/api/purchases/${line.id}`, 'PATCH', body)
+      if (version !== formVersion) return
       message.success('已保存')
       if (r?.planWarning) message.warning(r.planWarning)
-      emit('done', props.line.id)
+      emit('done', line.id)
     } else {
       const r = await purchaseSend<{ id: string; planWarning?: string | null }>('/api/purchases', 'POST', { ...body, workOrderNumber: form.workOrderNumber, arrivedDate: form.arrivedDate ?? null })
+      if (version !== formVersion) return
       message.success('已登记')
       if (r.planWarning) message.warning(r.planWarning)
       emit('done', r.id)
     }
   } catch (e) {
-    message.error(apiError(e))
+    if (version === formVersion) message.error(apiError(e))
   } finally {
-    saving.value = false
+    if (version === formVersion) saving.value = false
   }
 }
 </script>
