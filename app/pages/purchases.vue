@@ -399,7 +399,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
   <a-modal :open="!!arriving" :title="`确认到货：${arriving?.materialName ?? ''}`" ok-text="确认到货" :confirm-loading="busy" @ok="confirmArrive" @cancel="arriving = null">
     <a-form v-if="arriving" layout="vertical">
       <p class="muted">{{ arriving.workOrderNumber }} · {{ qtyText(arriving) }} · {{ arriving.supplierName ?? '未填供应商' }} · 需求日 {{ dayText(arriving.needDate) }}{{ arriving.promisedDate ? ` · 承诺 ${dayText(arriving.promisedDate)}` : '' }}</p>
-      <a-form-item label="到货日期"><a-date-picker v-model:value="arrival.arrivedDate" value-format="YYYY-MM-DD" :allow-clear="false" /></a-form-item>
+      <a-form-item label="到货日期"><UiDatePicker v-model:value="arrival.arrivedDate" :allow-clear="false" /></a-form-item>
       <template v-if="arrivalLate">
         <a-form-item label="延误原因（晚于需求日或承诺日）">
           <a-radio-group v-model:value="arrival.delayReason" :options="DELAY_REASON_OPTIONS" />

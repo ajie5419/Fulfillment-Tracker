@@ -196,16 +196,16 @@ async function submit() {
         <a-auto-complete v-model:value="form.supplier" :options="supplierOptions" placeholder="选 QMS 供应商，或直接填写名称" allow-clear />
         <div class="muted">{{ form.supplier.trim() ? (matchedSupplier ? '已关联 QMS 供应商（进货检验自动到货时核对供应商）' : '手填的供应商') : '' }}</div>
       </a-form-item>
-      <a-form-item label="需求日" required><a-date-picker v-model:value="form.needDate" value-format="YYYY-MM-DD" /></a-form-item>
+      <a-form-item label="需求日" required><UiDatePicker v-model:value="form.needDate" /></a-form-item>
       <a-form-item label="承诺到货日">
-        <a-date-picker v-model:value="form.promisedDate" value-format="YYYY-MM-DD" placeholder="供应商承诺的日期" />
+        <UiDatePicker v-model:value="form.promisedDate" placeholder="供应商承诺的日期" />
         <div class="muted">需求日前 7 天（可在设置里改）还没有承诺日会预警</div>
       </a-form-item>
       <a-form-item label="所属总计划节点">
         <PlanNodeSelect v-model:value="form.planNodeId" :work-order-number="form.workOrderNumber" :record-date="form.promisedDate ?? form.needDate" @pick="(d) => (form.needDate ||= d)" />
       </a-form-item>
       <a-form-item v-if="!editing || line?.status === 'ARRIVED'" label="实际到货日">
-        <a-date-picker v-model:value="form.arrivedDate" value-format="YYYY-MM-DD" :allow-clear="!editing" placeholder="已经到了才填" />
+        <UiDatePicker v-model:value="form.arrivedDate" :allow-clear="!editing" placeholder="已经到了才填" />
         <div v-if="!editing" class="muted">新登记时只用于补录已到货的物料；之后到货请用"确认到货"</div>
       </a-form-item>
       <a-form-item label="采购负责人">

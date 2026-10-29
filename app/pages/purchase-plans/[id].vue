@@ -98,7 +98,7 @@ const statusText = (item: Item) => !item.convertedLineId ? '未转入' : `已转
       <a-form-item label="物料名称" required><a-input v-model:value="itemForm.materialName" :maxlength="191" /></a-form-item>
       <a-form-item label="规格型号"><a-input v-model:value="itemForm.spec" :maxlength="191" /></a-form-item>
       <a-form-item label="数量 / 单位" required><a-space><a-input-number v-model:value="itemForm.quantity" :min="0" :max="1e9" :precision="3" /><a-input v-model:value="itemForm.unit" placeholder="单位" :maxlength="20" /></a-space></a-form-item>
-      <a-form-item label="需求日（下发前必填）"><a-date-picker v-model:value="itemForm.needDate" value-format="YYYY-MM-DD" /></a-form-item>
+      <a-form-item label="需求日（下发前必填）"><UiDatePicker v-model:value="itemForm.needDate" /></a-form-item>
       <a-form-item label="工件（可空）"><a-alert v-if="partError" type="error" message="工件列表加载失败"><template #action><a-button size="small" @click="refreshParts()">重试</a-button></template></a-alert><a-select v-else v-model:value="itemForm.partId" allow-clear show-search option-filter-prop="label" :options="parts?.map(p => ({ value: p.id, label: p.drawingNo ? `${p.name}（${p.drawingNo}）` : p.name }))" /></a-form-item>
       <a-form-item label="供应商（手填）"><a-input v-model:value="itemForm.supplierName" :maxlength="191" /></a-form-item>
       <a-form-item label="排序（越小越靠前）"><a-input-number v-model:value="itemForm.sortOrder" :min="0" :max="100000" :precision="0" /></a-form-item>

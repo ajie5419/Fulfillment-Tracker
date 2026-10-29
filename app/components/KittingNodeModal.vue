@@ -150,7 +150,7 @@ async function submit() {
       </a-form-item>
       <a-form-item label="节点名称" required><a-input v-model:value="form.name" :maxlength="191" placeholder="如 主梁总装、回转机构部装" /></a-form-item>
       <a-form-item label="需求日" required>
-        <a-date-picker v-model:value="form.needDate" value-format="YYYY-MM-DD" />
+        <UiDatePicker v-model:value="form.needDate" />
         <div class="muted">需求日前 5 天（可在设置里改）还没齐套黄色预警，前 1 天或已过红色</div>
       </a-form-item>
       <a-form-item label="所属总计划节点">

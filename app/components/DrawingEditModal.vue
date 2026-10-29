@@ -156,7 +156,7 @@ async function submit() {
         <a-select v-model:value="form.ownerId" allow-clear show-search option-filter-prop="label" placeholder="不选 = 技术部负责人" :options="ownerOptions" />
       </a-form-item>
       <a-form-item label="计划完成日" required>
-        <a-date-picker v-model:value="form.planDate" value-format="YYYY-MM-DD" />
+        <UiDatePicker v-model:value="form.planDate" />
         <div class="muted">计划完成日前 2 天（可在设置里改）还没完成设计黄色预警，过了计划完成日红色</div>
       </a-form-item>
       <a-form-item label="所属总计划节点">
@@ -164,7 +164,7 @@ async function submit() {
       </a-form-item>
       <a-form-item label="客户确认">
         <a-checkbox v-model:checked="form.needsCustomerConfirm">需要客户确认</a-checkbox>
-        <a-date-picker v-if="form.needsCustomerConfirm" v-model:value="form.customerPlanDate" value-format="YYYY-MM-DD" placeholder="客户确认计划日" style="margin-left: 8px" />
+        <UiDatePicker v-if="form.needsCustomerConfirm" v-model:value="form.customerPlanDate" placeholder="客户确认计划日" style="margin-left: 8px" />
         <div v-if="form.needsCustomerConfirm" class="muted">设计完成后超过客户确认计划日还没确认会预警；客户确认后任务才算完成</div>
       </a-form-item>
       <a-form-item label="备注"><a-input v-model:value="form.note" :maxlength="500" /></a-form-item>
