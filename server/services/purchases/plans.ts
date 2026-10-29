@@ -77,11 +77,15 @@ export async function changePurchasePlanStatus(id: string, action: 'issue' | 'wi
       if (items.some(i => !i.needDate || Number(i.quantity) <= 0)) throw new FlowError('请补齐每行需求日和大于 0 的数量再下发')
       // BOM 自动草稿可以暂不挂节点，下发时执行采购行的新建口径。
       await resolvePlanNode(tx, plan.workOrderNumber, plan.planNodeId, { creating: true })
-      const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PURCHASE_DEPT }, select: { userId: true } })
-      const owners = [...new Set(heads.map(h => h.userId))]
-      await tx.todo.createMany({ data: owners.map(ownerId => ({ ownerId, action: PURCHASE_PLAN_ISSUED, refType: 'purchasePlan', refId: id })) })
+      let notified = 0
+      if (items.some(i => i.convertedLineId === null)) {
+        const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PURCHASE_DEPT }, select: { userId: true } })
+        const owners = [...new Set(heads.map(h => h.userId))]
+        await tx.todo.createMany({ data: owners.map(ownerId => ({ ownerId, action: PURCHASE_PLAN_ISSUED, refType: 'purchasePlan', refId: id })) })
+        notified = owners.length
+      }
       await tx.purchasePlan.update({ where: { id }, data: { status, issuedBy: actorId, issuedAt: now } })
-      return { status, notified: owners.length }
+      return { status, notified }
     }
     await tx.purchasePlan.update({ where: { id }, data: { status } })
     await tx.todo.updateMany({ where: { refType: 'purchasePlan', refId: id, action: PURCHASE_PLAN_ISSUED, status: 'OPEN' }, data: { status: 'CANCELLED', doneAt: now } })
