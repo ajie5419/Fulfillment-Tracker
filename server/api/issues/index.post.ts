@@ -8,6 +8,7 @@ const body = z
     workOrderNumber: z.string().min(1, '请选择工单').max(64),
     partId: z.string().max(191).nullish(),
     category,
+    title: z.string().trim().min(1, '请填写标题').max(100, '标题最多 100 字').optional(),
     description: z.string().trim().min(1, '请填写一句话描述').max(500, '描述最多 500 字'),
     photoIds: z.array(z.string().regex(/^[a-f0-9]{32}$/, '照片无效')).max(MAX_PHOTOS, `照片最多 ${MAX_PHOTOS} 张`).default([]),
     dueDate: day.nullish(),

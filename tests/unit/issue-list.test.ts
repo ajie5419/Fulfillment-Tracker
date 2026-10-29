@@ -26,7 +26,7 @@ let managers: Record<string, string>
 function issue(index: number, fields: Partial<Issue> = {}): Issue {
   return {
     id: `issue-${String(index).padStart(5, '0')}`, issueNo: `YC-${index}`, workOrderNumber: 'WO',
-    refType: null, refId: null, category: 'OTHER', description: `Issue ${index}`, photos: [],
+    title: null, refType: null, refId: null, category: 'OTHER', description: `Issue ${index}`, photos: [],
     reporterId: 'other', source: 'MANUAL', responsibleDeptId: null, responsibleUserId: 'other',
     responsibleSupplierId: null, dueDate: null, status: 'OPEN', escalationLevel: 0, sourceKey: null,
     createdAt: new Date(+now - index * 1000), updatedAt: now, ...fields,

@@ -12,6 +12,7 @@ const { data: options } = await useIssueOptions()
 const workOrderNumber = ref<string>((route.query.wo as string) || '')
 const partId = ref<string>((route.query.partId as string) || '')
 const category = ref<IssueCategoryKey | ''>('')
+const title = ref('')
 const description = ref('')
 const supplierId = ref('')
 const dueDate = ref('')
@@ -53,9 +54,9 @@ function onOversize() {
 }
 
 const submitting = ref(false)
-const canSubmit = computed(() => !!workOrderNumber.value && !!category.value && !!description.value.trim())
+const canSubmit = computed(() => !!workOrderNumber.value && !!category.value && !!title.value.trim() && !!description.value.trim())
 async function submit() {
-  if (!canSubmit.value) return showToast('请选工单、分类，并写一句话描述')
+  if (!canSubmit.value) return showToast('请选工单、分类，并填写标题和说明')
   submitting.value = true
   try {
     const files = photos.value.map((p) => p.file).filter((f): f is File => !!f)
@@ -67,6 +68,7 @@ async function submit() {
         workOrderNumber: workOrderNumber.value,
         partId: partId.value || null,
         category: category.value,
+        title: title.value.trim(),
         description: description.value.trim(),
         photoIds,
         dueDate: dueDate.value || null,
@@ -124,8 +126,9 @@ async function submit() {
         <van-cell v-if="cat?.supplier" title="外协单位" :value="supplierName || '不指定'" is-link @click="showSupplier = true" />
       </van-cell-group>
 
-      <van-cell-group inset title="4. 一句话 + 照片">
-        <van-field v-model="description" type="textarea" rows="2" autosize maxlength="500" show-word-limit placeholder="发生了什么？如：涂装件返回有流挂，需返修" />
+      <van-cell-group inset title="4. 标题、说明与照片">
+        <van-field v-model="title" label="标题" required maxlength="100" show-word-limit placeholder="简要概括异常" />
+        <van-field label="说明" required v-model="description" type="textarea" rows="2" autosize maxlength="500" show-word-limit placeholder="发生了什么？如：涂装件返回有流挂，需返修" />
         <div class="uploader">
           <van-uploader v-model="photos" :max-count="MAX_PHOTOS" :max-size="MAX_PHOTO_BYTES" accept="image/jpeg,image/png,image/webp" multiple @oversize="onOversize" />
           <div class="muted">拍照或从相册选，最多 3 张，每张不超过 8MB</div>

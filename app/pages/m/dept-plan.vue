@@ -13,7 +13,7 @@ const q = (k: string) => (typeof route.query[k] === 'string' ? (route.query[k] a
 const dept = computed(() => q('dept'))
 const focusId = computed(() => q('node'))
 
-const EMPTY: DeptPlanView = { dept: null, deptText: null, deptOptions: [], workOrderOptions: [], groups: [], summary: { pending: 0, unsplit: 0, overdueTasks: 0, dueSoonTasks: 0, active: 0, done: 0 }, focusNodeId: null }
+const EMPTY: DeptPlanView = { dept: null, deptText: null, deptOptions: [], workOrderOptions: [], groups: [], summary: { pending: 0, returned: 0, unsplit: 0, overdueTasks: 0, dueSoonTasks: 0, active: 0, done: 0 }, focusNodeId: null }
 const { data, pending, refresh } = await useFetch<DeptPlanView>('/api/plan/dept', {
   query: computed(() => ({ dept: dept.value, node: focusId.value })),
   default: () => EMPTY,
@@ -132,6 +132,7 @@ const md = (d: string | null) => (d ? d.slice(5) : '')
       <template v-if="data.deptOptions.length > 1" #right><span class="link" role="button" @click="showDept = true">换部门</span></template>
     </van-nav-bar>
     <van-tabs v-model:active="tab">
+      <van-tab :title="`已退回（${data.summary.returned}）`" name="returned" />
       <van-tab :title="`待接收${data.summary.pending ? `（${data.summary.pending}）` : ''}`" name="pending" />
       <van-tab :title="`执行中${data.summary.active ? `（${data.summary.active}）` : ''}`" name="active" />
       <van-tab title="已完成" name="done" />
@@ -144,7 +145,7 @@ const md = (d: string | null) => (d ? d.slice(5) : '')
     </div>
     <van-loading v-if="pending" class="m-center" />
     <van-empty v-else-if="!data.deptOptions.length" description="你还没有对应的业务部门，请管理员在设置里配置部门对照" image-size="80" />
-    <van-empty v-else-if="!cards.length" :description="tab === 'pending' ? '没有待接收的节点' : tab === 'active' ? '没有执行中的节点' : '还没有完成的节点'" image-size="80" />
+    <van-empty v-else-if="!cards.length" :description="tab === 'returned' ? '没有已退回的节点' : tab === 'pending' ? '没有待接收的节点' : tab === 'active' ? '没有执行中的节点' : '还没有完成的节点'" image-size="80" />
     <div v-else class="m-list">
       <MCard v-for="c in cards" :id="`m-node-${c.node.id}`" :key="c.node.id" :tone="toneOf(c.node)" :class="{ focus: c.node.id === data.focusNodeId }">
         <div class="m-row">

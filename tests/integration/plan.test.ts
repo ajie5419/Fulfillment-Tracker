@@ -431,7 +431,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     expect(await openTodos(buy.id)).toHaveLength(0)
   })
 
-  it('部门计划页（10-23）：本部门在已发布计划里的末级节点，待接收（含已退回）/ 执行中；领导类可切换部门、按节点定位', async () => {
+  it('部门计划页（10-23）：本部门在已发布计划里的末级节点，待接收 / 已退回 / 执行中；领导类可切换部门、按节点定位', async () => {
     const { deptPlan } = await import('../../server/services/plan/dept')
     const nodes = await nodesOf(WO)
     const design = nodes.find((n) => n.name === '设计出图')!
@@ -451,8 +451,10 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     const pur = await deptPlan(await ctxOf('u-buyhead'), undefined)
     expect(pur.dept).toBe('PURCHASE')
     const pn = pur.groups.flatMap((g) => g.nodes).find((n) => n.id === buy.id)!
-    expect(pn).toMatchObject({ tab: 'pending', confirmStatus: 'REJECTED', confirmText: '已退回' })
-    expect(pur.summary.pending).toBeGreaterThanOrEqual(1)
+    expect(pn).toMatchObject({ tab: 'returned', confirmStatus: 'REJECTED', confirmText: '已退回' })
+    expect(pur.summary.returned).toBeGreaterThanOrEqual(1)
+    expect(pur.summary.pending).toBe(pur.groups.flatMap((g) => g.nodes).filter((n) => n.tab === 'pending').length)
+    expect(pur.groups.flatMap((g) => g.nodes).filter((n) => n.tab === 'pending').map((n) => n.id)).not.toContain(buy.id)
 
     // 项目部负责人（领导类）：能选全部部门，?node= 按节点所在部门显示并定位
     const lead = await deptPlan(await ctxOf('u-pdh'), undefined, { node: buy.id })

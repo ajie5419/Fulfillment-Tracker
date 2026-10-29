@@ -59,7 +59,7 @@ describe('班组长权限', () => {
 })
 
 describe('第一道待办与生产调度同一条规则 firstStepTodoReady', () => {
-  const tracked = (purchases: ('OPEN' | 'ARRIVED')[], drawings: ('PENDING' | 'DONE')[] = []) => prereqState({ purchases, drawings })
+  const tracked = (purchases: ('OPEN' | 'ARRIVED')[], drawings: ('PENDING' | 'DONE')[] = []) => prereqState({ purchases, drawings: drawings.map((status) => ({ status, materialStatus: 'ISSUED' })) })
   it('挂了物料 / 设计且都齐了、待开工、没在等变更才发', () => {
     expect(firstStepTodoReady({ status: 'PENDING', held: false }, tracked(['ARRIVED'], ['DONE']))).toBe(true)
     expect(firstStepTodoReady({ status: 'PENDING', held: false }, tracked(['OPEN']))).toBe(false) // 缺料：生产调度"卡住"

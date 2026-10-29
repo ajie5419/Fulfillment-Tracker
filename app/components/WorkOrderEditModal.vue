@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const requestFetch = useRequestFetch()
 /**
  * 新建 / 编辑工单（履约新建工单 10-27：工单由履约维护，保存时实际写入 QMS 工单库）。项目总览"新建工单"、工单详情"编辑工单"共用。
  *   工单号（新建必填，编辑只读）、客户（QMS 客户字典现取，必选）、项目名称、事业部（本地已同步的 QMS 部门，可空）、数量（≥1）、交期、
@@ -58,7 +59,7 @@ async function loadCustomers() {
   customersLoading.value = true
   customersError.value = null
   try {
-    customers.value = await $fetch<{ id: string; name: string }[]>('/api/work-orders/customers')
+    customers.value = await requestFetch<{ id: string; name: string }[]>('/api/work-orders/customers')
   } catch (e) {
     customersError.value = apiError(e)
   } finally {

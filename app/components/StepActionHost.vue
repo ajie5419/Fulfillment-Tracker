@@ -6,7 +6,7 @@
  */
 import type { ActionRow, PrimaryAction } from '#shared/production'
 const emit = defineEmits<{ done: [] }>()
-const { data: master } = await useMaster()
+const { data: master } = useMaster()
 
 const finishing = ref<{ id: string; title: string; quantity: number; doneQty: number } | null>(null)
 const sending = ref<{ id: string; supplierId: string | null; title: string } | null>(null)

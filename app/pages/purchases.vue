@@ -263,6 +263,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
 </script>
 
 <template>
+  <div>
   <div class="ft-page">
   <div v-if="stats" class="ft-stats">
     <UiStatCard label="未到货" :value="stats.open" unit="项" tone="primary" accent icon="dot" clickable :active="filter.view === 'open'" @click="applyView('open')">
@@ -408,6 +409,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
       </template>
     </a-form>
   </a-modal>
+  </div>
 </template>
 
 <style scoped>

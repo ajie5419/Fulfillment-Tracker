@@ -9,10 +9,11 @@
 definePageMeta({ layout: 'mobile' })
 const route = useRoute()
 const router = useRouter()
-const tab = ref<'mine' | 'all'>(route.query.tab === 'all' ? 'all' : 'mine')
+const tab = ref<'mine' | 'all' | 'nodes'>(route.query.tab === 'nodes' ? 'nodes' : route.query.tab === 'all' ? 'all' : 'mine')
+watch(() => route.query.tab, t => { tab.value = t === 'nodes' ? 'nodes' : t === 'all' ? 'all' : 'mine' })
 watch(tab, (t) => router.replace({ query: { ...route.query, tab: t } }))
-const { data, pending } = await useFetch('/api/kitting', {
-  query: computed(() => (tab.value === 'mine' ? { mine: '1' } : { incomplete: '1' })),
+const { data, pending, error, refresh } = await useFetch('/api/kitting', {
+  query: computed(() => (tab.value === 'mine' ? { mine: '1' } : tab.value === 'all' ? { incomplete: '1' } : {})),
   default: (): KitList => ({ rows: [], total: 0, stats: null, canCreate: false }),
 })
 const focusId = computed(() => (typeof route.query.id === 'string' && route.query.id ? route.query.id : ''))
@@ -51,11 +52,13 @@ const toggle = (id: string) => (opened.value = opened.value.includes(id) ? opene
       </template>
     </template>
     <van-tabs v-model:active="tab">
+      <van-tab title="全部节点（只读）" name="nodes" />
       <van-tab title="我负责的" name="mine" />
       <van-tab :title="`全部未齐套${data.stats?.incomplete ? `（${data.stats.incomplete}）` : ''}`" name="all" />
     </van-tabs>
     <van-loading v-if="pending" class="m-center" />
-    <van-empty v-else-if="!rows.length" :description="tab === 'mine' ? '没有我负责的装配节点' : '没有未齐套的装配节点'" image-size="80" />
+    <van-empty v-else-if="error" image="error" description="列表加载失败"><van-button size="small" @click="refresh()">重试</van-button></van-empty>
+    <van-empty v-else-if="!rows.length" :description="tab === 'mine' ? '没有我负责的装配节点' : tab === 'nodes' ? '没有装配节点' : '没有未齐套的装配节点'" image-size="80" />
     <div v-else class="m-list">
       <MKitCard v-for="n in rows" :key="n.id" :node="n" :window-days="data.stats?.windowDays ?? 5" :open="opened.includes(n.id)" @toggle="toggle(n.id)" />
     </div>

@@ -1,3 +1,4 @@
+import { isOutside } from '../../../shared/production'
 /** 外协在途：已发出（OUT）还没全部返回的步骤。 */
 import { prisma } from '../../utils/prisma'
 import { overdueDays } from './dates'
@@ -12,7 +13,8 @@ export async function listTransit(filter: { workOrderNumber?: string; supplierId
   }
   const steps = await prisma.routeStep.findMany({
     where: {
-      status: 'OUT',
+      mode: 'EXTERNAL_OUTSOURCE',
+      OR: [{ status: 'OUT' }, { status: 'BLOCKED', startedAt: { not: null } }],
       ...(filter.supplierId ? { supplierId: filter.supplierId } : {}),
       ...(Object.keys(wo).length ? { part: { workOrderNumber: wo } } : {}),
     },
@@ -33,7 +35,7 @@ export async function listTransit(filter: { workOrderNumber?: string; supplierId
   const returned = new Map(sums.map((s) => [s.stepId, s._sum.qty ?? 0]))
   const sendNote = new Map(sends.map((e) => [e.stepId, e.note]))
   const now = new Date()
-  return steps.map((s) => ({
+  return steps.filter(s => isOutside({ ...s, quantity: s.part.quantity, doneQty: returned.get(s.id) ?? 0 })).map((s) => ({
     stepId: s.id,
     seq: s.seq,
     workOrderNumber: s.part.workOrderNumber,

@@ -38,12 +38,12 @@ export async function loadPrereqs(partIds: string[]): Promise<Map<string, Prereq
   if (!partIds.length) return new Map()
   const [lines, drawings] = await Promise.all([
     prisma.purchaseLine.findMany({ where: { partId: { in: partIds } }, select: { partId: true, status: true } }),
-    prisma.drawingTaskPart.findMany({ where: { partId: { in: partIds } }, select: { partId: true, task: { select: { status: true } } } }),
+    prisma.drawingTaskPart.findMany({ where: { partId: { in: partIds } }, select: { partId: true, task: { select: { status: true, materialStatus: true } } } }),
   ])
   return new Map(
     partIds.map((id) => [
       id,
-      prereqState({ purchases: lines.filter((l) => l.partId === id).map((l) => l.status), drawings: drawings.filter((d) => d.partId === id).map((d) => d.task.status) }),
+      prereqState({ purchases: lines.filter((l) => l.partId === id).map((l) => l.status), drawings: drawings.filter((d) => d.partId === id).map((d) => d.task) }),
     ]),
   )
 }
@@ -92,7 +92,7 @@ export async function listProduction(filter: ProductionFilter) {
     countUnroutedParts(filter),
   ])
   const doneQty = new Map(sums.map((x) => [x.stepId, x._sum.qty ?? 0]))
-  const NO_PREREQ: PrereqState = { tracked: false, missingMaterial: 0, missingDrawing: 0 }
+  const NO_PREREQ: PrereqState = { tracked: false, missingMaterial: 0, missingDrawing: 0, missingMaterialList: 0 }
 
   type Classified = { s: (typeof steps)[number]; column: WorkshopColumn; stuck: StuckKind | null; prereq: PrereqState }
   const classified: Classified[] = []

@@ -14,10 +14,10 @@ import { shanghaiDay } from '../alerts/rules'
 import { BUSINESS_DEPT_NAME, BUSINESS_DEPTS } from '../auth/departments'
 import { type RoleContext, inDept, isLeaderLike } from '../auth/permissions'
 import { ACTIVE_WO_WHERE } from '../workorder/active'
-import { CONFIRM_PLAN_NODE, PLAN_REF, addDays } from './constants'
+import { CONFIRM_PLAN_NODE, PLAN_REF, addDays, deptNodeTab } from './constants'
 import { getPlan } from './plan'
 
-export type DeptPlanTab = 'pending' | 'active' | 'done'
+export type DeptPlanTab = 'pending' | 'returned' | 'active' | 'done'
 
 /** 当前用户能看哪些部门的部门计划 */
 async function deptChoices(ctx: RoleContext): Promise<{ depts: BusinessDept[]; todoNodes: { id: string; workOrderNumber: string; dept: BusinessDept }[] }> {
@@ -41,7 +41,7 @@ export async function deptPlan(ctx: RoleContext, visible: string[] | undefined, 
     depts[0] ??
     null
   const deptOptions = depts.map((d) => ({ value: d, label: BUSINESS_DEPT_NAME[d] }))
-  const empty = { dept, deptText: dept ? BUSINESS_DEPT_NAME[dept] : null, deptOptions, workOrderOptions: [] as { value: string; label: string }[], groups: [], summary: { pending: 0, unsplit: 0, overdueTasks: 0, dueSoonTasks: 0, active: 0, done: 0 }, focusNodeId: null }
+  const empty = { dept, deptText: dept ? BUSINESS_DEPT_NAME[dept] : null, deptOptions, workOrderOptions: [] as { value: string; label: string }[], groups: [], summary: { pending: 0, returned: 0, unsplit: 0, overdueTasks: 0, dueSoonTasks: 0, active: 0, done: 0 }, focusNodeId: null }
   if (!dept) return empty
 
   // 已发布、在做、有本部门节点的工单（可见范围 ∪ 手里有接收待办的工单）
@@ -70,8 +70,8 @@ export async function deptPlan(ctx: RoleContext, visible: string[] | undefined, 
           parentName: n.parentId ? (nameOf.get(n.parentId) ?? null) : null,
           /** 接收 / 退回日（上海时区，页面直接显示，避免服务端和浏览器时区不同） */
           confirmedDay: n.confirmedAt ? shanghaiDay(n.confirmedAt) : null,
-          /** 待接收（含已退回、等项目经理调整的）/ 执行中 / 已完成 */
-          tab: (n.done ? 'done' : n.confirmStatus === 'CONFIRMED' || !n.confirmStatus ? 'active' : 'pending') as DeptPlanTab,
+          /** 待接收 / 已退回（等项目经理调整）/ 执行中 / 已完成 */
+          tab: deptNodeTab(n),
         }))
       return {
         workOrder: p.workOrder,
@@ -93,6 +93,7 @@ export async function deptPlan(ctx: RoleContext, visible: string[] | undefined, 
     groups,
     summary: {
       pending: nodes.filter((n) => n.tab === 'pending').length,
+      returned: nodes.filter((n) => n.tab === 'returned').length,
       /** 已接收、没完成、还没分解任何任务 */
       unsplit: nodes.filter((n) => n.tab === 'active' && n.unsplit).length,
       overdueTasks: openTasks.filter((t) => t.overdue).length,

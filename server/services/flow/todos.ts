@@ -1,4 +1,5 @@
 /** 我的待办：附上工单、工件、工序（或发放单）和下一步建议，页面拿到就能展示。 */
+import { PURCHASE_PLAN_ISSUED } from '../../../shared/purchase-plans'
 import { READY_TO_START } from '../purchases/constants'
 import { describeReadyTodos } from '../purchases/purchases'
 import { prisma } from '../../utils/prisma'
@@ -17,6 +18,7 @@ import { dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { workBucket } from '../../../shared/workbench'
 
 const ACTION_TEXT: Record<string, string> = {
+  [PURCHASE_PLAN_ISSUED]: '执行采购计划',
   [ARRANGE_SEND]: '安排发出',
   [ARRANGE_START]: '安排开工',
   [SIGN_RELEASE]: '签收',
@@ -39,8 +41,11 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[], 
   const stepIds = todos.filter((t) => t.refType === 'step').map((t) => t.refId)
   let steps = await prisma.routeStep.findMany({ where: { id: { in: stepIds } }, include: { part: true } })
   const ready = await describeReadyTodos(todos.filter((t) => t.refType === 'part').map((t) => t.refId))
+  const purchasePlans = await prisma.purchasePlan.findMany({ where: { id: { in: todos.filter(t => t.refType === 'purchasePlan').map(t => t.refId) } }, select: { id: true, title: true, workOrderNumber: true } })
+  const purchasePlanOf = new Map(purchasePlans.map(p => [p.id, p]))
   if (visibleWorkOrders) {
     const visible = new Set(visibleWorkOrders)
+    todos = todos.filter(t => t.refType !== 'purchasePlan' || visible.has(purchasePlanOf.get(t.refId)?.workOrderNumber ?? ''))
     const hidden = new Set(steps.filter((s) => !visible.has(s.part.workOrderNumber)).map((s) => s.id))
     steps = steps.filter((s) => !hidden.has(s.id))
     todos = todos.filter((t) => !(t.refType === 'step' && hidden.has(t.refId)))
@@ -62,6 +67,10 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[], 
 
   const rows = todos.map((t) => {
     const actionText = ACTION_TEXT[t.action] ?? t.action
+    if (t.refType === 'purchasePlan') {
+      const p = purchasePlanOf.get(t.refId)
+      return { ...t, actionText, title: `${actionText}：${p?.workOrderNumber ?? ''} · ${p?.title ?? '计划已删除'}`, suggestion: '技术部已下发，请查看明细并转入采购行', link: `/purchase-plans/${t.refId}`, step: null, release: null, plan: null }
+    }
     if (t.refType === PLAN_TASK_REF) {
       const p = planTasks.get(t.refId)
       if (!p) return { ...t, actionText, title: actionText, suggestion: '关联的部门任务已删除', step: null, release: null, plan: null, planTask: null }
@@ -159,14 +168,14 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[], 
   const today = todayDay(now)
   return rows.map((row) => {
     // 只有"完成部门任务"带 planTask，其余补 null，页面统一按 t.planTask 判断
-    const t = { planTask: null, ...row }
+    const t = { planTask: null, link: null as string | null, ...row }
     const stepRow = t.refType === 'step' ? byId.get(t.refId) : undefined
     const stepStart = stepRow?.planStartDate ? dateFieldDay(stepRow.planStartDate) : t.refType === 'part' ? (ready.get(t.refId)?.step?.planStartDay ?? null) : null
     const stepDue = stepRow?.dueDate ? dateFieldDay(stepRow.dueDate) : null
     const dueDay = t.plan?.planDate ?? t.planTask?.planDate ?? stepStart ?? (t.dueAt ? shanghaiDay(t.dueAt) : stepDue)
     return {
       ...t,
-      workOrderNumber: (t.refType === 'part' ? ready.get(t.refId)?.workOrderNumber : null) ?? t.release?.workOrderNumber ?? t.plan?.workOrderNumber ?? t.planTask?.workOrderNumber ?? (t.refType === 'step' ? byId.get(t.refId)?.part.workOrderNumber : null) ?? null,
+      workOrderNumber: purchasePlanOf.get(t.refId)?.workOrderNumber ?? (t.refType === 'part' ? ready.get(t.refId)?.workOrderNumber : null) ?? t.release?.workOrderNumber ?? t.plan?.workOrderNumber ?? t.planTask?.workOrderNumber ?? (t.refType === 'step' ? byId.get(t.refId)?.part.workOrderNumber : null) ?? null,
       dueDay,
       bucket: workBucket({ kind: 'todo', dueDay }, today),
     }
@@ -177,6 +186,9 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[], 
 async function transferWorkOrder(tx: Prisma.TransactionClient, todo: Todo): Promise<string> {
   let workOrderNumber: string | undefined
   switch (todo.refType) {
+    case 'purchasePlan':
+      workOrderNumber = (await tx.purchasePlan.findUnique({ where: { id: todo.refId }, select: { workOrderNumber: true } }))?.workOrderNumber
+      break
     case 'step':
       workOrderNumber = (await tx.routeStep.findUnique({ where: { id: todo.refId }, select: { part: { select: { workOrderNumber: true } } } }))?.part.workOrderNumber
       break
@@ -214,6 +226,7 @@ export async function transferTodo(todoId: string, toUserId: string, actor: Acto
     if (todo.status !== 'OPEN') throw new FlowError('这条待办已处理或已转交')
     if (todo.ownerId === toUserId) throw new FlowError('不能转交给当前负责人')
     // 签收是本人确认收到，转给别人就失去意义了；发错人请发放人作废后重发
+    if (todo.action === PURCHASE_PLAN_ISSUED) throw new FlowError('采购计划待办由采购部负责人执行，不支持转交')
     if (todo.action === SIGN_RELEASE) throw new FlowError('签收待办不能转交：不是发给你的请拒收并写原因')
     const user = await tx.qmsUser.findFirst({ where: { id: toUserId, isDeleted: false, status: 'ACTIVE' }, select: { id: true } })
     if (!user) throw new FlowError('转交对象不存在或已停用')

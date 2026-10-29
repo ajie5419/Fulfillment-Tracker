@@ -204,6 +204,7 @@ function clearFilters() {
 </script>
 
 <template>
+  <div>
   <div class="risks">
     <div class="charts">
       <UiSectionCard title="按责任部门" :sub="`当前筛选下 ${tallies.total} 项风险；一条预警有多个责任部门时各算一次`" padding="tight">
@@ -310,6 +311,7 @@ function clearFilters() {
 
   <IssueDrawer :id="selected" @close="selected = null" @changed="refresh()" />
   <IssueReportModal :open="reporting" :work-order-number="filter.workOrderNumber" @close="reporting = false" @done="onReported" />
+  </div>
 </template>
 
 <style scoped>

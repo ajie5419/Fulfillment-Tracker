@@ -95,6 +95,7 @@ const stepDates = (s: { planStartDate: string | Date | null; dueDate: string | D
             <span class="tags">
               <UiStatusTag :tone="part.prereq.missingMaterial ? 'risk' : 'done'">{{ part.prereq.missingMaterial ? `缺料 ${part.prereq.missingMaterial} 项` : '物料齐' }}</UiStatusTag>
               <UiStatusTag :tone="part.prereq.missingDrawing ? 'risk' : 'done'">{{ part.prereq.missingDrawing ? `缺图 ${part.prereq.missingDrawing} 项` : '图纸齐' }}</UiStatusTag>
+              <UiStatusTag :tone="part.prereq.missingMaterialList ? 'risk' : 'done'">{{ part.prereq.missingMaterialList ? '料单未下发' : '料单已下发' }}</UiStatusTag>
             </span>
           </div>
         </div>

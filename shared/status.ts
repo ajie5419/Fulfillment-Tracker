@@ -151,3 +151,16 @@ const LEVEL_RANK = { RED: 0, YELLOW: 1, REMIND: 2 } as const
 export function sortActions<T extends ActionItem>(items: T[]): T[] {
   return [...items].sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level] || b.weight - a.weight || (a.kind === b.kind ? 0 : a.kind === 'alert' ? -1 : 1))
 }
+
+/** Distinct work orders with a warning, issue, shortage or schedule risk. */
+export function hasWorkOrderRisk(r: { redAlerts: number; yellowAlerts: number; openIssues: number; shortage: number; incompleteNodes: number; delayedPlanNodes: number; delayDays: number | null }): boolean {
+  return r.redAlerts > 0 || r.yellowAlerts > 0 || r.openIssues > 0 || r.shortage > 0 || r.incompleteNodes > 0 || r.delayedPlanNodes > 0 || (r.delayDays ?? 0) > 0
+}
+
+/** 总览关注分区允许重叠：风险卡片就是两区并集（按工单去重）。 */
+export function boardRiskSections<T extends Parameters<typeof hasWorkOrderRisk>[0]>(rows: T[]) {
+  return {
+    LATE: rows.filter(r => (r.delayDays ?? 0) > 0),
+    RISK: rows.filter(hasWorkOrderRisk),
+  }
+}

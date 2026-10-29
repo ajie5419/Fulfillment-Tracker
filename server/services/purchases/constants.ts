@@ -237,3 +237,8 @@ export function delayStats(rows: { late: boolean; delayReason: DelayReason | nul
 
 /** 数量、金额：Prisma Decimal → number（展示用） */
 export const num = (d: { toString(): string } | number | null | undefined) => (d == null ? null : Number(d.toString()))
+
+/** Old payment reasons cannot survive all linked payments becoming paid. */
+export function currentDelayReason(reason: DelayReason | null, statuses: readonly PaymentStatus[]): DelayReason | null {
+  return reason === 'PAYMENT' && statuses.length > 0 && statuses.every(s => s === 'PAID') ? null : reason
+}

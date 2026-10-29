@@ -3,11 +3,13 @@
  *
  * 按部件跟踪，挂在设计任务上（一个设计任务 = 一个部件）：
  *   料单：未开始 → 编制中 → 已下发；已下发后要改先点"修改"（修改中），改完再下发。编制中可以撤回到未开始（点错了）。
- *   工艺：无 → 编制中 → 已下发；已下发后要改点"修改"回到编制中。编制中可以撤回到无。
+ *   工艺：无 → 编制中 → 已下发；已下发后要改点"修改"回到编制中。编制中可以撤回到无。发放单作废自动转修改中，再次发放后可重新下发。
  * 设计变更涉及已下发的料单时，系统自动改成"修改中"（releases.ts createRelease → process.ts markRevisingByChange）。
  */
 import type { MaterialListStatus, ProcessDocKind, ProcessDocStatus } from '@prisma/client'
 import { BUSINESS_DEPT_NAME } from '../../../shared/business-depts'
+import type { ProcessAction } from '../../../shared/process'
+export type { ProcessAction } from '../../../shared/process'
 
 /** 料单、工艺的负责部门：设计变更自动改"修改中"时提醒它的负责人 */
 export const PROCESS_DEPT = BUSINESS_DEPT_NAME.PROCESS
@@ -22,14 +24,13 @@ export const MATERIAL_STATUS_TEXT: Record<MaterialListStatus, string> = {
 export const PROCESS_STATUS_TEXT: Record<ProcessDocStatus, string> = {
   NONE: '无',
   DRAFTING: '编制中',
+  REVISING: '修改中',
   ISSUED: '已下发',
 }
 
 export const KIND_TEXT: Record<ProcessDocKind, string> = { MATERIAL: '料单', PROCESS: '工艺' }
 
 /** 操作：开始编制 / 下发 / 修改（已下发后要改） / 撤回（编制中点错了） */
-export type ProcessAction = 'start' | 'issue' | 'revise' | 'reset'
-
 export const ACTION_TEXT: Record<ProcessAction, string> = { start: '开始编制', issue: '下发', revise: '修改', reset: '撤回' }
 
 type AnyStatus = MaterialListStatus | ProcessDocStatus
@@ -43,7 +44,7 @@ const MATERIAL_MOVES: Record<ProcessAction, { from: MaterialListStatus[]; to: Ma
 
 const PROCESS_MOVES: Record<ProcessAction, { from: ProcessDocStatus[]; to: ProcessDocStatus }> = {
   start: { from: ['NONE'], to: 'DRAFTING' },
-  issue: { from: ['DRAFTING'], to: 'ISSUED' },
+  issue: { from: ['DRAFTING', 'REVISING'], to: 'ISSUED' },
   revise: { from: ['ISSUED'], to: 'DRAFTING' },
   reset: { from: ['DRAFTING'], to: 'NONE' },
 }

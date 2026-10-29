@@ -26,7 +26,7 @@ import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadDeptIndex, resolveDeptName } from '../auth/departments'
 import { departmentNames, loadNames, userDepartmentNames } from '../flow/names'
 import { assertReleasable, lockTask, settleTask } from '../drawings/drawings'
-import { markRevisingByChange } from '../process/process'
+import { lockMaterialChangeParts, markRevisingByChange, markRevisingByVoid } from '../process/process'
 import { lockParts, refreshPartReady } from '../purchases/purchases'
 import { XLSX_MIME, applyTechBom, type RawBomRow, type TechBomResult } from '../bom/excel'
 import { formatIssueNo, nextSeq } from '../issues/constants'
@@ -260,8 +260,9 @@ export async function createRelease(input: NewReleaseInput, issuerId: string) {
       await tx.$queryRaw`SELECT workOrderNumber FROM qms_work_order WHERE workOrderNumber = ${input.workOrderNumber} FOR UPDATE`
       const exists = await tx.qmsWorkOrder.count({ where: { workOrderNumber: input.workOrderNumber, isDeleted: false } })
       if (!exists) throw new FlowError('工单不存在或已删除')
-      bom = await applyTechBom(tx, input.workOrderNumber, bomInput.rows)
+      bom = await applyTechBom(tx, input.workOrderNumber, bomInput.rows, { createdBy: issuerId })
     }
+    if (input.type === 'CHANGE') await lockMaterialChangeParts(tx, partIds, taskId)
     // 设计任务：先锁它的工件和任务行（与设计任务、采购同一加锁顺序）
     const task = taskId ? await lockTask(tx, taskId) : null
     const wo = await tx.qmsWorkOrder.findFirst({ where: { workOrderNumber: input.workOrderNumber, isDeleted: false }, select: { workOrderNumber: true } })
@@ -303,6 +304,7 @@ export async function createRelease(input: NewReleaseInput, issuerId: string) {
       })
       if (bound.count !== 1) throw new FlowError('BOM 表无效或已被使用，请重新选择')
     }
+    if (bom?.purchasePlanId) await tx.purchasePlan.update({ where: { id: bom.purchasePlanId }, data: { title: `BOM 外购件 ${release.releaseNo}` } })
     // 从设计任务发放：BOM 里的工件都挂到这个设计任务（原来挂着的不动）
     if (task && bomPartIds.length) await tx.drawingTaskPart.createMany({ data: bomPartIds.map((partId) => ({ taskId: task.id, partId })), skipDuplicates: true })
     const impact: ChangeImpact = input.type === 'CHANGE' && partIds.length ? await applyChangeImpact(tx, release, partIds) : { started: 0, held: 0, confirmers: [] }
@@ -310,7 +312,7 @@ export async function createRelease(input: NewReleaseInput, issuerId: string) {
     const material = input.type === 'CHANGE' ? await markRevisingByChange(tx, release, partIds, task?.id ?? null) : { revising: 0, notified: false }
     const drawing = task ? await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, task.id) : null
     const { unrouted, notified } = bomPartIds.length ? await notifyUnrouted(tx, release, bomPartIds) : { unrouted: 0, notified: false }
-    const bomSummary = bom ? { created: bom.created.length, matched: bom.matched.length, revisionFilled: bom.revisionFilled, skipped: bom.skipped, unrouted, unroutedNotified: notified } : null
+    const bomSummary = bom ? { created: bom.created.length, matched: bom.matched.length, revisionFilled: bom.revisionFilled, skipped: bom.skipped, unrouted, unroutedNotified: notified, ...(bom.purchasePlanId ? { purchasePlanId: bom.purchasePlanId, purchasePlanItems: bom.purchasePlanItems } : {}) } : null
     return { id: release.id, releaseNo: release.releaseNo, recipients: receipts.length, impact, drawing, bom: bomSummary, material }
   }, !!taskId || !!bomInput)
 }
@@ -430,10 +432,11 @@ export async function voidRelease(id: string, actor: Actor) {
       await tx.routeStep.updateMany({ where: { id: { in: stepIds }, holdReleaseId: null, status: 'PENDING' }, data: { holdReleaseId: releaseId } })
       stepIds.forEach((x) => restored.add(x))
     }
-    // 真正解除的（没还给更早变更单的）第一道：齐了就补发"可以开工"
-    await syncFirstStepReady(tx, cleared.stepIds.filter((x) => !restored.has(x)), true)
     await tx.release.update({ where: { id }, data: { status: 'VOID' } })
+    if (task) await markRevisingByVoid(tx, task, rel, actor.userId, now)
     if (task) await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, task.id)
+    // 先回退文档、重算设计，再评估真正解除的第一道，避免按作废前的前提误发待办。
+    await syncFirstStepReady(tx, cleared.stepIds.filter((x) => !restored.has(x)), true)
     return { cancelled: pendingIds.length, holdsCleared }
   }, taskId ? { isolationLevel: 'ReadCommitted' } : undefined)
 }

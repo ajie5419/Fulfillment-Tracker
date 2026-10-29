@@ -26,6 +26,8 @@ watch(
 )
 type PaymentRow = {
   id: string
+  paymentNo: string
+  workOrderDeleted: boolean
   workOrderNumber: string
   amount: number | null
   requestDate: string
@@ -42,12 +44,18 @@ type PaymentRow = {
   lines: { id: string; materialName: string; spec: string | null; needDate: string; status: string; progressText: string }[]
   permissions: { setStatus: boolean; delete: boolean }
 }
-const { data, pending, refresh } = await useFetch('/api/payments', {
+watch(() => route.query, (q) => {
+  filter.workOrderNumber = typeof q.wo === 'string' ? q.wo : undefined
+  filter.status = typeof q.status === 'string' ? q.status : 'UNPAID'
+  filter.blocking = q.blocking === '1' ? '1' : undefined
+})
+
+const { data, pending, error, refresh } = await useFetch('/api/payments', {
   query: computed(() => ({ status: filter.status, workOrderNumber: filter.workOrderNumber, blocking: filter.blocking })),
   default: () => [],
 })
-const rows = computed(() => data.value as unknown as PaymentRow[])
-const { data: stats, refresh: refreshStats } = await useFetch('/api/payments/stats', {
+const rows = computed(() => pending.value ? [] : data.value as unknown as PaymentRow[])
+const { data: stats, pending: statsPending, error: statsError, refresh: refreshStats } = await useFetch('/api/payments/stats', {
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber })),
   default: () => null,
 })
@@ -144,14 +152,16 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
 </script>
 
 <template>
+  <div>
   <div class="ft-page">
-  <div v-if="stats" class="ft-stats">
+  <a-result v-if="error" status="error" title="列表加载失败" :sub-title="apiError(error)"><template #extra><a-button @click="refresh()">重试</a-button></template></a-result>
+  <div v-if="stats && !statsPending && !statsError && !error" class="ft-stats">
     <UiStatCard label="待付" :value="stats.pending" unit="笔" tone="primary" accent icon="dot" clickable :active="filter.status === 'PENDING' && !filter.blocking" sub="财务还没处理的" @click="applyStatus('PENDING')" />
     <UiStatCard label="卡交期未付" :value="stats.blockingUnpaid" unit="笔" tone="late" accent icon="alert" clickable :active="filter.status === 'UNPAID' && filter.blocking === '1'" sub="待付 + 暂缓里卡交期的" @click="applyStatus('UNPAID', '1')" />
     <UiStatCard label="暂缓" :value="stats.onHold" unit="笔" tone="risk" accent icon="warn" clickable :active="filter.status === 'ON_HOLD' && !filter.blocking" @click="applyStatus('ON_HOLD')" />
     <UiStatCard label="已付" :value="stats.paid" unit="笔" tone="done" accent icon="check" clickable :active="filter.status === 'PAID' && !filter.blocking" @click="applyStatus('PAID')" />
   </div>
-  <a-card>
+  <a-card v-if="!error">
     <template #title>
       <span class="ft-title">付款申请
         <UiHelpTip label="付款申请说明">"未付"包括待付和暂缓。排序：卡交期的在前，再按关联物料里离需求日最近的。不做审批：{{ canSetStatus ? '你可以直接标记 已付 / 暂缓。' : '财务标记 已付 / 暂缓（财务在设置页"人员与角色"里配置）。' }}</UiHelpTip>
@@ -202,6 +212,9 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
         </template>
         <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
         <template v-else-if="column.key === 'lines'">
+          <div class="muted">付款编号 {{ record.paymentNo }}</div>
+          <UiStatusTag v-if="record.workOrderDeleted" tone="risk">工单已删除</UiStatusTag>
+          <div v-if="!record.lines.length" class="muted">未关联物料（无供应商、规格及需求日记录）</div>
           <div v-for="l in record.lines" :key="l.id" class="line">
             <NuxtLink :to="`/purchases?id=${encodeURIComponent(l.id)}`">{{ l.materialName }}</NuxtLink>
             <span v-if="l.spec" class="muted">（{{ l.spec }}）</span>
@@ -212,7 +225,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
         <template v-else-if="column.key === 'suppliers'">{{ record.suppliers.join('、') || '—' }}</template>
         <template v-else-if="column.key === 'need'">
           <span v-if="record.nearestNeedDate">{{ dayText(record.nearestNeedDate) }}</span>
-          <span v-else class="muted">都已到货</span>
+          <span v-else class="muted">—</span>
         </template>
         <template v-else-if="column.key === 'amount'">{{ moneyText(record.amount) }}</template>
         <template v-else-if="column.key === 'request'">
@@ -246,6 +259,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
     <p v-if="acting">{{ acting.row.workOrderNumber }} · {{ acting.row.lines.map((l) => l.materialName).join('、') }} · {{ moneyWithUnit(acting.row.amount) }}</p>
     <a-input v-model:value="financeNote" :maxlength="500" placeholder="处理意见，可空（如：月底统一付）" />
   </a-modal>
+  </div>
 </template>
 
 <style scoped>

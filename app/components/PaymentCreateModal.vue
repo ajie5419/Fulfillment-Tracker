@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const requestFetch = useRequestFetch()
 import { MAX_PAYMENT_LINES } from '#shared/purchases'
 import type { PageResult } from '#shared/pagination'
 /**
@@ -33,7 +34,7 @@ let opening = 0
  * the work-order scope, and discard results from a closed or replaced dialog. */
 async function hydrate(ids: string[], wo: string, version: number) {
   try {
-    const read = $fetch as unknown as (url: string, opts: { query: object }) => Promise<PageResult<PurchaseOption>>
+    const read = requestFetch as unknown as (url: string, opts: { query: object }) => Promise<PageResult<PurchaseOption>>
     const result = await read('/api/purchases/options', { query: { workOrderNumber: wo, ids, pageSize: MAX_PAYMENT_LINES } })
     if (version !== opening || !props.open || wo !== form.workOrderNumber) return
     picked.value = new Map([...picked.value.values(), ...result.rows]

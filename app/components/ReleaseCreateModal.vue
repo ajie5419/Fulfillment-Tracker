@@ -100,6 +100,7 @@ async function submit() {
   if (!form.workOrderNumber) return message.warning('请选择工单')
   if (!form.description.trim()) return message.warning('请填写说明')
   const groups = form.groups.filter((g) => g.department || g.role).map((g) => ({ department: g.department || null, role: g.role || null }))
+  if (form.groups.some(g => !g.department && !g.role) && !form.userIds.length && !groups.length) return message.warning('空部门行不代表全部人员，请选择部门或角色')
   if (!form.userIds.length && !groups.length) return message.warning('请选择接收人')
   const withBom = form.type === 'DRAWING' && bomAttached.value
   if (withBom && bomBlocked.value) return message.warning('BOM 表还没识别好或有问题，看 BOM 表一栏的提示；不附的话点"不附"或"清空"')
@@ -113,7 +114,7 @@ async function submit() {
       recipients: number
       impact: { started: number; held: number; confirmers: string[] }
       drawing: { status: string; readySent: number } | null
-      bom: { created: number; matched: number; revisionFilled: number; skipped: number; unrouted: number; unroutedNotified: boolean } | null
+      bom: { created: number; matched: number; revisionFilled: number; skipped: number; unrouted: number; unroutedNotified: boolean; purchasePlanItems?: number; purchasePlanId?: string } | null
       /** 工艺模块：设计变更涉及已下发的料单，改成了"修改中" */
       material: { revising: number; notified: boolean }
     }>('/api/releases', {
@@ -133,14 +134,15 @@ async function submit() {
         ? `；${r.impact.started ? `${r.impact.started} 道工序已在加工/在外，已通知确认变更影响` : ''}${r.impact.started && r.impact.held ? '，' : ''}${r.impact.held ? `${r.impact.held} 道未开工工序标"等变更"` : ''}`
         : ''
     const drawing = r.drawing ? `；设计任务${r.drawing.status === 'DONE' ? '已完成' : r.drawing.status === 'CUSTOMER_PENDING' ? '待客户确认' : '已更新'}${r.drawing.readySent ? `，${r.drawing.readySent} 个工件已通知"可以开工"` : ''}` : ''
-    const bom = !r.bom ? '' : r.bom.created ? `；按 BOM 新建 ${r.bom.created} 个工件${r.bom.matched ? `，关联已有 ${r.bom.matched} 个` : ''}` : `；BOM 里的 ${r.bom.matched} 个工件都已有，已关联`
+    const bom = !r.bom ? '' : r.bom.created ? `；按 BOM 新建 ${r.bom.created} 个工件${r.bom.matched ? `，关联已有 ${r.bom.matched} 个` : ''}` : r.bom.matched ? `；BOM 里的 ${r.bom.matched} 个工件都已有，已关联` : '；BOM 本次没有关联工件'
+    const purchasePlan = r.bom?.purchasePlanItems ? `；另有 ${r.bom.purchasePlanItems} 项外购件已生成采购计划草稿` : ''
     const route = r.bom?.unrouted
       ? `；${r.bom.unrouted} 个工件还没有工序链，${r.bom.unroutedNotified ? '已提醒生产经理排工序' : '但还没设生产部负责人、没人收到提醒，请到"设置→人员与角色"指定'}`
       : ''
     const material = r.material?.revising
       ? `；${r.material.revising} 个部件的料单已下发，已改为"修改中"${r.material.notified ? '并提醒工艺部负责人' : '（还没设工艺部负责人，没人收到提醒，请到"设置→人员与角色"指定）'}`
       : ''
-    message.success(`已发放 ${r.releaseNo}，${r.recipients} 人待签收${bom}${route}${extra}${drawing}${material}`, 6)
+    message.success(`已发放 ${r.releaseNo}，${r.recipients} 人待签收${bom}${purchasePlan}${route}${extra}${drawing}${material}`, 6)
     emit('done', r.id)
   } catch (e) {
     message.error(apiError(e))
@@ -185,12 +187,12 @@ async function submit() {
         </a-upload>
         <div class="muted">可选，纸质图纸照旧下发；每个 ≤ 20MB，最多 {{ MAX_ATTACHMENTS }} 个</div>
       </a-form-item>
-      <a-form-item label="接收人（按人）">
+      <a-form-item label="接收范围（按人或按部门 + 角色，至少选一项）" required>
         <a-select v-model:value="form.userIds" mode="multiple" show-search option-filter-prop="label" placeholder="选择人员" :options="userOptions" />
       </a-form-item>
-      <a-form-item label="按部门 + 角色">
+      <a-form-item label="按部门 + 角色（与按人任选其一）">
         <div v-for="(g, i) in form.groups" :key="i" class="group-row">
-          <a-select v-model:value="g.department" allow-clear placeholder="部门（可空）" style="width: 180px" :options="deptOptions" />
+          <a-select v-model:value="g.department" allow-clear placeholder="部门（只选全部人员时必填）" style="width: 180px" :options="deptOptions" />
           <a-select v-model:value="g.role" style="width: 150px" :options="RECIPIENT_ROLE_OPTIONS.map((o) => ({ ...o }))" />
           <a-button size="small" type="link" danger @click="form.groups.splice(i, 1)">删除</a-button>
         </div>

@@ -24,6 +24,8 @@ export interface Me {
   leadTeams: { id: string; name: string }[]
   /** 按角色的操作权限（不含"该工单项目经理""该工序责任人"，用 canDo 补上）。后端仍是最终判断 */
   can: {
+    purchasePlan: boolean
+    purchasePlanConvert: boolean
     drawing: boolean
     /** 改料单、工艺状态（工艺部） */
     processDoc: boolean
@@ -52,7 +54,7 @@ export function useMe() {
   return useFetch<Me>('/api/me', { key: 'me' })
 }
 
-export type Operation = 'drawing' | 'processDoc' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction' | 'plan'
+export type Operation = 'purchasePlan' | 'purchasePlanConvert' | 'drawing' | 'processDoc' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction' | 'plan'
 
 /**
  * 当前用户能不能做某个操作（只用来隐藏 / 禁用按钮，后端 403 才是最终判断）。

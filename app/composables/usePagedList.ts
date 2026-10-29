@@ -69,7 +69,7 @@ export function usePagedList<T extends { id: string }, P extends PageResult<T> =
       state.value.lastPage = value.page
     }
   }, { immediate: true, flush: 'sync' })
-  // Keep the visible snapshot until every loaded page has been rebuilt.
+  // Rebuild atomically; the retained snapshot is hidden while invalidated.
   async function reconcile() {
     if (!active.value || !enabled.value || !dirty.value || reconciling.value) return
     if (!append) {
@@ -114,11 +114,17 @@ export function usePagedList<T extends { id: string }, P extends PageResult<T> =
     }
   }
   onDeactivated(() => { active.value = false })
-  onActivated(() => { active.value = true; void reconcile() })
+  onActivated(() => {
+    const returning = !active.value
+    active.value = true
+    if (returning && !dirty.value) revision.value++
+    void reconcile()
+  })
   watch([revision, enabled, scope], () => { void reconcile() }, { immediate: true })
-  const rows = computed(() => append ? state.value.rows : data.value?.rows ?? [])
+  const stale = computed(() => append && dirty.value)
+  const rows = computed(() => stale.value ? [] : append ? state.value.rows : data.value?.rows ?? [])
   const total = computed(() => append ? state.value.total : data.value?.total ?? 0)
-  const pending = computed(() => enabled.value && (reconciling.value || request.status.value === 'pending'))
+  const pending = computed(() => enabled.value && (reconciling.value || (append && dirty.value && !reconcileError.value && !request.error.value) || request.status.value === 'pending'))
   const finished = computed(() => append && !dirty.value && state.value.lastPage > 0 && state.value.lastPage * pageSize.value >= total.value)
   function next() {
     if (!enabled.value || pending.value) return

@@ -7,7 +7,7 @@
  * 默认"我的"（我负责的，以及我当班组长的班组的自制工序），可切"全部"。地址栏 ?seg=ready|working|out、?mine=1|0、?stepId=（提醒跳过来定位到那一道，默认"全部"；只处理一次，处理完从地址栏删掉）、?wo=。
  * 能否操作与电脑端一致：生产部、外协专员、该工序负责人、管理员（后端同样拦）。
  */
-import { segOfColumn } from '#shared/production'
+import { segOfColumn, isOutside } from '#shared/production'
 
 definePageMeta({ layout: 'mobile' })
 const { data: me } = await useMe()
@@ -47,7 +47,7 @@ const { data, pending, error, refresh } = await useFetch('/api/production', {
 })
 type Row = (typeof data.value.rows)[number]
 const COLUMN_OF: Record<Seg, Row['column']> = { ready: 'ready', working: 'working', out: 'out' }
-const rowsOf = (s: Seg) => data.value.rows.filter((r) => r.column === COLUMN_OF[s])
+const rowsOf = (s: Seg) => data.value.rows.filter((r) => s === 'out' ? isOutside(r) : r.column === COLUMN_OF[s])
 const list = computed(() => {
   const l = rowsOf(seg.value)
   return focusId.value ? [...l].sort((a, b) => Number(b.stepId === focusId.value) - Number(a.stepId === focusId.value)) : l

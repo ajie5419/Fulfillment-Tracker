@@ -66,11 +66,19 @@ export async function setPaymentStatus(id: string, status: PaymentStatus, note: 
   return prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM payment_request WHERE id = ${id} FOR UPDATE`
     if (!rows.length) throw new FlowError('付款申请不存在')
-    return tx.paymentRequest.update({
+    const updated = await tx.paymentRequest.update({
       where: { id },
       data: { status, statusBy: actor.userId, statusAt: new Date(), ...(note !== undefined ? { financeNote: note?.trim() || null } : {}) },
       select: { id: true, status: true },
     })
+    if (status === 'PAID') {
+      // A paid request no longer explains a material delay. Other unpaid requests still do.
+      await tx.purchaseLine.updateMany({
+        where: { delayReason: 'PAYMENT', payments: { some: { paymentId: id }, none: { payment: { status: { not: 'PAID' } } } } },
+        data: { delayReason: null, delayNote: null },
+      })
+    }
+    return updated
   })
 }
 
@@ -153,12 +161,16 @@ export async function listPayments(filter: PaymentFilter, viewer: Actor, now = n
   ])
   const rows = [...open, ...paid]
   const names = await loadNames({ user: rows.flatMap((r) => [r.requesterId, r.statusBy]) })
+  const existing = new Set((await prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: [...new Set(rows.map(r => r.workOrderNumber))] }, isDeleted: false }, select: { workOrderNumber: true } })).map(w => w.workOrderNumber))
   const out = rows.map((r) => {
     const lines = r.lines.map((x) => x.purchaseLine)
     const open = lines.filter((l) => l.status === 'OPEN')
-    const nearestNeedDate = open.length ? new Date(Math.min(...open.map((l) => +l.needDate))) : null
+    const dated = open.length ? open : lines
+    const nearestNeedDate = dated.length ? new Date(Math.min(...dated.map((l) => +l.needDate))) : null
     return {
       id: r.id,
+      paymentNo: r.id,
+      workOrderDeleted: !existing.has(r.workOrderNumber),
       workOrderNumber: r.workOrderNumber,
       amount: !filter.amountVisible || filter.amountVisible(r.workOrderNumber) ? num(r.amount) : null,
       requestDate: r.requestDate,
@@ -173,6 +185,8 @@ export async function listPayments(filter: PaymentFilter, viewer: Actor, now = n
       statusAt: r.statusAt,
       createdAt: r.createdAt,
       nearestNeedDate,
+      // 排序仅看未到货行；显示日期可回退至全部关联行。
+      sortNeedDate: open.length ? new Date(Math.min(...open.map((l) => +l.needDate))) : null,
       suppliers: [...new Set(lines.map((l) => l.supplierName).filter((x): x is string => !!x))],
       lines: lines.map((l) => ({
         id: l.id,
@@ -189,5 +203,8 @@ export async function listPayments(filter: PaymentFilter, viewer: Actor, now = n
       },
     }
   })
-  return out.sort(comparePayments).slice(0, MAX_PAYMENT_ROWS)
+  return out.sort((a, b) => comparePayments(
+    { ...a, nearestNeedDate: a.sortNeedDate },
+    { ...b, nearestNeedDate: b.sortNeedDate },
+  )).slice(0, MAX_PAYMENT_ROWS).map(({ sortNeedDate, ...row }) => row)
 }

@@ -7,6 +7,7 @@
  * 地址栏 ?wo= 预选工单、?view= 选视图（设计变更提醒跳过来是 view=revising），页面没离开时改了地址栏也同步回筛选（规范第 4 节第 7 条）。
  */
 import { distinctPlanNodes, groupByWorkOrder, groupProgress } from '#shared/workbench'
+import { processReleaseBlockReason } from '#shared/process'
 
 const route = useRoute()
 const router = useRouter()
@@ -72,6 +73,8 @@ const acting = ref<{ row: ProcessRow; kind: ProcessKind; action: 'issue' | 'revi
 const actNote = ref('')
 const withRelease = ref(false)
 function act(row: ProcessRow, kind: ProcessKind, action: ProcessAction) {
+  const reason = processReleaseBlockReason(kind, action, !!row.drawingRelease)
+  if (reason) { message.warning(reason); return }
   if (action === 'issue' || action === 'revise') {
     acting.value = { row, kind, action }
     actNote.value = ''
@@ -159,13 +162,14 @@ const whoWhen = (name: string | null, at: string | null) => (name && at ? `${nam
 </script>
 
 <template>
+  <div>
   <div class="ft-page">
   <div class="ft-stats">
     <UiStatCard label="图纸已发、料单未开始" :value="num(stats?.waiting)" unit="个部件" tone="risk" accent icon="warn" clickable :active="filter.view === 'waiting'" sub="图纸已经发放，料单还没开始编" @click="applyView('waiting')" />
     <UiStatCard label="料单编制中" :value="num(stats?.drafting)" unit="个部件" tone="primary" accent icon="dot" clickable :active="filter.view === 'drafting'" @click="applyView('drafting')">
       <template #sub>工艺编制中 {{ num(stats?.processDrafting) }}</template>
     </UiStatCard>
-    <UiStatCard label="料单修改中" :value="num(stats?.revising)" unit="个部件" tone="late" accent icon="alert" clickable :active="filter.view === 'revising'" sub="已下发后要改，含设计变更自动改的" @click="applyView('revising')" />
+    <UiStatCard label="料单 / 工艺修改中" :value="num(stats?.revising)" unit="个部件" tone="late" accent icon="alert" clickable :active="filter.view === 'revising'" sub="已下发后要改，含设计变更、发放单作废" @click="applyView('revising')" />
     <UiStatCard label="料单已下发" :value="num(stats?.materialIssued)" unit="个部件" tone="done" accent icon="check" clickable :active="filter.view === 'issued'" @click="applyView('issued')">
       <template #sub>工艺已下发 {{ num(stats?.processIssued) }} · 共 {{ num(stats?.total) }} 个部件</template>
     </UiStatCard>
@@ -173,7 +177,7 @@ const whoWhen = (name: string | null, at: string | null) => (name && at ? `${nam
   <a-card>
     <template #title>
       <span class="ft-title">工艺
-        <UiHelpTip label="工艺说明">按部件（设计任务）跟踪料单和工艺。料单：未开始 → 编制中 → 已下发，已下发后要改先点"修改料单"，改完再下发；技术部发设计变更时，涉及的部件料单已下发的会自动改成"修改中"并提醒工艺部负责人。工艺：无 → 编制中 → 已下发。只有工艺部可以改，其他人只读。下发时可以顺手建一张工艺文件发放单，让车间签收。</UiHelpTip>
+        <UiHelpTip label="工艺说明">按部件（设计任务）跟踪料单和工艺。图纸正式发放后才可开始编制、下发，不要求签收；发放单作废时，已下发的料单和工艺自动转为"修改中"。料单：未开始 → 编制中 → 已下发，已下发后要改先点"修改料单"，改完再下发；技术部发设计变更时，涉及的部件料单已下发的会自动改成"修改中"并提醒工艺部负责人。工艺：无 → 编制中 → 已下发。只有工艺部可以改，其他人只读。下发时可以顺手建一张工艺文件发放单，让车间签收。</UiHelpTip>
       </span>
     </template>
     <template #extra>
@@ -241,7 +245,8 @@ const whoWhen = (name: string | null, at: string | null) => (name && at ? `${nam
                 v-for="a in (kind === 'MATERIAL' ? record.actions.material : record.actions.process) as ProcessAction[]"
                 :key="a"
                 size="small"
-                :disabled="busy"
+                :disabled="busy || !!processReleaseBlockReason(kind, a, !!record.drawingRelease)"
+                :title="processReleaseBlockReason(kind, a, !!record.drawingRelease) || undefined"
                 @click="act(record as ProcessRow, kind, a)"
               >{{ actionLabel(kind, a) }}</a-button>
             </a-space>
@@ -284,13 +289,14 @@ const whoWhen = (name: string | null, at: string | null) => (name && at ? `${nam
           <template #title>{{ l.kindText }}：{{ l.fromText }} → {{ l.toText }}</template>
           <template #desc>
             {{ l.actorName }} · {{ timeText(l.createdAt) }}
-            <template v-if="l.auto && l.release"> · 设计变更 <NuxtLink :to="`/releases?id=${encodeURIComponent(l.release.id)}`">{{ l.release.releaseNo ?? '（已删除）' }}</NuxtLink> 自动改的</template>
+            <template v-if="l.auto && l.release"> · 发放单 <NuxtLink :to="`/releases?id=${encodeURIComponent(l.release.id)}`">{{ l.release.releaseNo ?? '（已删除）' }}</NuxtLink> 自动回退</template>
           </template>
-          <template v-if="l.note && !l.auto" #meta>{{ l.note }}</template>
+          <template v-if="l.note" #meta>{{ l.note }}</template>
         </UiListItem>
       </div>
     </a-spin>
   </a-drawer>
+  </div>
 </template>
 
 <style scoped>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const { data: me } = await useMe()
-const route = useRoute()
+// 页头跟随已确认的导航立即更新；Nuxt useRoute 会等异步页面就绪才同步。
+const route = useRouter().currentRoute
 // 左侧竖向菜单，按岗位分组；条目多了也能纵向排下，窄屏（< lg）收起，点左侧把手展开。
 // 按角色只显示相关分组（权限方案 R13 第二节，me.menu 由后端算，多角色取并集）；页面本身不拦，从提醒链接点进去仍能只读查看。
 // sections：条目属于哪些菜单分区，有任一分区可见就显示；没写的人人可见
@@ -35,6 +36,7 @@ const groups = computed(() => {
       // 工艺（zhao 10-27）：按部件跟踪料单、工艺状态；工艺部改，技术部、生产部、项目经理、领导只读
       { key: '/process', label: '工艺', sections: ['process'] },
       { key: '/releases', label: '发放签收', sections: ['tech', 'releases'] },
+      { key: '/purchase-plans', label: '采购计划下发', sections: ['tech', 'purchase'] },
       { key: '/purchases', label: '采购到货', sections: ['purchase'] },
       { key: '/payments', label: '付款申请', sections: ['purchase', 'payments'] },
       { key: '/kitting', label: '齐套', sections: ['production', 'kitting'] },
@@ -61,19 +63,34 @@ function onBreakpoint(b: boolean) {
 }
 /** 内容区是独立滚动的（整页大白框固定在视口里），换页时手动回到顶部 */
 const contentEl = ref<HTMLElement | null>(null)
-watch(() => route.path, () => {
+watch(() => route.value.path, () => {
   if (broken.value) collapsed.value = true
   contentEl.value?.scrollTo({ top: 0 })
 })
 /** 没有单独菜单项的页面算到哪一项下：工单详情 /wo/:no 属于项目总览；工序路线模板 /templates 属于工序编排 */
 const MENU_ALIAS: Record<string, string> = { '/wo': '/board', '/templates': '/parts', '/workshop': '/production', '/unmatched': '/outsource' }
 const selected = computed(() => {
-  const alias = Object.keys(MENU_ALIAS).find((k) => route.path === k || route.path.startsWith(`${k}/`))
-  const path = alias ? MENU_ALIAS[alias]! : route.path
-  return [menu.value.find((m) => m.key !== '/' && path.startsWith(m.key))?.key ?? '/']
+  const alias = Object.keys(MENU_ALIAS).find((k) => route.value.path === k || route.value.path.startsWith(`${k}/`))
+  const path = alias ? MENU_ALIAS[alias]! : route.value.path
+  const match = menu.value.find((m) => path === m.key || (m.key !== '/' && path.startsWith(`${m.key}/`)))
+  return match ? [match.key] : []
 })
-/** 页头左侧显示当前所在菜单（图标 + 名称），和参考图一致 */
-const current = computed(() => menu.value.find((m) => m.key === selected.value[0]))
+// 标题取决于路由本身，不能因用户没有对应菜单权限而回落到工作台。
+const ROUTE_TITLES: Record<string, string> = {
+  '/': '工作台', '/calendar': '项目日历', '/risks': '风险',
+  '/board': '项目总览', '/plan': '项目计划', '/dept-plan': '部门计划',
+  '/drawings': '设计任务', '/process': '工艺', '/releases': '发放签收',
+  '/purchase-plans': '采购计划下发', '/purchases': '采购到货', '/payments': '付款申请', '/kitting': '齐套',
+  '/production': '生产调度', '/parts': '工序编排', '/outsource': '外协',
+  '/settings': '设置', '/dev': '演示工具', '/templates': '工序路线模板',
+  '/wo': '工单详情', '/overview': '项目总览', '/issues': '风险',
+  '/alerts': '风险', '/workshop': '生产调度', '/unmatched': '外协',
+}
+const current = computed(() => {
+  const path = route.value.path
+  const key = Object.keys(ROUTE_TITLES).find((key) => path === key || (key !== '/' && path.startsWith(`${key}/`)))
+  return key ? { key, label: ROUTE_TITLES[key] } : undefined
+})
 
 // ───── 菜单"工作台"未读角标（前端改版第二轮）：独立的 key（不和首页 reminders 冲突），随下面的 60 秒轮询一起刷新 ─────
 const { data: unread, refresh: refreshUnread } = useUnreadCount()

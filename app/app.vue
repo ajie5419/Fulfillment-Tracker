@@ -4,6 +4,16 @@ import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import { STATUS_COLOR } from '#shared/status'
 
+// Nuxt Suspense resolves async page setup before replacing the previous page.
+// Hide that previous content as soon as navigation starts.
+const changingPage = useState('page-changing', () => false)
+const nuxtApp = useNuxtApp()
+const router = useRouter()
+router.beforeEach((to, from) => { if (to.path !== from.path) changingPage.value = true })
+nuxtApp.hook('page:finish', () => { changingPage.value = false })
+router.afterEach((_to, _from, failure) => { if (failure) changingPage.value = false })
+nuxtApp.hook('app:error', () => { changingPage.value = false })
+
 // 日期选择器、分页等组件的文案用中文
 dayjs.locale('zh-cn')
 
@@ -29,7 +39,8 @@ const theme = {
   <AExtractStyle>
     <AConfigProvider :locale="zhCN" :theme="theme">
       <NuxtLayout>
-        <NuxtPage />
+        <div v-if="changingPage" role="status" class="ft-page">正在加载…</div>
+        <div v-show="!changingPage"><NuxtPage :page-key="route => route.path" /></div>
       </NuxtLayout>
     </AConfigProvider>
   </AExtractStyle>

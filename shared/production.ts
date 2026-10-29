@@ -173,3 +173,8 @@ export function partHeadline(p: PartLike, today: string): { tone: Tone; text: st
   if (steps.some((s) => s.status !== 'PENDING')) return { tone: 'primary', text: '进行中' }
   return { tone: 'none', text: '未开工' }
 }
+
+/** External custody survives a blocking issue until all pieces return. */
+export function isOutside(r: { status: string; mode: string; startedAt?: unknown; quantity?: number; doneQty?: number }): boolean {
+  return r.mode === 'EXTERNAL_OUTSOURCE' && (r.status === 'OUT' || (r.status === 'BLOCKED' && !!r.startedAt && (r.doneQty ?? 0) < (r.quantity ?? 0)))
+}

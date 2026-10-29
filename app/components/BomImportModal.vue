@@ -25,7 +25,7 @@ interface BomRow {
 interface Preview { items: BomRow[]; hasTechBom: boolean; missingInQms: { name: string; drawingNo: string | null }[] }
 interface ImportResult { created: number; linked: number; steps: number; skipped: number; missing: number; warnings: string[] }
 // 绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"）
-const get = $fetch as unknown as (url: string, opts: { query: object }) => Promise<Preview>
+const get = useRequestFetch() as unknown as (url: string, opts: { query: object }) => Promise<Preview>
 const post = $fetch as unknown as (url: string, opts: { method: 'POST'; body: object }) => Promise<ImportResult>
 
 const rows = ref<BomRow[]>([])

@@ -1,39 +1,65 @@
 /** 生产管理重设计第一批：统一"可以开工"口径（readiness.ts）、生产调度页签和主按钮、工序编排的筛选 / 状态 / 工序链色块 */
 import { describe, expect, it } from 'vitest'
-import { prereqMet, prereqReadyForTodo, prereqState, stepReadiness, stuckText } from '../../server/services/flow/readiness'
+import { firstStepTodoReady, prereqMet, prereqReadyForTodo, prereqState, stepReadiness, stuckText } from '../../server/services/flow/readiness'
 import { chainTones, inTab, isOverdue, partHeadline, primaryAction, routeFilterOf, segOfColumn, stepLate, stepLinkTab, tabCounts, tabForRow, type AlertLevelLike, type ProductionRowLike, type StepLike, type StepStatus } from '../../shared/production'
 
 describe('prereqState：工件开工前提', () => {
   it('已取消的物料、设计任务不算；没挂东西 = 不跟踪、也算齐', () => {
-    expect(prereqState({ purchases: [], drawings: [] })).toEqual({ tracked: false, missingMaterial: 0, missingDrawing: 0 })
-    expect(prereqState({ purchases: ['CANCELLED'], drawings: ['CANCELLED'] })).toEqual({ tracked: false, missingMaterial: 0, missingDrawing: 0 })
-    const s = prereqState({ purchases: ['ARRIVED', 'OPEN', 'CANCELLED'], drawings: ['DONE', 'DRAWN'] })
-    expect(s).toEqual({ tracked: true, missingMaterial: 1, missingDrawing: 1 })
+    expect(prereqState({ purchases: [], drawings: [] })).toEqual({ tracked: false, missingMaterial: 0, missingDrawing: 0, missingMaterialList: 0 })
+    expect(prereqState({ purchases: ['CANCELLED'], drawings: [{ status: 'CANCELLED', materialStatus: 'ISSUED' }] })).toEqual({ tracked: false, missingMaterial: 0, missingDrawing: 0, missingMaterialList: 0 })
+    const s = prereqState({ purchases: ['ARRIVED', 'OPEN', 'CANCELLED'], drawings: [{ status: 'DONE', materialStatus: 'ISSUED' }, { status: 'DRAWN', materialStatus: 'ISSUED' }] })
+    expect(s).toEqual({ tracked: true, missingMaterial: 1, missingDrawing: 1, missingMaterialList: 0 })
     expect(prereqMet(s)).toBe(false)
   })
   it('待办只在"挂了东西且都齐了"时发；生产调度"没挂东西"也算齐', () => {
     const none = prereqState({ purchases: [], drawings: [] })
     expect(prereqMet(none)).toBe(true)
     expect(prereqReadyForTodo(none)).toBe(false)
-    const all = prereqState({ purchases: ['ARRIVED'], drawings: ['DONE'] })
+    const all = prereqState({ purchases: ['ARRIVED'], drawings: [{ status: 'DONE', materialStatus: 'ISSUED' }] })
     expect(prereqReadyForTodo(all)).toBe(true)
   })
 })
 
+describe('料单纳入第一道开工前提', () => {
+  const first = { status: 'PENDING' as const, held: false }
+  for (const materialStatus of ['NOT_STARTED', 'DRAFTING', 'REVISING', 'ISSUED'] as const) {
+    it(`${materialStatus}：只有已下发放行`, () => {
+      const prereq = prereqState({ purchases: ['ARRIVED'], drawings: [{ status: 'DONE', materialStatus }] })
+      const ready = materialStatus === 'ISSUED'
+      expect(prereq.missingMaterialList).toBe(ready ? 0 : 1)
+      expect(prereqMet(prereq)).toBe(ready)
+      expect(prereqReadyForTodo(prereq)).toBe(ready)
+      expect(firstStepTodoReady(first, prereq)).toBe(ready)
+      expect(stepReadiness({ ...first, prev: null, prereq })).toEqual({ ready, reason: ready ? null : 'MATERIAL_LIST' })
+      expect(stepReadiness({ ...first, held: true, prev: null, prereq }).reason).toBe(ready ? 'HELD' : 'MATERIAL_LIST')
+      expect(stepReadiness({ ...first, status: 'IN_PROGRESS', prev: null, prereq }).reason).toBeNull()
+      expect(stepReadiness({ ...first, prev: { status: 'DONE', doneQty: 1 }, prereq }).ready).toBe(true)
+    })
+  }
+  it('无关联设计任务、已取消任务都不受料单限制', () => {
+    for (const drawings of [[], [{ status: 'CANCELLED' as const, materialStatus: 'REVISING' as const }]]) {
+      const prereq = prereqState({ purchases: ['ARRIVED'], drawings })
+      expect(firstStepTodoReady(first, prereq)).toBe(true)
+      expect(prereq.missingMaterialList).toBe(0)
+    }
+    expect(stuckText('MATERIAL_LIST')).toBe('料单未下发')
+  })
+})
+
 describe('stepReadiness：统一的"可以开工"', () => {
-  const ok = { tracked: true, missingMaterial: 0, missingDrawing: 0 }
+  const ok = { tracked: true, missingMaterial: 0, missingDrawing: 0, missingMaterialList: 0 }
   const base = { status: 'PENDING' as const, held: false, prev: null, prereq: ok }
   it('不是待开工的：不算可以开工，也没有原因', () => {
     expect(stepReadiness({ ...base, status: 'IN_PROGRESS' })).toEqual({ ready: false, reason: null })
   })
   it('第一道：物料、设计都齐才可以开工；缺料优先于缺图', () => {
     expect(stepReadiness(base)).toEqual({ ready: true, reason: null })
-    expect(stepReadiness({ ...base, prereq: { tracked: true, missingMaterial: 2, missingDrawing: 1 } }).reason).toBe('MATERIAL')
-    expect(stepReadiness({ ...base, prereq: { tracked: true, missingMaterial: 0, missingDrawing: 1 } }).reason).toBe('DRAWING')
-    expect(stepReadiness({ ...base, prereq: { tracked: false, missingMaterial: 0, missingDrawing: 0 } }).ready).toBe(true)
+    expect(stepReadiness({ ...base, prereq: { tracked: true, missingMaterial: 2, missingDrawing: 1, missingMaterialList: 0 } }).reason).toBe('MATERIAL')
+    expect(stepReadiness({ ...base, prereq: { tracked: true, missingMaterial: 0, missingDrawing: 1, missingMaterialList: 0 } }).reason).toBe('DRAWING')
+    expect(stepReadiness({ ...base, prereq: { tracked: false, missingMaterial: 0, missingDrawing: 0, missingMaterialList: 0 } }).ready).toBe(true)
   })
   it('其余道：上一道完成或已有部分返回 / 报工；不看物料（物料只管第一道）', () => {
-    const missing = { tracked: true, missingMaterial: 3, missingDrawing: 0 }
+    const missing = { tracked: true, missingMaterial: 3, missingDrawing: 0, missingMaterialList: 0 }
     expect(stepReadiness({ ...base, prereq: missing, prev: { status: 'DONE', doneQty: 0 } }).ready).toBe(true)
     expect(stepReadiness({ ...base, prev: { status: 'OUT', doneQty: 1 } }).ready).toBe(true)
     expect(stepReadiness({ ...base, prev: { status: 'IN_PROGRESS', doneQty: 0 } })).toEqual({ ready: false, reason: 'PREV_NOT_DONE' })
@@ -43,7 +69,7 @@ describe('stepReadiness：统一的"可以开工"', () => {
     expect(stepReadiness({ ...base, held: true, prev: { status: 'PENDING', doneQty: 0 } }).reason).toBe('PREV_NOT_DONE')
   })
   it('卡住原因写明缺几项', () => {
-    expect(stuckText('MATERIAL', { tracked: true, missingMaterial: 2, missingDrawing: 0 })).toContain('2 项')
+    expect(stuckText('MATERIAL', { tracked: true, missingMaterial: 2, missingDrawing: 0, missingMaterialList: 0 })).toContain('2 项')
     expect(stuckText('BLOCKED')).toContain('不合格')
   })
 })

@@ -16,6 +16,7 @@ type Detail = {
   stepStatus: string | null
   category: IssueCategoryKey
   categoryText: string
+  title: string | null
   description: string
   source: keyof typeof ISSUE_SOURCE_TEXT
   reporterName: string | null
@@ -36,11 +37,13 @@ type Detail = {
   logs: { id: string; fromStatus: IssueStatusKey | null; toStatus: IssueStatusKey | null; note: string | null; actorName: string; createdAt: string }[]
 }
 
+// 深链 SSR 也必须转发当前登录 Cookie；普通 $fetch 在服务端不带用户请求头。
+const requestFetch = useRequestFetch()
 const idRef = computed(() => props.id)
-const { data: detail, pending, refresh } = await useAsyncData<Detail | null>(
-  'issue-detail',
-  () => (idRef.value ? ($fetch as unknown as (u: string) => Promise<Detail>)(`/api/issues/${encodeURIComponent(idRef.value)}`) : Promise.resolve(null)),
-  { watch: [idRef] },
+const { data: detail, pending, error: detailError, refresh } = await useAsyncData<Detail | null>(
+  computed(() => `issue-detail:${idRef.value ?? 'closed'}`),
+  () => (idRef.value ? (requestFetch as unknown as (u: string) => Promise<Detail>)(`/api/issues/${encodeURIComponent(idRef.value)}`) : Promise.resolve(null)),
+  { default: () => null },
 )
 
 // ───── 操作弹窗 ─────
@@ -53,6 +56,7 @@ const form = reactive({
   responsibleSupplierId: undefined as string | undefined,
   dueDate: undefined as string | undefined,
 })
+watch(idRef, () => { form.open = false })
 const saving = ref(false)
 const withAssign = computed(() => form.action === 'accept' || form.action === 'reassign')
 const supplierAllowed = computed(() => detail.value?.category === 'OUTSOURCE_SCHEDULE' || detail.value?.category === 'OUTSOURCE_QUALITY')
@@ -106,7 +110,9 @@ const actions: IssueAction[] = ['accept', 'resolve', 'close', 'reject', 'reassig
 <template>
   <a-drawer :open="!!id" width="640" :title="detail ? `异常 ${detail.issueNo}` : '异常'" @close="emit('close')">
     <a-spin :spinning="pending">
-      <template v-if="detail">
+      <a-result v-if="detailError" status="error" title="异常加载失败"><template #extra><a-button @click="refresh()">重试</a-button></template></a-result>
+      <template v-else-if="detail && detail.id === id">
+        <h3 v-if="detail.title">{{ detail.title }}</h3>
         <a-space wrap style="margin-bottom: 12px">
           <a-tag :color="ISSUE_STATUS_COLOR[detail.status]">{{ ISSUE_STATUS_TEXT[detail.status] }}</a-tag>
           <a-tag>{{ detail.categoryText }}</a-tag>

@@ -154,7 +154,7 @@ export function issuePermissions(issue: Pick<Issue, 'status' | 'responsibleDeptI
   const assigner = admin || isDeptHead || isPM || isPDH
   const confirmer = admin || isReporter || isPM || isPDH
   return {
-    accept: issue.status === 'OPEN' && handler,
+    accept: issue.status === 'OPEN' && (handler || (!issue.responsibleUserId && isReporter)),
     resolve: issue.status === 'ACCEPTED' && handler,
     reassign: (issue.status === 'OPEN' || issue.status === 'ACCEPTED') && assigner,
     close: issue.status === 'RESOLVED' && confirmer,
@@ -165,7 +165,7 @@ export function issuePermissions(issue: Pick<Issue, 'status' | 'responsibleDeptI
 
 type Action = Exclude<keyof IssuePermissions, 'note'>
 const RULES: Record<Action, { from: IssueStatus[]; verb: string; denied: string }> = {
-  accept: { from: ['OPEN'], verb: '受理', denied: '只有责任人、责任部门负责人或管理员可以受理' },
+  accept: { from: ['OPEN'], verb: '受理', denied: '只有责任人、责任部门负责人、未指定责任人时的上报人或管理员可以受理' },
   resolve: { from: ['ACCEPTED'], verb: '填写处理结果', denied: '只有责任人、责任部门负责人或管理员可以填写处理结果' },
   reassign: { from: ['OPEN', 'ACCEPTED'], verb: '改派', denied: '只有责任部门负责人、该工单项目经理、项目部负责人或管理员可以改派' },
   close: { from: ['RESOLVED'], verb: '确认关闭', denied: '只有上报人、该工单项目经理、项目部负责人或管理员可以确认关闭' },
@@ -198,6 +198,7 @@ const joinNote = (parts: (string | null | undefined)[]) => parts.map((p) => p?.t
 // ───────────── 上报 ─────────────
 
 export interface NewIssueInput {
+  title?: string
   workOrderNumber: string
   partId?: string | null
   category: IssueCategory
@@ -237,6 +238,7 @@ export async function createIssue(input: NewIssueInput, reporterId: string) {
         refType: input.partId ? ('PART' satisfies IssueRefType) : null,
         refId: input.partId || null,
         category: input.category,
+        title: input.title?.trim() || null,
         description,
         photos: photoIds,
         reporterId,
@@ -360,6 +362,8 @@ export async function acceptIssue(id: string, actor: Actor, input: AssignInput &
   return prisma.$transaction(async (tx) => {
     const issue = await guard(tx, id, actor, 'accept')
     const { data, text } = await assignment(tx, issue, input)
+    // Unassigned issues belong to the person accepting them unless explicitly assigned.
+    if (!issue.responsibleUserId && input.responsibleUserId === undefined) data.responsibleUserId = actor.userId
     const due = 'dueDate' in data ? (data.dueDate as Date | null) : issue.dueDate
     let dueText: string | null = null
     if (!due) {
@@ -498,6 +502,7 @@ async function decorate(issues: Issue[], actor: Actor, now: Date) {
       stepStatus: step?.status ?? null,
       category: i.category,
       categoryText: CATEGORY_TEXT[i.category],
+      title: i.title,
       description: i.description,
       photoCount: Array.isArray(i.photos) ? i.photos.length : 0,
       source: i.source,

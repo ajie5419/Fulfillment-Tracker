@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const requestFetch = useRequestFetch()
 /** 电脑端发出登记弹窗：选外协厂（默认工序链里计划的，或上次用的）+ 承诺返回日 + 随件发料（外协带料时写上发了什么，在途里能看到） */
 const props = defineProps<{ step: { id: string; supplierId: string | null; title: string } | null }>()
 const emit = defineEmits<{ close: []; done: [] }>()
@@ -16,7 +17,7 @@ watch(
     promisedReturnDate.value = dayAfter(7)
     note.value = ''
     supplierId.value = step.supplierId ?? undefined
-    if (!supplierId.value) supplierId.value = (await $fetch('/api/last-supplier')).supplierId ?? undefined
+    if (!supplierId.value) supplierId.value = (await requestFetch('/api/last-supplier')).supplierId ?? undefined
   },
   { immediate: true },
 )

@@ -112,7 +112,7 @@ export interface ReleaseDetail {
   permissions: { sign: boolean; void: boolean; confirmChange: boolean }
 }
 
-export function fetchRelease(id: string) {
-  const get = $fetch as unknown as (u: string) => Promise<ReleaseDetail>
+export function fetchRelease(id: string, request?: (url: string) => Promise<unknown>) {
+  const get = (request ?? $fetch) as unknown as (u: string) => Promise<ReleaseDetail>
   return get(`/api/releases/${encodeURIComponent(id)}`)
 }
