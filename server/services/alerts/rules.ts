@@ -14,6 +14,7 @@
  *      同一规则下另管"节点超时未确认"（对象类型 planConfirm），按 W5 的阈值计时（发布后 4 小时提醒、1 天黄、2 天红）；
  *      "节点未分解"（对象类型 planSplit，部门计划二次分解）：发布后 W9 提醒小时数（默认 72）仍没有部门任务 → 提醒，不升级
  *   W10 厂内工序逾期未完：自制 / 厂内外协已开工（加工中）、有要求完成日的工序。要求完成日前 2 天提醒，超期 1 天黄、3 天红（同 W3 的算法，判定见 judgeW10）
+ *   W11 在制状态停滞：Asia/Shanghai 自然日差（不扣停工日），黄线只在监控中关注，红线生成预警；状态计时重置或回落红线以下自动消除，不适用“只升不降”。
  *
  * 计时按自然日/小时，停工日（off_day）整天不计入；"哪一天"一律按工厂时区 Asia/Shanghai 判定。
  * 级别只升不降：阈值调大后，已经是黄的预警也不退回提醒。
@@ -49,9 +50,11 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
   W8: { remindHours: null, yellowDays: 5, redDays: 1 },
   W9: { remindHours: 72, yellowDays: 1, redDays: 3 },
   W10: { remindHours: 48, yellowDays: 1, redDays: 3 },
+  // 暂定保守默认值，上线前须由用户确认。
+  W11: { remindHours: null, yellowDays: 7, redDays: 14 },
 }
 
-/** 红色时自动转为异常的规则（W10 与 W3 一样转；W4 本身就是异常，不再转；W5 未签收、W6 物料未到货、W7 设计逾期、W8 未齐套、W9 总计划延误只升级通知，不转异常） */
+/** 红色时自动转为异常的规则（W10 与 W3 一样转；W4 本身就是异常，不再转；W5–W9、W11 只通知，不转异常） */
 export const CONVERTIBLE_RULES: ScanRule[] = ['W1', 'W2', 'W3', 'W10']
 
 /** 活动预警的唯一键（alert.activeKey），消除后置 null */

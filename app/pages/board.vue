@@ -47,7 +47,7 @@ const { data, pending, refresh } = await useFetch('/api/board', {
 })
 /** 刷新：看板 + 领导那一块（BoardLeaderPanel 的数据 key 是 'overview'）一起刷新 */
 async function refreshAll() {
-  await Promise.all([refresh(), me.value?.can.overview ? refreshNuxtData('overview') : undefined])
+  await Promise.all([refresh(), me.value?.can.overview ? refreshNuxtData(['overview', 'status-monitoring']) : undefined])
 }
 type Row = (typeof data.value.rows)[number]
 
@@ -130,6 +130,7 @@ async function onCreated(no: string) {
 
     <!-- 原领导总览独有的内容（领导、项目部负责人、管理员） -->
     <BoardLeaderPanel v-if="me?.can.overview" />
+    <StatusMonitoringPanel v-if="me?.can.overview" />
 
     <a-spin :spinning="pending">
         <a-empty v-if="!focusRows.length" description="没有预计拖期或有风险的工单" class="empty" />
