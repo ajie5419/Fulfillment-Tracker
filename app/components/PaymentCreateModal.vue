@@ -124,7 +124,7 @@ async function submit() {
       <a-form-item label="金额（元）" required>
         <a-input-number v-model:value="form.amount" :min="0.01" :max="1000000000000" :precision="2" :controls="false" style="width: 200px" />
       </a-form-item>
-      <a-form-item label="申请日" required><a-date-picker v-model:value="form.requestDate" value-format="YYYY-MM-DD" :allow-clear="false" /></a-form-item>
+      <a-form-item label="申请日" required><UiDatePicker v-model:value="form.requestDate" :allow-clear="false" /></a-form-item>
       <a-form-item label="卡交期">
         <a-checkbox v-model:checked="form.blocksDelivery">不付就不发货 / 不排产（如预付款）</a-checkbox>
         <div class="muted">卡交期的排在财务列表最前面；物料超期时 W6 预警会通知财务</div>

@@ -173,7 +173,7 @@ function close() {
         </a-upload>
       </a-form-item>
       <a-form-item label="要求解决日（可不填，受理时默认 +3 天）">
-        <a-date-picker v-model:value="form.dueDate" value-format="YYYY-MM-DD" :disabled-date="pastDay" style="width: 100%" />
+        <UiDatePicker v-model:value="form.dueDate" :disabled-date="pastDay" style="width: 100%" />
       </a-form-item>
     </a-form>
   </a-modal>

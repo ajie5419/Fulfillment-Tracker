@@ -379,7 +379,7 @@ const loadColumns = [
   >
     <a-form v-if="acting" layout="vertical">
       <p class="muted">{{ acting.row.workOrderNumber }} · 计划完成 {{ dayText(acting.row.planDate) }}{{ acting.row.needsCustomerConfirm ? ` · 客户确认计划 ${acting.row.customerPlanDate ? dayText(acting.row.customerPlanDate) : '未定'}` : '' }}</p>
-      <a-form-item :label="acting.kind === 'drawn' ? '设计完成日期' : '客户确认日期'"><a-date-picker v-model:value="actDate" value-format="YYYY-MM-DD" :allow-clear="false" /></a-form-item>
+      <a-form-item :label="acting.kind === 'drawn' ? '设计完成日期' : '客户确认日期'"><UiDatePicker v-model:value="actDate" :allow-clear="false" /></a-form-item>
       <p v-if="acting.kind === 'drawn'" class="muted">设计完成后点"一键发放"生成图纸发放单；发放后{{ acting.row.needsCustomerConfirm ? '、客户确认后' : '' }}任务完成。</p>
     </a-form>
   </a-modal>

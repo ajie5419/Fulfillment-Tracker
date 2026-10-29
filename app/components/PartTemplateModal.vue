@@ -76,7 +76,7 @@ async function submit() {
         </span>
       </div>
       <a-form-item label="开工日（可不填）" extra="填了就按模板的默认工期逐道推算要求完成日（日历天）；不填则不设要求完成日。">
-        <a-date-picker v-model:value="form.startDate" value-format="YYYY-MM-DD" style="width: 100%" />
+        <UiDatePicker v-model:value="form.startDate" style="width: 100%" />
       </a-form-item>
     </a-form>
     <a-form v-else layout="vertical">

@@ -244,7 +244,7 @@ async function submit() {
       <a-form-item label="数量" required>
         <a-input-number v-model:value="form.quantity" :min="1" :max="1000000" :precision="0" style="width: 140px" />
       </a-form-item>
-      <a-form-item label="交期" required><a-date-picker v-model:value="form.deliveryDate" value-format="YYYY-MM-DD" /></a-form-item>
+      <a-form-item label="交期" required><UiDatePicker v-model:value="form.deliveryDate" /></a-form-item>
       <a-form-item v-if="editing" label="状态">
         <a-segmented v-model:value="form.status" :options="STATUS_OPTIONS" />
       </a-form-item>

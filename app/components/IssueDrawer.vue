@@ -170,7 +170,7 @@ const actions: IssueAction[] = ['accept', 'resolve', 'close', 'reject', 'reassig
             <a-select v-model:value="form.responsibleSupplierId" allow-clear show-search option-filter-prop="label" :options="master.suppliers.map((s) => ({ value: s.id, label: s.label }))" />
           </a-form-item>
           <a-form-item label="要求解决日" :extra="form.action === 'accept' ? '不填时默认受理当天 + 3 天' : undefined">
-            <a-date-picker v-model:value="form.dueDate" value-format="YYYY-MM-DD" style="width: 100%" />
+            <UiDatePicker v-model:value="form.dueDate" style="width: 100%" />
           </a-form-item>
         </template>
         <a-form-item :label="form.action === 'resolve' ? '处理结果' : form.action === 'reject' ? '退回原因' : '说明'" :required="NOTE_REQUIRED.includes(form.action)">

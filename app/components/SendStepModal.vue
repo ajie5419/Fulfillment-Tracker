@@ -48,7 +48,7 @@ async function submit() {
         <a-select v-model:value="supplierId" show-search option-filter-prop="label" :options="master.suppliers.map((s) => ({ value: s.id, label: s.label }))" />
       </a-form-item>
       <a-form-item label="承诺返回日" required>
-        <a-date-picker v-model:value="promisedReturnDate" value-format="YYYY-MM-DD" style="width: 100%" />
+        <UiDatePicker v-model:value="promisedReturnDate" style="width: 100%" />
       </a-form-item>
       <a-form-item label="随件发料" extra="外协厂需要我们供料时写上发了什么、多少，如：Q355 钢板 20mm × 2 张">
         <a-input v-model:value="note" :maxlength="200" placeholder="不供料就空着" />

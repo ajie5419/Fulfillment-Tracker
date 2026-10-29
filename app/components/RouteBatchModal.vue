@@ -79,7 +79,7 @@ async function submit() {
       <template v-if="mode === 'template'">
         <p class="muted">只给还没有工序的工件套用；已有工序链的跳过。负责人默认是你，套完再批量改。</p>
         <a-form-item label="模板" required><a-select v-model:value="form.templateId" :options="templateOptions" show-search option-filter-prop="label" placeholder="选择模板" /></a-form-item>
-        <a-form-item label="开工日" extra="给了开工日时，按模板的默认工期推算各道的要求完成日"><a-date-picker v-model:value="form.startDate" value-format="YYYY-MM-DD" style="width: 100%" /></a-form-item>
+        <a-form-item label="开工日" extra="给了开工日时，按模板的默认工期推算各道的要求完成日"><UiDatePicker v-model:value="form.startDate" style="width: 100%" /></a-form-item>
       </template>
       <template v-else>
         <p class="muted">只填要改的项，空着的不动；只改还没完成的工序。</p>
@@ -87,8 +87,8 @@ async function submit() {
         <a-form-item label="负责人"><a-select v-model:value="form.ownerId" allow-clear show-search option-filter-prop="label" placeholder="不改" :options="userOptions" /></a-form-item>
         <a-form-item label="班组 / 外协厂" extra="班组只设到自制工序上，外协厂只设到外协工序上"><a-select v-model:value="form.supplierId" allow-clear show-search option-filter-prop="label" placeholder="不改" :options="supplierOptions" /></a-form-item>
         <div class="two">
-          <a-form-item label="应开工日"><a-date-picker v-model:value="form.planStartDate" value-format="YYYY-MM-DD" placeholder="不改" style="width: 100%" /></a-form-item>
-          <a-form-item label="要求完成日"><a-date-picker v-model:value="form.dueDate" value-format="YYYY-MM-DD" placeholder="不改" style="width: 100%" /></a-form-item>
+          <a-form-item label="应开工日"><UiDatePicker v-model:value="form.planStartDate" placeholder="不改" style="width: 100%" /></a-form-item>
+          <a-form-item label="要求完成日"><UiDatePicker v-model:value="form.dueDate" placeholder="不改" style="width: 100%" /></a-form-item>
         </div>
         <a-form-item v-if="nodeOptions.length" label="所属总计划节点"><a-select v-model:value="form.planNodeId" allow-clear show-search option-filter-prop="label" placeholder="不改" :options="nodeOptions" /></a-form-item>
       </template>
