@@ -1,6 +1,7 @@
 /** 工艺模块（10-27）：料单 / 工艺允许的状态变化 */
 import { describe, expect, it } from 'vitest'
 import { allowedActions, nextStatus, processSummary } from '../../server/services/process/constants'
+import { processReleaseBlockReason } from '../../shared/process'
 
 describe('料单状态', () => {
   it('未开始 → 编制中 → 已下发 → 修改中 → 已下发', () => {
@@ -18,6 +19,30 @@ describe('料单状态', () => {
     expect(allowedActions('MATERIAL', 'DRAFTING')).toEqual(['issue', 'reset'])
     expect(allowedActions('MATERIAL', 'REVISING')).toEqual(['issue'])
     expect(allowedActions('MATERIAL', 'ISSUED')).toEqual(['revise'])
+  })
+})
+
+describe('图纸正式发放前置', () => {
+  it.each([
+    ['MATERIAL', 'start', '图纸未发放，不能开始编制料单'],
+    ['MATERIAL', 'issue', '图纸未发放，不能下发料单'],
+    ['PROCESS', 'start', '图纸未发放，不能开始编制工艺'],
+    ['PROCESS', 'issue', '图纸未发放，不能下发工艺'],
+  ] as const)('%s/%s 未发放时明确说明原因，有效发放后放行', (kind, action, reason) => {
+    expect(processReleaseBlockReason(kind, action, false)).toBe(reason)
+    expect(processReleaseBlockReason(kind, action, true)).toBeNull()
+  })
+
+  it.each([
+    ['MATERIAL', 'revise'], ['MATERIAL', 'reset'], ['PROCESS', 'revise'], ['PROCESS', 'reset'],
+  ] as const)('%s/%s 是回退，未发放也允许（包括工艺退回编制中）', (kind, action) => {
+    expect(processReleaseBlockReason(kind, action, false)).toBeNull()
+  })
+
+  it('作废回退的工艺修改中可以重新下发，不能重新开始或撤回', () => {
+    expect(nextStatus('PROCESS', 'REVISING', 'issue')).toBe('ISSUED')
+    expect(allowedActions('PROCESS', 'REVISING')).toEqual(['issue'])
+    expect(processSummary({ materialStatus: 'ISSUED', processStatus: 'REVISING' })).toBe('料单已下发 · 工艺修改中')
   })
 })
 

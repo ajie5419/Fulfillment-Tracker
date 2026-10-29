@@ -1,14 +1,14 @@
 <script setup lang="ts">
 /**
  * 项目总览（原"看板"，技术选型 6.2；前端改版第一轮改成卡片）：
- *   默认"按状态分组"：预计拖期 / 有风险 / 正常 三栏卡片，另列未建总计划的工单；顶部 4 张汇总卡 + 源头延误在哪个部门。
+ *   关注分区：预计拖期 / 有风险两栏（允许重叠），另列已关闭工单；顶部 4 张汇总卡 + 源头延误在哪个部门。
  *   每个工单一张卡：工单号 · 产品、项目经理 · 交期、拖期天数、总计划节点圆点、卡在哪个节点（最早的源头延误节点）、红预警 / 异常 / 缺件 / 齐套率。
  *   整张卡点进工单详情 /wo/:no。"按项目经理"按人分组；"表格视图"是原来的 14 列表格（工单号改链到详情）。
  * 顶部 QMS 最后同步时间（各类资源里最旧的那类），有资源同步报错时显示错误提示。
  * 红 = 有活动红色预警或超期 ≥3 天的异常；黄 = 有活动黄色预警或超期异常；否则绿。分组规则见 shared/status.ts boardGroup。
  * 功能重复梳理第一批（zhao 10-22）：
  *   原"领导总览"并入本页：领导、项目部负责人、管理员在汇总下方多看到一块（BoardLeaderPanel），旧地址 /overview 跳这里；
- *   全站只用"预计拖期 / 有风险 / 正常 / 未建总计划"一套分组，表格视图第一列也改成这套（不再显示红 / 黄 / 绿）；
+ *   本页风险分区包含预计拖期；工单主状态标签仍按 boardGroup 判定；
  *   原菜单"工单详情"入口页去掉，改为工具栏里搜工单直接进详情。
  * 只看要关注的（zhao 10-22）：只显示"预计拖期""有风险"的工单，"正常"和"未建总计划"的不显示（只给一行数量，点去"项目计划"看）；
  *   去掉"其余工单"卡和"按项目经理 / 表格视图"切换（zhao 10-22），只保留按状态分组。
@@ -17,7 +17,7 @@
  * 新建工单（履约新建工单 10-27）：工具栏蓝色主按钮，只有项目部、项目部负责人、管理员看得到（me.can.workOrder）；保存时写入 QMS 工单库。
  *   建好后跳到该工单详情，并问"是否现在套模板生成总计划"，点"生成"去项目计划页（/plan?wo=，现有的按模板生成入口）。
  */
-import { BOARD_GROUP_TEXT, type BoardGroup, boardGroup } from '#shared/status'
+import { BOARD_GROUP_TEXT, type BoardGroup, boardGroup, hasWorkOrderRisk, boardRiskSections } from '#shared/status'
 
 const route = useRoute()
 const router = useRouter()
@@ -65,10 +65,9 @@ const groupOf = (r: Row): BoardGroup => boardGroup(r)
 const activeRows = computed(() => data.value.rows.filter((r) => !r.closed))
 const closedRows = computed(() => data.value.rows.filter((r) => r.closed))
 /** 要关注的：预计拖期 + 有风险（正常、未建总计划的不在本页显示） */
-const focusRows = computed(() => activeRows.value.filter((r) => { const g = groupOf(r); return g === 'LATE' || g === 'RISK' }))
+const focusRows = computed(() => activeRows.value.filter(hasWorkOrderRisk))
 const grouped = computed(() => {
-  const g: Record<BoardGroup, Row[]> = { LATE: [], RISK: [], OK: [], NO_PLAN: [] }
-  for (const r of activeRows.value) g[groupOf(r)].push(r)
+  const g = boardRiskSections(activeRows.value)
   // 拖期多的在前；其余保持看板顺序（红黄绿、交期近的在前）
   g.LATE.sort((a, b) => (b.delayDays ?? 0) - (a.delayDays ?? 0))
   return g
@@ -122,7 +121,7 @@ async function onCreated(no: string) {
 
     <!-- 汇总 -->
     <div class="summary">
-      <UiStatCard v-for="c in COLUMNS" :key="c.key" :label="BOARD_GROUP_TEXT[c.key]" :value="grouped[c.key].length" unit="个工单" :tone="c.tone" :icon="c.icon" accent />
+      <UiStatCard v-for="c in COLUMNS" :key="c.key" :label="BOARD_GROUP_TEXT[c.key]" :value="grouped[c.key].length" :sub="c.key === 'RISK' ? '含预计拖期、预警、未关闭异常、缺件及未齐套，按工单去重' : undefined" unit="个工单" :tone="c.tone" :icon="c.icon" accent />
       <UiSectionCard padding="tight" class="dept-card">
         <div class="dept-title">源头延误在哪个部门<span class="ft-muted">（节点数）</span></div>
         <UiBarList :items="deptItems" compact empty="没有源头延误的节点" />

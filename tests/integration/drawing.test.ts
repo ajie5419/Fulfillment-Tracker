@@ -132,6 +132,9 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     await expect(task({ ownerId: 'u-nobody' })).rejects.toThrow('设计负责人不存在')
     await expect(task({ customerPlanDate: dayOff(3) })).rejects.toThrow('不需要客户确认')
 
+    // 料单须在图纸正式发放后下发；未下发料单的完整分支见 process.test.ts。
+    const process = await import('../../server/services/process/process')
+
     // 物料到了，但图纸还没出 → 不发"可以开工"
     expect((await s.pur.confirmArrival(line.id, { source: 'PC' }, 'u-worker')).readySent).toBe(false)
     expect(await readyTodos(part.id)).toHaveLength(0)
@@ -150,7 +153,10 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     await expect(release(t.id, { workOrderNumber: OTHER_WO })).rejects.toThrow('不属于该工单')
     await expect(release(t.id, { type: 'PROCESS' })).rejects.toThrow('图纸或设计变更')
     const r1 = await release(t.id, { partIds: [part.id] })
-    expect(r1.drawing).toMatchObject({ status: 'DONE', readySent: 1 })
+    expect(r1.drawing).toMatchObject({ status: 'DONE', readySent: 0 })
+    expect(await readyTodos(part.id)).toHaveLength(0)
+    await process.changeStatus(t.id, { kind: 'MATERIAL', action: 'start' }, 'u-des')
+    await process.changeStatus(t.id, { kind: 'MATERIAL', action: 'issue' }, 'u-des')
     expect((await db.release.findUniqueOrThrow({ where: { id: r1.id } })).drawingTaskId).toBe(t.id)
     let todos = await readyTodos(part.id)
     expect(todos).toHaveLength(1)
@@ -167,9 +173,11 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     todos = await readyTodos(part.id)
     expect(todos.map((x) => x.status)).toEqual(['CANCELLED'])
 
-    // 再发放 → 再发
+    // 再发放后仍等料单重新下发，随后恢复待办。
     const r2 = await release(t.id)
-    expect(r2.drawing).toMatchObject({ status: 'DONE', readySent: 1 })
+    expect(r2.drawing).toMatchObject({ status: 'DONE', readySent: 0 })
+    expect((await readyTodos(part.id)).filter((x) => x.status === 'OPEN')).toHaveLength(0)
+    await process.changeStatus(t.id, { kind: 'MATERIAL', action: 'issue' }, 'u-des')
     expect((await readyTodos(part.id)).filter((x) => x.status === 'OPEN')).toHaveLength(1)
 
     // 再挂一个设计中的任务 → 没处理的待办作废
@@ -210,7 +218,12 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
       [null, null, '减速机', 1],
     ])
     // 3 个工件都还没有工序链 → 提醒生产经理排工序（每张发放单每人一条），跳到工件页只看未排工序
-    expect(r1.bom).toEqual({ created: 2, matched: 1, revisionFilled: 1, skipped: 2, unrouted: 3, unroutedNotified: true })
+    expect(r1.bom).toEqual({ created: 2, matched: 1, revisionFilled: 1, skipped: 2, unrouted: 3, unroutedNotified: true, purchasePlanId: expect.any(String), purchasePlanItems: 1 })
+    const purchaseDraft = await db.purchasePlan.findUniqueOrThrow({ where: { id: r1.bom!.purchasePlanId! }, include: { items: true } })
+    expect(purchaseDraft).toMatchObject({ source: 'BOM_AUTO', status: 'DRAFT', createdBy: 'u-des', workOrderNumber: BWO, title: expect.stringContaining(r1.releaseNo) })
+    expect(purchaseDraft.items).toHaveLength(1)
+    expect(purchaseDraft.items[0]).toMatchObject({ materialName: '减速机', needDate: null, convertedLineId: null })
+    expect(Number(purchaseDraft.items[0]!.quantity)).toBe(1)
     expect(r1.drawing).toMatchObject({ status: 'DONE' })
     const routeReminders = await db.reminder.findMany({ where: { dedupeKey: { startsWith: `RELEASE_ROUTE:${r1.id}:` } } })
     expect(routeReminders.map((r) => [r.userId, r.kind, r.link])).toEqual([['u-prodhead', 'RELEASE', `/parts?wo=${BWO}&noRoute=1`]])
@@ -233,7 +246,7 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     expect(detail.parts.find((p) => p.drawingNo === 'CJ-002')).toMatchObject({ revision: 'A', quantity: 2 })
     // 同一个 BOM 文件不能再用
     await expect(
-      s.rel.createRelease({ type: 'DRAWING', workOrderNumber: BWO, description: 'x', userIds: ['u-worker'], bom: { fileId: rel1.bomFileId!, rows: rows([['CJ-009', null, '吊耳', 1]]) } }, 'u-des'),
+      s.rel.createRelease({ type: 'DRAWING', workOrderNumber: BWO, description: 'x', userIds: ['u-worker'], bom: { fileId: rel1.bomFileId!, rows: rows([['CJ-009', null, '吊耳', 1], [null, null, '回滚外购件', 2]]) } }, 'u-des'),
     ).rejects.toThrow('BOM 表无效或已被使用')
     expect(await db.part.count({ where: { workOrderNumber: BWO, drawingNo: 'CJ-009' } })).toBe(0)
 
@@ -242,6 +255,7 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     await s.steps.addStep(parts.find((p) => p.drawingNo === 'CJ-002')!.id, { processId: 'P-CUT', mode: 'SELF', ownerId: 'u-worker' }, 'u-worker')
     const r2 = await send([['CJ-002', 'A', '端梁', 2], ['CJ-003', null, '横梁', 1]], { drawingTaskId: null })
     expect(r2.bom).toEqual({ created: 1, matched: 1, revisionFilled: 0, skipped: 0, unrouted: 1, unroutedNotified: true })
+    expect(await db.purchasePlan.count({ where: { workOrderNumber: BWO, items: { some: { materialName: '回滚外购件' } } } })).toBe(0)
     expect((await db.reminder.findFirstOrThrow({ where: { dedupeKey: `RELEASE_ROUTE:${r2.id}:u-prodhead` } })).title).toContain('1 个工件还没有工序链')
     expect(await db.part.count({ where: { workOrderNumber: BWO, drawingNo: { not: null } } })).toBe(4)
 
@@ -282,9 +296,12 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
   it('客户确认是独立节点：发放后待客户确认，确认后才算完成；只挂设计任务的工件也会发"可以开工"', async () => {
     const part = await makePart()
     const t = await task({ partIds: [part.id], needsCustomerConfirm: true, customerPlanDate: dayOff(5), componentName: '液压系统' })
+    const process = await import('../../server/services/process/process')
     await expect(s.dr.confirmCustomer(t.id, null, 'u-pm')).rejects.toThrow('还没有完成设计')
     await s.dr.markDrawn(t.id, dayOff(-1), ADMIN)
     expect((await release(t.id)).drawing).toMatchObject({ status: 'CUSTOMER_PENDING', readySent: 0 })
+    await process.changeStatus(t.id, { kind: 'MATERIAL', action: 'start' }, 'u-des')
+    await process.changeStatus(t.id, { kind: 'MATERIAL', action: 'issue' }, 'u-des')
     expect(await readyTodos(part.id)).toHaveLength(0)
     await expect(s.dr.confirmCustomer(t.id, dayOff(1), 'u-pm')).rejects.toThrow('不能晚于今天')
     expect(await s.dr.confirmCustomer(t.id, null, 'u-pm')).toMatchObject({ status: 'DONE', readySent: 1 })

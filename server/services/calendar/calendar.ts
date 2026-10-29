@@ -24,6 +24,8 @@ import {
 } from '../../../shared/calendar'
 
 export interface Completion extends CompletionLike {
+  /** 列表/月格落点；独立于计划台数和逾期统计日期 */
+  displayDay: string
   workOrderNumber: string
   projectName: string | null
   customerName: string
@@ -65,6 +67,7 @@ async function loadAll(now: Date) {
       const c = {
         ...base,
         planDay: dateFieldDay(last.planDate),
+        displayDay: lastEst.expectedDay ?? dateFieldDay(last.planDate),
         source: 'PLAN' as const,
         done: lastEst.done || completed,
         // 只认落库的完成日（见 rules.ts）；自动完成但日期会变的算已完成、不计入实际完成台数
@@ -75,7 +78,7 @@ async function loadAll(now: Date) {
       }
       completions.push({ ...c, state: completionState(c, today) })
     } else {
-      const c = { ...base, planDay: deliveryDay, source: 'DELIVERY' as const, done: false, actualDay: null, expectedDay: null, nodeName: null, nodeId: null }
+      const c = { ...base, planDay: deliveryDay, displayDay: deliveryDay, source: 'DELIVERY' as const, done: false, actualDay: null, expectedDay: null, nodeName: null, nodeId: null }
       completions.push({ ...c, state: completionState(c, today) })
     }
   }
@@ -91,7 +94,7 @@ export interface CalendarData {
   period: Period
   summary: PeriodSummary
   trend: { period: Period; summary: PeriodSummary }[]
-  /** 计划完成日在本期涉及的整周里（月视图含首尾跨月的几天，列表按整周分组要用）、或实际完成在本期的工单（按计划完成日排） */
+  /** 展示落点在本期涉及的整周里（月视图含首尾跨月的几天，列表按整周分组要用）、或实际完成在本期的工单（按展示落点排） */
   completions: Completion[]
 }
 
@@ -108,7 +111,7 @@ export async function getCalendar(view: CalendarView, day: string | null, now = 
     period,
     summary: summarize(completions, period, today),
     trend,
-    completions: completions.filter((c) => inPeriod(grid, c.planDay) || (c.done && inPeriod(period, c.actualDay))).sort((a, b) => (a.planDay < b.planDay ? -1 : a.planDay > b.planDay ? 1 : 0)),
+    completions: completions.filter((c) => inPeriod(grid, c.displayDay) || (c.done && inPeriod(period, c.actualDay))).sort((a, b) => (a.displayDay < b.displayDay ? -1 : a.displayDay > b.displayDay ? 1 : 0)),
   }
 }
 

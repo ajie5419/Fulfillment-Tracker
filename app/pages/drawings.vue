@@ -7,6 +7,7 @@
  * 前端改版第二轮：顶部统计卡（设计中 / 逾期 / 本周到期 / 设计完成待发放·待确认，点了套用对应视图，数字是接口 stats，与视图同一口径）；
  * 列表默认按工单分组（?layout=group|table），组标题带本组设计完成度。
  */
+import { isDesignComplete } from '#shared/drawing'
 import { distinctPlanNodes, groupByWorkOrder, groupProgress } from '#shared/workbench'
 
 const route = useRoute()
@@ -45,11 +46,25 @@ watch(
   () => router.replace({ query: { ...route.query, wo: filter.workOrderNumber || undefined, view: filter.view, owner: filter.ownerId || undefined, tab: tab.value === 'load' ? 'load' : undefined } }),
 )
 
-const { data, pending, refresh } = await useFetch('/api/drawings', {
-  query: computed(() => ({ workOrderNumber: filter.workOrderNumber, ownerId: filter.ownerId, view: filter.view, q: filter.q || undefined })),
-  default: () => ({ rows: [] as DrawingRow[], total: 0, stats: null as DrawingStats | null }),
+watch(() => route.query, (q) => {
+  filter.workOrderNumber = typeof q.wo === 'string' ? q.wo : undefined
+  filter.ownerId = typeof q.owner === 'string' ? q.owner : undefined
+  filter.view = typeof q.view === 'string' ? q.view : q.id ? 'all' : 'open'
+  tab.value = q.tab === 'load' ? 'load' : 'list'
 })
-const rows = computed(() => data.value.rows as DrawingRow[])
+
+const listQuery = computed(() => ({ workOrderNumber: filter.workOrderNumber, ownerId: filter.ownerId, view: filter.view, q: filter.q || undefined }))
+// 限定返回类型，避免 Nitro 全站路由联合在 useAsyncData 泛型推导中递归展开。
+const requestFetch = useRequestFetch() as unknown as (
+  url: string, options: { query: typeof listQuery.value; signal: AbortSignal },
+) => Promise<{ rows: DrawingRow[]; total: number; stats: DrawingStats | null }>
+// 只由筛选 key 驱动请求，让不同筛选的结果与加载状态隔离。
+const { data, pending, error, refresh } = await useAsyncData(
+  computed(() => `drawings:${JSON.stringify(listQuery.value)}`),
+  (_app, { signal }) => requestFetch('/api/drawings', { query: listQuery.value, signal }),
+  { default: () => ({ rows: [] as DrawingRow[], total: 0, stats: null as DrawingStats | null }) },
+)
+const rows = computed(() => pending.value ? [] : data.value.rows as DrawingRow[])
 const stats = computed(() => data.value.stats as DrawingStats | null)
 
 // ───── 统计卡、按工单分组 ─────
@@ -63,7 +78,7 @@ const layout = useListLayout()
 const tables = computed(() =>
   layout.value === 'group' ? groupByWorkOrder(rows.value).map((g) => ({ key: g.workOrderNumber, ...g })) : [{ key: '__all', workOrderNumber: '', rows: rows.value }],
 )
-const doneOf = (g: { rows: DrawingRow[] }) => groupProgress(g.rows, (r) => r.status === 'DONE', (r) => r.status !== 'CANCELLED')
+const doneOf = (g: { rows: DrawingRow[] }) => groupProgress(g.rows, (r) => isDesignComplete(r.status), (r) => r.status !== 'CANCELLED')
 
 const { data: load, pending: loadPending, refresh: refreshLoad } = await useFetch('/api/drawings/load', {
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber })),
@@ -206,8 +221,10 @@ const loadColumns = [
 </script>
 
 <template>
+  <div>
   <div class="ft-page">
-  <div v-if="stats" class="ft-stats">
+  <a-result v-if="error" status="error" title="列表加载失败" :sub-title="apiError(error)"><template #extra><a-button @click="refresh()">重试</a-button></template></a-result>
+  <div v-if="stats && !pending && !error" class="ft-stats">
     <UiStatCard label="设计中" :value="stats.pending" unit="项" tone="primary" accent icon="dot" clickable :active="filter.view === 'pending'" sub="还没完成设计的任务" @click="applyView('pending')" />
     <UiStatCard label="逾期" :value="stats.overdue" unit="项" tone="late" accent icon="alert" clickable :active="filter.view === 'overdue'" sub="设计中过计划完成日，或客户确认过计划日" @click="applyView('overdue')" />
     <UiStatCard label="本周到期" :value="stats.dueThisWeek" unit="项" tone="risk" accent icon="warn" clickable :active="filter.view === 'week'" sub="设计中且计划完成日在本周" @click="applyView('week')" />
@@ -215,7 +232,7 @@ const loadColumns = [
       <template #sub>待发放 {{ stats.drawn }} · 待客户确认 {{ stats.customerPending }}</template>
     </UiStatCard>
   </div>
-  <a-card>
+  <a-card v-if="!error">
     <template #title>
       <span class="ft-title">设计任务
         <UiHelpTip label="设计任务说明">设计完成后点"一键发放"生成图纸发放单（R9）。关联工件的设计任务全部完成（设计完成、已发放、需要时客户已确认）后，物料也齐了才给第一道工序发"可以开工"。没指定设计负责人的派给技术部负责人。</UiHelpTip>
@@ -249,9 +266,9 @@ const loadColumns = [
             <a-segmented v-model:value="layout" :options="LAYOUT_OPTIONS" />
           </div>
         </div>
-        <p v-if="data.total > rows.length" class="warn">共 {{ data.total }} 项，只显示前 {{ rows.length }} 项，请按工单或负责人筛选</p>
+        <p v-if="!pending && !error && data.total > rows.length" class="warn">共 {{ data.total }} 项，只显示前 {{ rows.length }} 项，请按工单或负责人筛选</p>
 
-        <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty :description="filter.view === 'open' ? '没有未完成的设计任务' : '没有记录'" /></a-spin>
+        <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty v-if="!pending" :description="filter.view === 'open' ? '没有未完成的设计任务' : '没有记录'" /></a-spin>
         <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
         <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" :nodes="distinctPlanNodes(t.rows)" v-bind="doneOf(t)" label="设计完成" :count="t.rows.length" />
         <a-table
@@ -263,11 +280,12 @@ const loadColumns = [
           :scroll="{ x: layout === 'group' ? groupWidth : tableWidth }"
           :pagination="layout === 'group' ? false : { pageSize: 50, hideOnSinglePage: true }"
         >
-          <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未完成的设计任务' : '没有记录'" /></template>
+          <template #emptyText><a-empty v-if="!pending" :description="filter.view === 'open' ? '没有未完成的设计任务' : '没有记录'" /></template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'component'">
               <a v-if="canEditTask" @click="openEdit(record as DrawingRow)">{{ record.componentName }}</a>
               <span v-else>{{ record.componentName }}</span>
+              <UiStatusTag v-if="!record.parts.length" tone="none">文档 / 原理图（无关联零件）</UiStatusTag>
               <div class="muted">{{ record.parts.length ? partNames(record as DrawingRow) : '未关联工件' }}</div>
             </template>
             <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
@@ -365,6 +383,7 @@ const loadColumns = [
       <p v-if="acting.kind === 'drawn'" class="muted">设计完成后点"一键发放"生成图纸发放单；发放后{{ acting.row.needsCustomerConfirm ? '、客户确认后' : '' }}任务完成。</p>
     </a-form>
   </a-modal>
+  </div>
 </template>
 
 <style scoped>

@@ -10,7 +10,7 @@ const route = useRoute()
 const router = useRouter()
 
 const tab = ref<string>((route.query.tab as string) || 'todo')
-const { data: rows, pending, refresh } = await useFetch('/api/issues', {
+const { data: rows, pending, error, refresh } = await useFetch('/api/issues', {
   query: computed(() => ({ mine: tab.value, status: tab.value === 'todo' ? 'UNCLOSED' : undefined, dept: '0' })),
   default: () => [],
 })
@@ -21,6 +21,7 @@ type Detail = {
   workOrderNumber: string
   refText: string | null
   categoryText: string
+  title: string | null
   description: string
   source: keyof typeof ISSUE_SOURCE_TEXT
   reporterName: string | null
@@ -36,11 +37,12 @@ type Detail = {
   photos: { id: string; url: string }[]
   logs: { id: string; fromStatus: IssueStatusKey | null; toStatus: IssueStatusKey | null; note: string | null; actorName: string; createdAt: string }[]
 }
+const requestFetch = useRequestFetch()
 const selected = ref<string | null>((route.query.id as string) || null)
-const { data: detail, refresh: refreshDetail } = await useAsyncData<Detail | null>(
-  'm-issue-detail',
-  () => (selected.value ? ($fetch as unknown as (u: string) => Promise<Detail>)(`/api/issues/${encodeURIComponent(selected.value)}`) : Promise.resolve(null)),
-  { watch: [selected] },
+const { data: detail, pending: detailPending, error: detailError, refresh: refreshDetail } = await useAsyncData<Detail | null>(
+  computed(() => `m-issue-detail:${selected.value ?? 'closed'}`),
+  () => (selected.value ? (requestFetch as unknown as (u: string) => Promise<Detail>)(`/api/issues/${encodeURIComponent(selected.value)}`) : Promise.resolve(null)),
+  { default: () => null },
 )
 watch([tab, selected], ([t, id]) => {
   if (import.meta.client) router.replace({ query: { tab: t, id: id || undefined } })
@@ -48,6 +50,8 @@ watch([tab, selected], ([t, id]) => {
 
 // ───── 操作 ─────
 const acting = ref<IssueAction | null>(null)
+watch(() => route.query.id, (id) => { selected.value = typeof id === 'string' ? id : null })
+watch(selected, () => { acting.value = null })
 const note = ref('')
 const NOTE_LABEL: Partial<Record<IssueAction, string>> = { resolve: '处理结果', reject: '退回原因', close: '说明（可不填）', accept: '说明（可不填）' }
 function startAction(a: IssueAction) {
@@ -89,6 +93,7 @@ const logText = (l: Detail['logs'][number]) =>
       <van-tab title="我上报" name="reported" />
     </van-tabs>
     <van-loading v-if="pending" class="m-center" />
+    <van-empty v-else-if="error" image="error" description="列表加载失败"><van-button size="small" @click="refresh()">重试</van-button></van-empty>
     <van-empty v-else-if="!rows.length" description="没有异常" image-size="80" />
     <div v-else class="m-list">
       <MCard v-for="r in rows" :key="r.id" :tone="r.overdue ? 'late' : toneOfVant(ISSUE_STATUS_TYPE[r.status as IssueStatusKey])" link @click="selected = r.id">
@@ -97,6 +102,7 @@ const logText = (l: Detail['logs'][number]) =>
           <van-tag v-if="r.overdue" type="danger">超期</van-tag>
           <span class="no">{{ r.issueNo }}</span>
         </div>
+        <div v-if="r.title" class="m-title">{{ r.title }}</div>
         <div class="m-desc clamp desc">{{ r.description }}</div>
         <div class="m-meta">
           <span>{{ r.workOrderNumber }}</span>
@@ -108,12 +114,15 @@ const logText = (l: Detail['logs'][number]) =>
     <div class="m-foot" />
 
     <van-popup :show="!!selected" position="bottom" round closeable :style="{ height: '85%' }" @update:show="(v: boolean) => { if (!v) selected = null }">
-      <div v-if="detail" class="detail">
+      <van-loading v-if="detailPending" class="m-center" />
+      <van-empty v-else-if="detailError" image="error" description="异常加载失败"><van-button size="small" @click="refreshDetail()">重试</van-button></van-empty>
+      <div v-else-if="detail && detail.id === selected" class="detail">
         <div class="detail-head">
           <span class="detail-no">{{ detail.issueNo }}</span>
           <van-tag :type="ISSUE_STATUS_TYPE[detail.status]">{{ ISSUE_STATUS_TEXT[detail.status] }}</van-tag>
           <van-tag v-if="detail.overdue" type="danger">超期</van-tag>
         </div>
+        <div v-if="detail.title" class="m-title">{{ detail.title }}</div>
         <p class="desc-full">{{ detail.description }}</p>
         <van-cell-group inset class="info">
           <van-cell title="工单" :value="detail.workOrderNumber" />

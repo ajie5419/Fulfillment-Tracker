@@ -200,6 +200,7 @@ const LEVEL_LABEL: Record<AlertLevelKey, string> = { RED: '红色', YELLOW: '黄
 const toneIcon = (t: Tone) => (t === 'late' ? 'alert' : t === 'risk' ? 'warn' : 'dot')
 /** 待办的"查看"跳转：工序 → 工件抽屉（工序编排页）；发放 → 发放单；总计划 → 工单详情的总计划页签 */
 function todoLink(t: Todo): string | null {
+  if (t.link) return t.link
   if (t.plan) return t.plan.link
   if (t.planTask) return t.planTask.link
   if (t.release) return `/releases?id=${encodeURIComponent(t.release.id)}`
@@ -215,6 +216,7 @@ function onCardClick(c: Card) {
 </script>
 
 <template>
+  <div>
   <div class="wb">
     <div class="stats">
       <UiStatCard label="我的待办" :value="counts.todo" unit="条" tone="primary" accent icon="dot" :to="filterTo('todo')" :active="active === 'todo'" sub="点开只看待办" />
@@ -292,7 +294,8 @@ function onCardClick(c: Card) {
               </div>
               <div class="ops" @click.stop>
                 <template v-if="c.todo">
-                  <a-button v-if="c.todo.action === 'ARRANGE_SEND' && c.todo.step" type="primary" size="small" @click="openSend(c.todo)">登记发出</a-button>
+                  <a-button v-if="c.todo.link" type="primary" size="small" @click="navigateTo(c.todo.link)">查看采购计划</a-button>
+                  <a-button v-else-if="c.todo.action === 'ARRANGE_SEND' && c.todo.step" type="primary" size="small" @click="openSend(c.todo)">登记发出</a-button>
                   <template v-else-if="c.todo.action === 'ARRANGE_START' && c.todo.step">
                     <a-button type="primary" size="small" @click="start(c.todo)">开工</a-button>
                     <a-button size="small" @click="finish(c.todo)">完工</a-button>
@@ -308,8 +311,8 @@ function onCardClick(c: Card) {
                   <a-button v-else-if="c.todo.action === 'CONFIRM_CHANGE' && c.todo.release" type="primary" size="small" @click="releaseId = c.todo.release.id">确认变更影响</a-button>
                   <a-button v-else-if="c.todo.action === 'CONFIRM_PLAN_NODE' && c.todo.plan" type="primary" size="small" @click="navigateTo(c.todo.plan.link)">去确认</a-button>
                   <a-button v-else-if="c.todo.action === 'DO_PLAN_TASK' && c.todo.planTask" type="primary" size="small" @click="finishPlanTask(c.todo)">完成</a-button>
-                  <a-button v-if="c.todo.action !== 'SIGN_RELEASE'" size="small" @click="transferring = c.todo">转交</a-button>
-                  <NuxtLink v-if="todoLink(c.todo) && !c.todo.plan && !c.todo.release" :to="todoLink(c.todo)!" class="go">查看 ›</NuxtLink>
+                  <a-button v-if="c.todo.action !== 'SIGN_RELEASE' && c.todo.action !== 'PURCHASE_PLAN_ISSUED'" size="small" @click="transferring = c.todo">转交</a-button>
+                  <NuxtLink v-if="todoLink(c.todo) && !c.todo.plan && !c.todo.release && !c.todo.link" :to="todoLink(c.todo)!" class="go">查看 ›</NuxtLink>
                 </template>
                 <template v-else-if="c.reminder">
                   <a-button v-if="c.unread" size="small" @click="readReminder(c.reminder)">标已读</a-button>
@@ -338,6 +341,7 @@ function onCardClick(c: Card) {
       :options="master.users.filter((u) => u.id !== me?.id).map((u) => ({ value: u.id, label: `${u.name}（${u.department}）` }))"
     />
   </a-modal>
+  </div>
 </template>
 
 <style scoped>

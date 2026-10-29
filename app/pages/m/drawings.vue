@@ -71,6 +71,7 @@ async function markDrawn(r: DrawingRow) {
               <span class="wo">{{ r.workOrderNumber }}</span>
             </div>
             <div class="m-title name">{{ r.componentName }}</div>
+        <van-tag v-if="!r.parts.length" plain>文档 / 原理图（无关联零件）</van-tag>
             <div class="m-desc parts">{{ r.parts.length ? partsText(r.parts.map((p) => p.name)) : '未关联工件' }}</div>
             <div class="m-meta">
               <span :class="{ 'm-text-late': r.overdue }">计划 {{ dayText(r.planDate) }}</span>
@@ -101,6 +102,7 @@ async function markDrawn(r: DrawingRow) {
           <span class="wo">{{ r.workOrderNumber }}</span>
         </div>
         <div class="m-title name">{{ r.componentName }}</div>
+        <van-tag v-if="!r.parts.length" plain>文档 / 原理图（无关联零件）</van-tag>
         <div class="m-desc parts">{{ r.parts.length ? partsText(r.parts.map((p) => p.name)) : '未关联工件' }}</div>
         <div class="m-meta">
           <span :class="{ 'm-text-late': r.overdue }">计划 {{ dayText(r.planDate) }}</span>

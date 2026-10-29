@@ -19,7 +19,7 @@ import { convertAlertInTx } from '../issues/convert'
 import { CATEGORY_TEXT } from '../issues/constants'
 import { issueTransaction } from '../issues/issues'
 import { withLease } from '../jobs/lease'
-import { DELAY_REASON_TEXT, PAYMENT_STATUS_TEXT, PURCHASE_DEPT, judgeW6, w6Summary } from '../purchases/constants'
+import { DELAY_REASON_TEXT, PAYMENT_STATUS_TEXT, PURCHASE_DEPT, currentDelayReason, judgeW6, w6Summary } from '../purchases/constants'
 import { DRAWING_STATUS_TEXT, OPEN_DRAWING_STATUSES, TECH_DEPT, judgeW7, w7Summary } from '../drawings/constants'
 import { CONFIRM_CHANGE, PRODUCTION_DEPT, TYPE_TEXT } from '../releases/constants'
 import { KITTING_DEPT, judgeW8, w8Summary } from '../kitting/constants'
@@ -419,7 +419,8 @@ async function collectW6(now: Date, t: Thresholds, offDays: string[]): Promise<T
     const r = judgeW6({ needDate: l.needDate, promisedDate: l.promisedDate, now, offDays }, t.W6)
     if (!r.trigger) continue
     const blocking = l.payments.map((p) => p.payment).find((p) => p.blocksDelivery && p.status !== 'PAID')
-    const extra = [blocking ? `卡交期付款${PAYMENT_STATUS_TEXT[blocking.status]}` : '', l.delayReason ? `原因：${DELAY_REASON_TEXT[l.delayReason]}` : ''].filter(Boolean)
+    const reason = currentDelayReason(l.delayReason, l.payments.map(p => p.payment.status))
+    const extra = [blocking ? `卡交期付款${PAYMENT_STATUS_TEXT[blocking.status]}` : '', reason ? `原因：${DELAY_REASON_TEXT[reason]}` : ''].filter(Boolean)
     out.push({
       rule: 'W6',
       refType: 'purchase',

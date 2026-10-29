@@ -7,7 +7,7 @@
  *     用了前置 / 开始日的计划显示余量和关键节点；"甘特图"视图（PlanGantt，只读）。
  *   顶部：合同交期、预计交期、拖期天数、未挂节点的部门记录条数。
  *   项目经理、项目部、管理员可按模板生成、增删改节点、发布（发布后改日期 / 加删节点要写原因，记调整记录）；
- *   责任部门的人、项目经理可以手动标完成（挂靠任务全部完成也自动算完成）。
+ *   节点完成由部门任务自动汇总。
  *   10-23 zhao："不够直观，没分成 1、2 级；部门的任务分解不应该在这个界面"——
  *     按 MS Project 大纲显示：阶段 = 1 级（灰底粗体行，可折叠），节点 = 2 级，子节点 = 3 级（再缩进，汇总行可折叠），编号 阶段.节点.子节点；
  *     接收、退回、分解都挪到"部门计划"页（/dept-plan），这里的"部门执行"列和展开行只读（任务负责人仍可标完成）。
@@ -220,27 +220,11 @@ async function submitReason() {
   if (ok) reasonOpen.value = false
 }
 
-// ───── 节点完成 ─────
-const doneOpen = ref(false)
-const doneNode = ref<PlanNodeRow | null>(null)
-const doneDate = ref<Dayjs>(dayjs(factoryDay(new Date())))
-function openDone(n: PlanNodeRow) {
-  doneNode.value = n
-  doneDate.value = dayjs(factoryDay(new Date()))
-  doneOpen.value = true
-}
-async function submitDone() {
-  const n = doneNode.value
-  if (!n) return
-  const ok = await act(() => send(`/api/plan/nodes/${n.id}/complete`, { method: 'POST', body: { date: doneDate.value.format('YYYY-MM-DD') } }), '已标记完成')
-  if (ok) doneOpen.value = false
-}
 /** 展开行里任务有变动（负责人标完成 / 撤销）*/
 async function onWorkChanged() {
   await load()
   emit('changed')
 }
-const undoDone = (n: PlanNodeRow) => act(() => send(`/api/plan/nodes/${n.id}/undo-complete`, { method: 'POST', body: {} }), '已撤销完成')
 
 // ───── 表格 ─────
 // 列宽按内容收紧，1440 宽屏幕不横向滚动（设计规范第 3 节）；操作列固定在右边，窄屏横向滚动时也看得到
@@ -535,8 +519,6 @@ const logColumns = [
           </template>
           <template v-else-if="column.key === 'ops'">
             <a-space wrap size="small">
-              <a-button v-if="record.canComplete && !record.done" size="small" @click="openDone(record as PlanNodeRow)">标完成</a-button>
-              <a-button v-if="record.canComplete && record.doneBy === 'MANUAL'" size="small" @click="undoDone(record as PlanNodeRow)">撤销完成</a-button>
               <template v-if="data.canEdit">
                 <a-button size="small" @click="openEdit(record as PlanNodeRow)">调整</a-button>
                 <a-button v-if="!record.parentId" size="small" @click="openEdit(null, record as PlanNodeRow)">加子节点</a-button>
@@ -638,14 +620,6 @@ const logColumns = [
       <p class="muted">总计划已发布，删除要写原因（记入调整记录）；挂在上面的部门记录变成未挂。</p>
       <a-textarea v-model:value="reasonText" :rows="3" :maxlength="500" placeholder="删除原因" />
     </a-modal>
-
-    <a-modal v-model:open="doneOpen" :title="`标记完成：${doneNode?.name}`" @ok="submitDone">
-      <a-form layout="vertical">
-        <a-form-item label="完成日期"><a-date-picker v-model:value="doneDate" :allow-clear="false" style="width: 100%" /></a-form-item>
-      </a-form>
-      <p class="muted">部门任务全部完成时节点会自动算完成，不用手动标。</p>
-    </a-modal>
-
   </UiSectionCard>
 </template>
 

@@ -1,3 +1,4 @@
+import { isDesignComplete } from '../../../shared/drawing'
 /**
  * 项目部总计划（R14）的常量与纯函数：部门任务的预计日、节点预计完成日（沿前置节点顺延）、余量 / 关键节点、自动完成、预计交期、W9 判定。
  * 不碰数据库，便于单测。日期一律用 'YYYY-MM-DD' 字符串（日期字段存当天 UTC 零点，dateFieldDay 取出来），"今天"按工厂时区。
@@ -102,7 +103,7 @@ export function estimateTask(t: TaskFacts, nodePlanDay: string, today: string): 
 
 const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null)
 
-/** 设计任务：完成 = 已完成（设计完成、已发放、需要时客户已确认）；设计完成等客户确认的看客户确认计划日 */
+/** 设计任务：完成 = 已完成设计（含待确认、已发放）；设计完成等客户确认的看客户确认计划日 */
 export function drawingFacts(
   d: { id: string; status: DrawingTaskStatus; planDate: Date; drawnDate: Date | null; needsCustomerConfirm: boolean; customerPlanDate: Date | null; customerConfirmedDate: Date | null },
 ): TaskFacts {
@@ -111,7 +112,7 @@ export function drawingFacts(
     kind: 'drawing',
     id: d.id,
     excluded: d.status === 'CANCELLED',
-    done: d.status === 'DONE',
+    done: isDesignComplete(d.status),
     doneDay: day(d.customerConfirmedDate) ?? day(d.drawnDate),
     planDay: waitingCustomer ? day(d.customerPlanDate) : day(d.planDate),
   }
@@ -600,3 +601,8 @@ export function lateWarning(what: string, recordDay: string | null, node: { name
 }
 
 export type { BusinessDept }
+
+/** Returned nodes await project-plan adjustment, not department acceptance. */
+export function deptNodeTab(n: { done: boolean; confirmStatus: string | null }): 'pending' | 'returned' | 'active' | 'done' {
+  return n.done ? 'done' : n.confirmStatus === 'REJECTED' ? 'returned' : n.confirmStatus === 'CONFIRMED' || !n.confirmStatus ? 'active' : 'pending'
+}

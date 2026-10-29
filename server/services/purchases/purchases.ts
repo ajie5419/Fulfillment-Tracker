@@ -5,7 +5,7 @@
  * 权限从简：能看到该工单的人都能录入、修改、确认到货（采购、仓库、使用部门都可能是确认人）；可见范围由接口层 canSee 判断。
  * 责任人：采购负责人（buyerId）；没指定时是采购部负责人。W6 未到货预警见 alerts/scan.ts。
  *
- * "可以开工"：工件挂的关键物料（未取消的）全部到货、且关联的设计任务（R11，未取消的）全部完成（设计完成、已发放、需要时客户已确认）
+ * "可以开工"：工件挂的关键物料（未取消的）全部到货、且关联的设计任务（R11，未取消的）全部完成（设计完成、已发放、需要时客户已确认）、料单全部已下发
  * 的那一刻，给第一道工序负责人（没有时给生产部负责人）发待办；第一道已经开工/发出的不发。
  * 之后又挂上未到货的物料（新增、撤销到货、重新启用）或未完成的设计任务（新建、发放单作废、撤销设计完成）时，没处理的"可以开工"待办作废。
  * 待办在该工件任一道工序开工、发出或返厂时自动关闭（flow.ts）。
@@ -15,7 +15,7 @@
  * 同一工件的几项同时到货时，"是否全部到货"的判断也串行，不会谁都不发"可以开工"。
  * 先锁工件是因为写采购行时外键检查会给工件行加共享锁，之后再要排他锁会和并发的另一项互相等（死锁）。
  */
-import type { DelayReason, DrawingTaskStatus, FlowSource, Prisma, PurchaseLine, PurchaseStatus, RouteStep } from '@prisma/client'
+import type { DelayReason, DrawingTaskStatus, MaterialListStatus, FlowSource, Prisma, PurchaseLine, PurchaseStatus, RouteStep } from '@prisma/client'
 import { firstStepTodoReady, prereqState } from '../flow/readiness'
 import { resolveStepResponsible } from '../flow/responsible'
 import { prisma } from '../../utils/prisma'
@@ -156,12 +156,12 @@ export async function refreshPartReady(tx: Tx, partId: string | null, notify: bo
   const part = await tx.$queryRaw<{ id: string; workOrderNumber: string }[]>`SELECT id, workOrderNumber FROM part WHERE id = ${partId} FOR UPDATE`
   if (!part.length) return null
   const lines = await tx.$queryRaw<{ status: PurchaseStatus }[]>`SELECT status FROM purchase_line WHERE partId = ${partId} AND status <> 'CANCELLED' FOR SHARE`
-  const drawings = await tx.$queryRaw<{ status: DrawingTaskStatus }[]>`
-    SELECT t.status FROM drawing_task t JOIN drawing_task_part p ON p.taskId = t.id WHERE p.partId = ${partId} AND t.status <> 'CANCELLED' FOR SHARE`
+  const drawings = await tx.$queryRaw<{ status: DrawingTaskStatus; materialStatus: MaterialListStatus }[]>`
+    SELECT t.status, t.materialStatus FROM drawing_task t JOIN drawing_task_part p ON p.taskId = t.id WHERE p.partId = ${partId} AND t.status <> 'CANCELLED' FOR SHARE`
   const now = new Date()
   const first = await tx.routeStep.findFirst({ where: { partId }, orderBy: { seq: 'asc' }, select: { status: true, ownerId: true, mode: true, supplierId: true, holdReleaseId: true } })
   // 与生产调度同一条规则（flow/readiness.ts firstStepTodoReady）：挂了东西、都齐了、第一道还在待开工且没在"等变更"
-  const prereq = prereqState({ purchases: lines.map((l) => l.status), drawings: drawings.map((d) => d.status) })
+  const prereq = prereqState({ purchases: lines.map((l) => l.status), drawings })
   const ready = firstStepTodoReady(first && { status: first.status, held: !!first.holdReleaseId }, prereq)
   const where = { refType: 'part', refId: partId, action: READY_TO_START, status: 'OPEN' as const }
   if (!ready) {
@@ -179,39 +179,43 @@ export async function refreshPartReady(tx: Tx, partId: string | null, notify: bo
 
 // ───────────── 新建 / 修改 / 删除 ─────────────
 
-export async function createLine(input: NewLineInput, actorId: string) {
+export async function createLine(input: NewLineInput, actorId: string, tx?: Tx) {
+  if (tx) return createLineInTx(tx, input, actorId)
+  return purchaseTx((db) => createLineInTx(db, input, actorId))
+}
+
+/** 同一事务内创建并关联采购计划明细，保持采购行既有校验与副作用。 */
+async function createLineInTx(tx: Tx, input: NewLineInput, actorId: string) {
   const now = new Date()
   if (input.arrivedDate) assertNotFuture(input.arrivedDate, now)
-  return purchaseTx(async (tx) => {
-    await lockParts(tx, [input.partId])
-    const wo = await tx.qmsWorkOrder.findFirst({ where: { workOrderNumber: input.workOrderNumber, isDeleted: false }, select: { workOrderNumber: true } })
-    if (!wo) throw new FlowError('工单不存在或已删除')
-    await assertPart(tx, input.partId, wo.workOrderNumber)
-    await assertBuyer(tx, input.buyerId)
-    const supplier = await resolveSupplier(tx, input.supplierId, input.supplierName)
-    const link = await resolvePlanNode(tx, wo.workOrderNumber, input.planNodeId, { creating: true })
-    const line = await tx.purchaseLine.create({
-      data: {
-        workOrderNumber: wo.workOrderNumber,
-        partId: input.partId || null,
-        materialName: input.materialName.trim(),
-        spec: input.spec?.trim() || null,
-        quantity: input.quantity,
-        unit: input.unit?.trim() || null,
-        ...supplier,
-        needDate: input.needDate,
-        promisedDate: input.promisedDate ?? null,
-        planNodeId: link.value ?? null,
-        buyerId: input.buyerId || null,
-        note: input.note?.trim() || null,
-        createdBy: actorId,
-        ...(input.arrivedDate ? { status: 'ARRIVED', arrivedDate: input.arrivedDate, arrivalSource: 'PC', arrivedBy: actorId, arrivedAt: now } : {}),
-      },
-    })
-    // 补录已到货的不发"可以开工"（不是这一刻到的）；挂上未到货的，作废没处理的"可以开工"
-    await refreshPartReady(tx, line.partId, false)
-    return { ...line, planWarning: purchaseWarning(line, link.node) }
+  await lockParts(tx, [input.partId])
+  const wo = await tx.qmsWorkOrder.findFirst({ where: { workOrderNumber: input.workOrderNumber, isDeleted: false }, select: { workOrderNumber: true } })
+  if (!wo) throw new FlowError('工单不存在或已删除')
+  await assertPart(tx, input.partId, wo.workOrderNumber)
+  await assertBuyer(tx, input.buyerId)
+  const supplier = await resolveSupplier(tx, input.supplierId, input.supplierName)
+  const link = await resolvePlanNode(tx, wo.workOrderNumber, input.planNodeId, { creating: true })
+  const line = await tx.purchaseLine.create({
+    data: {
+      workOrderNumber: wo.workOrderNumber,
+      partId: input.partId || null,
+      materialName: input.materialName.trim(),
+      spec: input.spec?.trim() || null,
+      quantity: input.quantity,
+      unit: input.unit?.trim() || null,
+      ...supplier,
+      needDate: input.needDate,
+      promisedDate: input.promisedDate ?? null,
+      planNodeId: link.value ?? null,
+      buyerId: input.buyerId || null,
+      note: input.note?.trim() || null,
+      createdBy: actorId,
+      ...(input.arrivedDate ? { status: 'ARRIVED', arrivedDate: input.arrivedDate, arrivalSource: 'PC', arrivedBy: actorId, arrivedAt: now } : {}),
+    },
   })
+  // 补录已到货的不发"可以开工"（不是这一刻到的）；挂上未到货的，作废没处理的"可以开工"
+  await refreshPartReady(tx, line.partId, false)
+  return { ...line, planWarning: purchaseWarning(line, link.node) }
 }
 
 /** 采购行的日期晚于节点计划日：有承诺到货日看承诺日，否则看需求日 */
@@ -272,6 +276,7 @@ export async function deleteLine(id: string) {
       throw new FlowError('已关联付款申请，不能删除；不再跟踪请改为"已取消"')
     }
     await deleteCommentsOf(tx, 'purchase', id) // 留言和它发出的提醒都没有外键，一起删
+    if (await tx.purchasePlanItem.findUnique({ where: { convertedLineId: id }, select: { id: true } })) throw new FlowError('由采购计划转入的采购行不能删除，请改为已取消')
     await tx.purchaseLine.delete({ where: { id } })
     await clearAlertKeys(tx, [w6Key(id)])
     await refreshPartReady(tx, line.partId, line.status === 'OPEN')

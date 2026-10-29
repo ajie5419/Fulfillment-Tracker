@@ -20,7 +20,7 @@ const props = withDefaults(
 const value = defineModel<string | null | undefined>('value')
 const emit = defineEmits<{ pick: [planDate: string] }>()
 
-const get = $fetch as unknown as <T>(url: string, opts?: { query?: object }) => Promise<T>
+const get = useRequestFetch() as unknown as <T>(url: string, opts?: { query?: object }) => Promise<T>
 const opts = ref<{ published: boolean; nodes: Opt[] }>({ published: false, nodes: [] })
 async function load() {
   const wo = props.workOrderNumber

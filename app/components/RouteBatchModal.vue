@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const requestFetch = useRequestFetch()
 /**
  * 批量编排（生产管理重设计第一批，zhao 10-26 同意放第一批）：工序编排页勾选多个工件后——
  *   template：一次套用模板（只给还没有工序的工件套，已有工序链的跳过）；
@@ -30,7 +31,7 @@ watch(
     for (const k of Object.keys(form) as (keyof typeof form)[]) form[k] = undefined
     if (props.mode === 'template') {
       try {
-        templates.value = await $fetch<TemplateRow[]>('/api/templates')
+        templates.value = await requestFetch<TemplateRow[]>('/api/templates')
       } catch (e) {
         message.error(apiError(e))
       }

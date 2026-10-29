@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Vue from 'vue'
 import * as workbench from '../../shared/workbench'
+import * as drawing from '../../shared/drawing'
 import * as purchases from '../../shared/purchases'
 import { deferred, flushVue, mountScript } from '../helpers/vue-script'
 
@@ -16,6 +17,8 @@ beforeEach(() => {
   for (const name of ['ref', 'reactive', 'computed', 'watch', 'onMounted', 'onBeforeUnmount'] as const) vi.stubGlobal(name, Vue[name])
   vi.stubGlobal('useWorkOrders', async () => ({ data: Vue.ref([{ workOrderNumber: 'WO-A' }, { workOrderNumber: 'WO-B' }]) }))
   vi.stubGlobal('useMaster', async () => ({ data: Vue.ref({ suppliers: [], users: [] }) }))
+  vi.stubGlobal('useRequestFetch', () => fetchApi)
+  vi.stubGlobal('useAsyncData', (_key: unknown, _handler: unknown, options: { default: () => unknown }) => ({ data: Vue.ref(options.default()), pending: Vue.ref(false), error: Vue.ref(null), refresh: vi.fn() }))
   vi.stubGlobal('useFetch', async () => ({ data: parts, refresh: vi.fn() }))
   vi.stubGlobal('usePagedList', () => ({ ready: Promise.resolve(), data: Vue.ref({ rows: [], stats: null, groups: {} }), rows: Vue.ref([]), total: Vue.ref(0), pending: Vue.ref(false), error: Vue.ref(null), finished: Vue.ref(false), refresh: vi.fn() }))
   vi.stubGlobal('message', message)
@@ -44,7 +47,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 async function mount(file: string, props: Record<string, unknown> = {}) {
-  const result = await mountScript(file, props, { '#shared/workbench': workbench, '#shared/purchases': purchases })
+  const result = await mountScript(file, props, { '#shared/drawing': drawing, '#shared/workbench': workbench, '#shared/purchases': purchases })
   cleanups.push(result.unmount)
   return result
 }

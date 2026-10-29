@@ -75,7 +75,7 @@ export async function lockTask(tx: Tx, id: string, alsoParts: string[] = []): Pr
 }
 
 /** 是否有关联本任务、不是作废状态的发放单 */
-async function isReleased(tx: Tx, taskId: string) {
+export async function isReleased(tx: Tx, taskId: string) {
   return (await tx.release.count({ where: { drawingTaskId: taskId, status: 'ACTIVE' } })) > 0
 }
 

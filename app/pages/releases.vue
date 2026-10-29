@@ -88,6 +88,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
 </script>
 
 <template>
+  <div>
   <div class="ft-page">
   <div v-if="stats" class="ft-stats">
     <UiStatCard label="发放单" :value="stats.all" unit="张" tone="primary" accent icon="dot" clickable :active="!filter.progress" sub="当前工单 / 类型 / 范围下全部" @click="filter.progress = undefined" />
@@ -165,6 +166,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
 
   <ReleaseCreateModal :open="creating" :work-order-number="filter.workOrderNumber" @close="creating = false" @done="created" />
   <ReleaseDrawer :id="selected" @close="selected = null" @changed="refresh()" />
+  </div>
 </template>
 
 <style scoped>

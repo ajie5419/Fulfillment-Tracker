@@ -69,6 +69,8 @@ export const leaderTeamOfStep = (s: { mode: string; supplierId: string | null })
  *   设置页"设项目经理"（PUT /api/settings/work-orders/:wo）仍只限管理员，不走这里
  */
 export type Operation =
+  | 'purchasePlan'
+  | 'purchasePlanConvert'
   | 'drawing'
   | 'processDoc'
   | 'release'
@@ -100,6 +102,8 @@ export interface OperationTarget {
 }
 
 export const OPERATION_DENIED: Record<Operation, string> = {
+  purchasePlan: '只有技术部或管理员可以编辑、下发、撤回采购计划',
+  purchasePlanConvert: '只有采购部或管理员可以转入采购行',
   drawing: '只有技术部或管理员可以编辑设计任务',
   processDoc: '只有工艺部或管理员可以修改料单、工艺状态',
   release: '只有技术部、管理员可以发放图纸和设计变更；工艺部可以发放工艺文件',
@@ -121,6 +125,10 @@ export function canOperate(ctx: RoleContext, op: Operation, target: OperationTar
   const pm = isPM(ctx, target.workOrderNumber) || (target.workOrderNumbers ?? []).some((wo) => isPM(ctx, wo))
   const outsource = has(ctx, 'OUTSOURCE_COORDINATOR')
   switch (op) {
+    case 'purchasePlan':
+      return inDept(ctx, 'TECH')
+    case 'purchasePlanConvert':
+      return inDept(ctx, 'PURCHASE')
     case 'drawing':
       return inDept(ctx, 'TECH')
     case 'processDoc':
@@ -228,6 +236,8 @@ export function menuSections(ctx: RoleContext): MenuSection[] {
 /** 给前端的权限标志（不含"该工单项目经理""该工序责任人"这类按对象判断的部分，前端用 pmOf / 本人 ID 补上；后端仍是最终判断） */
 export function permissionFlags(ctx: RoleContext) {
   return {
+    purchasePlan: canOperate(ctx, 'purchasePlan'),
+    purchasePlanConvert: canOperate(ctx, 'purchasePlanConvert'),
     drawing: canOperate(ctx, 'drawing'),
     /** 改料单、工艺状态（工艺部、管理员） */
     processDoc: canOperate(ctx, 'processDoc'),

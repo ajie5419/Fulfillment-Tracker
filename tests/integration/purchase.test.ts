@@ -437,7 +437,7 @@ describe.skipIf(!DB)('关键物料到货与付款（R10）', () => {
       return order.indexOf(a) - order.indexOf(b)
     }))
     expect(list.find((p) => p.id === pBoth.id)?.nearestNeedDate).toEqual(dayOff(3))
-    expect(list.find((p) => p.id === pDone.id)?.nearestNeedDate).toBeNull()
+    expect(list.find((p) => p.id === pDone.id)?.nearestNeedDate).toEqual(dayOff(1)) // 显示需求日；排序仍将无 OPEN 行的排最后
     expect(list[0]!.permissions).toEqual({ setStatus: false, delete: false })
 
     // 项目经理不能标已付；财务、管理员可以

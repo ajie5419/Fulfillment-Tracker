@@ -200,6 +200,7 @@ async function submit() {
 </script>
 
 <template>
+  <div>
   <a-result v-if="me && !me.devTools" status="404" title="演示工具未开启" sub-title="设置环境变量 NUXT_DEV_TOOLS=1 后重启" />
   <a-space v-else direction="vertical" size="large" style="width: 100%">
     <a-card title="QMS 同步">
@@ -295,6 +296,7 @@ async function submit() {
       </a-space>
     </a-card>
   </a-space>
+  </div>
 </template>
 
 <style scoped>

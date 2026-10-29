@@ -49,6 +49,8 @@ describe.skipIf(!DB)('外协主链路', () => {
     await db.qmsSupplier.deleteMany()
     await db.qmsProcess.deleteMany()
     await db.qmsUser.deleteMany()
+    // 角色/项目经理关系无用户外键；清理复用账号的遗留工单，避免其他测试把本测试账号意外限域。
+    await db.workOrderExt.deleteMany({ where: { projectManagerId: { in: ['u-pm', 'u-out'] } } })
 
     const now = new Date()
     await db.qmsWorkOrder.create({

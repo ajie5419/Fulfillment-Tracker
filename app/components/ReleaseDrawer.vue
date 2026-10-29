@@ -3,6 +3,8 @@
 const props = defineProps<{ id: string | null }>()
 const emit = defineEmits<{ close: []; changed: [] }>()
 
+// 限定读取签名，避免 Nitro 全站路由类型递归展开。
+const requestFetch = useRequestFetch() as unknown as (url: string) => Promise<ReleaseDetail>
 const detail = ref<ReleaseDetail | null>(null)
 const loading = ref(false)
 const loadError = ref('')
@@ -17,7 +19,7 @@ async function load() {
   loading.value = !!id
   if (!id) return
   try {
-    const result = await fetchRelease(id)
+    const result = await fetchRelease(id, requestFetch)
     if (seq === loadSeq && props.id === id) detail.value = result
   } catch (e) {
     if (seq === loadSeq && props.id === id) loadError.value = apiError(e)

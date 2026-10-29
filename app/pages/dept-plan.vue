@@ -18,7 +18,7 @@ const dept = computed({ get: () => q('dept'), set: (v) => void router.replace({ 
 const wo = computed({ get: () => q('wo'), set: (v) => void router.replace({ query: { ...route.query, wo: v || undefined } }) })
 const focusId = computed(() => q('node'))
 
-const EMPTY: DeptPlanView = { dept: null, deptText: null, deptOptions: [], workOrderOptions: [], groups: [], summary: { pending: 0, unsplit: 0, overdueTasks: 0, dueSoonTasks: 0, active: 0, done: 0 }, focusNodeId: null }
+const EMPTY: DeptPlanView = { dept: null, deptText: null, deptOptions: [], workOrderOptions: [], groups: [], summary: { pending: 0, returned: 0, unsplit: 0, overdueTasks: 0, dueSoonTasks: 0, active: 0, done: 0 }, focusNodeId: null }
 const { data, pending, error, refresh } = await useFetch<DeptPlanView>('/api/plan/dept', {
   query: computed(() => ({ dept: dept.value, wo: wo.value, node: focusId.value })),
   default: () => EMPTY,
@@ -52,6 +52,7 @@ const inTab = (n: DeptPlanNode) => n.tab === tab.value || (tab.value === 'pendin
 const groups = computed(() => data.value.groups.map((g) => ({ ...g, shown: g.nodes.filter(inTab) })).filter((g) => g.shown.length))
 const tabOptions = computed(() => [
   { value: 'pending', label: `待接收 ${data.value.summary.pending}` },
+  { value: 'returned', label: `已退回 ${data.value.summary.returned}` },
   { value: 'active', label: `执行中 ${data.value.summary.active}` },
   { value: 'done', label: '已完成' },
 ])
@@ -118,6 +119,7 @@ const planText = (n: DeptPlanNode) => (n.startDate && n.startDate !== n.planDate
     <a-result v-else-if="!pending && !data.deptOptions.length" status="info" title="你还没有对应的业务部门" sub-title="部门计划按业务部门显示。请管理员在“设置 → 部门对照”里把你的 QMS 部门对应到业务部门。" />
     <template v-else>
       <div class="ft-stats">
+        <UiStatCard label="已退回" :value="data.summary.returned" unit="个节点" tone="late" clickable :active="tab === 'returned'" @click="tab = 'returned'" />
         <UiStatCard label="待接收" :value="data.summary.pending" unit="个节点" tone="risk" accent icon="warn" clickable :active="tab === 'pending'" sub="项目计划已发布，等本部门接收" @click="tab = 'pending'" />
         <UiStatCard label="已接收未分解" :value="data.summary.unsplit" unit="个节点" tone="primary" accent icon="dot" clickable :active="tab === 'active'" sub="还没分解任务、指定责任人" @click="tab = 'active'" />
         <UiStatCard label="任务逾期" :value="data.summary.overdueTasks" unit="项" tone="late" accent icon="alert" sub="分解的任务过了计划完成日" />
@@ -140,7 +142,7 @@ const planText = (n: DeptPlanNode) => (n.startDate && n.startDate !== n.planDate
         </template>
 
         <a-spin :spinning="pending">
-          <a-empty v-if="!groups.length" class="empty" :description="tab === 'pending' ? '没有待接收的节点' : tab === 'active' ? '没有执行中的节点' : '还没有完成的节点'" />
+          <a-empty v-if="!groups.length" class="empty" :description="tab === 'returned' ? '没有已退回的节点' : tab === 'pending' ? '没有待接收的节点' : tab === 'active' ? '没有执行中的节点' : '还没有完成的节点'" />
           <div v-for="g in groups" :key="g.workOrder.workOrderNumber" class="group">
             <div class="group-head">
               <NuxtLink :to="{ path: '/plan', query: { wo: g.workOrder.workOrderNumber } }" class="wo">{{ g.workOrder.workOrderNumber }}</NuxtLink>

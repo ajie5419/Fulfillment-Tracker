@@ -146,6 +146,7 @@ const woOptions = computed(() => workOrders.value.map((w) => ({ value: w.workOrd
 </script>
 
 <template>
+  <div>
   <a-card>
     <template #title>
       <span class="ft-title">工序编排 <UiHelpTip>给工件排工序链：工序、方式（自制 / 厂内外协 / 厂外外协）、班组或外协厂、负责人、应开工和要求完成日、所属总计划节点。点"编排"在右侧改，勾选多个工件可批量套模板、批量设负责人 / 班组 / 日期。工件一般由技术部发放图纸时附 BOM 自动建好。开工、完工、发出在"生产调度"和"外协"做。</UiHelpTip></span>
@@ -224,6 +225,7 @@ const woOptions = computed(() => workOrders.value.map((w) => ({ value: w.workOrd
       <a-form-item label="QMS BOM 物料 ID" extra="填了以后，QMS 报检按物料 ID 自动匹配；不填则按名称和工序匹配"><a-input v-model:value="partForm.qmsPartId" /></a-form-item>
     </a-form>
   </a-modal>
+  </div>
 </template>
 
 <style scoped>

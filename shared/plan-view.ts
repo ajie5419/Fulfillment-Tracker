@@ -109,7 +109,7 @@ export type CanCreate = PlanView['canCreate']
 export interface DeptPlanNode extends PlanNodeRow {
   parentName: string | null
   confirmedDay: string | null
-  tab: 'pending' | 'active' | 'done'
+  tab: 'pending' | 'returned' | 'active' | 'done'
 }
 export interface DeptPlanGroup {
   workOrder: PlanView['workOrder']
@@ -126,6 +126,6 @@ export interface DeptPlanView {
   deptOptions: { value: string; label: string }[]
   workOrderOptions: { value: string; label: string }[]
   groups: DeptPlanGroup[]
-  summary: { pending: number; unsplit: number; overdueTasks: number; dueSoonTasks: number; active: number; done: number }
+  summary: { returned: number; pending: number; unsplit: number; overdueTasks: number; dueSoonTasks: number; active: number; done: number }
   focusNodeId: string | null
 }

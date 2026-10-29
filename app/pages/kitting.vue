@@ -125,6 +125,7 @@ const crossColumns = [
 </script>
 
 <template>
+  <div>
   <div class="ft-page">
   <div v-if="stats" class="ft-stats">
     <UiStatCard label="装配节点" :value="stats.all" unit="个" tone="primary" accent icon="dot" clickable :active="!filter.incomplete" :sub="filter.workOrderNumber ? `工单 ${filter.workOrderNumber}` : '全部工单'" @click="applyCard('all')" />
@@ -234,6 +235,7 @@ const crossColumns = [
   </div>
 
   <KittingNodeModal :open="editOpen" :node="editing" :work-order-number="filter.workOrderNumber" @close="editOpen = false" @done="saved" />
+  </div>
 </template>
 
 <style scoped>

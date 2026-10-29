@@ -32,6 +32,7 @@ type Todo = (typeof todos.value)[number]
 
 /** 安排发出 → 发出登记页（预填该步骤）；安排开工 → 确认后开工；签收 / 确认变更影响 → 手机签收页；可以开工 → 按第一道工序的方式发出或开工 */
 async function open(t: Todo) {
+  if (t.link) return navigateTo(t.link)
   // 接收计划节点（10-23）：到手机端"部门计划"接收 / 退回
   if (t.plan) return navigateTo(t.plan.mobileLink)
   // 完成部门任务（部门计划二次分解）：确认后标完成，完成日记今天
@@ -204,7 +205,7 @@ const entries = computed(() =>
               <span :class="['due', `m-text-${DUE_GROUP_TONE[g.group]}`]">{{ dueText(t, g.group) }}</span>
               <van-tag v-if="t.step?.held" type="warning" class="held">等变更</van-tag>
               <span class="m-spacer" />
-              <van-button v-if="t.action !== 'SIGN_RELEASE'" size="small" plain @click.stop="transferring = t">转交</van-button>
+              <van-button v-if="t.action !== 'SIGN_RELEASE' && t.action !== 'PURCHASE_PLAN_ISSUED'" size="small" plain @click.stop="transferring = t">转交</van-button>
               <van-button v-if="todoPrimaryLabel(t)" size="small" type="primary" @click.stop="open(t)">{{ todoPrimaryLabel(t) }}</van-button>
             </div>
           </MCard>

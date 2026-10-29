@@ -2,15 +2,19 @@
  * 工艺模块（10-27，zhao 定）：按部件（设计任务）跟踪料单、工艺两个状态。
  *
  * 只有工艺部、管理员能改（接口层 assertCanOperate 'processDoc'），其他人只读；每次改状态记一条 process_doc_log（谁、什么时候、从什么改成什么）。
- * 已取消的设计任务不能改，也不在列表里。不和"可以开工"挂钩，不做计划日期和预警（第一版，试点后再看）。
+ * 已取消的设计任务不能改，也不在列表里。开始编制、下发均要求存在有效的关联发放单，不要求签收；修改和撤回允许回退。
+ * 发放单作废时，关联任务的已下发料单 / 工艺改为修改中。料单状态联动"可以开工"待办，不做计划日期和预警。
  *
  * 设计变更联动：技术部发设计变更时（releases.ts createRelease 同一事务），关联工件所在的设计任务、或从设计任务发放的那个任务，
  * 料单已下发的 → 自动改成"修改中"、记一条变更记录（操作人 = 发放人，releaseId = 这张设计变更），并提醒工艺部负责人。
  *
- * 并发：改状态先锁设计任务行（FOR UPDATE）再按最新状态判断，点两次"下发"第二次会提示"状态已经变了"。
+ * 并发：改状态先锁全部关联工件，再锁设计任务行（FOR UPDATE）按最新状态判断，点两次"下发"第二次会提示"状态已经变了"。
  * 加锁顺序与设计任务一致：工件 → 设计任务 → 发放单（设计变更联动在 createRelease 里，此前只锁了工件和那一个设计任务）。
  */
-import { Prisma, type DrawingTaskStatus, type MaterialListStatus, type ProcessDocKind, type ProcessDocStatus, type Release } from '@prisma/client'
+import { Prisma, type DrawingTask, type DrawingTaskStatus, type MaterialListStatus, type ProcessDocKind, type ProcessDocStatus, type Release } from '@prisma/client'
+import { lockTask, drawingTx, isReleased } from '../drawings/drawings'
+import { processReleaseBlockReason } from '../../../shared/process'
+import { lockParts, refreshPartReady } from '../purchases/purchases'
 import { prisma } from '../../utils/prisma'
 import { canSee, resolveScope } from '../../utils/auth'
 import { FlowError } from '../flow/errors'
@@ -35,7 +39,7 @@ type Tx = Prisma.TransactionClient
 
 const uniq = <T>(xs: T[]) => [...new Set(xs)]
 
-/** 图纸已经发放 = 设计任务状态是 待客户确认 / 已完成（drawings/constants.ts deriveStatus：这两个状态都要求有不是作废状态的发放单） */
+/** 列表按派生状态筛选；操作校验直接复用 drawings.isReleased 的有效发放事实。 */
 export const RELEASED_DRAWING_STATUSES: DrawingTaskStatus[] = ['CUSTOMER_PENDING', 'DONE']
 
 // ───────────── 改状态 ─────────────
@@ -48,15 +52,17 @@ export interface ActionInput {
 
 /** 改料单 / 工艺状态（权限在接口层判断）。返回新状态 */
 export async function changeStatus(taskId: string, input: ActionInput, actorId: string, now = new Date()) {
-  return prisma.$transaction(async (tx) => {
-    const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM drawing_task WHERE id = ${taskId} FOR UPDATE`
-    if (!rows.length) throw new FlowError('设计任务不存在')
-    const task = await tx.drawingTask.findUniqueOrThrow({ where: { id: taskId } })
+  return drawingTx(async (tx) => {
+    const task = await lockTask(tx, taskId)
     if (task.status === 'CANCELLED') throw new FlowError('设计任务已取消，不能再改料单、工艺')
     const current = input.kind === 'MATERIAL' ? task.materialStatus : task.processStatus
     const to = nextStatus(input.kind, current, input.action)
     if (!to) {
       throw new FlowError(`${KIND_TEXT[input.kind]}现在是"${statusText(input.kind, current)}"，不能${ACTION_TEXT[input.action]}，请刷新`)
+    }
+    if (input.action === 'start' || input.action === 'issue') {
+      const reason = processReleaseBlockReason(input.kind, input.action, await isReleased(tx, taskId))
+      if (reason) throw new FlowError(reason)
     }
     const data: Prisma.DrawingTaskUncheckedUpdateInput =
       input.kind === 'MATERIAL'
@@ -66,11 +72,41 @@ export async function changeStatus(taskId: string, input: ActionInput, actorId: 
     await tx.processDocLog.create({
       data: { taskId, kind: input.kind, fromStatus: current, toStatus: to, note: input.note?.trim() || null, actorId, createdAt: now },
     })
+    if (input.kind === 'MATERIAL') {
+      for (const partId of task.parts.map((p) => p.partId).sort()) await refreshPartReady(tx, partId, to === 'ISSUED')
+    }
     return { id: taskId, kind: input.kind, status: to, statusText: statusText(input.kind, to) }
   })
 }
 
+/** 发放单作废：调用方已按工件 → 任务 → 发放单加锁，同一事务内回退已下发文档。 */
+export async function markRevisingByVoid(tx: Tx, task: DrawingTask & { parts: { partId: string }[] }, release: Pick<Release, 'id' | 'releaseNo'>, actorId: string, now: Date) {
+  if (task.status === 'CANCELLED') return
+  const note = `因发放单作废 ${release.releaseNo}`
+  for (const kind of ['MATERIAL', 'PROCESS'] as const) {
+    const current = kind === 'MATERIAL' ? task.materialStatus : task.processStatus
+    if (current !== 'ISSUED') continue
+    await tx.drawingTask.update({
+      where: { id: task.id },
+      data: kind === 'MATERIAL'
+        ? { materialStatus: 'REVISING', materialAt: now, materialBy: actorId }
+        : { processStatus: 'REVISING', processAt: now, processBy: actorId },
+    })
+    await tx.processDocLog.create({ data: { taskId: task.id, kind, fromStatus: current, toStatus: 'REVISING', note, releaseId: release.id, actorId, createdAt: now } })
+  }
+  if (task.materialStatus === 'ISSUED') {
+    for (const partId of task.parts.map((p) => p.partId).sort()) await refreshPartReady(tx, partId, false)
+  }
+}
+
 // ───────────── 设计变更联动 ─────────────
+
+/** 在锁任务 / 工序前，一次锁完变更涉及的任务关联工件（同一料单可能关联多个工件）。 */
+export async function lockMaterialChangeParts(tx: Tx, partIds: string[], taskId: string | null) {
+  const linked = await tx.drawingTaskPart.findMany({ where: { OR: [{ partId: { in: partIds } }, ...(taskId ? [{ taskId }] : [])] }, select: { taskId: true } })
+  const all = await tx.drawingTaskPart.findMany({ where: { taskId: { in: uniq(linked.map((l) => l.taskId)) } }, select: { partId: true } })
+  await lockParts(tx, [...partIds, ...all.map((p) => p.partId)])
+}
 
 /**
  * 设计变更发出时（createRelease 同一事务里调用）：受影响的设计任务里，料单已下发的改成"修改中"，并提醒工艺部负责人。
@@ -95,6 +131,8 @@ export async function markRevisingByChange(tx: Tx, release: Pick<Release, 'id' |
   await tx.processDocLog.createMany({
     data: tasks.map((t) => ({ taskId: t.id, kind: 'MATERIAL' as const, fromStatus: 'ISSUED', toStatus: 'REVISING', note, releaseId: release.id, actorId: release.issuerId, createdAt: now })),
   })
+  const affected = await tx.drawingTaskPart.findMany({ where: { taskId: { in: tasks.map((t) => t.id) } }, select: { partId: true } })
+  for (const partId of uniq(affected.map((p) => p.partId)).sort()) await refreshPartReady(tx, partId, false)
   const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PROCESS_DEPT }, select: { userId: true } })
   const candidates = uniq(heads.map((h) => h.userId))
   const active = candidates.length
@@ -130,15 +168,15 @@ const MAX_LIST_ROWS = 500
 function viewWhere(view: ProcessView): Prisma.DrawingTaskWhereInput {
   switch (view) {
     case 'todo':
-      return { OR: [{ materialStatus: { not: 'ISSUED' } }, { processStatus: 'DRAFTING' }] }
+      return { OR: [{ materialStatus: { not: 'ISSUED' } }, { processStatus: { in: ['DRAFTING', 'REVISING'] } }] }
     case 'waiting':
       return { status: { in: RELEASED_DRAWING_STATUSES }, materialStatus: 'NOT_STARTED' }
     case 'drafting':
       return { OR: [{ materialStatus: 'DRAFTING' }, { processStatus: 'DRAFTING' }] }
     case 'revising':
-      return { materialStatus: 'REVISING' }
+      return { OR: [{ materialStatus: 'REVISING' }, { processStatus: 'REVISING' }] }
     case 'issued':
-      return { materialStatus: 'ISSUED', processStatus: { not: 'DRAFTING' } }
+      return { materialStatus: 'ISSUED', processStatus: { notIn: ['DRAFTING', 'REVISING'] } }
     default:
       return {}
   }
@@ -150,7 +188,7 @@ async function stats(scope: Prisma.DrawingTaskWhereInput[]) {
   const [waiting, drafting, revising, materialIssued, processDrafting, processIssued, total] = await Promise.all([
     count(viewWhere('waiting')),
     count({ materialStatus: 'DRAFTING' }),
-    count({ materialStatus: 'REVISING' }),
+    count(viewWhere('revising')),
     count({ materialStatus: 'ISSUED' }),
     count({ processStatus: 'DRAFTING' }),
     count({ processStatus: 'ISSUED' }),
@@ -247,7 +285,7 @@ export async function listLogs(taskId: string) {
       note: l.note,
       actorName: names.user.get(l.actorId) ?? l.actorId,
       release: l.releaseId ? { id: l.releaseId, releaseNo: relNo.get(l.releaseId) ?? null } : null,
-      /** 设计变更自动改的 */
+      /** 设计变更 / 发放单作废自动改的 */
       auto: !!l.releaseId,
       createdAt: l.createdAt,
     })),

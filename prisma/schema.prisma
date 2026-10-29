@@ -205,6 +205,8 @@ model Part {
   @@index([workOrderNumber, drawingNo])
   @@index([qmsPartId])
   @@map("part")
+  purchasePlanItems PurchasePlanItem[]
+
 }
 
 enum StepMode {
@@ -395,6 +397,7 @@ model Issue {
   refType               String?       @db.VarChar(20)
   refId                 String?       @db.VarChar(64)
   category              IssueCategory
+  title                 String?       @db.VarChar(100)
   description           String        @db.Text
   photos                Json?
   reporterId            String?       @db.VarChar(64)
@@ -735,6 +738,8 @@ model PurchaseLine {
   @@index([partId])
   @@index([planNodeId])
   @@map("purchase_line")
+  purchasePlanItem PurchasePlanItem?
+
 }
 
 /// 每条 QMS 进货检验（INCOMING）只自动处理一次：MATCHED = 已确认到货；NO_CANDIDATE / MULTIPLE = 没对上 / 对上多条，留给手工确认
@@ -864,6 +869,7 @@ enum ProcessDocStatus {
   NONE // 无（还没开始或不需要）
   DRAFTING // 编制中
   ISSUED // 已下发
+  REVISING // 修改中（发放单作废自动回退）
 }
 
 enum ProcessDocKind {
@@ -871,7 +877,7 @@ enum ProcessDocKind {
   PROCESS // 工艺
 }
 
-/// 料单 / 工艺状态的变更记录：每次改状态一条（谁、什么时候、从什么改成什么）；设计变更自动改的 actorId 为发放人，releaseId 为那张设计变更
+/// 料单 / 工艺状态变更记录；设计变更、发放单作废自动回退时，actorId 为操作人、releaseId 为来源发放单
 model ProcessDocLog {
   id         String         @id @default(cuid())
   taskId     String
@@ -1071,6 +1077,8 @@ model PlanNode {
   @@index([confirmStatus])
   @@index([parentId])
   @@map("plan_node")
+  purchasePlans PurchasePlan[]
+
 }
 
 /**
@@ -1181,4 +1189,59 @@ model Comment {
   @@index([refType, refId])
   @@index([workOrderNumber])
   @@map("comment")
+}
+
+enum PurchasePlanStatus {
+  DRAFT
+  ISSUED
+  WITHDRAWN
+}
+
+enum PurchasePlanSource {
+  MANUAL
+  BOM_AUTO
+}
+
+model PurchasePlan {
+  id              String             @id @default(cuid())
+  workOrderNumber String             @db.VarChar(64)
+  title           String             @db.VarChar(191)
+  category        String             @default("") @db.VarChar(191)
+  planNodeId      String?
+  status          PurchasePlanStatus @default(DRAFT)
+  source          PurchasePlanSource @default(MANUAL)
+  createdBy       String             @db.VarChar(64)
+  issuedBy        String?            @db.VarChar(64)
+  issuedAt        DateTime?
+  note            String?            @db.VarChar(500)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  planNode        PlanNode?          @relation(fields: [planNodeId], references: [id], onDelete: SetNull)
+  items           PurchasePlanItem[]
+
+  @@index([workOrderNumber, status])
+  @@index([planNodeId])
+  @@map("purchase_plan")
+}
+
+model PurchasePlanItem {
+  id              String        @id @default(cuid())
+  planId          String
+  materialName    String        @db.VarChar(191)
+  spec            String?       @db.VarChar(191)
+  quantity        Decimal       @db.Decimal(14, 3)
+  unit            String?       @db.VarChar(20)
+  needDate        DateTime?
+  partId          String?
+  supplierName    String?       @db.VarChar(191)
+  note            String?       @db.VarChar(500)
+  sortOrder       Int           @default(0)
+  convertedLineId String?       @unique
+  plan            PurchasePlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+  part            Part?         @relation(fields: [partId], references: [id], onDelete: SetNull)
+  convertedLine   PurchaseLine? @relation(fields: [convertedLineId], references: [id], onDelete: Restrict)
+
+  @@index([planId, sortOrder])
+  @@index([partId])
+  @@map("purchase_plan_item")
 }

@@ -90,8 +90,8 @@ describe.skipIf(!DB)('项目日历', () => {
     expect(r.summary.overdue).toEqual({ orders: 1, units: 2 }) // A
     expect(r.summary.noPlan).toEqual({ orders: 1, units: 1 }) // C
     expect(r.completions.map((c) => [c.workOrderNumber, c.state])).toEqual([
+      ['C-B', 'DONE'], // 已完成节点的预计日为实际完成日 10-15，展示排序在 A 前
       ['C-A', 'OVERDUE'],
-      ['C-B', 'DONE'],
       ['C-C', 'NO_PLAN'],
     ])
     expect(r.completions.find((c) => c.workOrderNumber === 'C-C')!.planDay).toBe('2026-10-30') // 草稿不用节点日，用 QMS 交期
@@ -103,8 +103,8 @@ describe.skipIf(!DB)('项目日历', () => {
   it('月视图的工单含首尾跨月的整周（列表按整周分组），统计仍只算本月', async () => {
     const r = await cal.getCalendar('month', '2026-11-05', NOW)
     expect(r.period).toMatchObject({ start: '2026-11-01', end: '2026-11-30' })
-    // 11 月第一周是 10-26 ~ 11-01：B（计划 10-28）、C（交期 10-30）也带上
-    expect(r.completions.map((c) => c.workOrderNumber)).toEqual(['C-B', 'C-C', 'C-D'])
+    // 11 月第一周是 10-26 ~ 11-01：C（交期 10-30）带上；B 展示日为实际完成日 10-15，不在整周范围
+    expect(r.completions.map((c) => c.workOrderNumber)).toEqual(['C-C', 'C-D'])
     expect(r.summary.planned).toEqual({ orders: 1, units: 5 }) // 只算 11 月的 D
   })
 

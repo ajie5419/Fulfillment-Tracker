@@ -2,7 +2,7 @@
 import { toneOfVant } from '#shared/mobile-todo'
 
 /** 手机：到货确认（R10）。未到货的关键物料（缺料、超期的在前）/ 已到货；点一条进入确认页。仓库、使用部门、采购都可以确认 */
-definePageMeta({ layout: 'mobile', keepalive: true })
+definePageMeta({ layout: 'mobile', keepalive: true, scrollToTop: false })
 const route = useRoute()
 const router = useRouter()
 const tab = computed({
@@ -26,11 +26,22 @@ await list.ready
 const { rows, pending, error, total, finished, next } = list
 const scroll = ref(0)
 onBeforeRouteLeave(() => { scroll.value = window.scrollY })
-onActivated(() => nextTick(() => window.scrollTo(0, scroll.value)))
+// Keep enough height while rebuilding, then restore after the fresh rows render.
+const savedHeight = ref(0)
+onBeforeRouteLeave(() => { savedHeight.value = document.documentElement.scrollHeight })
+const restoring = ref(false)
+const changingPage = useState('page-changing', () => false)
+onActivated(() => { restoring.value = true })
+watch([pending, restoring, changingPage], async ([loading, restore, changing]) => {
+  if (loading || changing || !restore) return
+  await nextTick()
+  window.scrollTo(0, scroll.value)
+  restoring.value = false
+}, { flush: 'post' })
 </script>
 
 <template>
-  <div>
+  <div :style="restoring && savedHeight ? { minHeight: `${savedHeight}px` } : undefined">
     <van-nav-bar title="到货确认" left-arrow @click-left="navigateTo('/m')" />
     <van-tabs v-model:active="tab">
       <van-tab title="未到货" name="open" />

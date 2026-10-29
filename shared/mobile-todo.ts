@@ -82,6 +82,7 @@ export function todoPrimaryLabel(t: {
   release?: unknown
   step?: { status: string; mode: string } | null
 }): string | null {
+  if (t.action === 'PURCHASE_PLAN_ISSUED') return '查看采购计划'
   if (t.plan) return '去接收'
   if (t.planTask) return '完成'
   if (t.release) return t.action === 'CONFIRM_CHANGE' ? '去确认' : '去签收'

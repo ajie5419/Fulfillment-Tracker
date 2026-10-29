@@ -62,7 +62,8 @@ describe('shared paged list adapter', () => {
     activate(); await settle()
     expect(reads[2]!.query).toEqual({ view: 'open', q: 'steel', page: 1, pageSize: 2 })
     reads[2]!.resolve([{ id: 'b' }, { id: 'c' }], 5); await settle()
-    expect(list.rows.value.map(r => r.id)).toEqual(['a', 'b', 'c', 'd'])
+    expect(list.rows.value).toEqual([])
+    expect(list.pending.value).toBe(true)
     reads[3]!.resolve([{ id: 'd' }, { id: 'e' }], 5); await settle()
     expect(list.rows.value.map(r => r.id)).toEqual(['b', 'c', 'd', 'e'])
     expect(list.total.value).toBe(5)
@@ -72,7 +73,7 @@ describe('shared paged list adapter', () => {
     expect(list.finished.value).toBe(true)
   })
 
-  it('preserves the snapshot on reconciliation failure and retries without clearing rows', async () => {
+  it('hides stale rows on reconciliation failure and retries the retained pages', async () => {
     const list = scope.run(() => usePagedList<Row>('/api/list', { key: 'test', query: {}, mode: 'append', pageSize: ref(1) }))!
     reads[0]!.resolve([{ id: 'a' }], 3); await settle()
     list.next(); await settle()
@@ -80,7 +81,7 @@ describe('shared paged list adapter', () => {
     invalidatePagedList('test'); await settle()
     reads[2]!.resolve([{ id: 'b' }], 2); await settle()
     reads[3]!.reject(); await settle()
-    expect(list.rows.value.map(r => r.id)).toEqual(['a', 'b'])
+    expect(list.rows.value).toEqual([])
     expect(list.total.value).toBe(3)
     expect(list.error.value).toBeTruthy()
     void list.next(); await settle()
@@ -89,6 +90,17 @@ describe('shared paged list adapter', () => {
     expect(list.total.value).toBe(1)
     expect(list.page.value).toBe(1)
     expect(list.finished.value).toBe(true)
+  })
+
+  it('refreshes when returning even without a local mutation', async () => {
+    const list = scope.run(() => usePagedList<Row>('/api/list', { key: 'test', query: {}, mode: 'append', pageSize: ref(2) }))!
+    reads[0]!.resolve([{ id: 'old' }], 1); await settle()
+    deactivate()
+    activate(); await settle()
+    expect(list.rows.value).toEqual([])
+    expect(list.pending.value).toBe(true)
+    reads[1]!.resolve([{ id: 'fresh' }], 1); await settle()
+    expect(list.rows.value).toEqual([{ id: 'fresh' }])
   })
 
   it('accepts a clamped page while rebuilding a shrinking collection', async () => {

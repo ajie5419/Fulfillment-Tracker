@@ -640,15 +640,20 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(await me(tech)).toMatchObject({ can: { releaseProcessOnly: false, processDoc: false } })
     // 10-27 工艺模块：料单 / 工艺状态只有工艺部（和管理员）能改；技术部、生产部只读；设计任务不存在报错不放过
     {
-      const t = await db.drawingTask.create({ data: { workOrderNumber: MINE, componentName: 'R13 工艺部件', planDate: new Date('2026-12-01') } })
+      const t = await db.drawingTask.create({ data: { workOrderNumber: MINE, componentName: 'R13 工艺部件', ownerId: 'h-tech', planDate: new Date('2026-12-01') } })
       const body = { kind: 'MATERIAL', action: 'start' }
       expect((await send(tech, 'POST', `/api/process/${t.id}/action`, body)).status).toBe(403)
       expect((await send(prod, 'POST', `/api/process/${t.id}/action`, body)).status).toBe(403)
+      expect((await send(proc, 'POST', `/api/process/${t.id}/action`, body)).status).toBe(400)
+      expect((await send(tech, 'POST', `/api/drawings/${t.id}/drawn`, {})).status).toBe(200)
+      const releaseResponse = await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: '工艺编制前正式发放', drawingTaskId: t.id, userIds: ['h-proc'] })
+      expect(releaseResponse.status).toBe(200)
       expect((await send(proc, 'POST', `/api/process/${t.id}/action`, body)).status).toBe(200)
       expect((await send(proc, 'POST', `/api/process/no-such-task/action`, body)).status).toBe(400)
       const list = (await (await get(`/api/process?workOrderNumber=${encodeURIComponent(MINE)}&view=all`, tech)).json()) as { rows: { id: string; materialStatus: string; actions: { material: string[] } }[] }
       expect(list.rows.find((r) => r.id === t.id)).toMatchObject({ materialStatus: 'DRAFTING', actions: { material: [] } })
       expect((await get(`/api/process/${t.id}/logs`, tech)).status).toBe(200)
+      await db.release.deleteMany({ where: { drawingTaskId: t.id } })
       await db.drawingTask.delete({ where: { id: t.id } })
     }
     // 10-24 图纸发放附 BOM：按 kind=bom 上传 .xlsx → 预览（能发图纸的人）→ 发放时按图号建工件；签收人能下载 BOM 表
@@ -1118,4 +1123,40 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(leader, 'POST', `/api/steps/${other.id}/start`, { source: 'MOBILE' })).status).toBe(403)
     await clean()
   })
+  it('采购计划：技术部建/下发、采购部转入；写权限与工单范围在接口拦截', async () => {
+    const send = (sess: Record<string, string>, method: string, path: string, body?: object) => fetch(`${base}${path}`, { method, headers: { cookie: cookieHeader(sess), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+    const tech = await login('h-tech')
+    const buyer = await login('h-buyer')
+    const pm = await login('h-pm')
+    const body = { workOrderNumber: OTHER, title: 'HTTP采购计划', category: '主要外购件' }
+    // 本用例不依赖其他用例发布的总计划状态。
+    await db.workOrderPlan.deleteMany({ where: { workOrderNumber: OTHER } })
+    expect((await send(buyer, 'POST', '/api/purchase-plans', body)).status).toBe(403)
+    const created = await send(tech, 'POST', '/api/purchase-plans', body)
+    expect(created.status).toBe(200)
+    const p = await created.json() as { id: string }
+    try {
+      const added = await send(tech, 'POST', `/api/purchase-plans/${p.id}/items`, { materialName: 'HTTP电机', quantity: 1, needDate: '2026-12-01' })
+      expect(added.status).toBe(200)
+      const item = await added.json() as { id: string }
+      expect((await send(buyer, 'POST', `/api/purchase-plans/${p.id}/issue`)).status).toBe(403)
+      expect((await send(tech, 'POST', `/api/purchase-plans/${p.id}/issue`)).status).toBe(200)
+      expect((await send(tech, 'POST', `/api/purchase-plans/${p.id}/convert`, {})).status).toBe(403)
+      expect((await get(`/api/purchase-plans/${p.id}`, pm)).status).toBe(403)
+      expect((await send(pm, 'POST', `/api/purchase-plans/${p.id}/convert`, {})).status).toBe(403)
+      const converted = await send(buyer, 'POST', `/api/purchase-plans/${p.id}/convert`, { itemIds: [item.id] })
+      expect(converted.status).toBe(200)
+      expect(await converted.json()).toMatchObject({ succeeded: 1, failed: 0 })
+      const detail = await (await get(`/api/purchase-plans/${p.id}`, tech)).json() as { progress: object }
+      expect(detail.progress).toMatchObject({ total: 1, converted: 1, arrived: 0 })
+      const list = await (await get('/api/purchase-plans', pm)).json() as { rows: { id: string }[] }
+      expect(list.rows.some(row => row.id === p.id)).toBe(false)
+    } finally {
+      await db.todo.deleteMany({ where: { refType: 'purchasePlan', refId: p.id } })
+      const ids = (await db.purchasePlanItem.findMany({ where: { planId: p.id } })).flatMap(i => i.convertedLineId ? [i.convertedLineId] : [])
+      await db.purchasePlan.delete({ where: { id: p.id } })
+      await db.purchaseLine.deleteMany({ where: { id: { in: ids } } })
+    }
+  })
+
 })

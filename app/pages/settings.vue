@@ -138,6 +138,7 @@ const woColumns = [
 </script>
 
 <template>
+  <div>
   <a-card v-if="me && !me.isAdmin && (me.can?.planTemplate || me.can?.teamLeader)" title="设置">
     <a-tabs v-model:active-key="tab">
       <a-tab-pane v-if="me.can?.planTemplate" key="plan-templates" tab="总计划模板"><PlanTemplatesTab /></a-tab-pane>
@@ -328,6 +329,7 @@ const woColumns = [
       </a-tab-pane>
     </a-tabs>
   </a-card>
+  </div>
 </template>
 
 <style scoped>

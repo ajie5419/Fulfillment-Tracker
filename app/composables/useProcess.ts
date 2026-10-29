@@ -1,19 +1,19 @@
 /** 工艺模块（料单、工艺状态，10-27）页面共用：文案、状态色、接口调用。与 server/services/process/constants.ts 一致 */
+import type { ProcessKind, ProcessAction } from '#shared/process'
+export type { ProcessKind, ProcessAction } from '#shared/process'
 
 export type MaterialStatusKey = 'NOT_STARTED' | 'DRAFTING' | 'REVISING' | 'ISSUED'
-export type ProcessStatusKey = 'NONE' | 'DRAFTING' | 'ISSUED'
-export type ProcessKind = 'MATERIAL' | 'PROCESS'
-export type ProcessAction = 'start' | 'issue' | 'revise' | 'reset'
+export type ProcessStatusKey = 'NONE' | 'DRAFTING' | 'REVISING' | 'ISSUED'
 
 export const MATERIAL_STATUS_TEXT: Record<MaterialStatusKey, string> = { NOT_STARTED: '未开始', DRAFTING: '编制中', REVISING: '修改中', ISSUED: '已下发' }
-export const PROCESS_STATUS_TEXT: Record<ProcessStatusKey, string> = { NONE: '无', DRAFTING: '编制中', ISSUED: '已下发' }
+export const PROCESS_STATUS_TEXT: Record<ProcessStatusKey, string> = { NONE: '无', DRAFTING: '编制中', REVISING: '修改中', ISSUED: '已下发' }
 
 export const PROCESS_KIND_TEXT: Record<ProcessKind, string> = { MATERIAL: '料单', PROCESS: '工艺' }
 
 type Tone = 'late' | 'risk' | 'done' | 'upstream' | 'none' | 'primary'
 /** 状态胶囊的颜色：修改中 = 延误红（下发的料单作废待改），编制中 = 主色，已下发 = 完成绿，未开始 / 无 = 灰 */
 export const MATERIAL_TONE: Record<MaterialStatusKey, Tone> = { NOT_STARTED: 'none', DRAFTING: 'primary', REVISING: 'late', ISSUED: 'done' }
-export const PROCESS_TONE: Record<ProcessStatusKey, Tone> = { NONE: 'none', DRAFTING: 'primary', ISSUED: 'done' }
+export const PROCESS_TONE: Record<ProcessStatusKey, Tone> = { NONE: 'none', DRAFTING: 'primary', REVISING: 'late', ISSUED: 'done' }
 
 /** 按钮文字（料单 / 工艺各一套） */
 export function actionLabel(kind: ProcessKind, a: ProcessAction) {

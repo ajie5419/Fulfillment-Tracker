@@ -5,7 +5,7 @@
  * 规则：
  *   - 列按表头名称识别（图号、版号、部件名称、数量；顺序随意），表头可以不在第 1 行（CAD 导出常带标题行）；
  *   - 每个图号建一个工件（名称、图号、版号、数量），不建工序：自制还是外协由生产识别后再排；
- *   - 螺栓、螺母不建工件（生产辅材采购）；没有图号的行不建（外购件走技术部的采购计划）；
+ *   - 螺栓、螺母不建工件（生产辅材采购）；没有图号的行不建工件，正式发放时另建采购计划草稿；
  *   - 文件里同一图号出现多次（挂在不同部件下）合成一个工件，数量相加；
  *   - 工单里已有同图号的工件就跳过，绝不修改已有工件；版号不一样时单独列出，按设计变更处理；
  *   - 数量不是正整数等错误：整批不导入，列出每行问题（行号 = Excel 行号）。
@@ -261,7 +261,7 @@ export function classifyBom(rows: RawBomRow[], existing: ExistingPart[]): { line
       continue
     }
     if (!drawingNo) {
-      lines.push({ rows: [r.row], drawingNo: null, revision, name: name!, quantity: parseQuantity(r.quantity) ?? 0, status: 'noDrawing', notes: ['没有图号：外购件走技术部采购计划，不建工件'] })
+      lines.push({ rows: [r.row], drawingNo: null, revision, name: name!, quantity: parseQuantity(r.quantity) ?? 0, status: 'noDrawing', notes: ['没有图号：不建工件，正式发放时生成采购计划草稿'] })
       continue
     }
     const quantity = parseQuantity(r.quantity)
@@ -344,6 +344,9 @@ export interface TechBomResult {
   revisionFilled: number
   /** 不建的行：螺栓螺母、没有图号的外购件 */
   skipped: number
+  /** 无图号外购件自动生成的草稿（仅正式应用时落库） */
+  purchasePlanId?: string
+  purchasePlanItems?: number
 }
 
 /**
@@ -354,7 +357,7 @@ export interface TechBomResult {
  *   - 其余新图号建工件，已有的一并关联到发放单。
  * 分批发图纸时每批只带自己那部分 BOM，按图号累加，不会重复建。
  */
-export async function applyTechBom(tx: Prisma.TransactionClient, workOrderNumber: string, rows: RawBomRow[]): Promise<TechBomResult> {
+export async function applyTechBom(tx: Prisma.TransactionClient, workOrderNumber: string, rows: RawBomRow[], context?: { createdBy: string; title?: string }): Promise<TechBomResult> {
   await tx.$queryRaw`SELECT id FROM part WHERE workOrderNumber = ${workOrderNumber} ORDER BY id FOR UPDATE`
   const { lines, errors } = classifyBom(rows, await loadExisting(tx, workOrderNumber))
   if (errors.length) {
@@ -378,6 +381,25 @@ export async function applyTechBom(tx: Prisma.TransactionClient, workOrderNumber
     created.push(p.id)
   }
   const matched = lines.filter((l) => (l.status === 'exists' || l.status === 'revisionChanged') && l.existing).map((l) => l.existing!.id)
-  if (!created.length && !matched.length) throw new FlowError('BOM 表里没有要建的工件（只有螺栓螺母或没有图号的行），没有发放')
-  return { created, matched, revisionFilled: fill.length, skipped: lines.filter((l) => l.status === 'fastener' || l.status === 'noDrawing').length }
+  // 正式应用和工件写入共用调用方事务；预览不会走到这里。
+  const purchased = lines.filter(l => l.status === 'noDrawing' && !isFastener(l.name))
+  if (!created.length && !matched.length && !purchased.length) throw new FlowError('BOM 表里没有要建的工件或外购件（只有螺栓螺母等辅材），没有发放')
+  let purchasePlanId: string | undefined
+  if (purchased.length) {
+    const plan = await tx.purchasePlan.create({
+      data: {
+        workOrderNumber,
+        title: context?.title ?? `BOM 外购件 ${new Date().toISOString().slice(0, 10)}`,
+        source: 'BOM_AUTO',
+        createdBy: context?.createdBy ?? 'SYSTEM',
+        note: 'BOM 无图号行自动带出，请核对数量、补齐需求日与所属总计划节点后下发。',
+        items: { create: purchased.map((l, sortOrder) => ({ materialName: l.name, quantity: l.quantity, sortOrder, note: `BOM 第 ${l.rows.join('、')} 行` })) },
+      },
+      select: { id: true },
+    })
+    purchasePlanId = plan.id
+  }
+  return { created, matched, revisionFilled: fill.length, skipped: lines.filter((l) => l.status === 'fastener' || l.status === 'noDrawing').length,
+    ...(purchasePlanId ? { purchasePlanId, purchasePlanItems: purchased.length } : {}),
+  }
 }

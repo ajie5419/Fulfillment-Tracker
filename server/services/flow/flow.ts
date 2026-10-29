@@ -80,12 +80,21 @@ export interface SendInput {
   source: FlowSource
 }
 
+/** 料单只约束第一道待开工工序；后续工序及已开工的完工 / 报工不受回退影响。调用前已锁工件。 */
+async function assertMaterialListIssued(tx: Tx, step: RouteStep) {
+  const prev = await tx.routeStep.findFirst({ where: { partId: step.partId, seq: { lt: step.seq } }, select: { id: true } })
+  if (prev) return
+  const missing = await tx.drawingTaskPart.count({ where: { partId: step.partId, task: { status: { not: 'CANCELLED' }, materialStatus: { not: 'ISSUED' } } } })
+  if (missing) throw new FlowError('料单未下发')
+}
+
 /** 发出登记：仅厂外外协、待开工的步骤。前一道没完成也允许发出（现场常有先后不一）。 */
 export function sendStep(input: SendInput) {
   return prisma.$transaction(async (tx) => {
     const step = await lockStep(tx, input.stepId)
     if (step.mode !== 'EXTERNAL_OUTSOURCE') throw new FlowError('只有厂外外协的步骤需要发出登记')
     if (step.status !== 'PENDING') throw new FlowError('该步骤已发出或已完成，不能重复发出')
+    await assertMaterialListIssued(tx, step)
     const supplierId = input.supplierId || step.supplierId
     if (!supplierId) throw new FlowError('请选择外协厂')
     const supplier = await tx.qmsSupplier.findFirst({ where: { id: supplierId, isDeleted: false }, select: { id: true } })
@@ -131,6 +140,7 @@ export function startStep(input: ActInput) {
     const step = await lockStep(tx, input.stepId)
     assertInPlant(step)
     if (step.status !== 'PENDING') throw new FlowError('该步骤已开工或已完成')
+    await assertMaterialListIssued(tx, step)
     const now = new Date()
     const updated = await tx.routeStep.update({ where: { id: step.id }, data: { status: 'IN_PROGRESS', startedAt: now } })
     await tx.flowEvent.create({
