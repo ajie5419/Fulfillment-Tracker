@@ -1,5 +1,5 @@
 /**
- * scan-rules：一次跑完 W1–W9，新建、升级、消除预警（工单已完工 / 已取消时只保留 W1、W4，见 collectTargets），并给升级阶梯上的人写"我的提醒"（方案 6.2）。
+ * scan-rules：一次跑完 W1–W11，新建、升级、消除预警（工单已完工 / 已取消时只保留 W1、W4，见 collectTargets），并给升级阶梯上的人写"我的提醒"（方案 6.2）。
  *
  * 幂等：同一对象同一规则只有一条活动预警（alert.activeKey 唯一）；同一人同一预警同一级别只有一条提醒
  * （reminder 上 alertId+level+userId 唯一）。每轮都会把当前级别该收到的人补齐，所以中途失败下一轮自动补上。
@@ -29,6 +29,8 @@ import { CONFIRM_PLAN_NODE, PLAN_REF, judgeSplit, judgeW9, judgeW9Plan, w9Confir
 import { loadPlans } from '../plan/plan'
 import { SCAN_RULES, loadOffDays, loadThresholds } from './config'
 import { closedWorkOrders } from '../workorder/active'
+import { loadMonitoredEntities } from '../monitoring/status'
+import { stagnationTargets } from '../monitoring/targets'
 import {
   CONVERTIBLE_RULES,
   type ScanRule,
@@ -51,7 +53,7 @@ export { SCAN_RULES, loadOffDays, loadThresholds }
 /** 一个处在规则关注状态的对象（不一定已到阈值） */
 export interface Target {
   rule: ScanRule
-  refType: 'step' | 'unmatched' | 'issue' | 'receipt' | 'release' | 'purchase' | 'drawing' | 'node' | 'plan' | 'planNode' | 'planConfirm' | 'planSplit'
+  refType: 'step' | 'part' | 'unmatched' | 'issue' | 'receipt' | 'release' | 'purchase' | 'drawing' | 'node' | 'plan' | 'planNode' | 'planConfirm' | 'planSplit'
   refId: string
   key: string
   workOrderNumber: string | null
@@ -70,10 +72,10 @@ export interface Target {
   /** 标题里冒号后的部分，如"组焊返厂 2 天仍未发出" */
   summary: string
   /** 转异常时定分类用；W5 带发放单 ID（跳转用） */
-  meta?: { stepMode?: StepMode; supplierId?: string | null; releaseId?: string }
+  meta?: { stepMode?: StepMode; supplierId?: string | null; releaseId?: string; link?: string }
 }
 
-/** 收集 W1–W10 关注的全部对象，并按 now 判定级别；only 只收集某一条规则 */
+/** 收集 W1–W11 关注的全部对象，并按 now 判定级别；only 只收集某一条规则 */
 export async function collectTargets(now: Date, t: Thresholds, offDays: string[], only?: ScanRule): Promise<Target[]> {
   const run = (rule: ScanRule, fn: () => Promise<Target[]>) => (!only || only === rule ? fn() : Promise.resolve([]))
   const parts = await Promise.all([
@@ -87,9 +89,10 @@ export async function collectTargets(now: Date, t: Thresholds, offDays: string[]
     run('W8', () => collectW8(now, t)),
     run('W9', () => collectW9(now, t, offDays)),
     run('W10', () => collectW10(now, t, offDays)),
+    run('W11', async () => stagnationTargets(await loadMonitoredEntities(now, t.W11))),
   ])
   const all = parts.flat()
-  // 工单已完工 / 已取消（zhao 10-22）：进度类预警（W2/W3/W5–W10）不再报，已有的本轮自动消除；
+  // 工单已完工 / 已取消（zhao 10-22）：进度类预警（W2/W3/W5–W11）不再报，已有的本轮自动消除；
   // W1 待确认匹配（报检本身要处理）、W4 异常（人提出的问题要关闭）照常
   const closed = await closedWorkOrders(all.filter((x) => !KEEP_WHEN_CLOSED.has(x.rule) && x.workOrderNumber).map((x) => x.workOrderNumber!))
   return closed.size ? all.filter((x) => KEEP_WHEN_CLOSED.has(x.rule) || !x.workOrderNumber || !closed.has(x.workOrderNumber)) : all
@@ -779,7 +782,7 @@ async function runScan(now: Date): Promise<ScanResult> {
     result.reminders += outcome.count
   }
 
-  // 对象已离开规则关注的状态（已处理、已发出/开工、已返厂、异常已受理处理）→ 活动的消除；已转异常的只释放 activeKey
+  // 对象已离开规则关注的状态（W11 还包括状态计时周期变化或低于红线）→ 活动的消除；已转异常的只释放 activeKey
   const live = new Set(targets.map((x) => x.key))
   const gone = keyed.filter((a) => !live.has(a.activeKey!))
   const goneActive = gone.filter((a) => a.status === 'ACTIVE').map((a) => a.id)

@@ -81,8 +81,10 @@ const rowSelection = computed(() => (canRoute.value ? { selectedRowKeys: selecte
 const editId = ref<string | null>(null)
 const editPart = computed(() => parts.value.find((p) => p.id === editId.value) ?? null)
 const detailId = ref<string | null>(null)
+const detailStepId = ref<string | null>(null)
 const detailTab = ref<'info' | 'comments'>('info')
 function openDetail(id: string, tab: 'info' | 'comments' = 'info') {
+  detailStepId.value = null
   detailTab.value = tab
   detailId.value = id
 }
@@ -91,13 +93,16 @@ function openDetail(id: string, tab: 'info' | 'comments' = 'info') {
  * 要等这个工单的工件加载完：刚切工单（如工件抽屉"去编排"跳到别的工单）时列表还是上一个工单的，先不处理、不删
  */
 useOneShotQuery(
-  ['part', 'comments', 'edit'],
+  ['part', 'comments', 'edit', 'step'],
   {
     fetches: [{ pending, error }],
     when: () => !(typeof route.query.wo === 'string' && route.query.wo !== workOrderNumber.value) && !parts.value.some((p) => p.workOrderNumber !== workOrderNumber.value),
   },
-  ({ part, comments, edit }) => {
-    if (part) openDetail(part, comments === '1' ? 'comments' : 'info')
+  ({ part, comments, edit, step }) => {
+    if (part) {
+      openDetail(part, comments === '1' ? 'comments' : 'info')
+      detailStepId.value = step ?? null
+    }
     if (edit && parts.value.some((p) => p.id === edit)) {
       routeFilter.value = 'all'
       editId.value = edit
@@ -213,7 +218,7 @@ const woOptions = computed(() => workOrders.value.map((w) => ({ value: w.workOrd
 
   <RouteEditDrawer :part="editPart" :work-order-number="workOrderNumber ?? ''" :plan-opts="planOpts" :can-route="canRoute" @close="editId = null" @changed="refresh()" @deleted="editId = null; refresh()" />
   <RouteBatchModal :open="batch.open" :mode="batch.mode" :part-ids="selected" :plan-opts="planOpts" @close="batch.open = false" @done="afterBatch" />
-  <PartDrawer :part-id="detailId" :tab="detailTab" @close="detailId = null" @changed="refresh()" @edit="onDetailEdit" />
+  <PartDrawer :part-id="detailId" :tab="detailTab" :focus-step-id="detailStepId" @close="detailId = null; detailStepId = null" @changed="refresh()" @edit="onDetailEdit" />
   <BomImportModal :open="bomImportOpen" :work-order-number="workOrderNumber" @close="bomImportOpen = false" @done="bomImportOpen = false; refresh()" />
 
   <a-modal :open="partForm.open" title="新建工件" ok-text="保存" @ok="createPart" @cancel="partForm.open = false">

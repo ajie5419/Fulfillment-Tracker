@@ -10,7 +10,7 @@ import { chainTones, type ChainTone } from '#shared/production'
 import { factoryDay } from '#shared/mobile-todo'
 import type { PartDetail } from '~~/server/services/flow/steps'
 
-const props = defineProps<{ partId: string | null; tab?: 'info' | 'timeline' | 'comments' }>()
+const props = defineProps<{ partId: string | null; tab?: 'info' | 'timeline' | 'comments'; focusStepId?: string | null }>()
 const emit = defineEmits<{ close: []; changed: []; edit: [part: { id: string; workOrderNumber: string }] }>()
 
 const tab = ref<'info' | 'timeline' | 'comments'>('info')
@@ -31,6 +31,11 @@ watch(tab, (t) => { if (t === 'timeline' && props.partId) refreshTimeline() })
 
 const today = factoryDay(new Date())
 const tones = computed(() => (part.value ? chainTones(part.value.steps, today) : []))
+watch([() => part.value?.id, () => props.focusStepId], async () => {
+  if (!import.meta.client || !part.value || part.value.id !== props.partId || !props.focusStepId || error.value) return
+  await nextTick()
+  document.querySelector('[data-monitoring-focus="true"]')?.scrollIntoView({ block: 'center' })
+})
 const TONE: Record<ChainTone, 'done' | 'primary' | 'late' | 'none'> = { done: 'done', current: 'primary', late: 'late', blocked: 'late', todo: 'none' }
 const KIND_TEXT = { part: '建档', drawing: '设计', purchase: '物料', flow: '流转', issue: '异常', comment: '留言' } as const
 const related = computed(() => {
@@ -103,7 +108,7 @@ const stepDates = (s: { planStartDate: string | Date | null; dueDate: string | D
         <h3 class="sec">工序进度</h3>
         <p v-if="!part.steps.length" class="empty">还没排工序，点右上角"去编排"。</p>
         <ol v-else class="steps">
-          <li v-for="(s, i) in part.steps" :key="s.id" class="step">
+          <li v-for="(s, i) in part.steps" :key="s.id" class="step" :class="{ 'monitoring-focus': s.id === focusStepId }" :data-monitoring-focus="s.id === focusStepId ? 'true' : undefined">
             <span class="seq">{{ s.seq }}</span>
             <div class="step-main">
               <div class="step-name">{{ s.processName }}<span class="muted"> · {{ stepWhere(s) }}</span></div>
@@ -163,6 +168,7 @@ const stepDates = (s: { planStartDate: string | Date | null; dueDate: string | D
 .sec { margin: 16px 0 8px; font-size: 14px; font-weight: 600; }
 .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .step { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 8px 10px; border: 1px solid var(--ft-border); border-radius: 10px; }
+.monitoring-focus { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
 .seq { color: var(--ft-text-2); font-size: 12px; line-height: 22px; }
 .step-name { font-size: 14px; }
 .muted { color: var(--ft-text-2); font-size: 12px; }

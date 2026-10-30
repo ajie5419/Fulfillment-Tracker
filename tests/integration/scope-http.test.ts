@@ -198,6 +198,45 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
   }
   const get = (path: string, s: Record<string, string>) => fetch(`${base}${path}`, { headers: { cookie: cookieHeader(s) } })
 
+  it('状态监控新接口：未登录 401，普通项目经理 403，领导可看全部在制分布并按实体 / 状态下钻', async () => {
+    expect((await fetch(`${base}/api/monitoring/status`)).status).toBe(401)
+    const pm = await login('h-pm')
+    expect((await get('/api/monitoring/status', pm)).status).toBe(403)
+    expect((await get('/api/monitoring/entities?entityType=part&status=ACTIVE', pm)).status).toBe(403)
+    const leader = await login('h-lead')
+    const response = await get('/api/monitoring/status', leader)
+    expect(response.status).toBe(200)
+    const summary = await response.json()
+    expect(summary.threshold).toMatchObject({ yellowDays: 7, redDays: 14, remindHours: null })
+    expect(summary.steps.map((r: { status: string }) => r.status)).toEqual(['PENDING', 'OUT', 'IN_PROGRESS', 'BLOCKED'])
+    const listResponse = await get('/api/monitoring/entities?entityType=part&status=ACTIVE&pageSize=100', leader)
+    expect(listResponse.status).toBe(200)
+    const list = await listResponse.json()
+    expect(list.total).toBe(summary.parts[0].count)
+    expect(list.rows.find((r: { id: string }) => r.id === otherPartId)).toMatchObject({ entityType: 'part', workOrderNumber: OTHER, status: 'ACTIVE', sinceSource: 'statusSince', link: expect.stringContaining(`part=${otherPartId}`) })
+    expect((await get('/api/monitoring/entities?page=0', leader)).status).toBe(400)
+    expect((await get('/api/monitoring/entities?status=DONE', leader)).status).toBe(400)
+  })
+
+  it('W11 复用设置阈值接口：管理员可改、非法边界拒绝，监控接口随配置更新', async () => {
+    const admin = await login('h-admin')
+    const prior = await db.threshold.findUnique({ where: { rule: 'W11' } })
+    const save = (yellowDays: number, redDays: number) => fetch(`${base}/api/settings/thresholds/W11`, {
+      method: 'PUT', headers: { cookie: cookieHeader(admin), 'content-type': 'application/json' },
+      body: JSON.stringify({ remindHours: null, yellowDays, redDays }),
+    })
+    try {
+      expect((await save(8, 16)).status).toBe(200)
+      expect((await (await get('/api/monitoring/status', admin)).json()).threshold).toEqual({ remindHours: null, yellowDays: 8, redDays: 16 })
+      expect((await save(16, 8)).status).toBe(400)
+      expect((await save(0, 8)).status).toBe(400)
+      expect((await save(7, 366)).status).toBe(400)
+    } finally {
+      if (prior) await db.threshold.upsert({ where: { rule: 'W11' }, create: prior, update: prior })
+      else await db.threshold.deleteMany({ where: { rule: 'W11' } })
+    }
+  })
+
   it('项目经理只看到自己负责的工单：列表不含，详情 403；领导看全部', async () => {
     const pm = await login('h-pm')
     expect(await (await get('/api/me', pm)).json()).toMatchObject({ id: 'h-pm', limited: true })

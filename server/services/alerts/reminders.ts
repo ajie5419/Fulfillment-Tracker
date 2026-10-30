@@ -16,6 +16,7 @@ import { todayDay } from '../flow/dates'
 import { userDeptNames } from '../auth/departments'
 import { workBucket } from '../../../shared/workbench'
 import { stepLinkTab, type StepStatus } from '../../../shared/production'
+import { monitoringDetailLink } from '../../../shared/monitoring'
 
 interface Link {
   /** 电脑端：步骤 → 生产调度 / 外协页对应页签（stepPcLink）；待确认 → 外协页"待确认匹配"；异常 → 异常列表并打开该条；签收记录（W5）→ 发放单详情；采购行（W6）→ 采购到货页并打开该行；设计任务（W7）→ 设计任务页并打开该任务；装配节点（W8）→ 齐套页并定位该节点 */
@@ -73,7 +74,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
   const converted = alerts.filter((a) => a.status === 'CONVERTED').map((a) => alertSourceKey(a.id))
   const idsOf = (refType: string) => alerts.filter((a) => a.refType === refType).map((a) => a.refId)
   const [purchaseIds, drawingIds, nodeIds, issueIds, releaseIds] = ['purchase', 'drawing', 'node', 'issue', 'release'].map(idsOf) as [string[], string[], string[], string[], string[]]
-  const [steps, issues, receipts, planNodes, purchases, drawings, nodes, refIssues, releases] = await Promise.all([
+  const [steps, issues, receipts, planNodes, purchases, drawings, nodes, refIssues, releases, parts] = await Promise.all([
     stepIds.length ? prisma.routeStep.findMany({ where: { id: { in: stepIds } }, include: { part: { select: { workOrderNumber: true } } } }) : [],
     converted.length ? prisma.issue.findMany({ where: { sourceKey: { in: converted } }, select: { id: true, issueNo: true, sourceKey: true } }) : [],
     receiptIds.length ? prisma.releaseReceipt.findMany({ where: { id: { in: receiptIds } }, select: { id: true, releaseId: true, release: { select: { workOrderNumber: true } } } }) : [],
@@ -84,6 +85,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     nodeIds.length ? prisma.assemblyNode.findMany({ where: { id: { in: nodeIds } }, select: { id: true, workOrderNumber: true, needDate: true } }) : [],
     issueIds.length ? prisma.issue.findMany({ where: { id: { in: issueIds } }, select: { id: true, workOrderNumber: true, dueDate: true } }) : [],
     releaseIds.length ? prisma.release.findMany({ where: { id: { in: releaseIds } }, select: { id: true, workOrderNumber: true } }) : [],
+    idsOf('part').length ? prisma.part.findMany({ where: { id: { in: idsOf('part') } }, select: { id: true, workOrderNumber: true } }) : [],
   ])
   const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null)
   /** 对象 → 所属工单、截止日 */
@@ -94,6 +96,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
   for (const r of nodes) facts.set(`node:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: day(r.needDate) })
   for (const r of refIssues) facts.set(`issue:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: day(r.dueDate) })
   for (const r of releases) facts.set(`release:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: null })
+  for (const r of parts) facts.set(`part:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: null })
   for (const r of receipts) facts.set(`receipt:${r.id}`, { workOrderNumber: r.release.workOrderNumber, dueDay: null })
   for (const r of planNodes) {
     facts.set(`planNode:${r.id}`, { workOrderNumber: r.workOrderNumber, dueDay: day(r.planDate) })
@@ -105,6 +108,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
   for (const r of steps) facts.set(`step:${r.id}`, { workOrderNumber: r.part.workOrderNumber, dueDay: day(r.promisedReturnDate ?? r.dueDate) })
   const planWoOf = new Map(planNodes.map((n) => [n.id, n.workOrderNumber]))
   const stepById = new Map(steps.map((s) => [s.id, s]))
+  const partById = new Map(parts.map((p) => [p.id, p]))
   const releaseOf = new Map(receipts.map((r) => [r.id, r.releaseId]))
   const issueBySource = new Map(issues.map((i) => [i.sourceKey!, i]))
   const out = new Map<string, LinkInfo>()
@@ -125,7 +129,10 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     if (step) {
       const wo = encodeURIComponent(step.part.workOrderNumber)
       link = { pc: stepPcLink(step, wo, a.level), mobile: stepMobileLink(step, wo) }
+      if (a.rule === 'W11') link = { pc: monitoringDetailLink(step.part.workOrderNumber, step.partId, step.id), mobile: null }
     }
+    const part = a.refType === 'part' ? partById.get(a.refId) : undefined
+    if (part) link = { pc: monitoringDetailLink(part.workOrderNumber, part.id), mobile: null }
     // 已转异常：跳到生成的异常
     const issue = a.status === 'CONVERTED' ? issueBySource.get(alertSourceKey(a.id)) : undefined
     if (issue) link = issueLink(issue.id)
@@ -261,6 +268,7 @@ function canConvert(level: AlertLevel, target: Pick<Target, 'rule' | 'ownerIds'>
 
 /** 预警列表里"去处理"的电脑端地址 */
 function targetLink(t: Target, level: AlertLevel): string | null {
+  if (t.rule === 'W11') return t.meta?.link ?? null
   // 工序预警：与"我的提醒"同一个地址（stepPcLink）。规则决定工序当时的状态：W3 在外、W10 加工中、W2 待开工（转序停滞）
   if (t.refType === 'step' && t.workOrderNumber) {
     const status = t.rule === 'W3' ? 'OUT' : t.rule === 'W10' ? 'IN_PROGRESS' : 'PENDING'
@@ -328,7 +336,7 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
         summary: t.summary,
         startAt: t.startAt,
         duration:
-          a.rule === 'W3' || a.rule === 'W10' || a.rule === 'W4' || a.rule === 'W6' || a.rule === 'W7' || a.rule === 'W8' || (a.rule === 'W9' && a.refType !== 'planConfirm' && a.refType !== 'planSplit')
+          a.rule === 'W3' || a.rule === 'W10' || a.rule === 'W11' || a.rule === 'W4' || a.rule === 'W6' || a.rule === 'W7' || a.rule === 'W8' || (a.rule === 'W9' && a.refType !== 'planConfirm' && a.refType !== 'planSplit')
             ? null
             : durationText(elapsedExcludingOffDays(t.startAt, at, offDays)),
         owners: t.ownerIds.map((id) => ({ id, name: names.user.get(id) ?? id })),

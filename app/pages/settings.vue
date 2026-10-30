@@ -59,10 +59,10 @@ watch(
   },
   { immediate: true },
 )
-const REMIND_LABEL = { W1: '小时后提醒', W2: '（不提醒）', W3: '天前提醒（承诺返回日前）', W4: '（不提醒）', W5: '小时未签收 / 未确认提醒', W6: '天内要用仍无承诺到货日 → 黄（需求日前）', W7: '天内到计划完成日仍未完成设计 → 黄', W8: '（不提醒）', W9: '天后节点仍未分解 → 提醒部门负责人（总计划发布后）', W10: '天前提醒（要求完成日前）' } as const
-const YELLOW_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（待受理 / 超期）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 黄（需求日前）', W9: '天（源头节点自身晚于计划日）', W10: '天（超要求完成日）' } as const
-const RED_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（超要求解决日）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 红（需求日前，已过也红）', W9: '天（源头节点自身晚于计划日）', W10: '天（超要求完成日）' } as const
-const NO_REMIND = (rule: Row['rule']) => rule === 'W2' || rule === 'W4' || rule === 'W8'
+const REMIND_LABEL = { W1: '小时后提醒', W2: '（不提醒）', W3: '天前提醒（承诺返回日前）', W4: '（不提醒）', W5: '小时未签收 / 未确认提醒', W6: '天内要用仍无承诺到货日 → 黄（需求日前）', W7: '天内到计划完成日仍未完成设计 → 黄', W8: '（不提醒）', W9: '天后节点仍未分解 → 提醒部门负责人（总计划发布后）', W10: '天前提醒（要求完成日前）', W11: '（红线预警）' } as const
+const YELLOW_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（待受理 / 超期）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 黄（需求日前）', W9: '天（源头节点自身晚于计划日）', W10: '天（超要求完成日）', W11: '天（当前状态，关注）' } as const
+const RED_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（超要求解决日）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 红（需求日前，已过也红）', W9: '天（源头节点自身晚于计划日）', W10: '天（超要求完成日）', W11: '天（当前状态，停滞预警）' } as const
+const NO_REMIND = (rule: Row['rule']) => rule === 'W2' || rule === 'W4' || rule === 'W8' || rule === 'W11'
 function saveThreshold(r: Row) {
   const remindHours = NO_REMIND(r.rule) || r.remind == null ? null : BY_DAY(r.rule) ? Math.round(r.remind * 24) : r.remind
   const url = `/api/settings/thresholds/${r.rule}`
@@ -150,12 +150,12 @@ const woColumns = [
   <a-card v-else-if="data" title="设置">
     <a-tabs v-model:active-key="tab">
       <a-tab-pane key="thresholds" tab="阈值">
-        <p class="muted">全公司一套。计时按自然日，停工日整天不计入。级别只升不降：调大阈值后已经升级的预警不会退回。</p>
+        <p class="muted">全公司一套。通常停工日整天不计入，预警级别只升不降；W8、W11 按工厂时区自然日。W11 回落红线以下或状态计时重置后自动消除。</p>
         <a-table :columns="thresholdColumns" :data-source="rows" row-key="rule" size="small" :pagination="false">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'rule'">{{ RULE_TEXT[record.rule as Row['rule']] }}</template>
             <template v-else-if="column.key === 'remind'">
-              <span v-if="NO_REMIND(record.rule)" class="muted">不提醒，直接黄</span>
+              <span v-if="NO_REMIND(record.rule)" class="muted">{{ record.rule === 'W11' ? '黄线关注，红线预警' : '不提醒，直接黄' }}</span>
               <a-space v-else>
                 <a-input-number v-model:value="record.remind" :min="1" :max="BY_DAY(record.rule) ? 30 : 720" size="small" />
                 <span>{{ REMIND_LABEL[record.rule as Row['rule']] }}</span>
@@ -169,6 +169,7 @@ const woColumns = [
               <div v-if="record.rule === 'W3'" class="muted">要求完成日已过也直接红</div>
               <div v-if="record.rule === 'W4'" class="muted">W4 红色不再转异常</div>
               <div v-if="record.rule === 'W10'" class="muted">只看已开工的自制 / 厂内外协工序；黄色起通知生产经理；红色自动转异常；完工后自动消除</div>
+              <div v-if="record.rule === 'W11'" class="muted">含停工日；黄线只在状态监控关注，红线通知责任方及管理角色，不自动转异常。默认黄 7 / 红 14 天为暂定值，上线前请确认。</div>
               <div v-if="record.rule === 'W5'" class="muted">W5 也管"确认变更影响"待办；黄色起通知发放人，红色不转异常</div>
               <div v-if="record.rule === 'W6'" class="muted">需求日已过仍未到货直接红；有没付的卡交期付款时黄色起通知财务；红色不转异常</div>
               <div v-if="record.rule === 'W7'" class="muted">已过计划完成日仍未完成设计直接红；黄色起通知技术部负责人、项目经理；红色不转异常</div>

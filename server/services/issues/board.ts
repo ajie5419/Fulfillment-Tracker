@@ -44,7 +44,7 @@ export type BoardColor = 'RED' | 'YELLOW' | 'GREEN'
 async function alertWorkOrders(alerts: { id: string; refType: string; refId: string }[]) {
   const ids = (t: string) => alerts.filter((a) => a.refType === t).map((a) => a.refId)
   const planIds = alerts.filter((a) => isPlanNodeAlert(a.refType)).map((a) => a.refId)
-  const [steps, inspections, issues, receipts, releases, purchases, drawings, nodes, planNodes] = await Promise.all([
+  const [steps, inspections, issues, receipts, releases, purchases, drawings, nodes, planNodes, parts] = await Promise.all([
     ids('step').length ? prisma.routeStep.findMany({ where: { id: { in: ids('step') } }, select: { id: true, part: { select: { workOrderNumber: true } } } }) : [],
     ids('unmatched').length ? prisma.qmsInspection.findMany({ where: { id: { in: ids('unmatched') } }, select: { id: true, workOrderNumber: true } }) : [],
     ids('issue').length ? prisma.issue.findMany({ where: { id: { in: ids('issue') } }, select: { id: true, workOrderNumber: true } }) : [],
@@ -56,9 +56,11 @@ async function alertWorkOrders(alerts: { id: string; refType: string; refId: str
     ids('drawing').length ? prisma.drawingTask.findMany({ where: { id: { in: ids('drawing') } }, select: { id: true, workOrderNumber: true } }) : [],
     ids('node').length ? prisma.assemblyNode.findMany({ where: { id: { in: ids('node') } }, select: { id: true, workOrderNumber: true } }) : [],
     planIds.length ? prisma.planNode.findMany({ where: { id: { in: planIds } }, select: { id: true, workOrderNumber: true } }) : [],
+    ids('part').length ? prisma.part.findMany({ where: { id: { in: ids('part') } }, select: { id: true, workOrderNumber: true } }) : [],
   ])
   const wo = new Map<string, string>()
   for (const s of steps) wo.set(`step:${s.id}`, s.part.workOrderNumber)
+  for (const p of parts) wo.set(`part:${p.id}`, p.workOrderNumber)
   for (const i of inspections) wo.set(`unmatched:${i.id}`, i.workOrderNumber)
   for (const i of issues) wo.set(`issue:${i.id}`, i.workOrderNumber)
   for (const r of receipts) wo.set(`receipt:${r.id}`, r.release.workOrderNumber)
