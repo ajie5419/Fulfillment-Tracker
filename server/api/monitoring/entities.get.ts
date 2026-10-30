@@ -6,6 +6,7 @@ import { listMonitoredEntities } from '../../services/monitoring/status'
 const query = z.object({
   entityType: z.enum(['step', 'part']).optional(),
   status: z.enum(['PENDING', 'OUT', 'IN_PROGRESS', 'BLOCKED', 'ACTIVE']).optional(),
+  level: z.enum(['GREEN', 'YELLOW', 'RED']).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 })

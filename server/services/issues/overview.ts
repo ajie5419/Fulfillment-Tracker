@@ -15,6 +15,7 @@ import { BUSINESS_DEPTS, BUSINESS_DEPT_NAME, resolveDeptNames } from '../auth/de
 import { loadPlans } from '../plan/plan'
 import { getBoard } from './board'
 import { OPEN_STATUSES } from './constants'
+import { redWorkOrderStages } from '../../../shared/board-cockpit'
 
 /** 工厂时区本周一 00:00（周一算一周的第一天） */
 export function weekStart(now: Date): Date {
@@ -101,6 +102,7 @@ export async function getOverview(now = new Date()) {
       { key: 'issue', label: '超期异常', count: sum('overdueIssues'), link: '/issues?overdue=1&dept=0' },
     ],
     byDept: [...byDept.values()].sort((a, b) => b.overdue - a.overdue || b.open - a.open || a.dept.localeCompare(b.dept, 'zh-CN')),
+    redStages: redWorkOrderStages(board.rows),
     redWorkOrders: board.rows
       .filter((r) => r.color === 'RED')
       .map((r) => ({
@@ -109,6 +111,16 @@ export async function getOverview(now = new Date()) {
         projectManagerName: r.projectManagerName,
         deliveryDate: r.deliveryDate,
         reason: redReason(r),
+        delayDays: r.delayDays,
+        shortage: r.shortage,
+        purchasePending: r.purchasePending,
+        drawingOverdue: r.drawingOverdue,
+        overdueIssues: r.overdueIssues,
+        overdueSteps: r.overdueSteps,
+        incompleteNodes: r.incompleteNodes,
+        unsignedReleases: r.unsignedReleases,
+        stagnationRedDays: r.stagnationRedDays,
+        stagnationYellowDays: r.stagnationYellowDays,
       })),
     planDelays: board.rows
       .filter((r) => (r.delayDays ?? 0) > 0)

@@ -37,6 +37,7 @@ import { pickMainAssembly } from '../workorder/rules'
 import { isClosedWorkOrder, nodeState, stuckNode } from '../../../shared/status'
 import { ACTIVE_WO_WHERE } from '../workorder/active'
 import { OPEN_STATUSES } from './constants'
+import { loadMonitoredEntities } from '../monitoring/status'
 
 export type BoardColor = 'RED' | 'YELLOW' | 'GREEN'
 
@@ -86,7 +87,7 @@ function sourceByDept(rows: { planNodes: { dept: keyof typeof BUSINESS_DEPT_NAME
  */
 export async function getBoard(visibleWorkOrders: string[] | undefined, now = new Date(), opts: { withClosed?: boolean } = {}) {
   const woWhere = visibleWorkOrders ? { in: visibleWorkOrders } : undefined
-  const [workOrders, exts, outSteps, issues, alerts, sync, thresholds, offDays, unsigned, shortage, drawingOverdue] = await Promise.all([
+  const [workOrders, exts, outSteps, issues, alerts, sync, thresholds, offDays, unsigned, shortage, drawingOverdue, purchasePending] = await Promise.all([
     prisma.qmsWorkOrder.findMany({
       where: { ...(opts.withClosed ? { isDeleted: false } : ACTIVE_WO_WHERE), ...(woWhere ? { workOrderNumber: woWhere } : {}) },
       orderBy: [{ deliveryDate: 'asc' }, { workOrderNumber: 'asc' }],
@@ -120,16 +121,30 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
       where: { AND: [overdueWhere(todayDate(now)), ...(woWhere ? [{ workOrderNumber: woWhere }] : [])] },
       _count: { _all: true },
     }),
+    prisma.purchaseLine.groupBy({
+      by: ['workOrderNumber'],
+      where: { status: 'OPEN', ...(woWhere ? { workOrderNumber: woWhere } : {}) },
+      _count: { _all: true },
+    }),
   ])
   const incompleteNodes = await prisma.assemblyNode.groupBy({
     by: ['workOrderNumber'],
     where: { AND: [incompleteWhere(), dueWindowWhere(now, thresholds.W8), ...(woWhere ? [{ workOrderNumber: woWhere }] : [])] },
     _count: { _all: true },
   })
-  const [plans, assemblies] = await Promise.all([
+  const [plans, assemblies, monitored] = await Promise.all([
     loadPlans({ workOrderNumbers: workOrders.map((w) => w.workOrderNumber), publishedOnly: true }, now),
     prisma.assemblyNode.findMany({ where: { workOrderNumber: { in: workOrders.map((w) => w.workOrderNumber) } }, include: NODE_LINKS }),
+    loadMonitoredEntities(now, thresholds.W11, workOrders.map((w) => w.workOrderNumber)),
   ])
+  const stagnationOf = new Map<string, { stagnationRedDays: number | null; stagnationYellowDays: number | null }>()
+  for (const entity of monitored) {
+    if (entity.level === 'GREEN') continue
+    const row = stagnationOf.get(entity.workOrderNumber) ?? { stagnationRedDays: null, stagnationYellowDays: null }
+    const key = entity.level === 'RED' ? 'stagnationRedDays' : 'stagnationYellowDays'
+    row[key] = Math.max(row[key] ?? 0, entity.days)
+    stagnationOf.set(entity.workOrderNumber, row)
+  }
   // 总装齐套率：每个工单一个主装配节点
   const mains = new Map<string, (typeof assemblies)[number]>()
   for (const wo of new Set(assemblies.map((a) => a.workOrderNumber))) {
@@ -140,6 +155,7 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
   const incompleteNodesOf = new Map(incompleteNodes.map((n) => [n.workOrderNumber, n._count._all]))
   const drawingOverdueOf = new Map(drawingOverdue.map((d) => [d.workOrderNumber, d._count._all]))
   const shortageOf = new Map(shortage.map((s) => [s.workOrderNumber, s._count._all]))
+  const purchasePendingOf = new Map(purchasePending.map((p) => [p.workOrderNumber, p._count._all]))
   const unsignedOf = new Map(unsigned.map((u) => [u.workOrderNumber, u._count._all]))
   const alertWo = await alertWorkOrders(alerts)
   const pmOf = new Map(exts.map((e) => [e.workOrderNumber, e.projectManagerId]))
@@ -188,6 +204,11 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
       openIssues: open.length,
       unsignedReleases: unsignedOf.get(wo) ?? 0,
       shortage: shortageOf.get(wo) ?? 0,
+      /** 未到货采购行数（OPEN），不以缺料数代替；含未到需求日的行。 */
+      purchasePending: purchasePendingOf.get(wo) ?? 0,
+      /** W11 完整监控集合按工单、级别取最大自然日数，不依赖 Top 或上次扫描预警。 */
+      stagnationRedDays: stagnationOf.get(wo)?.stagnationRedDays ?? null,
+      stagnationYellowDays: stagnationOf.get(wo)?.stagnationYellowDays ?? null,
       drawingOverdue: drawingOverdueOf.get(wo) ?? 0,
       incompleteNodes: incompleteNodesOf.get(wo) ?? 0,
       /** 已发布总计划的预计交期（'YYYY-MM-DD'）、拖期天数（正数 = 晚于 QMS 交期）、源头延误节点数（不含只因上游顺延的）；没有已发布总计划为 null / 0 */
