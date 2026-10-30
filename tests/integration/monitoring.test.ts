@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const DB = process.env.TEST_DATABASE_URL
 const WO = 'T-MON-ACTIVE'
-const WOS = [WO, 'T-MON-DONE', 'T-MON-CANCELLED', 'T-MON-DELETED', 'T-MON-BOARD']
+const WOS = [WO, 'T-MON-DONE', 'T-MON-CANCELLED', 'T-MON-DELETED', 'T-MON-BOARD', 'T-MON-COUNT', 'T-MON-CAPSULES']
 const now = new Date()
 const old = new Date(+now - 20 * 86_400_000)
 
@@ -26,6 +26,7 @@ describe.skipIf(!DB)('状态监控与 W11 扫描（真实 MySQL）', () => {
     await db.alert.deleteMany({ where: { id: { in: alerts.map((a) => a.id) } } })
     await db.todo.deleteMany({ where: { refId: { in: refIds } } })
     await db.flowEvent.deleteMany({ where: { stepId: { in: refIds } } })
+    await db.purchaseLine.deleteMany({ where: { workOrderNumber: { in: WOS } } })
     await db.part.deleteMany({ where: { workOrderNumber: { in: WOS } } })
     await db.qmsWorkOrder.deleteMany({ where: { workOrderNumber: { in: WOS } } })
     await db.qmsUser.deleteMany({ where: { id: 'T-MON-OWNER' } })
@@ -160,5 +161,51 @@ describe.skipIf(!DB)('状态监控与 W11 扫描（真实 MySQL）', () => {
     await db.qmsWorkOrder.update({ where: { workOrderNumber: wo }, data: { status: 'CANCELLED' } })
     await scan.scanRules(now)
     expect(await db.alert.findFirstOrThrow({ where: { rule: 'W11', refId: part.id } })).toMatchObject({ status: 'CLEARED', activeKey: null })
+  })
+
+  it('redCount 在完整集合独立计数，恰达红线含工序和工件，真实开工后回落，与红线筛选总数一致', async () => {
+    const before = (await monitoring.getStatusMonitoring(now)).redCount
+    const boundary = new Date(+now - 14 * 86_400_000)
+    const red = []
+    for (let i = 0; i < 6; i++) red.push(await makePart('T-MON-COUNT', boundary))
+    await makePart('T-MON-COUNT', new Date(+now - 13 * 86_400_000))
+    await makePart('T-MON-COUNT', now)
+    const summary = await monitoring.getStatusMonitoring(now)
+    expect(summary.redCount).toBe(before + 12)
+    expect(summary.redCount).toBeGreaterThan(summary.top.length)
+    const filter = { level: 'RED' as const, page: 1, pageSize: 100 }
+    const list = await monitoring.listMonitoredEntities(filter, now)
+    expect(list.total).toBe(summary.redCount)
+    expect(list.rows.every((r) => r.level === 'RED')).toBe(true)
+    expect(list.rows.filter((r) => r.workOrderNumber === 'T-MON-COUNT')).toHaveLength(12)
+    expect((await monitoring.listMonitoredEntities({ ...filter, entityType: 'part' }, now)).rows.filter((r) => r.workOrderNumber === 'T-MON-COUNT')).toHaveLength(6)
+    const { startStep } = await import('../../server/services/flow/flow')
+    await startStep({ stepId: red[0]!.step.id, actorId: 'T-MON-OWNER', source: 'PC' })
+    const after = new Date()
+    expect((await monitoring.getStatusMonitoring(after)).redCount).toBe(before + 10)
+    expect((await monitoring.listMonitoredEntities(filter, after)).total).toBe(before + 10)
+    await db.qmsWorkOrder.update({ where: { workOrderNumber: 'T-MON-COUNT' }, data: { status: 'COMPLETED' } })
+    expect((await monitoring.getStatusMonitoring(after)).redCount).toBe(before)
+  })
+
+  it('看板采购未到货与缺料分别统计，停滞取本单完整集合最大值且支持黄线，不受 Top 截断 / 预警扫描影响', async () => {
+    const wo = 'T-MON-CAPSULES'
+    await db.purchaseLine.createMany({ data: [
+      { workOrderNumber: wo, materialName: '已到需求日', quantity: 1, needDate: old },
+      { workOrderNumber: wo, materialName: '未到需求日', quantity: 1, needDate: new Date(+now + 20 * 86_400_000) },
+      { workOrderNumber: wo, materialName: '已到货', quantity: 1, needDate: old, status: 'ARRIVED' },
+      { workOrderNumber: wo, materialName: '已取消', quantity: 1, needDate: old, status: 'CANCELLED' },
+    ] })
+    const a = await makePart(wo, new Date(+now - 7 * 86_400_000))
+    const { getBoard } = await import('../../server/services/issues/board')
+    expect((await getBoard([wo], now)).rows[0]).toMatchObject({ purchasePending: 2, shortage: 1, stagnationRedDays: null, stagnationYellowDays: 7 })
+    await db.routeStep.update({ where: { id: a.step.id }, data: { createdAt: new Date(+now - 18 * 86_400_000) } })
+    const b = await makePart(wo, new Date(+now - 21 * 86_400_000))
+    const board = await getBoard([wo], now)
+    expect(board.rows).toHaveLength(1)
+    expect(board.rows[0]).toMatchObject({ purchasePending: 2, shortage: 1, stagnationRedDays: 21, stagnationYellowDays: 7 })
+    await db.part.update({ where: { id: b.part.id }, data: { status: 'DONE' } })
+    expect((await getBoard([wo], now)).rows[0]!.stagnationRedDays).toBe(18)
+    expect((await getBoard([], now)).rows).toEqual([])
   })
 })
