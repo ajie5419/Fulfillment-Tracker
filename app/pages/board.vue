@@ -1,27 +1,30 @@
 <script setup lang="ts">
 /**
- * 项目总览（原"看板"，技术选型 6.2；前端改版第一轮改成卡片）：
- *   关注分区：预计拖期 / 有风险两栏（允许重叠），另列已关闭工单；顶部 4 张汇总卡 + 源头延误在哪个部门。
- *   每个工单一张卡：工单号 · 产品、项目经理 · 交期、拖期天数、总计划节点圆点、卡在哪个节点（最早的源头延误节点）、红预警 / 异常 / 缺件 / 齐套率。
- *   整张卡点进工单详情 /wo/:no。"按项目经理"按人分组；"表格视图"是原来的 14 列表格（工单号改链到详情）。
- * 顶部 QMS 最后同步时间（各类资源里最旧的那类），有资源同步报错时显示错误提示。
- * 红 = 有活动红色预警或超期 ≥3 天的异常；黄 = 有活动黄色预警或超期异常；否则绿。分组规则见 shared/status.ts boardGroup。
- * 功能重复梳理第一批（zhao 10-22）：
- *   原"领导总览"并入本页：领导、项目部负责人、管理员在汇总下方多看到一块（BoardLeaderPanel），旧地址 /overview 跳这里；
- *   本页风险分区包含预计拖期；工单主状态标签仍按 boardGroup 判定；
- *   原菜单"工单详情"入口页去掉，改为工具栏里搜工单直接进详情。
- * 只看要关注的（zhao 10-22）：只显示"预计拖期""有风险"的工单，"正常"和"未建总计划"的不显示（只给一行数量，点去"项目计划"看）；
- *   去掉"其余工单"卡和"按项目经理 / 表格视图"切换（zhao 10-22），只保留按状态分组。
- * 已完工 / 已取消的工单（zhao 10-22）：默认不显示；工具栏"显示已完工"打开后（?closed=1）在最下面单列一组，表格 / 按项目经理里也列出，
- *   但不进 4 个分组、汇总卡和"源头延误在哪个部门"。工单搜索默认也只搜在做的，打开开关后连已完工的一起搜。
- * 新建工单（履约新建工单 10-27）：工具栏蓝色主按钮，只有项目部、项目部负责人、管理员看得到（me.can.workOrder）；保存时写入 QMS 工单库。
- *   建好后跳到该工单详情，并问"是否现在套模板生成总计划"，点"生成"去项目计划页（/plan?wo=，现有的按模板生成入口）。
+ * 项目总览双视图：can.overview 默认看驾驶舱，其余角色只看工单看板。
+ * 看板默认保留预计拖期 / 有风险两栏（允许重叠）、源头延误与已关闭工单；可切表格 / 项目经理。
+ * 所有视图与筛选直接读 URL，提醒深链、前进 / 后退不依赖页面重建。
  */
-import { BOARD_GROUP_TEXT, type BoardGroup, boardGroup, hasWorkOrderRisk, boardRiskSections } from '#shared/status'
+import { BOARD_GROUP_TEXT, type BoardGroup, boardGroup, hasWorkOrderRisk, boardRiskSections, woStatusText } from '#shared/status'
+import { BOARD_VIEWS, resolveBoardView, type BoardView } from '#shared/board-cockpit'
 
 const route = useRoute()
 const router = useRouter()
 const { data: me } = await useMe()
+const view = computed(() => resolveBoardView(!!me.value?.can.overview, route.query.view))
+// 显式请求无权查看的 cockpit 时清正 URL；其余参数和锚点保留。
+if (!me.value?.can.overview && route.query.view === 'cockpit') {
+  await navigateTo({ path: '/board', query: { ...route.query, view: 'board' }, hash: route.hash }, { replace: true })
+}
+watch(() => route.query.view, (value) => {
+  if (!me.value?.can.overview && value === 'cockpit') void router.replace({ query: { ...route.query, view: 'board' }, hash: route.hash })
+})
+function changeView(value: BoardView) { void router.replace({ query: { ...route.query, view: resolveBoardView(!!me.value?.can.overview, value) }, hash: route.hash }) }
+const cockpit = ref<{ refresh: () => Promise<void> } | null>(null)
+const layout = computed(() => route.query.layout === 'table' ? 'table' : route.query.layout === 'manager' ? 'manager' : 'status')
+const boardLayouts = [{ value: 'status', label: '按状态' }, { value: 'manager', label: '按项目经理' }, { value: 'table', label: '表格视图' }]
+function changeLayout(value: string) { void router.replace({ query: { ...route.query, layout: value } }) }
+const redOnly = computed(() => route.query.color === 'RED')
+function clearColor() { void router.replace({ query: { ...route.query, color: undefined } }) }
 /** 显示已完工 / 已取消的工单（地址栏 ?closed=1，刷新、分享链接都保留） */
 // 直接由地址栏算出（不另存一份），浏览器前进 / 后退、站内跳转改了地址，开关和数据跟着变
 const showClosed = computed({
@@ -41,13 +44,13 @@ const woOptions = computed(() =>
 function openWo(no: unknown) {
   if (typeof no === 'string' && no) navigateTo(`/wo/${encodeURIComponent(no)}`)
 }
-const { data, pending, refresh } = await useFetch('/api/board', {
+const { data, pending, error, refresh } = await useFetch('/api/board', {
   query: closedQuery,
   default: () => ({ lastSyncAt: null, syncOldest: null, syncErrors: [], syncConfigured: false, summary: { red: 0, yellow: 0, green: 0 }, sourceByDept: [], rows: [] }),
 })
-/** 刷新：看板 + 领导那一块（BoardLeaderPanel 的数据 key 是 'overview'）一起刷新 */
+/** 驾驶舱只在有权限且被挂载时请求，普通角色不触发管理接口。 */
 async function refreshAll() {
-  await Promise.all([refresh(), me.value?.can.overview ? refreshNuxtData(['overview', 'status-monitoring']) : undefined])
+  await Promise.all([refresh(), cockpit.value?.refresh()])
 }
 type Row = (typeof data.value.rows)[number]
 
@@ -62,12 +65,14 @@ const syncErrorText = computed(() =>
 // ───── 分组 ─────
 const groupOf = (r: Row): BoardGroup => boardGroup(r)
 /** 在做的工单（分组、汇总只算它们）；已完工 / 已取消的单列 */
-const activeRows = computed(() => data.value.rows.filter((r) => !r.closed))
-const closedRows = computed(() => data.value.rows.filter((r) => r.closed))
+const activeRows = computed(() => data.value.rows.filter((r) => !r.closed && (!redOnly.value || r.color === 'RED')))
+const closedRows = computed(() => data.value.rows.filter((r) => r.closed && (!redOnly.value || r.color === 'RED')))
 /** 要关注的：预计拖期 + 有风险（正常、未建总计划的不在本页显示） */
-const focusRows = computed(() => activeRows.value.filter(hasWorkOrderRisk))
+const focusRows = computed(() => activeRows.value.filter((r) => redOnly.value || hasWorkOrderRisk(r)))
 const grouped = computed(() => {
   const g = boardRiskSections(activeRows.value)
+  // 红色数字下钻也要列出红色但未建总计划的工单；默认两栏规则保持原样。
+  if (redOnly.value) g.RISK = activeRows.value
   // 拖期多的在前；其余保持看板顺序（红黄绿、交期近的在前）
   g.LATE.sort((a, b) => (b.delayDays ?? 0) - (a.delayDays ?? 0))
   return g
@@ -77,6 +82,26 @@ const COLUMNS: { key: 'LATE' | 'RISK'; icon: 'alert' | 'warn'; tone: 'late' | 'r
   { key: 'RISK', icon: 'warn', tone: 'risk' },
 ]
 const deptItems = computed(() => data.value.sourceByDept.map((d) => ({ key: d.dept, label: d.deptText, value: d.nodes })))
+
+const managerGroups = computed(() => {
+  const groups = new Map<string, { name: string; rows: Row[] }>()
+  for (const row of focusRows.value) {
+    const key = row.projectManagerId ?? ''
+    const group = groups.get(key) ?? { name: row.projectManagerName ?? '未设置项目经理', rows: [] }
+    group.rows.push(row)
+    groups.set(key, group)
+  }
+  return [...groups.entries()].map(([key, group]) => ({ key, ...group }))
+})
+const tableRows = computed(() => [...focusRows.value, ...closedRows.value])
+const tableColumns = [
+  { title: '工单号', key: 'wo' }, { title: '项目', key: 'project' }, { title: '项目经理', dataIndex: 'projectManagerName' },
+  { title: '交期', key: 'delivery' }, { title: '状态', key: 'status' }, { title: '预计交期', key: 'expected' },
+  { title: '拖期天数', dataIndex: 'delayDays' }, { title: '外协在途', dataIndex: 'outCount' },
+  { title: '外协超期', dataIndex: 'overdueSteps' }, { title: '未关闭异常', dataIndex: 'openIssues' },
+  { title: '超期异常', dataIndex: 'overdueIssues' }, { title: '未签收发放', dataIndex: 'unsignedReleases' },
+  { title: '缺料', dataIndex: 'shortage' }, { title: '齐套率', key: 'kit' },
+]
 
 // ───── 新建工单 ─────
 const createOpen = ref(false)
@@ -100,8 +125,10 @@ async function onCreated(no: string) {
     <div class="page-head">
       <h1 class="page-title">项目总览</h1>
       <div class="tools">
-        <span class="ft-muted sync-time" :title="data.syncOldest ? `最旧的是：${data.syncOldest}` : undefined">QMS 最后同步：{{ syncText }}</span>
+        <a-segmented v-if="me?.can.overview" :value="view" :options="BOARD_VIEWS" aria-label="项目总览视图" @change="changeView($event as BoardView)" />
+        <span v-if="view === 'board'" class="ft-muted sync-time" :title="data.syncOldest ? `最旧的是：${data.syncOldest}` : undefined">QMS 最后同步：{{ syncText }}</span>
         <a-select
+          v-if="view === 'board'"
           :value="undefined"
           show-search
           option-filter-prop="label"
@@ -112,13 +139,17 @@ async function onCreated(no: string) {
           :not-found-content="'没有可见的工单'"
           @change="openWo"
         />
-        <label class="closed-switch"><a-switch v-model:checked="showClosed" size="small" />显示已完工</label>
+        <label v-if="view === 'board'" class="closed-switch"><a-switch v-model:checked="showClosed" size="small" />显示已完工</label>
         <UiRefreshButton @click="refreshAll()" />
         <a-button v-if="me?.can.workOrder" type="primary" @click="createOpen = true">新建工单</a-button>
       </div>
     </div>
     <a-alert v-if="data.syncErrors.length" type="error" show-icon class="sync-error" message="QMS 同步出错，数据可能不是最新" :description="syncErrorText" />
 
+    <BoardCockpit v-if="view === 'cockpit' && me?.can.overview" ref="cockpit" />
+    <template v-else>
+    <a-result v-if="error" status="error" title="看板加载失败" :sub-title="apiError(error)"><template #extra><a-button @click="refresh()">重试</a-button></template></a-result>
+    <template v-else>
     <!-- 汇总 -->
     <div class="summary">
       <UiStatCard v-for="c in COLUMNS" :key="c.key" :label="BOARD_GROUP_TEXT[c.key]" :value="grouped[c.key].length" :sub="c.key === 'RISK' ? '含预计拖期、预警、未关闭异常、缺件及未齐套，按工单去重' : undefined" unit="个工单" :tone="c.tone" :icon="c.icon" accent />
@@ -128,12 +159,31 @@ async function onCreated(no: string) {
       </UiSectionCard>
     </div>
 
-    <!-- 原领导总览独有的内容（领导、项目部负责人、管理员） -->
-    <BoardLeaderPanel v-if="me?.can.overview" />
-    <StatusMonitoringPanel v-if="me?.can.overview" />
+    <div class="ft-toolbar board-toolbar">
+      <a-segmented :value="layout" :options="boardLayouts" aria-label="工单展示方式" @change="changeLayout($event as string)" />
+      <a-tag v-if="redOnly" closable @close.prevent="clearColor">仅红色工单 · {{ activeRows.length }}</a-tag>
+    </div>
 
     <a-spin :spinning="pending">
-        <a-empty v-if="!focusRows.length" description="没有预计拖期或有风险的工单" class="empty" />
+        <UiSectionCard v-if="layout === 'table'" padding="none">
+          <a-table class="ft-table board-table" :columns="tableColumns" :data-source="tableRows" row-key="workOrderNumber" :pagination="false" size="small">
+            <template #bodyCell="{ column, record: r }">
+              <WoLink v-if="column.key === 'wo'" :no="r.workOrderNumber" />
+              <template v-else-if="column.key === 'project'">{{ r.projectName ?? r.customerName }}</template>
+              <template v-else-if="column.key === 'delivery'">{{ dayText(r.deliveryDate) }}</template>
+              <template v-else-if="column.key === 'status'">{{ r.closed ? woStatusText(r.status) : BOARD_GROUP_TEXT[groupOf(r as Row)] }}</template>
+              <template v-else-if="column.key === 'expected'">{{ r.expectedDelivery || '—' }}</template>
+              <template v-else-if="column.key === 'kit'">{{ r.kitPercent == null ? '—' : `${r.kitPercent}%` }}</template>
+            </template>
+          </a-table>
+        </UiSectionCard>
+        <div v-else-if="layout === 'manager'" class="manager-groups">
+          <UiSectionCard v-for="group in managerGroups" :key="group.key" :title="`${group.name} · ${group.rows.length}`" padding="tight">
+            <div class="noplan-grid"><BoardWoCard v-for="r in group.rows" :key="r.workOrderNumber" :row="r" :group="groupOf(r)" /></div>
+          </UiSectionCard>
+          <a-empty v-if="!managerGroups.length" description="没有预计拖期或有风险的工单" />
+        </div>
+        <a-empty v-else-if="!focusRows.length" description="没有预计拖期或有风险的工单" class="empty" />
         <div v-else class="columns">
           <section v-for="c in COLUMNS" :key="c.key" class="col">
             <h2 class="col-title"><UiStatusIcon :kind="c.icon" :tone="c.tone" />{{ BOARD_GROUP_TEXT[c.key] }} · {{ grouped[c.key].length }}</h2>
@@ -141,13 +191,15 @@ async function onCreated(no: string) {
             <BoardWoCard v-for="r in grouped[c.key]" :key="r.workOrderNumber" :row="r" :group="c.key" />
           </section>
         </div>
-        <section v-if="closedRows.length" class="noplan-sec">
+        <section v-if="closedRows.length && layout !== 'table'" class="noplan-sec">
           <h2 class="col-title"><UiStatusIcon kind="check" tone="none" />已完工 / 已取消 · {{ closedRows.length }}</h2>
           <div class="noplan-grid">
             <BoardWoCard v-for="r in closedRows" :key="r.workOrderNumber" :row="r" :group="groupOf(r)" />
           </div>
         </section>
     </a-spin>
+    </template>
+    </template>
     <WorkOrderEditModal v-if="me?.can.workOrder" :open="createOpen" :work-order="null" @close="createOpen = false" @done="onCreated" />
   </div>
 </template>
@@ -167,6 +219,10 @@ async function onCreated(no: string) {
 .noplan-sec { margin-top: 24px; }
 /* align-items: start：卡片按各自内容高度，不被同一行最高的卡片拉高（否则只有两行字的卡片里空一大块） */
 .noplan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 10px; align-items: start; }
+.manager-groups { display: grid; gap: 16px; }
+.board-toolbar { margin-bottom: 16px; }
+.board-table { overflow-x: auto; }
+.board-table :deep(th), .board-table :deep(td) { font-size: 12px; padding: 8px 6px; overflow-wrap: anywhere; }
 .empty { padding: 48px 0; }
 .wo-search { width: 240px; }
 .closed-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ft-text-2); cursor: pointer; white-space: nowrap; }

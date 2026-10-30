@@ -116,3 +116,18 @@ describe('总览与下钻', () => {
     expect([...link.searchParams]).toEqual([['wo', '工单 A&1'], ['part', 'p&1'], ['step', 's&1']])
   })
 })
+
+
+describe('停滞红线总数', () => {
+  it('完整集合独立计数，超过 Top 10，排除黄线与正常，工序工件都计入', () => {
+    const rows = Array.from({ length: 15 }, (_, i) => entity(14 + i, { entityType: i % 2 ? 'part' : 'step' }))
+    const summary = monitoringSummary([...rows, entity(13), entity(7), entity(0)])
+    expect(summary.redCount).toBe(15)
+    expect(summary.top).toHaveLength(10)
+  })
+  it('恰达红线计入，回落后不计入，空集合为零', () => {
+    expect(monitoringSummary([entity(14), entity(13)]).redCount).toBe(1)
+    expect(monitoringSummary([entity(0), entity(13)]).redCount).toBe(0)
+    expect(monitoringSummary([]).redCount).toBe(0)
+  })
+})

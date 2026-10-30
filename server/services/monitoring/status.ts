@@ -29,8 +29,8 @@ export interface MonitoredEntity {
 }
 
 /** 总览、下钻清单、W11 扫描唯一数据口径；只算仍在履约的工单下的非终态对象。 */
-export async function loadMonitoredEntities(now: Date, threshold: RuleThreshold): Promise<MonitoredEntity[]> {
-  const workOrders = await prisma.qmsWorkOrder.findMany({ where: ACTIVE_WO_WHERE, select: { workOrderNumber: true } })
+export async function loadMonitoredEntities(now: Date, threshold: RuleThreshold, visibleWorkOrders?: string[]): Promise<MonitoredEntity[]> {
+  const workOrders = await prisma.qmsWorkOrder.findMany({ where: { ...ACTIVE_WO_WHERE, ...(visibleWorkOrders ? { workOrderNumber: { in: visibleWorkOrders } } : {}) }, select: { workOrderNumber: true } })
   if (!workOrders.length) return []
   // 现有模型：Part 终态只有 DONE，RouteStep 终态只有 DONE；取消在工单层排除。
   const parts = await prisma.part.findMany({
@@ -81,6 +81,8 @@ export function monitoringSummary(entities: MonitoredEntity[]) {
   return {
     steps: distribution('step', MONITORING_STEP_STATUSES),
     parts: distribution('part', MONITORING_PART_STATUSES),
+    // 从完整在制集合单独计数，不取 Top 长度，也不把黄线 / 正常混入。
+    redCount: entities.reduce((count, e) => count + Number(e.level === 'RED'), 0),
     top: entities.filter((e) => e.level !== 'GREEN').slice(0, 10),
   }
 }
@@ -93,13 +95,14 @@ export async function getStatusMonitoring(now = new Date()) {
 export interface MonitoringFilter {
   entityType?: MonitoringEntityType
   status?: MonitoringStatus
+  level?: MonitoringLevel
   page: number
   pageSize: number
 }
 
 export async function listMonitoredEntities(filter: MonitoringFilter, now = new Date()) {
   const threshold = (await loadThresholds()).W11
-  const rows = (await loadMonitoredEntities(now, threshold)).filter((e) => (!filter.entityType || e.entityType === filter.entityType) && (!filter.status || e.status === filter.status))
+  const rows = (await loadMonitoredEntities(now, threshold)).filter((e) => (!filter.entityType || e.entityType === filter.entityType) && (!filter.status || e.status === filter.status) && (!filter.level || e.level === filter.level))
   const start = (filter.page - 1) * filter.pageSize
   return { asOf: now, threshold, total: rows.length, rows: rows.slice(start, start + filter.pageSize) }
 }

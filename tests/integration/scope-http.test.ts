@@ -82,6 +82,8 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     // 只清本测试用到的数据
     await cleanPlans()
     await db.issue.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
+    // HTTP 用例会登记真实流转事件；再次运行前先按外键顺序清理本测试的事件。
+    await db.flowEvent.deleteMany({ where: { step: { part: { workOrderNumber: { in: [MINE, OTHER] } } } } })
     await db.part.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db.workOrderExt.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
     await db.qmsWorkOrder.deleteMany({ where: { workOrderNumber: { in: [MINE, OTHER] } } })
@@ -216,6 +218,18 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(list.rows.find((r: { id: string }) => r.id === otherPartId)).toMatchObject({ entityType: 'part', workOrderNumber: OTHER, status: 'ACTIVE', sinceSource: 'statusSince', link: expect.stringContaining(`part=${otherPartId}`) })
     expect((await get('/api/monitoring/entities?page=0', leader)).status).toBe(400)
     expect((await get('/api/monitoring/entities?status=DONE', leader)).status).toBe(400)
+  })
+
+  it('停滞红线 HTTP 下钻含两类在制对象，total 与 redCount 一致，拒绝非法级别且保留权限', async () => {
+    const leader = await login('h-lead')
+    const summary = await (await get('/api/monitoring/status', leader)).json()
+    const response = await get('/api/monitoring/entities?level=RED&pageSize=100', leader)
+    expect(response.status).toBe(200)
+    const list = await response.json()
+    expect(list.total).toBe(summary.redCount)
+    expect(list.rows.every((r: { level: string }) => r.level === 'RED')).toBe(true)
+    expect((await get('/api/monitoring/entities?level=BLUE', leader)).status).toBe(400)
+    expect((await get('/api/monitoring/entities?level=RED', await login('h-pm'))).status).toBe(403)
   })
 
   it('W11 复用设置阈值接口：管理员可改、非法边界拒绝，监控接口随配置更新', async () => {
