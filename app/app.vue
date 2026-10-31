@@ -25,10 +25,12 @@ const theme = {
     colorWarning: STATUS_COLOR.risk,
     colorError: STATUS_COLOR.late,
     colorInfo: STATUS_COLOR.onTrack,
-    colorTextBase: '#1b2430',
-    borderRadius: 8,
-    borderRadiusLG: 14,
-    borderRadiusSM: 6,
+    colorTextBase: '#18181b',
+    colorBorder: '#ecece9',
+    // 大圆角与 base.css 的 --card-radius-outer 对齐。
+    borderRadius: 10,
+    borderRadiusLG: 16,
+    borderRadiusSM: 8,
     fontFamily: "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif",
   },
 }

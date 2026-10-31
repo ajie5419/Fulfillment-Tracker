@@ -322,7 +322,7 @@ function clearFilters() {
 .list { display: flex; flex-direction: column; gap: 8px; }
 .more { margin-top: 12px; text-align: center; }
 
-.rcard { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid var(--ft-border); border-radius: 10px; background: var(--ft-card-bg); overflow: hidden; }
+.rcard { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); background: var(--ft-card-bg); overflow: hidden; }
 .rcard.clickable { cursor: pointer; }
 .rcard.clickable:hover { border-color: var(--ft-text-3); background: var(--ft-fill); }
 .rcard:focus-visible { outline: 2px solid var(--ft-primary); }

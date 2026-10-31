@@ -1,20 +1,38 @@
 /*
  * 全站基础样式与主题变量（前端改版第一轮）。
  * 状态色与 shared/status.ts 的 STATUS_COLOR 一致（改一处要两处一起改）；Ant Design 组件的主题 token 在 app/app.vue。
+ * 卡片视觉由 --card-* 定义，既有 --ft-* 映射到对应 token，主色和状态色保持独立。
  * 页面底色只加在电脑端布局（.ft-app，layouts/default.vue）上，手机端 /m 不受影响。
  */
 :root {
+  /* 暖色极简 Bento：画布、托盘与表面 */
+  --card-canvas-bg: #F5F5F4;
+  --card-tray-bg: #F6F6F4;
+  --card-surface-bg: #FFFFFF;
+  --card-border: #ECECE9;
+  --card-border-subtle: rgba(0, 0, 0, 0.04);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --card-radius-outer: 16px;
+  --card-radius-inner: 12px;
+  /* 托盘内缩由外圆角减内圆角推导：16px - 12px = 4px */
+  --card-tray-padding: 4px;
+  --card-text-primary: #18181B;
+  --card-text-secondary: #52525B;
+  --card-text-muted: #71717A;
+  /* 仅登记备用，不替换主色/状态色——橙色在本系统已表示「受上游影响」 */
+  --card-accent: #EA580C;
+
   --ft-primary: #2a78d6;
-  /* 设计规范定稿：中性浅灰底、卡片不用阴影（电脑端和手机端共用） */
-  --ft-page-bg: #eceef1;
-  --ft-card-bg: #fff;
-  --ft-card-radius: 14px;
-  --ft-card-shadow: none;
-  --ft-text: #1b2430;
-  --ft-text-2: #5b6575;
-  --ft-text-3: #8a93a3;
-  --ft-border: #e6e9ef;
-  --ft-fill: #f4f6f9;
+  /* 设计规范定稿：暖色画布、极轻阴影与细边框（电脑端和手机端共用） */
+  --ft-page-bg: var(--card-canvas-bg);
+  --ft-card-bg: var(--card-surface-bg);
+  --ft-card-radius: var(--card-radius-outer);
+  --ft-card-shadow: var(--card-shadow);
+  --ft-text: var(--card-text-primary);
+  --ft-text-2: var(--card-text-secondary);
+  --ft-text-3: var(--card-text-muted);
+  --ft-border: var(--card-border);
+  --ft-fill: var(--card-tray-bg);
   --ft-sider-bg: #16202e;
 
   /* 状态色：已完成/正常、有风险（黄）、受上游影响、延误（红）、未开始/未建计划、按计划 */
@@ -47,7 +65,7 @@ html, body { margin: 0; background: var(--ft-page-bg); font-family: -apple-syste
 /* 页面里原有的 a-card 统一成圆角卡片 */
 .ft-app .ft-content > .ant-card,
 .ft-app .ft-content > .ant-space > .ant-space-item > .ant-card { border-radius: var(--ft-card-radius); border: 1px solid var(--ft-border); box-shadow: var(--ft-card-shadow); }
-.ft-app .ft-content > .ant-card > .ant-card-head { border-bottom-color: var(--ft-border); }
+.ft-app .ft-content > .ant-card > .ant-card-head { border-bottom: none; }
 .ft-app .ft-content > .ant-card > .ant-card-head .ant-card-head-title { font-size: 17px; font-weight: 600; color: var(--ft-text); flex: none; margin-right: 16px; }
 /* 右上角筛选多时换行，不把标题挤成省略号 */
 .ft-app .ft-content > .ant-card > .ant-card-head { padding-block: 8px; }
@@ -65,7 +83,7 @@ html, body { margin: 0; background: var(--ft-page-bg); font-family: -apple-syste
 /* 部门工作台：统计卡一行 + 原来的卡片；卡片样式与上面 .ft-content > .ant-card 一致 */
 .ft-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .ft-app .ft-page > .ant-card { border-radius: var(--ft-card-radius); border: 1px solid var(--ft-border); box-shadow: var(--ft-card-shadow); }
-.ft-app .ft-page > .ant-card > .ant-card-head { border-bottom-color: var(--ft-border); padding-block: 8px; }
+.ft-app .ft-page > .ant-card > .ant-card-head { border-bottom: none; padding-block: 8px; }
 .ft-app .ft-page > .ant-card > .ant-card-head .ant-card-head-title { font-size: 17px; font-weight: 600; color: var(--ft-text); flex: none; margin-right: 16px; }
 .ft-app .ft-page > .ant-card > .ant-card-head .ant-card-head-wrapper { flex-wrap: wrap; row-gap: 8px; }
 .ft-app .ft-page > .ant-card > .ant-card-head .ant-card-extra { margin-inline-start: auto; }
@@ -96,7 +114,7 @@ html, body { margin: 0; background: var(--ft-page-bg); font-family: -apple-syste
 
 /* ───── 设计规范通用类（docs/前端设计规范.md） ───── */
 /* 卡片里的浅灰区域：图表、列表都放在里面 */
-.ft-well { background: var(--ft-fill); border-radius: 12px; padding: 16px; }
+.ft-well { background: var(--ft-fill); border: 1px solid var(--card-border-subtle); border-radius: var(--card-radius-inner); padding: 16px; }
 .ft-well.list { display: flex; flex-direction: column; padding: 4px 16px; }
 .ft-well.list > .ant-empty { margin: 24px 0; }
 /* 筛选面板里的一行：左边条件名，右边控件 */
