@@ -42,8 +42,10 @@ function onKey(e: KeyboardEvent) {
   align-items: flex-start;
   gap: 10px;
   padding: 12px 14px;
-  background: var(--ft-card-bg);
-  border: 1px solid var(--ft-border);
+  background: var(--card-surface-sheen);
+  background-clip: padding-box;
+  border: 1px solid var(--card-hairline);
+  border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom);
   border-radius: var(--ft-card-radius);
   box-shadow: var(--card-shadow);
   overflow: hidden;

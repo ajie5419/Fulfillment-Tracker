@@ -57,8 +57,10 @@ withDefaults(
 
 <style scoped>
 .ft-section {
-  background: var(--ft-card-bg);
-  border: 1px solid var(--ft-border);
+  background: var(--card-surface-sheen);
+  background-clip: padding-box;
+  border: 1px solid var(--card-hairline);
+  border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom);
   border-radius: var(--ft-card-radius);
   box-shadow: var(--ft-card-shadow);
   display: flex;
@@ -68,7 +70,7 @@ withDefaults(
 .ft-section-panel { flex: 1; min-width: 0; }
 .ft-section-panel.pad-normal { padding: 16px 20px 20px; }
 .ft-section-panel.pad-tight { padding: 12px 18px 16px; }
-.ft-section-panel.pad-none { padding: 0; overflow: hidden; }
+.ft-section-panel.pad-none { padding: 0; overflow: hidden; border-radius: 0 0 calc(var(--ft-card-radius) - 1px) calc(var(--ft-card-radius) - 1px); }
 .ft-section:not(.headless) .ft-section-panel.pad-normal { padding-top: 6px; }
 .ft-section:not(.headless) .ft-section-panel.pad-tight { padding-top: 4px; }
 .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 15px 20px 11px; }
@@ -82,8 +84,11 @@ withDefaults(
   width: 24px;
   height: 24px;
   border-radius: 7px;
-  background: var(--ft-fill);
-  border: 1px solid var(--ft-border);
+  background: var(--card-keycap-surface);
+  background-clip: padding-box;
+  border: 1px solid var(--card-hairline);
+  border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom);
+  box-shadow: var(--card-keycap-shadow);
   color: var(--ft-text-2);
 }
 .title { margin: 0; font-size: 15px; font-weight: 600; color: var(--ft-text); line-height: 22px; }

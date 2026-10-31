@@ -5,16 +5,76 @@
  * 页面底色只加在电脑端布局（.ft-app，layouts/default.vue）上，手机端 /m 不受影响。
  */
 :root {
-  /* 清爽冷白企业风（Linear / Stripe 质感）：冷白画布 #F8FAFC + 纯白单层卡片 + 清透石板蓝 #2563EB + 低饱和状态色 */
+  /* 清爽冷白企业风（Linear / Ember 轻盈精工卡片质感）：
+     - 90° 顶光层级：外框画布 #F3F5F8 → 工作台净白画板 #FCFCFD → 顶光微光泽白卡 #FFFFFF→#FCFDFF
+     - 1px 轻盈光学细描边（padding-box 裁切）+ 1px 顶部纯白内发光 + 克制三重衰减微投影 */
   /* 文字与边框两色另在 shared/theme.ts 有同值来源（Ant 主题用），改一处要两处一起改。 */
-  --card-canvas-bg: #F4F5F7;
+  --card-canvas-bg: #F3F5F8;
+  --card-sheet-bg: #FCFCFD;
   --card-tray-bg: #F3F5F8;
+  --card-tray-surface: linear-gradient(180deg, #F7F8FB 0%, #F1F4F8 100%);
   --card-surface-bg: #FFFFFF;
+  --card-surface-sheen: linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%);
+  --card-keycap-surface: linear-gradient(180deg, #FFFFFF 0%, #F9FAFC 100%);
   --card-border: #E2E8F0;
   --card-border-hover: #CBD5E1;
   --card-border-subtle: #E6ECF2;
-  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --card-shadow-hover: 0 4px 12px rgba(15, 23, 42, 0.06);
+  /* 1px 光学方向性细描边：克制清透，顶受光极轻、底边微收而不压重 */
+  --card-hairline-top: rgba(15, 23, 42, 0.048);
+  --card-hairline: rgba(15, 23, 42, 0.065);
+  --card-hairline-bottom: rgba(15, 23, 42, 0.095);
+  --card-panel-hairline-top: rgba(15, 23, 42, 0.038);
+  --card-panel-hairline: rgba(15, 23, 42, 0.052);
+  --card-panel-hairline-bottom: rgba(15, 23, 42, 0.078);
+  --card-hairline-hover-top: rgba(15, 23, 42, 0.08);
+  --card-hairline-hover: rgba(15, 23, 42, 0.115);
+  --card-hairline-hover-bottom: rgba(15, 23, 42, 0.16);
+  /* 顶部 1px 内发光 + 内侧微高光环 + 轻盈三重衰减外投影 */
+  --card-shadow:
+    inset 0 1px 0 0 #FFFFFF,
+    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+    inset 0 -1px 0 0 rgba(15, 23, 42, 0.016),
+    0 1px 2px 0 rgba(15, 23, 42, 0.028),
+    0 3px 8px -2px rgba(15, 23, 42, 0.032),
+    0 10px 22px -8px rgba(15, 23, 42, 0.034);
+  --card-shadow-hover:
+    inset 0 1px 0 0 #FFFFFF,
+    inset 0 0 0 1px rgba(255, 255, 255, 0.86),
+    inset 0 -1px 0 0 rgba(15, 23, 42, 0.022),
+    0 2px 4px -1px rgba(15, 23, 42, 0.04),
+    0 6px 14px -4px rgba(15, 23, 42, 0.05),
+    0 14px 28px -10px rgba(15, 23, 42, 0.052);
+  --card-tray-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.92),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 0 rgba(15, 23, 42, 0.018),
+    0 1px 2px 0 rgba(15, 23, 42, 0.022),
+    0 4px 10px -3px rgba(15, 23, 42, 0.026),
+    0 10px 20px -8px rgba(15, 23, 42, 0.026);
+  --card-panel-shadow:
+    inset 0 1px 0 0 #FFFFFF,
+    inset 0 0 0 1px rgba(255, 255, 255, 0.8),
+    0 1px 1.5px 0 rgba(15, 23, 42, 0.032),
+    0 3px 7px -2px rgba(15, 23, 42, 0.036),
+    0 7px 14px -6px rgba(15, 23, 42, 0.028);
+  --card-keycap-shadow:
+    inset 0 1px 0 0 #FFFFFF,
+    0 1px 1.5px 0 rgba(15, 23, 42, 0.036),
+    0 2px 5px -2px rgba(15, 23, 42, 0.03);
+  --card-badge-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.72),
+    0 1px 1.5px 0 rgba(15, 23, 42, 0.026);
+  --card-sheet-shadow:
+    inset 0 1px 0 0 #FFFFFF,
+    0 1px 2px 0 rgba(15, 23, 42, 0.03),
+    0 8px 22px -8px rgba(15, 23, 42, 0.04);
+  --btn-ink-surface: linear-gradient(180deg, #1E293B 0%, #0F172A 100%);
+  --btn-ink-surface-hover: linear-gradient(180deg, #334155 0%, #1E293B 100%);
+  --btn-ink-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.22),
+    0 1px 2px 0 rgba(15, 23, 42, 0.14),
+    0 3px 8px -2px rgba(15, 23, 42, 0.1);
   --card-radius-outer: 12px;
   --card-radius-inner: 10px;
   --card-text-primary: #0F172A;
@@ -64,14 +124,28 @@ html, body { margin: 0; background: var(--ft-page-bg); color: var(--ft-text); fo
 
 /* ───── 电脑端通用 ───── */
 .ft-app { background: var(--ft-page-bg); color: var(--ft-text); }
-/* 页面里原有的 a-card 统一成圆角卡片（含 .ft-page 与包裹容器内的顶层卡片） */
-.ft-app :is(.ft-content > .ant-card, .ft-content > .ant-space > .ant-space-item > .ant-card, .ft-page > .ant-card) { border-radius: var(--ft-card-radius); border: 1px solid var(--ft-border); box-shadow: var(--ft-card-shadow); }
-.ft-app :is(.ft-content > .ant-card, .ft-page > .ant-card) > .ant-card-head { border-bottom: none; padding-block: 8px; }
-.ft-app :is(.ft-content > .ant-card, .ft-page > .ant-card) > .ant-card-head .ant-card-head-title { font-size: 16px; font-weight: 600; color: var(--ft-text); flex: none; margin-right: 16px; }
+/* 页面里原有的顶层 a-card 统一成精工高光圆角卡片（内嵌子卡不叠加外投影，杜绝套娃感） */
+.ft-app .ft-content .ant-card:not(.ant-card .ant-card) {
+  background: var(--card-surface-sheen);
+  background-clip: padding-box;
+  border-radius: var(--ft-card-radius);
+  border: 1px solid var(--card-hairline);
+  border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom);
+  box-shadow: var(--ft-card-shadow);
+}
+.ft-app .ft-content .ant-card .ant-card {
+  background: var(--ft-card-bg);
+  border-radius: var(--card-radius-inner);
+  border: 1px solid var(--card-border-subtle);
+  box-shadow: none;
+}
+.ft-app .ft-content .ant-card:not(.ant-card .ant-card) > .ant-card-head { background: transparent; border-bottom: none; padding-block: 8px; }
+.ft-app .ft-content .ant-card:not(.ant-card .ant-card) > .ant-card-body { background: transparent; }
+.ft-app .ft-content .ant-card:not(.ant-card .ant-card) > .ant-card-head .ant-card-head-title { font-size: 16px; font-weight: 600; color: var(--ft-text); flex: none; margin-right: 16px; }
 /* 右上角筛选多时换行，不把标题挤成省略号 */
-.ft-app :is(.ft-content > .ant-card, .ft-page > .ant-card) > .ant-card-head .ant-card-head-wrapper { flex-wrap: wrap; row-gap: 8px; }
-.ft-app :is(.ft-content > .ant-card, .ft-page > .ant-card) > .ant-card-head .ant-card-extra { margin-inline-start: auto; }
-.ft-app :is(.ft-content > .ant-card, .ft-page > .ant-card) > .ant-card-body:only-child { padding: 16px 20px 20px; }
+.ft-app .ft-content .ant-card:not(.ant-card .ant-card) > .ant-card-head .ant-card-head-wrapper { flex-wrap: wrap; row-gap: 8px; }
+.ft-app .ft-content .ant-card:not(.ant-card .ant-card) > .ant-card-head .ant-card-extra { margin-inline-start: auto; }
+.ft-app .ft-content .ant-card:not(.ant-card .ant-card) > .ant-card-body:only-child { padding: 16px 20px 20px; }
 
 /* 状态文字（永远带文字，颜色只是辅助） */
 .ft-text-done { color: var(--ft-done-text); }
@@ -115,7 +189,15 @@ html, body { margin: 0; background: var(--ft-page-bg); color: var(--ft-text); fo
 /* 严禁卡片叠卡片：
    - 独立放在冷白画布上的 .ft-well 为单层纯白卡片；
    - 若位于单层白卡（UiSectionCard / a-card / a-drawer）内部，自动退化为无框平铺容器，只靠留白或细分割线分区 */
-.ft-well { background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); padding: 16px; }
+.ft-well {
+  background: var(--card-surface-sheen);
+  background-clip: padding-box;
+  border: 1px solid var(--card-hairline);
+  border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom);
+  border-radius: var(--ft-card-radius);
+  box-shadow: var(--ft-card-shadow);
+  padding: 16px;
+}
 .ft-well.list { display: flex; flex-direction: column; padding: 4px 18px; }
 .ft-well.list > .ant-empty { margin: 24px 0; }
 :is(.ft-section:not(.flat), .ant-card-body) .ft-well { background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 0; }
@@ -138,9 +220,24 @@ html, body { margin: 0; background: var(--ft-page-bg); color: var(--ft-text); fo
 :root .ant-tag:is(.ant-tag-blue, .ant-tag-processing, .ant-tag-geekblue, .ant-tag-cyan) { --tag-dot: var(--ft-primary); background: var(--ft-primary-bg); color: var(--ft-primary-text); }
 /* 卡片标题 + 说明问号 */
 .ft-title { display: inline-flex; align-items: center; gap: 6px; }
-/* Ember 式深墨黑主操作按钮：把彩色留给数据状态，主操作按钮沉稳高对比 */
-.ft-app .ft-btn-ink.ant-btn-primary:not(:disabled) { background: var(--ft-text); border-color: var(--ft-text); color: var(--ft-card-bg); box-shadow: var(--ft-card-shadow); }
-.ft-app .ft-btn-ink.ant-btn-primary:not(:disabled):hover { background: color-mix(in srgb, var(--ft-text) 86%, var(--ft-card-bg)); border-color: color-mix(in srgb, var(--ft-text) 86%, var(--ft-card-bg)); color: var(--ft-card-bg); }
+/* Ember 式深墨黑主操作按钮：顶光微斜面 + 1px 顶部内高光 + 双重立体投影 */
+.ft-app .ft-btn-ink.ant-btn-primary:not(:disabled) {
+  background: var(--btn-ink-surface);
+  background-clip: padding-box;
+  border-color: var(--ft-text);
+  color: var(--ft-card-bg);
+  box-shadow: var(--btn-ink-shadow);
+}
+.ft-app .ft-btn-ink.ant-btn-primary:not(:disabled):hover {
+  background: var(--btn-ink-surface-hover);
+  border-color: var(--ft-text);
+  color: var(--ft-card-bg);
+}
+/* 分段控制器选中滑块：统一带 1px 顶部高光与键帽微投影 */
+.ft-app .ant-segmented .ant-segmented-item-selected {
+  background: var(--card-keycap-surface);
+  box-shadow: var(--card-keycap-shadow);
+}
 /* 卡片内的工具栏：左边状态切换，右边搜索 / 次要筛选 / 显示方式，一行放不下时自动换行 */
 .ft-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 14px; }
 .ft-toolbar-left, .ft-toolbar-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

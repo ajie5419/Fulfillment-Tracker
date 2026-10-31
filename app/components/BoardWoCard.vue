@@ -69,9 +69,9 @@ const product = computed(() => r.value.projectName ?? r.value.customerName)
 </template>
 
 <style scoped>
-.card { display: block; position: relative; padding: 14px 16px 12px; border: 1px solid var(--ft-border); background: var(--ft-card-bg); border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); color: var(--ft-text); min-width: 0; overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
+.card { display: block; position: relative; padding: 14px 16px 12px; background: var(--card-surface-sheen); background-clip: padding-box; border: 1px solid var(--card-hairline); border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom); border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); color: var(--ft-text); min-width: 0; overflow: hidden; transition: border-color 0.16s, box-shadow 0.16s, transform 0.16s; }
 /* 设计改版：去掉左侧色条（用户意见）；卡片已按状态分组（组标题带图标），卡内有拖期天数和预警标签 */
-a.card:hover { color: var(--ft-text); border-color: var(--ft-border-hover); box-shadow: var(--card-shadow-hover); }
+a.card:hover { color: var(--ft-text); border-color: var(--card-hairline-hover-top) var(--card-hairline-hover) var(--card-hairline-hover-bottom); box-shadow: var(--card-shadow-hover); transform: translateY(-1px); }
 a.card:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
 .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .title { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
