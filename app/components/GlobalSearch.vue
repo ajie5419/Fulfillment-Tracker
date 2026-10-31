@@ -108,10 +108,31 @@ async function onSelect(value: unknown) {
 </template>
 
 <style scoped>
-.search-wrap, .global-search { width: 100%; }
-:deep(.search-input.ant-input-affix-wrapper) {
+.search-wrap {
+  display: flex;
+  align-items: center;
+  width: 100%;
   height: 32px;
-  padding: 0 8px 0 10px;
+  line-height: 1.4;
+}
+.global-search {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 32px;
+}
+:deep(.global-search .ant-select-selector),
+:deep(.global-search .ant-select-selection-search) {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 32px;
+}
+:deep(.search-input.ant-input-affix-wrapper) {
+  box-sizing: border-box;
+  height: 32px;
+  margin: 0;
+  padding: 0 7px 0 10px;
   border-radius: 8px;
   background: var(--ft-fill);
   border-color: transparent;
