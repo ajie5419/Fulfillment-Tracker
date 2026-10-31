@@ -26,7 +26,6 @@ const stageRiskLinks: Record<string, string> = {
   outsource: '/risks?tab=alerts&rule=W3', kitting: '/risks?tab=alerts&rule=W8', issue: OVERDUE_ISSUES_LINK,
 }
 const stageBars = computed(() => stages.value.map((s) => ({ key: s.key, label: s.label, value: s.count, to: s.link })))
-const deptBars = computed(() => overview.data.value?.byDept.map((d) => ({ key: d.dept, label: d.dept, value: d.open, text: `${d.open} · 超期 ${d.overdue}` })) ?? [])
 async function refresh() { await Promise.all(sources.map((s) => s.refresh())) }
 defineExpose({ refresh })
 </script>
@@ -85,14 +84,9 @@ defineExpose({ refresh })
         <NuxtLink v-else-if="topStage && topStage.count > 0" :to="stageRiskLinks[topStage.key] ?? '/risks'">{{ topStage.label }} {{ topStage.count }}</NuxtLink>
         <span v-else>暂无卡点</span>
       </p>
-      <div v-if="overview.data.value && !overview.error.value" class="compact-charts">
-        <UiSectionCard title="卡点分布" padding="tight">
-          <div class="ft-well compact-stage"><UiColumnChart :items="stageBars" highlight="late" :height="140" /></div>
-        </UiSectionCard>
-        <UiSectionCard title="按责任部门 · 未关闭异常" padding="tight">
-          <div class="ft-well"><UiBarList :items="deptBars" compact :label-width="96" empty="没有未关闭的异常" /></div>
-        </UiSectionCard>
-      </div>
+      <UiSectionCard v-if="overview.data.value && !overview.error.value" title="卡点分布" padding="tight">
+        <div class="ft-well compact-stage"><UiColumnChart :items="stageBars" highlight="late" :height="140" /></div>
+      </UiSectionCard>
     </div>
   </div>
 </template>
@@ -106,9 +100,8 @@ defineExpose({ refresh })
 .cockpit-list :deep(.extra) { color: var(--ft-late-text); }
 .source-error { margin-bottom: 8px; color: var(--ft-late-text); }
 .week-summary { margin: 0 0 12px; color: var(--ft-text-2); }
-.compact-charts { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 16px; }
 .compact-stage { height: 180px; }
-@media (max-width: 991px) { .cockpit-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } .compact-charts { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 991px) { .cockpit-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 575px) {
   .cockpit-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .cockpit-list :deep(.ft-li) { flex-wrap: wrap; }
