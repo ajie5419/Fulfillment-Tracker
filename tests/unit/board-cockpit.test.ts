@@ -58,29 +58,49 @@ const stagnation = (id: string, days: number): CockpitStagnation => ({
 const merge = (extra: Partial<Parameters<typeof mergeCockpitItems>[0]> = {}) => mergeCockpitItems({ redWorkOrders: [], issues: [], stagnation: [], ...extra })
 
 describe('红色清单合并、排序与深链', () => {
-  it('按类别优先级排序，不跨时钟比较天数；同工单的三种事项都保留', () => {
+  it('一单命中三类只出一行，主项为红色工单，附加项完整且有独立入口', () => {
     const items = merge({ redWorkOrders: [wo('WO-1')], issues: [issue('i', 100)], stagnation: [stagnation('s', 200)] })
-    expect(items.map((r) => r.kind)).toEqual(['workOrder', 'issue', 'stagnation'])
-    expect(items.map((r) => r.workOrderNumber)).toEqual(['WO-1', 'WO-1', 'WO-1'])
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ key: 'wo:WO-1', kind: 'workOrder', days: 200, workOrder: wo('WO-1') })
+    expect(items[0]!.also).toMatchObject([
+      { kind: 'issue', label: '超期异常', duration: '已超期 100 天', to: '/risks?tab=issues&overdue=1&dept=0&id=i' },
+      { kind: 'stagnation', label: '停滞红线', detail: '工序 · 待开工', duration: '已停 200 天', to: stagnation('s', 200).link },
+    ])
   })
-  it('各组天数降序、同天数按稳定 key；无工单时长排末尾', () => {
+  it('先按主类型，再按该单超期 / 停滞 / 拖期最大天数排序，同天数按工单 key', () => {
     const items = merge({
-      redWorkOrders: [wo('C'), wo('B'), wo('A')],
-      issues: [{ ...issue('z', 2), workOrderNumber: 'A' }, { ...issue('b', 9), workOrderNumber: 'B' }, issue('a', 9)], stagnation: [stagnation('s1', 14), stagnation('s2', 20)],
+      redWorkOrders: [wo('D'), { ...wo('C'), delayDays: 11 }, wo('B'), wo('A')],
+      issues: [{ ...issue('a', 11), workOrderNumber: 'A' }, { ...issue('b', 9), workOrderNumber: 'B' }, { ...issue('e', 100), workOrderNumber: 'E' }],
+      stagnation: [{ ...stagnation('b', 20), workOrderNumber: 'B' }, { ...stagnation('e', 200), workOrderNumber: 'E' }, { ...stagnation('f', 300), workOrderNumber: 'F' }],
     })
-    expect(items.map((r) => r.key)).toEqual(['wo:B', 'wo:A', 'wo:C', 'issue:a', 'issue:b', 'issue:z', 'step:s2', 'step:s1'])
+    expect(items.map((r) => [r.key, r.kind, r.days])).toEqual([
+      ['wo:B', 'workOrder', 20], ['wo:A', 'workOrder', 11], ['wo:C', 'workOrder', 11], ['wo:D', 'workOrder', null],
+      ['wo:E', 'issue', 200], ['wo:F', 'stagnation', 300],
+    ])
+    expect(items.find((r) => r.workOrderNumber === 'E')).toMatchObject({ duration: '已超期 100 天', also: [{ kind: 'stagnation', days: 200 }] })
   })
-  it('只收正超期与 RED 停滞，排除黄线、绿线及无超期事项', () => {
-    expect(merge({ issues: [issue('i', 0), { ...issue('closed', 99), overdue: false }], stagnation: [{ ...stagnation('s', 8), level: 'YELLOW' }, { ...stagnation('s2', 1), level: 'GREEN' }] })).toEqual([])
+  it('只收 overdue 异常与 RED 停滞，包含 overdueDays = 0 的待受理超时', () => {
+    const rows = merge({ issues: [issue('i', 0), { ...issue('closed', 99), overdue: false }], stagnation: [{ ...stagnation('s', 8), level: 'YELLOW' }, { ...stagnation('s2', 1), level: 'GREEN' }] })
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ kind: 'issue', days: null, duration: '待受理超时', also: [] })
   })
-  it('排序完成再截取 10 条；不修改输入，前十中保留正确的最长事项', () => {
-    const input = Array.from({ length: 15 }, (_, n) => issue(String(n), n + 1))
-    expect(merge({ issues: input }).map((r) => r.days)).toEqual([15, 14, 13, 12, 11, 10, 9, 8, 7, 6])
+  it('分组和排序后按 10 单截断，同单多问题不挤占行数，也不修改输入', () => {
+    const input = Array.from({ length: 15 }, (_, n) => ({ ...issue(String(n), n + 1), workOrderNumber: `W-${n}` }))
+    const rows = merge({ issues: [...input, ...input.map((i) => ({ ...i, id: `other-${i.id}`, overdueDays: 1 }))] })
+    expect(rows.map((r) => r.days)).toEqual([15, 14, 13, 12, 11, 10, 9, 8, 7, 6])
+    expect(new Set(rows.map((r) => r.workOrderNumber)).size).toBe(10)
+    expect(rows.every((r) => r.also.length === 1)).toBe(true)
     expect(input[0]!.overdueDays).toBe(1)
+    expect(input[0]!.id).toBe('0')
+    const mixed = merge({ redWorkOrders: Array.from({ length: 9 }, (_, n) => wo(`R-${n}`)), issues: input, stagnation: [{ ...stagnation('s', 999), workOrderNumber: 'S' }] })
+    expect(mixed).toHaveLength(10)
+    expect(mixed.map((r) => r.kind)).toEqual([...Array(9).fill('workOrder'), 'issue'])
+    expect(mixed[9]!.workOrderNumber).toBe('W-14')
   })
   it('保留 redReason 原文、责任方、三类原有详情链接和服务端时长', () => {
     const rows = merge({ redWorkOrders: [wo('WO /?1')], issues: [{ ...issue('i &1', 4), workOrderNumber: 'WO /?1' }], stagnation: [stagnation('s', 18)] })
-    expect(rows.map((r) => [r.to, r.duration, r.responsibility])).toEqual([
+    const details = [rows[0]!, ...rows[0]!.also, rows[1]!]
+    expect(details.map((r) => [r.to, r.duration, r.responsibility])).toEqual([
       ['/wo/WO%20%2F%3F1', '异常最长已超 4 天', '项目经理 张经理'],
       ['/risks?tab=issues&overdue=1&dept=0&id=i%20%261', '已超期 4 天', '技术部 · 李工'],
       ['/parts?wo=WO-1&part=p&step=s', '已停 18 天', '生产部 · 王工'],
@@ -88,14 +108,29 @@ describe('红色清单合并、排序与深链', () => {
     expect(rows[0]!.detail).toBe(wo('WO /?1').reason)
   })
   it('责任与时长缺失明确显示缺失，不推定责任人或制造天数', () => {
-    const rows = merge({ redWorkOrders: [{ ...wo('W'), projectManagerName: null }], issues: [{ ...issue('i', 2), responsibleDeptName: null, responsibleUserName: null }], stagnation: [{ ...stagnation('s', 14), owners: [], deptNames: [] }] })
+    const rows = merge({ redWorkOrders: [{ ...wo('W'), projectManagerName: null }], issues: [{ ...issue('i', 2), responsibleDeptName: null, responsibleUserName: null }], stagnation: [{ ...stagnation('s', 14), workOrderNumber: 'S', owners: [], deptNames: [] }] })
     expect(rows[0]).toMatchObject({ days: null, duration: '时长未提供', responsibility: '未设置项目经理' })
     expect(rows.slice(1).map((r) => r.responsibility)).toEqual(['未指定责任方', '未指定责任方'])
   })
-  it('工单只复用已有异常中最大的超期天数，不受输入顺序影响，也不采用预测延期', () => {
+  it('同单的多条异常和停滞都保留，主项和顺序不受输入顺序影响', () => {
     const rows = merge({ redWorkOrders: [wo('WO-1')], issues: [issue('long', 11), issue('short', 2)] })
     expect(rows[0]).toMatchObject({ days: 11, duration: '异常最长已超 11 天' })
+    expect(rows[0]!.also.map((r) => r.key)).toEqual(['issue:long', 'issue:short'])
+    const input = { issues: [issue('short', 2), issue('long', 11)], stagnation: [stagnation('s1', 20), stagnation('s2', 30)] }
+    const grouped = merge(input)
+    expect(grouped).toHaveLength(1)
+    expect(grouped[0]).toMatchObject({ kind: 'issue', days: 30, title: 'YC-long · 图纸未确认' })
+    expect(grouped[0]!.also.map((r) => r.key)).toEqual(['issue:short', 'step:s2', 'step:s1'])
+    expect(merge({ issues: [...input.issues].reverse(), stagnation: [...input.stagnation].reverse() })).toEqual(grouped)
     expect(merge({ redWorkOrders: [wo('WO-1')] })[0]).toMatchObject({ days: null, duration: '时长未提供' })
+  })
+  it('工单排序也使用完整停滞摘要和预计拖期，但文案区分时钟', () => {
+    const rows = merge({ redWorkOrders: [{ ...wo('A'), delayDays: 25 }, { ...wo('B'), stagnationRedDays: 30 }, { ...wo('C'), stagnationYellowDays: 8, delayDays: -3 }] })
+    expect(rows.map((r) => [r.workOrderNumber, r.days, r.duration])).toEqual([['B', 30, '已停 30 天'], ['A', 25, '预计拖期 25 天'], ['C', 8, '已停 8 天']])
+  })
+  it('只有异常或只有停滞的工单照常一单一行', () => {
+    const rows = merge({ issues: [issue('i', 3)], stagnation: [{ ...stagnation('s', 25), workOrderNumber: 'S' }] })
+    expect(rows.map((r) => [r.workOrderNumber, r.kind, r.also])).toEqual([['WO-1', 'issue', []], ['S', 'stagnation', []]])
   })
   it('无数据时得到空清单', () => { expect(merge()).toEqual([]) })
 })

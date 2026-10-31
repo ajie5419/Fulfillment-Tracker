@@ -13,7 +13,8 @@ import type { Issue, IssueCategory, IssueSource, IssueStatus, NotifyRole, Prisma
 import { prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { loadOffDays, loadThresholds } from '../alerts/config'
-import { alertKey, dateFieldDay, judgeW4 } from '../alerts/rules'
+import { alertKey, dateFieldDay } from '../alerts/rules'
+import { judgeIssueOverdue } from './overdue'
 import { FlowError, FlowForbidden } from '../flow/errors'
 import { lockStep, restoreBlockedStep } from '../flow/flow'
 import { deptIdsResolvingTo, loadDeptIndex, representativeDeptId, resolveDeptName, resolveDeptNames } from '../auth/departments'
@@ -452,7 +453,7 @@ export interface IssueFilter {
   deptIds?: string[]
   /** responsible = 我负责；reported = 我上报；todo = 等我操作（受理/处理/确认） */
   mine?: 'responsible' | 'reported' | 'todo'
-  /** 只看超期（W4 意义上：待受理超 1 天或过要求解决日） */
+  /** 只看超期（待受理满 W4 黄阈值，或已过要求解决日；待确认、已关闭不算） */
   overdue?: boolean
   /** 可见工单（undefined = 全部） */
   visibleWorkOrders?: string[]
@@ -489,7 +490,7 @@ async function decorate(issues: Issue[], actor: Actor, now: Date) {
   return issues.map((i) => {
     const step = i.refType === 'STEP' && i.refId ? stepById.get(i.refId) : undefined
     const part = step?.part ?? (i.refType === 'PART' && i.refId ? partById.get(i.refId) : undefined)
-    const judged = judgeW4({ status: i.status, createdAt: i.createdAt, dueDate: i.dueDate, now, offDays }, thresholds.W4)
+    const judged = judgeIssueOverdue({ status: i.status, createdAt: i.createdAt, dueDate: i.dueDate, now, offDays }, thresholds.W4)
     return {
       id: i.id,
       issueNo: i.issueNo,
@@ -522,7 +523,7 @@ async function decorate(issues: Issue[], actor: Actor, now: Date) {
       createdAt: i.createdAt,
       updatedAt: i.updatedAt,
       /** 超期：待受理超阈值、或过要求解决日（待确认、已关闭不算） */
-      overdue: !!judged.level,
+      overdue: judged.overdue,
       overdueDays: judged.overdueDays,
       /** 当前 W4 预警级别（扫描任务写入的） */
       alertLevel: w4.get(i.id) ?? null,

@@ -163,7 +163,9 @@ describe('issue list completeness', () => {
     db.threshold.findMany.mockResolvedValue([{ rule: 'W4', remindHours: null, yellowDays: 2, redDays: 5 }])
     db.offDay.findMany.mockResolvedValue([{ date: new Date('2026-10-26') }, { date: new Date('2026-10-27') }])
     const rows = await listIssues({ overdue: true }, actor, now)
-    expect(rows.map((r) => r.id)).toEqual([stored[501]!.id])
+    // 已过解决日就算超期，即使未达到 W4 可配置的 2 天黄阈值。
+    expect(rows.map((r) => r.id)).toEqual([stored[500]!.id, stored[501]!.id])
+    expect(rows.map((r) => r.overdueDays)).toEqual([1, 2])
   })
 
   it('keeps status, category, department, ownership and visible work-order restrictions on every batch', async () => {
