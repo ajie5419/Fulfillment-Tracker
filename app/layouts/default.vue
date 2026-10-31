@@ -20,7 +20,7 @@ const groups = computed(() => {
       // 项目日历（zhao 10-21）：所有人都能看，不分权限
       { key: '/calendar', label: '项目日历' },
       // 前端改版第二轮：预警列表、异常列表合并为"风险"（旧地址 /alerts、/issues 重定向到 /risks 对应页签）
-      { key: '/risks', label: '风险' },
+      { key: '/risks', label: '预警与异常处理' },
     ]) },
     // 功能重复梳理第一批：领导总览并入项目总览（有权限的人在项目总览汇总下方多看到一块），
     // "工单详情"入口页去掉（项目总览顶部搜工单、卡片点进详情）；旧地址 /overview、/wo 跳项目总览；/templates 不在菜单里但保留（非管理员只读查看）
@@ -77,14 +77,14 @@ const selected = computed(() => {
 })
 // 标题取决于路由本身，不能因用户没有对应菜单权限而回落到工作台。
 const ROUTE_TITLES: Record<string, string> = {
-  '/': '工作台', '/calendar': '项目日历', '/risks': '风险',
+  '/': '工作台', '/calendar': '项目日历', '/risks': '预警与异常处理',
   '/board': '项目总览', '/plan': '项目计划', '/dept-plan': '部门计划',
   '/drawings': '设计任务', '/process': '工艺', '/releases': '发放签收',
   '/purchase-plans': '采购计划下发', '/purchases': '采购到货', '/payments': '付款申请', '/kitting': '齐套',
   '/production': '生产调度', '/parts': '工序编排', '/outsource': '外协',
   '/settings': '设置', '/dev': '演示工具', '/templates': '工序路线模板',
-  '/wo': '工单详情', '/overview': '项目总览', '/issues': '风险',
-  '/alerts': '风险', '/workshop': '生产调度', '/unmatched': '外协',
+  '/wo': '工单详情', '/overview': '项目总览', '/issues': '预警与异常处理',
+  '/alerts': '预警与异常处理', '/workshop': '生产调度', '/unmatched': '外协',
 }
 const current = computed(() => {
   const path = route.value.path
