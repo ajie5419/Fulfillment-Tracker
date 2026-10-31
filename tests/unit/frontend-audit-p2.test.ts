@@ -15,10 +15,11 @@ describe('Frontend audit P2: accessibility, motion preferences, narrow-screen dr
     expect(app).toContain('transition-duration: 0.01ms !important')
   })
 
-  it('upgrades default.vue with 100dvh, concentric 24px frame radius, and narrow-screen overlay drawer + Escape', () => {
+  it('upgrades default.vue with 100dvh, Ember inset white workspace sheet + bottom profile card, and narrow-screen overlay drawer + Escape', () => {
     const layout = readFileSync('app/layouts/default.vue', 'utf8')
     expect(layout).toContain('height: 100dvh')
-    expect(layout).toContain('border-radius: 24px')
+    expect(layout).toContain('border-radius: 16px')
+    expect(layout).toContain('class="user-card"')
     expect(layout).toContain('class="sider-mask"')
     expect(layout).toContain("e.key === 'Escape'")
   })
@@ -29,16 +30,18 @@ describe('Frontend audit P2: accessibility, motion preferences, narrow-screen dr
     expect(head).toContain('color: var(--ft-text-2)')
   })
 
-  it('aligns index.vue and risks.vue with Bento ft-well containers, capsule tags, keyboard access, and single-accent CTA', () => {
+  it('aligns index.vue and risks.vue with de-nested flat SectionCards, single-layer cards, capsule tags, keyboard access, and single-accent CTA', () => {
     const index = readFileSync('app/pages/index.vue', 'utf8')
-    expect(index).toContain('class="ft-well cards"')
+    expect(index).toContain('<UiSectionCard flat title="待办与提醒"')
+    expect(index).not.toContain('class="ft-well cards"')
     expect(index).toContain('border-radius: 999px')
     expect(index).toContain(':tabindex="c.reminder ? 0 : undefined"')
     expect(index).toContain('@keydown.space.prevent="onCardClick(c)"')
     expect(index).not.toContain('var(--ft-text-3); font-size: 12px')
 
     const risks = readFileSync('app/pages/risks.vue', 'utf8')
-    expect(risks).toContain('class="ft-well list"')
+    expect(risks).toContain('<UiSectionCard flat>')
+    expect(risks).not.toContain('class="ft-well list"')
     expect(risks).toContain('<a-button type="primary" @click="reporting = true">上报异常</a-button>')
     expect(risks).not.toContain('danger @click="reporting = true"')
     expect(risks).toContain('@keydown.space.prevent="selected = it.i.id"')

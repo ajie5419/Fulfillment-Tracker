@@ -10,12 +10,14 @@ describe('Frontend audit P1: layout hierarchy, Bento card physics, and table uni
     expect(plan).toContain('<UiHelpTip')
   })
 
-  it('unifies StatCard, BoardWoCard, and SectionCard hover physics, contrast, active state, and tabular-nums', () => {
+  it('unifies Bento capsule StatCard, BoardWoCard, and flat-capable SectionCard hover physics, contrast, active state, and tabular-nums', () => {
     const statCard = readFileSync('app/components/ui/StatCard.vue', 'utf8')
     expect(statCard).not.toContain('rgba(')
+    expect(statCard).toContain('ft-stat-iconbox')
+    expect(statCard).toContain('ft-stat-ticks')
     expect(statCard).toContain('font-variant-numeric: tabular-nums')
     expect(statCard).toContain('var(--ft-late-text)')
-    expect(statCard).toContain('.ft-stat.active { border-color: var(--ft-primary); background: var(--ft-primary-bg); }')
+    expect(statCard).toContain('.ft-stat.active { border-color: var(--ft-primary); background: var(--ft-primary-bg);')
     expect(statCard).toContain('.ft-stat.link:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }')
 
     const woCard = readFileSync('app/components/BoardWoCard.vue', 'utf8')
@@ -24,6 +26,9 @@ describe('Frontend audit P1: layout hierarchy, Bento card physics, and table uni
     expect(woCard).toContain('font-variant-numeric: tabular-nums')
 
     const sectionCard = readFileSync('app/components/ui/SectionCard.vue', 'utf8')
+    expect(sectionCard).not.toContain('ft-section-inner')
+    expect(sectionCard).toContain('.ft-section.flat {')
+    expect(sectionCard).toContain('.ft-section.flat > .ft-section-panel { padding: 0; }')
     expect(sectionCard).toContain('.sub { margin-top: 2px; font-size: 12px; color: var(--ft-text-2); }')
   })
 

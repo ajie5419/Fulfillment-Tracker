@@ -7,10 +7,15 @@ const { data, error } = await useFetch('/api/calendar/summary', { key: 'calendar
 const items = computed(() =>
   (data.value?.items ?? []).map((i) => {
     const s = i.summary
+    const planned = s.planned.units
+    const ratio = s.overdue.orders
+      ? (planned > 0 ? s.overdue.units / planned : 1)
+      : (planned > 0 ? s.actual.units / planned : 0)
     return {
       key: i.key,
       label: `${i.title}（${i.period.label}）`,
-      value: s.planned.units,
+      value: planned,
+      ratio,
       tone: s.overdue.orders ? ('late' as const) : ('primary' as const),
       sub: `实际完成 ${s.actual.units} 台${s.overdue.orders ? ` · 逾期 ${s.overdue.units} 台` : ''}`,
       // 本周 / 下周 → 列表并滚到那一周（wk = 那周周一）；本月 → 日历。本周用今天（周一可能在上个月，会翻到上个月去）
@@ -24,14 +29,14 @@ const items = computed(() =>
 </script>
 
 <template>
-  <UiSectionCard padding="tight">
+  <UiSectionCard flat>
     <template #title>
       <span class="ft-title">项目日历 <UiHelpTip label="项目日历说明">"完成"指总计划的发运节点完成，台数取 QMS 工单数量；没有已发布总计划的工单按 QMS 交期计入计划。</UiHelpTip></span>
     </template>
     <template #extra><NuxtLink to="/calendar" class="more">查看日历</NuxtLink></template>
     <a-alert v-if="error" type="error" show-icon :message="apiError(error)" />
     <div v-else class="cells">
-      <UiStatCard v-for="i in items" :key="i.key" :label="i.label" :value="i.value" unit="台计划完成" :tone="i.tone" :sub="i.sub" :to="i.to" icon="dot" />
+      <UiStatCard v-for="i in items" :key="i.key" :label="i.label" :value="i.value" :ratio="i.ratio" unit="台计划完成" :tone="i.tone" :sub="i.sub" :to="i.to" />
       <template v-if="!data">
         <a-skeleton v-for="n in 3" :key="n" active :paragraph="{ rows: 1 }" :title="false" />
       </template>

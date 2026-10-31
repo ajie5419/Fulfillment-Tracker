@@ -179,7 +179,7 @@ async function onCreated(no: string) {
           </a-table>
         </UiSectionCard>
         <div v-else-if="layout === 'manager'" class="manager-groups">
-          <UiSectionCard v-for="group in managerGroups" :key="group.key" :title="`${group.name} · ${group.rows.length}`" padding="tight">
+          <UiSectionCard v-for="group in managerGroups" :key="group.key" flat :title="`${group.name} · ${group.rows.length}`">
             <div class="noplan-grid"><BoardWoCard v-for="r in group.rows" :key="r.workOrderNumber" :row="r" :group="groupOf(r)" /></div>
           </UiSectionCard>
           <a-empty v-if="!managerGroups.length" description="没有预计拖期或有风险的工单" />

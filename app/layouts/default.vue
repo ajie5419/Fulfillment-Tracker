@@ -98,6 +98,13 @@ const badgeText = (n: number) => (n > 99 ? '99+' : n ? String(n) : '')
 const unreadText = computed(() => badgeText(unread.value?.unread ?? 0))
 /** 部门计划：本人待接收的计划节点数 */
 const planPendingText = computed(() => badgeText(unread.value?.planPending ?? 0))
+const userInitial = computed(() => me.value?.name?.trim()?.charAt(0)?.toUpperCase() || 'U')
+const userRoleSub = computed(() => {
+  const m = me.value
+  if (!m) return ''
+  if (m.businessDeptName && m.department && m.businessDeptName !== m.department) return `${m.department} · ${m.businessDeptName}`
+  return m.department || m.businessDeptName || m.roleName || '在线'
+})
 
 // ───── 新的黄、红预警在右上角弹出（方案 6.3）：每 60 秒轮询一次 ─────
 // 第一次只取服务器时间作为起点，不把旧提醒全弹一遍；弹过的按 id 记住，不重复弹
@@ -174,43 +181,87 @@ onBeforeUnmount(() => {
   <a-layout class="ft-app">
     <a-layout class="frame" has-sider>
     <div v-if="broken && !collapsed" class="sider-mask" aria-hidden="true" @click="collapsed = true" />
-    <a-layout-sider v-model:collapsed="collapsed" :trigger="null" :width="188" breakpoint="lg" :collapsed-width="0" class="sider" @breakpoint="onBreakpoint">
-      <div class="sider-inner">
-        <NuxtLink to="/" class="brand">
-          <img class="logo" src="/brand/tolian-logo.png" width="96" height="79" alt="通联 TOLIAN">
-          <span class="brand-sub">项目履约与异常管理</span>
-        </NuxtLink>
-        <nav class="sider-scroll" aria-label="主菜单" :inert="collapsed || undefined">
+    <a-layout-sider v-model:collapsed="collapsed" :trigger="null" :width="212" breakpoint="lg" :collapsed-width="0" class="sider" @breakpoint="onBreakpoint">
+      <div class="sider-inner" :inert="collapsed || undefined">
+        <div class="brand-bar">
+          <NuxtLink to="/" class="brand">
+            <span class="brand-mark">
+              <img class="logo" src="/brand/tolian-logo.png" width="24" height="20" alt="通联 TOLIAN">
+            </span>
+            <span class="brand-title">通联履约<span class="brand-dot">.</span></span>
+          </NuxtLink>
+          <button
+            type="button"
+            class="icon-btn collapse-btn"
+            aria-label="收起侧边栏"
+            title="收起侧边栏"
+            @click="collapsed = true"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2" y="2.5" width="12" height="11" rx="2.5" stroke="currentColor" stroke-width="1.4" />
+              <path d="M6.2 2.5v11" stroke="currentColor" stroke-width="1.4" />
+            </svg>
+          </button>
+        </div>
+
+        <nav class="sider-scroll" aria-label="主菜单">
           <div v-for="g in groups" :key="g.title" class="group">
             <div class="group-title">{{ g.title }}</div>
             <NuxtLink v-for="m in g.items" :key="m.key" :to="m.key" class="item" :class="{ active: selected[0] === m.key }" :aria-current="selected[0] === m.key ? 'page' : undefined">
-              <UiNavIcon :name="m.key" />
+              <span class="item-ico"><UiNavIcon :name="m.key" /></span>
               <span class="item-label">{{ m.label }}</span>
               <span v-if="m.key === '/' && unreadText" class="badge" :aria-label="`未读提醒 ${unreadText} 条`">{{ unreadText }}</span>
               <span v-if="m.key === '/dept-plan' && planPendingText" class="badge" :aria-label="`待接收计划节点 ${planPendingText} 个`">{{ planPendingText }}</span>
             </NuxtLink>
           </div>
         </nav>
+
+        <div v-if="me" class="user-card">
+          <span class="avatar" aria-hidden="true">{{ userInitial }}</span>
+          <div class="user-meta">
+            <div class="user-name" :title="me.name">{{ me.name }}</div>
+            <div class="user-dept" :title="userRoleSub">{{ userRoleSub }}</div>
+          </div>
+          <button type="button" class="icon-btn logout-btn" aria-label="退出或切换账号" title="退出 / 切换账号" @click="logout">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M6.2 2.5H4.5A2 2 0 0 0 2.5 4.5v7a2 2 0 0 0 2 2h1.7M10.5 11.2 13.7 8l-3.2-3.2M6.2 8h7.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
       </div>
     </a-layout-sider>
-    <a-layout class="main">
+    <a-layout class="main" :class="{ 'main-full': collapsed || broken }">
       <a-layout-header class="header">
         <span class="left">
-          <a-button
-            v-if="broken"
-            size="small"
-            :aria-label="collapsed ? '展开菜单' : '收起菜单'"
+          <button
+            v-if="collapsed"
+            type="button"
+            :aria-label="collapsed ? '展开侧边栏' : '收起侧边栏'"
             :aria-expanded="!collapsed"
-            class="nav-toggle"
-            @click="collapsed = !collapsed"
-          >菜单</a-button>
-          <span v-if="current" class="page-name"><UiNavIcon :name="current.key" /><span>{{ current.label }}</span></span>
+            title="展开侧边栏"
+            class="icon-btn nav-toggle"
+            @click="collapsed = false"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2" y="2.5" width="12" height="11" rx="2.5" stroke="currentColor" stroke-width="1.4" />
+              <path d="M6.2 2.5v11" stroke="currentColor" stroke-width="1.4" />
+            </svg>
+          </button>
+          <span v-if="current" class="page-name">
+            <span class="page-ico"><UiNavIcon :name="current.key" /></span>
+            <span>{{ current.label }}</span>
+          </span>
         </span>
-        <GlobalSearch class="search" />
-        <span v-if="me" class="user">
-          {{ me.name }}<template v-if="me.department"> · {{ me.department }}</template><template v-if="me.businessDeptName && me.businessDeptName !== me.department">（{{ me.businessDeptName }}）</template>
-          <a-button type="link" size="small" @click="logout">退出 / 切换账号</a-button>
-        </span>
+        <div class="header-right">
+          <GlobalSearch class="search" />
+          <NuxtLink to="/" class="top-action" :aria-label="unreadText ? `未读提醒 ${unreadText} 条，点击查看工作台` : '查看工作台提醒'" title="待办与未读提醒">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M8 2.2a3.8 3.8 0 0 0-3.8 3.8v2.1c0 .7-.25 1.38-.7 1.9L2.8 10.8h10.4l-.7-.8a2.9 2.9 0 0 1-.7-1.9V6A3.8 3.8 0 0 0 8 2.2Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+              <path d="M6.5 12.4a1.6 1.6 0 0 0 3 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            </svg>
+            <span v-if="unreadText" class="bell-dot" aria-hidden="true" />
+          </NuxtLink>
+        </div>
       </a-layout-header>
       <div ref="contentEl" class="content ft-content">
         <slot />
@@ -221,53 +272,71 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* 设计改版（参考图）：整页是一个固定在视口里的大白框，左边灰色侧栏面板，右边带细边框的内容面板；
-   内容面板里页头固定、下面内容独立滚动，所以滚动时内容不会从页头上下露出来，四角也天然是圆的 */
-.ft-app { height: 100vh; height: 100dvh; padding: 10px; overflow: hidden; }
-.frame { position: relative; height: 100%; gap: 8px; padding: 8px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: 24px; overflow: hidden; }
-.sider { height: 100%; background: transparent !important; }
-.sider-mask { position: absolute; inset: 0; z-index: 15; background: color-mix(in srgb, var(--ft-text) 28%, transparent); }
-.sider-inner { height: 100%; display: flex; flex-direction: column; background: var(--ft-fill); border-radius: 16px; overflow: hidden; }
-.brand { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px 14px 12px; color: var(--ft-text); white-space: nowrap; }
+/* Ember 式抽屉壳层：左侧浅冷灰融底导航 + 底部白卡名片，右侧 16px 圆角纯白独立工作台画板 */
+.ft-app { height: 100vh; height: 100dvh; padding: 0; overflow: hidden; background: var(--ft-page-bg); }
+.frame { position: relative; height: 100%; background: var(--ft-page-bg); overflow: hidden; }
+.sider { height: 100%; background: transparent !important; border-right: none; }
+.sider-mask { position: absolute; inset: 0; z-index: 15; background: color-mix(in srgb, var(--ft-text) 22%, transparent); }
+.sider-inner { height: 100%; display: flex; flex-direction: column; background: var(--ft-page-bg); overflow: hidden; }
+
+.brand-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 12px 8px 14px; }
+.brand { display: inline-flex; align-items: center; gap: 9px; min-width: 0; color: var(--ft-text); white-space: nowrap; }
 .brand:hover { color: var(--ft-text); }
-/* 公司标志（通联 TOLIAN 原图：字在图标下面，透明底，保留原色）居中放，下面一行灰色小字系统名（zhao 10-21 选定） */
-.logo { flex: none; display: block; width: 96px; height: 79px; object-fit: contain; }
-.brand-sub { font-size: 12px; line-height: 1.3; color: var(--ft-text-2); }
-.sider-scroll { flex: 1; overflow-y: auto; padding: 2px 8px 16px; }
-/* 参考图的分组标题更浅，但 --ft-text-3 在浅灰底上达不到 4.5:1，这里用 --ft-text-2 */
-.group-title { padding: 12px 10px 4px; font-size: 12px; color: var(--ft-text-2); }
-/* 菜单项高 36px（含间距 38px），15 项在 900 高的屏幕上一屏放下 */
-.item { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; margin: 2px 0; border-radius: 10px; color: var(--ft-text-2); font-size: 14px; white-space: nowrap; overflow: hidden; }
+.brand-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 8px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); box-shadow: var(--ft-card-shadow); }
+.logo { display: block; width: 20px; height: 17px; object-fit: contain; }
+.brand-title { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: var(--ft-text); }
+.brand-dot { color: var(--ft-primary); margin-left: 1px; }
+
+.icon-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--ft-text-3); cursor: pointer; transition: background-color 0.15s, color 0.15s, border-color 0.15s; }
+.icon-btn:hover { color: var(--ft-text); background: color-mix(in srgb, var(--ft-text) 5%, transparent); }
+.icon-btn:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 1px; }
+
+.sider-scroll { flex: 1; overflow-y: auto; padding: 4px 10px 12px; }
+.group + .group { margin-top: 6px; }
+.group-title { padding: 10px 10px 4px; font-size: 11px; font-weight: 500; letter-spacing: 0.01em; color: var(--ft-text-3); }
+.item { display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 10px; margin: 1px 0; border-radius: 9px; color: var(--ft-text-2); font-size: 13.5px; white-space: nowrap; overflow: hidden; transition: background-color 0.12s, color 0.12s; }
+.item-ico { flex: none; display: inline-flex; align-items: center; color: var(--ft-text-3); transition: color 0.12s; }
 .item-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* 未读角标：白底胶囊，数字多时变宽 */
-.badge { flex: none; min-width: 22px; height: 20px; padding: 0 7px; border-radius: 10px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); color: var(--ft-text); font-size: 12px; line-height: 18px; text-align: center; font-weight: 600; }
-.item:hover { color: var(--ft-text); background: var(--ft-border); }
-/* 选中项：黑底白字（参考图） */
-.item.active { color: var(--ft-card-bg); background: var(--ft-text); font-weight: 500; }
-.item.active .badge { border-color: transparent; }
+/* Ember 式纯白细描边数字小方牌 */
+.badge { flex: none; min-width: 20px; height: 19px; padding: 0 5px; border-radius: 6px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); box-shadow: var(--ft-card-shadow); color: var(--ft-text-2); font-size: 11px; line-height: 17px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.item:hover { color: var(--ft-text); background: color-mix(in srgb, var(--ft-text) 4.5%, transparent); }
+.item:hover .item-ico { color: var(--ft-text-2); }
+/* 选中项：柔和浅灰圆角条 + 深墨字 + 品牌色图标，克制不刺眼 */
+.item.active { color: var(--ft-text); background: color-mix(in srgb, var(--ft-text) 6.5%, var(--ft-card-bg)); font-weight: 600; }
+.item.active .item-ico { color: var(--ft-primary); }
+.item.active .badge { border-color: var(--ft-border-hover); color: var(--ft-text); }
 .item:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: -2px; }
-.main { min-width: 0; height: 100%; display: flex; flex-direction: column; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: 16px; overflow: hidden; }
-.header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 56px; line-height: 56px; margin: 0 16px; padding: 0; background: transparent; border-bottom: 1px solid var(--ft-border); }
-.left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.page-name { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; color: var(--ft-text); white-space: nowrap; }
-.search { flex: 1; max-width: 360px; margin-left: auto; }
-.user { color: var(--ft-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-/* 框架四周留白控制在原来的宽度附近（侧栏 188 + 留白），各页面表格可用宽度基本不变 */
-.content { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+
+/* 侧栏底部个人名片白卡 */
+.user-card { flex: none; display: flex; align-items: center; gap: 9px; margin: 4px 10px 10px; padding: 8px 9px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: 11px; box-shadow: var(--ft-card-shadow); min-width: 0; }
+.avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--ft-primary-bg); color: var(--ft-primary-text); border: 1px solid color-mix(in srgb, var(--ft-primary) 18%, transparent); font-size: 13px; font-weight: 600; }
+.user-meta { flex: 1; min-width: 0; line-height: 1.28; }
+.user-name { font-size: 13px; font-weight: 600; color: var(--ft-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-dept { margin-top: 1px; font-size: 11.5px; color: var(--ft-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logout-btn { width: 26px; height: 26px; }
+
+/* 右侧独立圆角纯白工作台画板 */
+.main { min-width: 0; height: calc(100% - 16px); margin: 8px 8px 8px 0; display: flex; flex-direction: column; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: 16px; box-shadow: var(--ft-card-shadow); overflow: hidden; }
+.main.main-full { margin-left: 8px; }
+.header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 50px; line-height: 50px; margin: 0; padding: 0 22px; background: var(--ft-card-bg); border-bottom: 1px solid var(--card-border-subtle); }
+.left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.page-name { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 500; color: var(--ft-text); white-space: nowrap; }
+.page-ico { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: var(--ft-fill); border: 1px solid var(--card-border-subtle); color: var(--ft-text-2); }
+.header-right { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; }
+.search { width: 290px; max-width: 42vw; }
+.top-action { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); color: var(--ft-text-2); transition: border-color 0.15s, color 0.15s, background-color 0.15s; }
+.top-action:hover { color: var(--ft-text); border-color: var(--ft-border-hover); background: var(--ft-fill); }
+.top-action:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 1px; }
+.bell-dot { position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--ft-late); box-shadow: 0 0 0 1.5px var(--ft-card-bg); }
+
+.content { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 26px 30px; }
 @media (max-width: 991px) {
-  /* 窄屏侧栏改为浮层抽屉，不挤压右侧内容面板宽度 */
-  .frame { gap: 0; }
-  .sider { position: absolute !important; inset: 8px auto 8px 8px; z-index: 20; height: auto; }
-  .sider-inner { box-shadow: var(--card-shadow); border: 1px solid var(--ft-border); }
+  .sider { position: absolute !important; inset: 0 auto 0 0; z-index: 20; height: 100%; box-shadow: var(--card-shadow-hover); border-right: 1px solid var(--ft-border); }
 }
 @media (max-width: 575px) {
-  .ft-app { padding: 0; }
-  .frame { padding: 0; border: none; border-radius: 0; }
-  .sider { inset: 0 auto 0 0; }
-  .sider-inner { border-radius: 0 16px 16px 0; }
-  .main { border: none; border-radius: 0; }
-  .header { margin: 0 12px; }
+  .main, .main.main-full { height: 100%; margin: 0; border-radius: 0; border: none; }
+  .header { padding: 0 14px; }
   .search { display: none; }
-  .content { padding: 12px; }
+  .content { padding: 14px; }
 }
 </style>
