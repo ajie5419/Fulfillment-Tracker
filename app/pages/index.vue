@@ -372,7 +372,7 @@ function onCardClick(c: Card) {
 .cards { display: flex; flex-direction: column; gap: 8px; }
 
 /* 卡片：状态由图标 + 级别标签表达（设计改版去掉了左侧色条） */
-.wcard { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid var(--ft-border); border-radius: 10px; background: var(--ft-card-bg); overflow: hidden; }
+.wcard { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); background: var(--ft-card-bg); overflow: hidden; }
 .wcard.clickable { cursor: pointer; }
 .wcard.clickable:hover { border-color: var(--ft-text-3); background: var(--ft-fill); }
 .icon { margin-top: 3px; }

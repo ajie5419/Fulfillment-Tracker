@@ -281,7 +281,7 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
 .count { font-size: 14px; font-weight: 600; color: var(--ft-text); }
 .col-body { display: flex; flex-direction: column; gap: 8px; min-height: 120px; }
 .empty { margin: 8px 0; color: var(--ft-text-2); font-size: 13px; text-align: center; }
-.card { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: 10px; color: var(--ft-text); }
+.card { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); color: var(--ft-text); }
 .card.late { border-color: var(--ft-late); }
 .card-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .wo { font-size: 12px; color: var(--ft-text-2); }

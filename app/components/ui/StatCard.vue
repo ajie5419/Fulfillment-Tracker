@@ -35,6 +35,7 @@ const asButton = computed(() => !props.to && props.clickable)
 /** 图标形状也区分状态（不只靠颜色），与 UiStatusIcon 的默认对应关系一致 */
 const CHIP_ICON = { late: 'alert', risk: 'warn', done: 'check', upstream: 'warn', none: 'ring', primary: 'dot' } as const
 const chipIcon = computed(() => props.icon ?? CHIP_ICON[props.tone ?? 'none'])
+const headIcon = computed(() => props.chip ? chipIcon.value : (props.icon ?? CHIP_ICON[props.tone ?? 'none']))
 function onKey(e: KeyboardEvent) {
   if (!asButton.value) return
   e.preventDefault()
@@ -55,65 +56,41 @@ function onKey(e: KeyboardEvent) {
     @keydown.enter="onKey"
     @keydown.space="onKey"
   >
-    <template v-if="chip">
-      <div class="chip-head">
-        <span class="chip-icon" aria-hidden="true"><UiStatusIcon :kind="chipIcon" :tone="tone ?? 'none'" :size="18" /></span>
-        <span class="chip-label">{{ label }}</span>
-      </div>
+    <div class="ft-stat-head">
+      <span class="ft-stat-iconbox"><UiStatusIcon :kind="headIcon" :tone="tone ?? 'none'" :size="15" /></span>
+      <span class="ft-stat-label">{{ label }}</span>
+    </div>
+    <div class="ft-stat-inner">
       <div v-if="value != null || $slots.value" class="value">
         <slot name="value"><b>{{ value }}</b><span v-if="unit" class="unit">{{ unit }}</span></slot>
       </div>
       <div v-if="sub || $slots.sub || $slots.default" class="sub"><slot name="sub">{{ sub }}</slot><slot /></div>
-    </template>
-    <template v-else>
-      <div class="label">
-        <i v-if="icon || tone" class="tick" aria-hidden="true" />
-        <span>{{ label }}</span>
-      </div>
-      <div v-if="value != null || $slots.value" class="value">
-        <slot name="value"><b>{{ value }}</b><span v-if="unit" class="unit">{{ unit }}</span></slot>
-      </div>
-      <div v-if="sub || $slots.sub || $slots.default" class="sub"><slot name="sub">{{ sub }}</slot><slot /></div>
-    </template>
+    </div>
   </component>
 </template>
 
 <style scoped>
-.ft-stat { display: block; position: relative; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); padding: 14px 16px; color: var(--ft-text); min-width: 0; overflow: hidden; }
-.ft-stat.link { cursor: pointer; transition: box-shadow 0.15s; }
-.ft-stat.link:hover { box-shadow: 0 2px 4px rgba(16, 24, 40, 0.06), 0 6px 16px rgba(16, 24, 40, 0.08); color: var(--ft-text); }
+.ft-stat { display: flex; flex-direction: column; position: relative; background: var(--card-tray-bg); border: 1px solid var(--card-border); border-radius: var(--card-radius-outer); box-shadow: none; padding: 0; height: 100%; box-sizing: border-box; color: var(--ft-text); min-width: 0; overflow: hidden; }
+.ft-stat-head { display: flex; align-items: center; gap: 9px; padding: 10px 12px 9px; flex: none; }
+.ft-stat-iconbox { flex: none; width: 26px; height: 26px; border-radius: 8px; background: var(--card-surface-bg); border: 1px solid var(--card-border-subtle); box-shadow: var(--card-shadow); display: flex; align-items: center; justify-content: center; }
+.ft-stat-label { min-width: 0; font-size: 14px; font-weight: 500; color: var(--ft-text); line-height: 18px; }
+.ft-stat-inner { margin: 0 var(--card-tray-padding) var(--card-tray-padding); flex: 1; background: var(--card-surface-bg); border: 1px solid var(--card-border-subtle); border-radius: var(--card-radius-inner); box-shadow: var(--card-shadow); box-sizing: border-box; padding: 14px 16px; }
+.ft-stat.link { cursor: pointer; }
+.ft-stat.link .ft-stat-inner { transition: box-shadow 0.15s; }
+.ft-stat.link:hover { color: var(--ft-text); }
+.ft-stat.link:hover .ft-stat-inner { box-shadow: 0 2px 4px rgba(16, 24, 40, 0.06), 0 6px 16px rgba(16, 24, 40, 0.08); }
 .ft-stat.active { outline: 2px solid var(--ft-primary); }
 .ft-stat.link:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
 /* 设计改版：顶部色条（accent）按用户意见去掉，状态由标签前的图标和文字表达（用到 accent 的卡片都带 icon）；
    改成和 chip 一样的细边框，accent 属性保留以免各页面改调用 */
 .accent { border: 1px solid var(--ft-border); }
-/* 设计改版（参考图）：标签前是一根细色条，颜色按 tone；状态靠标签文字表达，色条只是辅助 */
-.label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ft-text-2); }
-.tick { flex: none; display: inline-block; width: 3px; height: 13px; border-radius: 2px; background: var(--ft-none); }
-.tone-late .tick { background: var(--ft-late); }
-.tone-risk .tick { background: var(--ft-risk); }
-.tone-done .tick { background: var(--ft-done); }
-.tone-upstream .tick { background: var(--ft-upstream); }
-.tone-primary .tick { background: var(--ft-primary); }
-.value { margin-top: 8px; line-height: 1.2; }
-.value b { font-size: 24px; font-weight: 600; }
+.value { margin-top: 0; line-height: 1.2; }
+.value b { font-size: 28px; font-weight: 600; letter-spacing: -0.5px; }
 .unit { margin-left: 6px; font-size: 13px; color: var(--ft-text-2); }
 .tone-late .value b { color: var(--ft-late); }
-.sub { margin-top: 6px; font-size: 12px; color: var(--ft-text-3); }
-/* chip：参考图的小块卡片，放在分组大卡片里用，所以只要细边框、不要阴影 */
-.chip { padding: 16px 18px; border: 1px solid var(--ft-border); border-radius: 12px; box-shadow: none; }
-.chip.link:hover { box-shadow: 0 4px 14px rgba(16, 24, 40, 0.08); border-color: transparent; }
-.chip-head { display: flex; align-items: center; gap: 10px; }
-.chip-icon { flex: none; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: var(--ft-none-bg); }
-.tone-late .chip-icon { background: var(--ft-late-bg); }
-.tone-risk .chip-icon { background: var(--ft-risk-bg); }
-.tone-done .chip-icon { background: var(--ft-done-bg); }
-.tone-upstream .chip-icon { background: var(--ft-upstream-bg); }
-.tone-primary .chip-icon { background: var(--ft-primary-bg); }
-/* 窄屏时标签换行，不截断成省略号 */
-.chip-label { min-width: 0; font-size: 13px; line-height: 18px; color: var(--ft-text-2); }
-.chip .value { margin-top: 12px; }
-.chip .value b, .chip.tone-late .value b { font-size: 28px; font-weight: 600; letter-spacing: -0.5px; color: var(--ft-text); }
-/* 说明行用 --ft-text-2：--ft-text-3 在白底上只有约 3.1:1 */
-.chip .sub { margin-top: 4px; color: var(--ft-text-2); }
+.sub { margin-top: 6px; font-size: 12px; color: var(--ft-text-2); }
+/* chip：放在分组大卡片里用，内面板保留更宽的内边距 */
+.chip .ft-stat-inner { padding: 16px 18px; }
+.chip.link:hover .ft-stat-inner { box-shadow: 0 4px 14px rgba(16, 24, 40, 0.08); border-color: transparent; }
+.chip .value b, .chip.tone-late .value b { color: var(--ft-text); }
 </style>

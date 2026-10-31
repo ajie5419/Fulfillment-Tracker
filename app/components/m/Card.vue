@@ -33,6 +33,7 @@ const kind = computed(() => TONE_ICON[props.tone])
   background: var(--ft-card-bg);
   border: 1px solid var(--ft-border);
   border-radius: var(--ft-card-radius);
+  box-shadow: var(--card-shadow);
   overflow: hidden;
   min-width: 0;
 }

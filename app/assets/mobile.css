@@ -23,7 +23,7 @@
   --van-active-color: var(--ft-fill);
   --van-base-font: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --van-radius-md: 8px;
-  --van-radius-lg: 14px;
+  --van-radius-lg: var(--card-radius-outer);
 
   /* 组件 */
   --van-cell-group-inset-radius: var(--ft-card-radius);
@@ -97,7 +97,7 @@
 .ft-m .van-hairline--bottom::after { border-color: var(--ft-border); }
 .ft-m { min-height: 100vh; max-width: 640px; margin: 0 auto; background: var(--ft-page-bg); color: var(--ft-text); overflow-x: clip; }
 .ft-m .van-nav-bar__title { font-weight: 600; }
-.ft-m .van-cell-group--inset { border: 1px solid var(--ft-border); box-shadow: none; }
+.ft-m .van-cell-group--inset { border: 1px solid var(--ft-border); box-shadow: var(--card-shadow); background: var(--card-surface-bg); }
 .ft-m .van-cell-group__title--inset { padding: 16px 16px 8px; font-size: 13px; font-weight: 600; }
 .ft-m .van-tabs__nav { background: var(--ft-card-bg); }
 .ft-m .van-tab--active { font-weight: 600; }
