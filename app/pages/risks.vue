@@ -243,7 +243,7 @@ function clearFilters() {
           </template>
         </UiFilterButton>
         <UiRefreshButton @click="refresh()" />
-        <a-button type="primary" danger @click="reporting = true">上报异常</a-button>
+        <a-button type="primary" @click="reporting = true">上报异常</a-button>
       </template>
 
       <!-- 已生效的筛选条件：点 × 单独去掉，"清空"恢复默认 -->
@@ -251,7 +251,7 @@ function clearFilters() {
 
       <a-spin :spinning="alertsPending || issuesPending">
         <a-empty v-if="!items.length" :description="tab === 'alerts' ? '没有活动中的预警' : tab === 'issues' ? '没有符合条件的异常' : '没有符合条件的预警和异常'" />
-        <div class="list">
+        <div v-else class="ft-well list">
           <template v-for="it in items.slice(0, shown)" :key="it.key">
             <!-- 预警 -->
             <article v-if="it.kind === 'alert'" class="rcard" :class="`tone-${it.tone}`">
@@ -278,7 +278,7 @@ function clearFilters() {
               </div>
             </article>
             <!-- 异常：点开处理抽屉 -->
-            <article v-else class="rcard clickable" :class="`tone-${it.tone}`" role="button" tabindex="0" @click="selected = it.i.id" @keydown.enter="selected = it.i.id">
+            <article v-else class="rcard clickable" :class="`tone-${it.tone}`" role="button" tabindex="0" @click="selected = it.i.id" @keydown.enter="selected = it.i.id" @keydown.space.prevent="selected = it.i.id">
               <UiStatusIcon :kind="iconOf(it.tone)" :tone="it.tone" :size="16" class="icon" />
               <div class="main">
                 <div class="head">
@@ -317,23 +317,22 @@ function clearFilters() {
 <style scoped>
 .risks { display: flex; flex-direction: column; gap: 16px; }
 .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.muted { color: var(--ft-text-3); font-size: 12px; }
+.muted { color: var(--ft-text-2); font-size: 12px; }
 .tabs { font-weight: normal; }
-.list { display: flex; flex-direction: column; gap: 8px; }
+.list { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
 .more { margin-top: 12px; text-align: center; }
 
-.rcard { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); background: var(--ft-card-bg); overflow: hidden; }
+.rcard { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); background: var(--ft-card-bg); overflow: hidden; transition: border-color 0.15s, background-color 0.15s; }
 .rcard.clickable { cursor: pointer; }
 .rcard.clickable:hover { border-color: var(--ft-text-3); background: var(--ft-fill); }
-.rcard:focus-visible { outline: 2px solid var(--ft-primary); }
+.rcard:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
 /* 设计改版：去掉左侧色条（用户意见），状态由图标 + 标签表达 */
-.tone-none .bar { background: var(--ft-none); }
 .icon { margin-top: 3px; }
 .main { flex: 1; min-width: 0; }
 .head { line-height: 22px; }
 .head > * { vertical-align: middle; }
 .head > * + * { margin-left: 8px; }
-.kind { display: inline-block; font-size: 12px; line-height: 20px; padding: 0 6px; border-radius: 4px; background: var(--ft-fill); color: var(--ft-text-2); }
+.kind { display: inline-flex; align-items: center; height: 22px; font-size: 12px; font-weight: 500; line-height: 22px; padding: 0 9px; border-radius: 999px; background: var(--ft-none-bg); color: var(--ft-text-2); }
 .k-RED { background: var(--ft-late-bg); color: var(--ft-late-text); }
 .k-YELLOW { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
 .k-REMIND { background: var(--ft-primary-bg); color: var(--ft-primary-text); }
@@ -341,7 +340,7 @@ function clearFilters() {
 .subject { font-size: 14px; line-height: 22px; word-break: break-word; }
 span.subject { color: var(--ft-text); }
 .strong { font-weight: 600; }
-.rule { font-size: 12px; color: var(--ft-text-3); }
+.rule { font-size: 12px; color: var(--ft-text-2); }
 .tag { margin-inline-end: 0; }
 .desc { margin-top: 2px; font-size: 13px; color: var(--ft-text); }
 .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

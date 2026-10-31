@@ -128,11 +128,18 @@ const entries = computed(() =>
     { text: '我的签收', icon: 'certificate', to: '/m/releases', tone: 'primary' },
   ],
 )
+const entriesExpanded = ref(false)
+const visibleEntries = computed(() => (entriesExpanded.value ? entries.value : entries.value.slice(0, 4)))
+const unreadRedCount = computed(() => (data.value?.items ?? []).filter((i) => !i.readAt && !i.cleared && i.level === 'RED').length)
+const remindersEl = ref<HTMLElement | null>(null)
+function scrollToReminders() {
+  remindersEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 </script>
 
 <template>
   <div>
-    <van-nav-bar title="我的提醒" />
+    <van-nav-bar title="工作台" right-text="切换账号" @click-right="logout" />
 
     <!-- 我是谁 + 顶部统计 -->
     <div class="hello">
@@ -157,16 +164,25 @@ const entries = computed(() =>
       </div>
     </div>
 
-    <!-- 常用入口 -->
+    <!-- 常用入口：默认展示首行 4 个高频入口，避免挤压首屏待办卡片 -->
     <div class="entries">
       <van-grid :column-num="4" :border="false">
-        <van-grid-item v-for="e in entries" :key="e.to" :to="e.to" :text="e.text">
+        <van-grid-item v-for="e in visibleEntries" :key="e.to" :to="e.to" :text="e.text">
           <template #icon>
             <span :class="['entry-icon', `tone-${e.tone}`]"><van-icon :name="e.icon" /></span>
           </template>
         </van-grid-item>
       </van-grid>
+      <button v-if="entries.length > 4" type="button" class="entries-toggle" :aria-expanded="entriesExpanded" @click="entriesExpanded = !entriesExpanded">
+        {{ entriesExpanded ? '收起常用入口' : `展开全部入口（共 ${entries.length} 项）` }}
+      </button>
     </div>
+
+    <!-- 未读红色预警强提示：避免被长待办列表淹没 -->
+    <button v-if="unreadRedCount && todos.length" type="button" class="m-hint late red-jump" @click="scrollToReminders">
+      <UiStatusIcon kind="alert" tone="late" :size="15" />
+      <span>有 {{ unreadRedCount }} 条未读红色预警，点此直达查看 ›</span>
+    </button>
 
     <!-- QMS 同步连续失败（管理员）：未读时置顶，点一下标为已读（处理请到电脑端设置页） -->
     <div v-for="p in data?.pinned ?? []" :key="p.id" class="digest lv-RED unread" @click="readDigest(p)">
@@ -214,9 +230,9 @@ const entries = computed(() =>
     </template>
 
     <!-- 我的提醒：按红、黄、提醒分组 -->
-    <div class="m-section">
+    <div ref="remindersEl" class="m-section">
       我的提醒<span v-if="data?.unread" class="m-count">未读 {{ data.unread }}</span>
-      <span class="m-section-extra"><van-button v-if="data?.unread" size="mini" plain @click="readAll">全部已读</van-button></span>
+      <span class="m-section-extra"><van-button v-if="data?.unread" size="small" plain @click="readAll">全部已读</van-button></span>
     </div>
     <van-loading v-if="pending" class="m-center" />
     <van-empty v-else-if="!data?.items.length" description="暂时没有提醒" image-size="80" />
@@ -277,12 +293,15 @@ const entries = computed(() =>
 .stat.warm { background: var(--ft-risk-bg); }
 .stat-num { font-size: 24px; font-weight: 600; line-height: 32px; color: var(--ft-text); font-variant-numeric: tabular-nums; }
 .stat-label { margin-top: 2px; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 12px; color: var(--ft-text-2); white-space: nowrap; }
-.entries { margin: 10px 12px 0; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); overflow: hidden; padding: 4px 0; }
-.entries :deep(.van-grid-item__content) { background: transparent; }
+.entries { margin: 10px 12px 0; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); overflow: hidden; padding: 4px 0 0; }
+.entries :deep(.van-grid-item__content) { background: transparent; padding: 10px 4px; }
 .entries :deep(.van-grid-item__text) { margin-top: 6px; white-space: nowrap; }
-.entry-icon { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 12px; font-size: 22px; }
-.entry-icon.tone-primary { background: var(--ft-primary-bg); color: var(--ft-primary); }
-.entry-icon.tone-late { background: var(--ft-late-bg); color: var(--ft-late); }
+.entries-toggle { display: block; width: 100%; height: 36px; border: 0; border-top: 1px solid var(--ft-border); background: var(--ft-fill); color: var(--ft-text-2); font-size: 12px; cursor: pointer; }
+.entries-toggle:active { opacity: 0.85; }
+.red-jump { width: calc(100% - 24px); border: 1px solid var(--ft-late); text-align: left; cursor: pointer; font-weight: 500; }
+.entry-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 12px; font-size: 20px; }
+.entry-icon.tone-primary { background: var(--ft-primary-bg); color: var(--ft-primary-text); }
+.entry-icon.tone-late { background: var(--ft-late-bg); color: var(--ft-late-text); }
 .entry-icon.tone-done { background: var(--ft-done-bg); color: var(--ft-done-text); }
 .entry-icon.tone-risk { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
 .entry-icon.tone-upstream { background: var(--ft-upstream-bg); color: var(--ft-upstream-text); }

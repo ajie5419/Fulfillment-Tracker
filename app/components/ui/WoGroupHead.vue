@@ -45,5 +45,5 @@ const pct = computed(() => (props.total ? Math.round((props.done / props.total) 
 .fill { display: block; height: 100%; background: var(--ft-primary); border-radius: 3px; }
 .fill.full { background: var(--ft-done); }
 .txt { white-space: nowrap; color: var(--ft-text); font-variant-numeric: tabular-nums; }
-.count { margin-left: auto; color: var(--ft-text-3); font-size: 12px; }
+.count { margin-left: auto; color: var(--ft-text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
 </style>

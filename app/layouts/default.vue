@@ -155,16 +155,25 @@ async function poll() {
   }
 }
 
+function onEscape(e: KeyboardEvent) {
+  if (e.key === 'Escape' && broken.value && !collapsed.value) collapsed.value = true
+}
+
 onMounted(() => {
   poll()
   timer = setInterval(poll, POLL_MS)
+  window.addEventListener('keydown', onEscape)
 })
-onBeforeUnmount(() => clearInterval(timer))
+onBeforeUnmount(() => {
+  clearInterval(timer)
+  window.removeEventListener('keydown', onEscape)
+})
 </script>
 
 <template>
   <a-layout class="ft-app">
     <a-layout class="frame" has-sider>
+    <div v-if="broken && !collapsed" class="sider-mask" aria-hidden="true" @click="collapsed = true" />
     <a-layout-sider v-model:collapsed="collapsed" :trigger="null" :width="188" breakpoint="lg" :collapsed-width="0" class="sider" @breakpoint="onBreakpoint">
       <div class="sider-inner">
         <NuxtLink to="/" class="brand">
@@ -214,9 +223,10 @@ onBeforeUnmount(() => clearInterval(timer))
 <style scoped>
 /* 设计改版（参考图）：整页是一个固定在视口里的大白框，左边灰色侧栏面板，右边带细边框的内容面板；
    内容面板里页头固定、下面内容独立滚动，所以滚动时内容不会从页头上下露出来，四角也天然是圆的 */
-.ft-app { height: 100vh; padding: 10px; overflow: hidden; }
-.frame { height: 100%; gap: 8px; padding: 8px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: 22px; overflow: hidden; }
+.ft-app { height: 100vh; height: 100dvh; padding: 10px; overflow: hidden; }
+.frame { position: relative; height: 100%; gap: 8px; padding: 8px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: 24px; overflow: hidden; }
 .sider { height: 100%; background: transparent !important; }
+.sider-mask { position: absolute; inset: 0; z-index: 15; background: color-mix(in srgb, var(--ft-text) 28%, transparent); }
 .sider-inner { height: 100%; display: flex; flex-direction: column; background: var(--ft-fill); border-radius: 16px; overflow: hidden; }
 .brand { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px 14px 12px; color: var(--ft-text); white-space: nowrap; }
 .brand:hover { color: var(--ft-text); }
@@ -245,12 +255,16 @@ onBeforeUnmount(() => clearInterval(timer))
 /* 框架四周留白控制在原来的宽度附近（侧栏 188 + 留白），各页面表格可用宽度基本不变 */
 .content { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
 @media (max-width: 991px) {
-  /* 窄屏侧栏收起时不留空隙 */
+  /* 窄屏侧栏改为浮层抽屉，不挤压右侧内容面板宽度 */
   .frame { gap: 0; }
+  .sider { position: absolute !important; inset: 8px auto 8px 8px; z-index: 20; height: auto; }
+  .sider-inner { box-shadow: var(--card-shadow); border: 1px solid var(--ft-border); }
 }
 @media (max-width: 575px) {
   .ft-app { padding: 0; }
   .frame { padding: 0; border: none; border-radius: 0; }
+  .sider { inset: 0 auto 0 0; }
+  .sider-inner { border-radius: 0 16px 16px 0; }
   .main { border: none; border-radius: 0; }
   .header { margin: 0 12px; }
   .search { display: none; }
