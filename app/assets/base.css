@@ -63,15 +63,13 @@ html, body { margin: 0; background: var(--ft-page-bg); font-family: -apple-syste
 
 /* ───── 电脑端通用 ───── */
 .ft-app { background: var(--ft-page-bg); color: var(--ft-text); }
-/* 页面里原有的 a-card 统一成圆角卡片 */
-.ft-app .ft-content > .ant-card,
-.ft-app .ft-content > .ant-space > .ant-space-item > .ant-card { border-radius: var(--ft-card-radius); border: 1px solid var(--ft-border); box-shadow: var(--ft-card-shadow); }
-.ft-app .ft-content > .ant-card > .ant-card-head { border-bottom: none; }
-.ft-app .ft-content > .ant-card > .ant-card-head .ant-card-head-title { font-size: 17px; font-weight: 600; color: var(--ft-text); flex: none; margin-right: 16px; }
+/* 页面里原有的 a-card 统一成圆角卡片（含 .ft-page 与包裹容器内的顶层卡片） */
+.ft-app :is(.ft-content > .ant-card, .ft-content > .ant-space > .ant-space-item > .ant-card, .ft-page > .ant-card) { border-radius: var(--ft-card-radius); border: 1px solid var(--ft-border); box-shadow: var(--ft-card-shadow); }
+.ft-app :is(.ft-content > .ant-card, .ft-page > .ant-card) > .ant-card-head { border-bottom: none; padding-block: 8px; }
+.ft-app :is(.ft-content > .ant-card, .ft-page > .ant-card) > .ant-card-head .ant-card-head-title { font-size: 16px; font-weight: 600; color: var(--ft-text); flex: none; margin-right: 16px; }
 /* 右上角筛选多时换行，不把标题挤成省略号 */
-.ft-app .ft-content > .ant-card > .ant-card-head { padding-block: 8px; }
-.ft-app .ft-content > .ant-card > .ant-card-head .ant-card-head-wrapper { flex-wrap: wrap; row-gap: 8px; }
-.ft-app .ft-content > .ant-card > .ant-card-head .ant-card-extra { margin-inline-start: auto; }
+.ft-app :is(.ft-content > .ant-card, .ft-page > .ant-card) > .ant-card-head .ant-card-head-wrapper { flex-wrap: wrap; row-gap: 8px; }
+.ft-app :is(.ft-content > .ant-card, .ft-page > .ant-card) > .ant-card-head .ant-card-extra { margin-inline-start: auto; }
 
 /* 状态文字（永远带文字，颜色只是辅助） */
 .ft-text-done { color: var(--ft-done-text); }
@@ -81,13 +79,8 @@ html, body { margin: 0; background: var(--ft-page-bg); font-family: -apple-syste
 .ft-text-none, .ft-muted { color: var(--ft-text-3); }
 
 /* ───── 前端改版第二轮 ───── */
-/* 部门工作台：统计卡一行 + 原来的卡片；卡片样式与上面 .ft-content > .ant-card 一致 */
+/* 部门工作台：统计卡一行 + 原来的卡片 */
 .ft-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.ft-app .ft-page > .ant-card { border-radius: var(--ft-card-radius); border: 1px solid var(--ft-border); box-shadow: var(--ft-card-shadow); }
-.ft-app .ft-page > .ant-card > .ant-card-head { border-bottom: none; padding-block: 8px; }
-.ft-app .ft-page > .ant-card > .ant-card-head .ant-card-head-title { font-size: 17px; font-weight: 600; color: var(--ft-text); flex: none; margin-right: 16px; }
-.ft-app .ft-page > .ant-card > .ant-card-head .ant-card-head-wrapper { flex-wrap: wrap; row-gap: 8px; }
-.ft-app .ft-page > .ant-card > .ant-card-head .ant-card-extra { margin-inline-start: auto; }
 .ft-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .ft-stats.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 991px) { .ft-stats, .ft-stats.cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } }
@@ -99,13 +92,16 @@ html, body { margin: 0; background: var(--ft-page-bg); font-family: -apple-syste
 /* ───── 设计改版试点 ───── */
 /* 卡片里的表格：只对加了 class="ft-table" 的表格生效，不改全站其他表格。
    表头不再铺灰底（卡片标题已经是一层表头，灰底会看成两条标题栏），只用小号灰字 + 底线；
-   首尾列留 20px，与卡片标题左右对齐，文字不贴边 */
+   UiSectionCard(pad-none) 内首尾列留 20px 与卡头对齐；a-card-body 已有内边距时收敛为 12px 与分组头对齐 */
+.ft-table { font-variant-numeric: tabular-nums; }
 .ft-table .ant-table-thead > tr > th { background: transparent; color: var(--ft-text-2); font-weight: 500; font-size: 13px; border-bottom: 1px solid var(--ft-border); }
 .ft-table .ant-table-thead > tr > th::before { display: none; }
 .ft-table .ant-table-tbody > tr:hover > td { background: var(--ft-fill); }
 /* Ant 的 size=middle 内边距选择器较长，这里同样写全才能盖过 */
 .ft-table.ant-table-wrapper .ant-table .ant-table-thead > tr > th:first-child, .ft-table.ant-table-wrapper .ant-table .ant-table-tbody > tr > td:first-child { padding-left: 20px; }
 .ft-table.ant-table-wrapper .ant-table .ant-table-thead > tr > th:last-child, .ft-table.ant-table-wrapper .ant-table .ant-table-tbody > tr > td:last-child { padding-right: 20px; }
+.ant-card-body .ft-table.ant-table-wrapper .ant-table .ant-table-thead > tr > th:first-child, .ant-card-body .ft-table.ant-table-wrapper .ant-table .ant-table-tbody > tr > td:first-child { padding-left: 12px; }
+.ant-card-body .ft-table.ant-table-wrapper .ant-table .ant-table-thead > tr > th:last-child, .ant-card-body .ft-table.ant-table-wrapper .ant-table .ant-table-tbody > tr > td:last-child { padding-right: 12px; }
 .ft-table .ant-table-tbody > tr:last-child > td { border-bottom: none; }
 
 /* ───── 设计改版试点 v2 ───── */

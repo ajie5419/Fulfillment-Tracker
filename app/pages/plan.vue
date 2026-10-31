@@ -86,10 +86,10 @@ const enc = encodeURIComponent
     <!-- 一览 -->
     <template v-else>
       <div class="page-head">
-        <h1 class="page-title">
-          项目计划
-          <UiHelpTip>每个工单一份总计划：项目经理、项目部按模板编制、发布、调整；发布后各部门在“部门计划”里接收本部门的节点、分解任务、委派责任人。点一行进入该工单的计划。</UiHelpTip>
-        </h1>
+        <span class="head-hint">
+          总计划编制、发布与节点跟踪
+          <UiHelpTip label="项目计划说明">每个工单一份总计划：项目经理、项目部按模板编制、发布、调整；发布后各部门在“部门计划”里接收本部门的节点、分解任务、委派责任人。点一行进入该工单的计划。</UiHelpTip>
+        </span>
         <div class="tools">
           <a-select
             :value="undefined"
@@ -178,9 +178,9 @@ const enc = encodeURIComponent
 </template>
 
 <style scoped>
-.page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 8px 0 16px; }
-.page-title { display: inline-flex; align-items: center; gap: 6px; font-size: 22px; font-weight: 600; margin: 0; color: var(--ft-text); }
-.tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 16px; }
+.head-hint { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ft-text-2); }
+.tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }
 .wo-search { width: 240px; }
 .closed-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ft-text-2); cursor: pointer; white-space: nowrap; }
 .summary { margin-bottom: 16px; }

@@ -224,12 +224,12 @@ const loadColumns = [
   <div>
   <div class="ft-page">
   <a-result v-if="error" status="error" title="列表加载失败" :sub-title="apiError(error)"><template #extra><a-button @click="refresh()">重试</a-button></template></a-result>
-  <div v-if="stats && !pending && !error" class="ft-stats">
-    <UiStatCard label="设计中" :value="stats.pending" unit="项" tone="primary" accent icon="dot" clickable :active="filter.view === 'pending'" sub="还没完成设计的任务" @click="applyView('pending')" />
-    <UiStatCard label="逾期" :value="stats.overdue" unit="项" tone="late" accent icon="alert" clickable :active="filter.view === 'overdue'" sub="设计中过计划完成日，或客户确认过计划日" @click="applyView('overdue')" />
-    <UiStatCard label="本周到期" :value="stats.dueThisWeek" unit="项" tone="risk" accent icon="warn" clickable :active="filter.view === 'week'" sub="设计中且计划完成日在本周" @click="applyView('week')" />
-    <UiStatCard label="设计完成待发放 / 待确认" :value="stats.drawn + stats.customerPending" unit="项" tone="done" accent icon="check" clickable :active="filter.view === 'drawn'" @click="applyView('drawn')">
-      <template #sub>待发放 {{ stats.drawn }} · 待客户确认 {{ stats.customerPending }}</template>
+  <div v-if="!error" class="ft-stats">
+    <UiStatCard label="设计中" :value="stats ? stats.pending : '—'" unit="项" tone="primary" accent icon="dot" clickable :active="filter.view === 'pending'" sub="还没完成设计的任务" @click="applyView('pending')" />
+    <UiStatCard label="逾期" :value="stats ? stats.overdue : '—'" unit="项" tone="late" accent icon="alert" clickable :active="filter.view === 'overdue'" sub="设计中过计划完成日，或客户确认过计划日" @click="applyView('overdue')" />
+    <UiStatCard label="本周到期" :value="stats ? stats.dueThisWeek : '—'" unit="项" tone="risk" accent icon="warn" clickable :active="filter.view === 'week'" sub="设计中且计划完成日在本周" @click="applyView('week')" />
+    <UiStatCard label="设计完成待发放 / 待确认" :value="stats ? stats.drawn + stats.customerPending : '—'" unit="项" tone="done" accent icon="check" clickable :active="filter.view === 'drawn'" @click="applyView('drawn')">
+      <template #sub>待发放 {{ stats ? stats.drawn : '—' }} · 待客户确认 {{ stats ? stats.customerPending : '—' }}</template>
     </UiStatCard>
   </div>
   <a-card v-if="!error">
@@ -272,6 +272,7 @@ const loadColumns = [
         <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
         <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" :nodes="distinctPlanNodes(t.rows)" v-bind="doneOf(t)" label="设计完成" :count="t.rows.length" />
         <a-table
+          class="ft-table"
           :columns="layout === 'group' ? groupColumns : columns"
           :data-source="t.rows"
           :loading="pending"
@@ -283,7 +284,7 @@ const loadColumns = [
           <template #emptyText><a-empty v-if="!pending" :description="filter.view === 'open' ? '没有未完成的设计任务' : '没有记录'" /></template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'component'">
-              <a v-if="canEditTask" @click="openEdit(record as DrawingRow)">{{ record.componentName }}</a>
+              <button v-if="canEditTask" type="button" class="link-btn" @click="openEdit(record as DrawingRow)">{{ record.componentName }}</button>
               <span v-else>{{ record.componentName }}</span>
               <UiStatusTag v-if="!record.parts.length" tone="none">文档 / 原理图（无关联零件）</UiStatusTag>
               <div class="muted">{{ record.parts.length ? partNames(record as DrawingRow) : '未关联工件' }}</div>
@@ -347,12 +348,12 @@ const loadColumns = [
 
       <a-tab-pane key="load" tab="设计负荷">
         <p class="muted">按设计负责人统计{{ filter.workOrderNumber ? `（工单 ${filter.workOrderNumber}）` : '' }}。逾期 = 设计中已过计划完成日，或客户确认已过计划日；本周到期 = 设计中且计划完成日在本周（{{ load.week.monday }} ~ {{ load.week.sunday }}）。点数字看明细。</p>
-        <a-table :columns="loadColumns" :data-source="load.rows" :loading="loadPending" :row-key="loadKey" size="middle" :pagination="false">
+        <a-table class="ft-table" :columns="loadColumns" :data-source="load.rows" :loading="loadPending" :row-key="loadKey" size="middle" :pagination="false">
           <template #emptyText><a-empty description="没有未完成的设计任务" /></template>
           <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'owner'"><a @click="showOwner(record.ownerId)">{{ record.ownerName }}</a></template>
+            <template v-if="column.key === 'owner'"><button type="button" class="link-btn" @click="showOwner(record.ownerId)">{{ record.ownerName }}</button></template>
             <template v-else-if="column.key === 'overdue'">
-              <a v-if="record.overdue" class="warn" @click="showOwner(record.ownerId, 'overdue')">{{ record.overdue }}</a>
+              <button v-if="record.overdue" type="button" class="link-btn warn" @click="showOwner(record.ownerId, 'overdue')">{{ record.overdue }}</button>
               <span v-else class="muted">0</span>
             </template>
             <template v-else-if="column.key === 'week'">
@@ -389,7 +390,10 @@ const loadColumns = [
 <style scoped>
 .no-nav :deep(.ant-tabs-nav) { display: none; }
 .muted { color: var(--ft-text-2); font-size: 12px; }
-.warn { color: var(--ft-late); }
+.link-btn { padding: 0; border: 0; background: none; font: inherit; color: var(--ft-primary); text-align: left; cursor: pointer; }
+.link-btn:hover { text-decoration: underline; }
+.link-btn:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; border-radius: 2px; }
+.warn { color: var(--ft-late-text); }
 .small { font-size: 12px; }
 .proc { display: block; font-size: 12px; white-space: nowrap; }
 .void { text-decoration: line-through; color: var(--ft-text-3); }
