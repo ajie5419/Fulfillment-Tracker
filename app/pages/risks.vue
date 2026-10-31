@@ -120,6 +120,20 @@ function convert(row: { id: string; subject: string }) {
 // ───── 汇总图 ─────
 // 按当前页签取数：预警页签不算异常，异常页签不算预警
 const tallies = computed(() => riskTallies(tab.value === 'issues' ? [] : alerts.value, tab.value === 'alerts' ? [] : issues.value))
+const heroSummary = computed(() => {
+  if ((alertsPending.value || issuesPending.value) && !items.value.length) return '正在汇总当前预警与未关闭异常…'
+  const t = tallies.value
+  if (!t.total) return '当前筛选范围内暂无活动预警与未关闭异常。'
+  const sev = t.bySeverity
+  const parts: string[] = []
+  if (sev.RED) parts.push(`红色预警 ${sev.RED}`)
+  if (sev.ISSUE_OVERDUE) parts.push(`超期异常 ${sev.ISSUE_OVERDUE}`)
+  if (sev.YELLOW) parts.push(`黄色预警 ${sev.YELLOW}`)
+  if (sev.ISSUE_OPEN) parts.push(`待处理异常 ${sev.ISSUE_OPEN}`)
+  const top = t.byDept[0]
+  const deptNote = top && top.name !== NO_DEPT ? `，主要集中在${top.name}（${top.count} 项）` : ''
+  return `当前筛选下共 ${t.total} 项风险${parts.length ? `（${parts.join(' · ')}）` : ''}${deptNote}。`
+})
 const SEVERITY_TONE: Record<RiskSeverity, string> = { RED: 'late', YELLOW: 'risk', ISSUE_OVERDUE: 'upstream', ISSUE_OPEN: 'on-track' }
 const severityBars = computed(() => RISK_SEVERITIES.map((s) => ({ key: s, label: RISK_SEVERITY_TEXT[s], value: tallies.value.bySeverity[s], tone: SEVERITY_TONE[s] })))
 /** 部门多时只列前 8 个，其余合并 */
@@ -206,25 +220,29 @@ function clearFilters() {
 <template>
   <div>
   <div class="risks">
+    <UiPageHero title="风险与异常监控" :summary="heroSummary">
+      <template #titleAfter>
+        <UiHelpTip label="风险页说明">预警由扫描任务每 15 分钟更新，对象状态变化后自动消除；红色预警（W1–W3）会自动转成异常。电脑上点右上角"上报异常"；手机上打开手机端"异常"→"上报异常"。系统会把 QMS 检验不合格和红色预警自动转成异常。</UiHelpTip>
+      </template>
+      <template #actions>
+        <UiRefreshButton @click="refresh()" />
+        <a-button type="primary" class="ft-btn-ink" @click="reporting = true">上报异常</a-button>
+      </template>
+    </UiPageHero>
+
     <div class="charts">
-      <UiSectionCard title="按责任部门" :sub="`当前筛选下 ${tallies.total} 项风险；一条预警有多个责任部门时各算一次`" padding="tight">
+      <UiSectionCard icon="bars" title="按责任部门" :sub="`当前筛选下 ${tallies.total} 项风险；一条预警有多个责任部门时各算一次`" padding="tight">
         <UiBarList :items="deptBars" empty="没有风险" :label-width="84" />
       </UiSectionCard>
-      <UiSectionCard title="按严重度" sub="预警只算活动中的红、黄（已转异常的算在异常里）；异常只算未关闭的" padding="tight">
+      <UiSectionCard icon="chart" title="按严重度" sub="预警只算活动中的红、黄（已转异常的算在异常里）；异常只算未关闭的" padding="tight">
         <UiBarList :items="severityBars" :label-width="84" />
       </UiSectionCard>
     </div>
 
-    <UiSectionCard flat>
-      <template #title>
-        <span class="ft-title">
-          风险
-          <UiHelpTip label="风险页说明">预警由扫描任务每 15 分钟更新，对象状态变化后自动消除；红色预警（W1–W3）会自动转成异常。电脑上点右上角"上报异常"；手机上打开手机端"异常"→"上报异常"。系统会把 QMS 检验不合格和红色预警自动转成异常。</UiHelpTip>
-        </span>
-      </template>
+    <UiSectionCard icon="shield" padding="none" title="风险明细" :sub="filter.workOrderNumber ? `工单 ${filter.workOrderNumber}` : '按紧急度排序：红色预警 → 超期异常 → 黄色预警 → 未超期异常'">
       <template #extra>
         <a-segmented v-model:value="tab" :options="tabOptions" class="tabs" />
-        <a-select v-model:value="filter.workOrderNumber" allow-clear show-search placeholder="全部工单" style="width: 170px" :options="woOptions" />
+        <a-select v-model:value="filter.workOrderNumber" allow-clear show-search placeholder="全部工单" style="width: 168px" :options="woOptions" />
         <UiFilterButton :count="activeChips.length" @clear="clearFilters">
           <template v-if="showAlertFilters">
             <div class="ft-filter-group">预警</div>
@@ -242,25 +260,27 @@ function clearFilters() {
             <a-checkbox v-model:checked="overdueOnly">只看超期</a-checkbox>
           </template>
         </UiFilterButton>
-        <UiRefreshButton @click="refresh()" />
-        <a-button type="primary" @click="reporting = true">上报异常</a-button>
       </template>
 
-      <!-- 已生效的筛选条件：点 × 单独去掉，"清空"恢复默认 -->
-      <UiFilterChips :items="activeChips" @clear-all="clearFilters" />
+      <div v-if="activeChips.length" class="chips-bar">
+        <UiFilterChips :items="activeChips" @clear-all="clearFilters" />
+      </div>
 
       <a-spin :spinning="alertsPending || issuesPending">
-        <a-empty v-if="!items.length" :description="tab === 'alerts' ? '没有活动中的预警' : tab === 'issues' ? '没有符合条件的异常' : '没有符合条件的预警和异常'" />
-        <div v-else class="list">
+        <div v-if="!items.length" class="empty-box">
+          <a-empty :description="tab === 'alerts' ? '没有活动中的预警' : tab === 'issues' ? '没有符合条件的异常' : '没有符合条件的预警和异常'" />
+        </div>
+        <div v-else class="feed-list">
           <template v-for="it in items.slice(0, shown)" :key="it.key">
             <!-- 预警 -->
-            <article v-if="it.kind === 'alert'" class="rcard" :class="`tone-${it.tone}`">
-              <UiStatusIcon :kind="iconOf(it.tone)" :tone="it.tone" :size="16" class="icon" />
+            <article v-if="it.kind === 'alert'" class="rrow" :class="`tone-${it.tone}`">
+              <span class="row-badge" :class="`badge-${it.tone}`" aria-hidden="true">
+                <UiStatusIcon :kind="iconOf(it.tone)" :tone="it.tone" :size="15" />
+              </span>
               <div class="main">
                 <div class="head">
-                  <span class="kind" :class="`k-${it.a.level}`">{{ LEVEL_TEXT[it.a.level as AlertLevelKey] }}预警</span>
-                  <NuxtLink v-if="it.a.link" :to="it.a.link" class="subject">{{ it.a.subject }}</NuxtLink>
-                  <span v-else class="subject">{{ it.a.subject }}</span>
+                  <NuxtLink v-if="it.a.link" :to="it.a.link" class="subject strong">{{ it.a.subject }}</NuxtLink>
+                  <span v-else class="subject strong">{{ it.a.subject }}</span>
                   <span class="rule">{{ RULE_TEXT[it.a.rule as keyof typeof RULE_TEXT] }}</span>
                 </div>
                 <div class="desc">{{ it.a.summary }}<span v-if="it.a.duration" class="muted">　已持续 {{ it.a.duration }}（不含停工日）</span></div>
@@ -272,17 +292,19 @@ function clearFilters() {
                 </div>
               </div>
               <div class="ops">
+                <span class="sq-badge" :class="`k-${it.a.level}`">{{ LEVEL_TEXT[it.a.level as AlertLevelKey] }}预警</span>
                 <a-button v-if="it.a.issue" size="small" class="issue-btn" @click="selected = it.a.issue.id">已转异常 {{ it.a.issue.issueNo }}</a-button>
                 <a-button v-else-if="it.a.canConvert" size="small" danger :loading="converting === it.a.id" @click="convert({ id: it.a.id, subject: it.a.subject })">转异常</a-button>
                 <NuxtLink v-if="it.a.link" :to="it.a.link" class="go">去处理 ›</NuxtLink>
               </div>
             </article>
             <!-- 异常：点开处理抽屉 -->
-            <article v-else class="rcard clickable" :class="`tone-${it.tone}`" role="button" tabindex="0" @click="selected = it.i.id" @keydown.enter="selected = it.i.id" @keydown.space.prevent="selected = it.i.id">
-              <UiStatusIcon :kind="iconOf(it.tone)" :tone="it.tone" :size="16" class="icon" />
+            <article v-else class="rrow clickable" :class="`tone-${it.tone}`" role="button" tabindex="0" @click="selected = it.i.id" @keydown.enter="selected = it.i.id" @keydown.space.prevent="selected = it.i.id">
+              <span class="row-badge" :class="`badge-${it.tone}`" aria-hidden="true">
+                <UiStatusIcon :kind="iconOf(it.tone)" :tone="it.tone" :size="15" />
+              </span>
               <div class="main">
                 <div class="head">
-                  <span class="kind k-ISSUE">异常</span>
                   <span class="subject strong">{{ it.i.issueNo }}</span>
                   <span class="rule">{{ it.i.categoryText }} · {{ ISSUE_SOURCE_TEXT[it.i.source as keyof typeof ISSUE_SOURCE_TEXT] }}</span>
                   <a-tag :color="ISSUE_STATUS_COLOR[it.i.status as IssueStatusKey]" class="tag">{{ ISSUE_STATUS_TEXT[it.i.status as IssueStatusKey] }}</a-tag>
@@ -297,7 +319,8 @@ function clearFilters() {
                 </div>
               </div>
               <div class="ops">
-                <a-button size="small" type="primary" ghost @click.stop="selected = it.i.id">处理 ›</a-button>
+                <span class="sq-badge k-ISSUE">异常</span>
+                <a-button size="small" @click.stop="selected = it.i.id">处理 ›</a-button>
               </div>
             </article>
           </template>
@@ -317,35 +340,76 @@ function clearFilters() {
 <style scoped>
 .risks { display: flex; flex-direction: column; gap: 20px; }
 .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.muted { color: var(--ft-text-2); font-size: 12px; }
+.muted { color: var(--ft-text-3); font-size: 12px; }
 .tabs { font-weight: normal; }
-.list { display: flex; flex-direction: column; gap: 8px; padding: 0; }
-.more { margin-top: 12px; text-align: center; }
+.chips-bar { padding: 0 20px 10px; }
+.empty-box { padding: 36px 20px; }
+.feed-list { display: flex; flex-direction: column; border-top: 1px solid var(--ft-border); }
+.more { padding: 14px 20px; border-top: 1px solid var(--card-border-subtle); text-align: center; }
 
-.rcard { position: relative; display: flex; align-items: flex-start; gap: 12px; padding: 13px 16px; border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); background: var(--ft-card-bg); box-shadow: var(--ft-card-shadow); overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
-.rcard.clickable { cursor: pointer; }
-.rcard.clickable:hover { border-color: var(--ft-border-hover); box-shadow: var(--card-shadow-hover); }
-.rcard:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
-/* 设计改版：去掉左侧色条（用户意见），状态由图标 + 标签表达 */
-.icon { margin-top: 3px; }
-.main { flex: 1; min-width: 0; }
-.head { line-height: 22px; }
-.head > * { vertical-align: middle; }
-.head > * + * { margin-left: 8px; }
-.kind { display: inline-flex; align-items: center; height: 22px; font-size: 12px; font-weight: 500; line-height: 22px; padding: 0 9px; border-radius: 999px; background: var(--ft-none-bg); color: var(--ft-text-2); }
+/* Ember Payouts 式去框平铺风险行 */
+.rrow {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 14px 20px;
+  background: var(--ft-card-bg);
+  transition: background-color 0.14s;
+}
+.rrow + .rrow { border-top: 1px solid var(--card-border-subtle); }
+.rrow.clickable { cursor: pointer; }
+.rrow:hover { background: color-mix(in srgb, var(--ft-fill) 65%, transparent); }
+.rrow:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: -2px; }
+
+.row-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin-top: 1px;
+  border-radius: 9px;
+  border: 1px solid var(--card-border-subtle);
+}
+.badge-late { background: var(--ft-late-bg); color: var(--ft-late-text); }
+.badge-risk { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
+.badge-upstream { background: var(--ft-upstream-bg); color: var(--ft-upstream-text); }
+.badge-primary { background: var(--ft-primary-bg); color: var(--ft-primary-text); }
+.badge-none { background: var(--ft-fill); color: var(--ft-text-3); }
+
+.sq-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 21px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 21px;
+  background: var(--ft-fill);
+  color: var(--ft-text-2);
+  white-space: nowrap;
+}
 .k-RED { background: var(--ft-late-bg); color: var(--ft-late-text); }
 .k-YELLOW { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
 .k-REMIND { background: var(--ft-primary-bg); color: var(--ft-primary-text); }
 .k-ISSUE { background: var(--ft-upstream-bg); color: var(--ft-upstream-text); }
+
+.main { flex: 1; min-width: 0; }
+.head { line-height: 22px; }
+.head > * { vertical-align: middle; }
+.head > * + * { margin-left: 8px; }
 .subject { font-size: 14px; line-height: 22px; word-break: break-word; }
 span.subject { color: var(--ft-text); }
 .strong { font-weight: 600; }
 .rule { font-size: 12px; color: var(--ft-text-2); }
 .tag { margin-inline-end: 0; }
-.desc { margin-top: 2px; font-size: 13px; color: var(--ft-text); }
+.desc { margin-top: 3px; font-size: 13px; color: var(--ft-text); line-height: 1.45; }
 .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; font-size: 12px; color: var(--ft-text-2); }
-.meta .late { color: var(--ft-late-text); }
+.meta .late { color: var(--ft-late-text); font-weight: 500; }
 .ops { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; max-width: 260px; }
 .issue-btn { color: var(--ft-primary-text); border-color: var(--ft-primary-bg); }
 .go { font-size: 13px; white-space: nowrap; }
@@ -354,7 +418,7 @@ span.subject { color: var(--ft-text); }
   .charts { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 575px) {
-  .rcard { flex-wrap: wrap; }
-  .ops { width: 100%; max-width: none; justify-content: flex-start; padding-left: 26px; }
+  .rrow { flex-wrap: wrap; padding: 12px 14px; }
+  .ops { width: 100%; max-width: none; justify-content: flex-start; padding-left: 47px; }
 }
 </style>

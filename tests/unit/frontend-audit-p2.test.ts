@@ -30,22 +30,25 @@ describe('Frontend audit P2: accessibility, motion preferences, narrow-screen dr
     expect(head).toContain('color: var(--ft-text-2)')
   })
 
-  it('aligns index.vue and risks.vue with de-nested flat SectionCards, single-layer cards, capsule tags, keyboard access, and single-accent CTA', () => {
+  it('aligns index.vue and risks.vue with Ember UiPageHero, Payouts-style borderless feed rows, keyboard access, and ink primary CTA', () => {
+    const hero = readFileSync('app/components/ui/PageHero.vue', 'utf8')
+    expect(hero).toContain('class="ft-hero-title"')
+    expect(hero).toContain('class="ft-hero-spark"')
+
     const index = readFileSync('app/pages/index.vue', 'utf8')
-    expect(index).toContain('<UiSectionCard flat title="待办与提醒"')
-    expect(index).not.toContain('class="ft-well cards"')
-    expect(index).toContain('border-radius: 999px')
+    expect(index).toContain('<UiPageHero :title="heroTitle" :summary="heroSummary">')
+    expect(index).toContain('<UiSectionCard icon="inbox" padding="none" title="待办与提醒"')
+    expect(index).toContain('class="wrow"')
+    expect(index).toContain('class="row-badge"')
     expect(index).toContain(':tabindex="c.reminder ? 0 : undefined"')
     expect(index).toContain('@keydown.space.prevent="onCardClick(c)"')
-    expect(index).not.toContain('var(--ft-text-3); font-size: 12px')
 
     const risks = readFileSync('app/pages/risks.vue', 'utf8')
-    expect(risks).toContain('<UiSectionCard flat>')
-    expect(risks).not.toContain('class="ft-well list"')
-    expect(risks).toContain('<a-button type="primary" @click="reporting = true">上报异常</a-button>')
+    expect(risks).toContain('<UiPageHero title="风险与异常监控" :summary="heroSummary">')
+    expect(risks).toContain('<UiSectionCard icon="shield" padding="none" title="风险明细"')
+    expect(risks).toContain('<a-button type="primary" class="ft-btn-ink" @click="reporting = true">上报异常</a-button>')
     expect(risks).not.toContain('danger @click="reporting = true"')
     expect(risks).toContain('@keydown.space.prevent="selected = it.i.id"')
-    expect(risks).toContain('border-radius: 999px')
   })
 
   it('improves mobile /m viewport, fixed tabbar bounds, MCard keyboard access, account switch, and above-the-fold priority', async () => {

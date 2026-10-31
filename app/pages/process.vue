@@ -175,30 +175,20 @@ const whoWhen = (name: string | null, at: string | null) => (name && at ? `${nam
     </UiStatCard>
   </div>
   <a-card>
-    <template #title>
-      <span class="ft-title">工艺
-        <UiHelpTip label="工艺说明">按部件（设计任务）跟踪料单和工艺。图纸正式发放后才可开始编制、下发，不要求签收；发放单作废时，已下发的料单和工艺自动转为"修改中"。料单：未开始 → 编制中 → 已下发，已下发后要改先点"修改料单"，改完再下发；技术部发设计变更时，涉及的部件料单已下发的会自动改成"修改中"并提醒工艺部负责人。工艺：无 → 编制中 → 已下发。只有工艺部可以改，其他人只读。下发时可以顺手建一张工艺文件发放单，让车间签收。</UiHelpTip>
-      </span>
-    </template>
-    <template #extra>
-      <a-space wrap>
+    <div class="ft-toolbar">
+      <a-segmented v-model:value="filter.view" :options="VIEWS.map((v) => ({ value: v.value, label: v.label }))" />
+      <div class="ft-toolbar-right">
         <a-select
           v-model:value="filter.workOrderNumber"
           allow-clear
           show-search
           placeholder="全部工单"
-          style="width: 170px"
+          style="width: 168px"
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
-        <UiRefreshButton @click="refresh()" />
-      </a-space>
-    </template>
-
-    <div class="ft-toolbar">
-      <a-segmented v-model:value="filter.view" :options="VIEWS.map((v) => ({ value: v.value, label: v.label }))" />
-      <div class="ft-toolbar-right">
-        <a-input-search v-model:value="keyword" allow-clear placeholder="部件 / 工单" style="width: 180px" />
+        <a-input-search v-model:value="keyword" allow-clear placeholder="部件 / 工单" style="width: 172px" />
         <a-segmented v-model:value="layout" :options="LAYOUT_OPTIONS" />
+        <UiRefreshButton @click="refresh()" />
       </div>
     </div>
     <p v-if="filter.view === 'waiting'" class="muted">只看图纸已经发放、料单还没开始的部件。<a @click="applyView('waiting')">看全部未完成</a></p>
