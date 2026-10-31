@@ -70,7 +70,7 @@ export interface KitList {
 export const BLOCKER_COLOR: Record<string, string> = {
   NO_ROUTE: 'default',
   HOLD: 'purple',
-  DRAWING: 'magenta',
+  DRAWING: 'volcano',
   MATERIAL: 'orange',
   BLOCKED: 'red',
   OUT: 'cyan',
