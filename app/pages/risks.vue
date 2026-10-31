@@ -35,11 +35,11 @@ const filter = reactive({
   overdue: route.query.overdue === '1' ? '1' : undefined,
 })
 
-const { data: alerts, pending: alertsPending, refresh: refreshAlerts } = await useFetch('/api/alerts', {
+const { data: alerts, pending: alertsPending, error: alertsError, refresh: refreshAlerts } = await useFetch('/api/alerts', {
   query: computed(() => ({ rule: filter.rule, level: filter.level, workOrderNumber: filter.workOrderNumber })),
   default: () => [],
 })
-const { data: issues, pending: issuesPending, refresh: refreshIssues } = await useFetch('/api/issues', {
+const { data: issues, pending: issuesPending, error: issuesError, refresh: refreshIssues } = await useFetch('/api/issues', {
   query: computed(() => ({
     status: filter.status || undefined,
     category: filter.category,
@@ -120,8 +120,19 @@ function convert(row: { id: string; subject: string }) {
 // ───── 汇总图 ─────
 // 按当前页签取数：预警页签不算异常，异常页签不算预警
 const tallies = computed(() => riskTallies(tab.value === 'issues' ? [] : alerts.value, tab.value === 'alerts' ? [] : issues.value))
+const summaryError = computed(() =>
+  tab.value === 'alerts' ? Boolean(alertsError.value) : tab.value === 'issues' ? Boolean(issuesError.value) : Boolean(alertsError.value || issuesError.value),
+)
+const summaryPending = computed(() =>
+  tab.value === 'alerts' ? alertsPending.value : tab.value === 'issues' ? issuesPending.value : alertsPending.value || issuesPending.value,
+)
 const heroSummary = computed(() => {
-  if ((alertsPending.value || issuesPending.value) && !items.value.length) return '正在汇总当前预警与未关闭异常…'
+  if (summaryError.value) {
+    if (tab.value === 'alerts') return '预警数据加载失败，暂无法汇总，请重试。'
+    if (tab.value === 'issues') return '异常数据加载失败，暂无法汇总，请重试。'
+    return '预警与异常数据加载失败，暂无法汇总，请重试。'
+  }
+  if (summaryPending.value && !items.value.length) return '正在汇总当前预警与未关闭异常…'
   const t = tallies.value
   if (!t.total) return '当前筛选范围内暂无活动预警与未关闭异常。'
   const sev = t.bySeverity

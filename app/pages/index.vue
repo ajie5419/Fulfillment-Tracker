@@ -9,7 +9,7 @@ import type { PartDetail } from '~~/server/services/flow/steps'
 import { WORK_BUCKET_TEXT, factoryTimeText, groupByBucket, type WorkBucket } from '#shared/workbench'
 
 const route = useRoute()
-const { data, pending } = await useReminders()
+const { data, pending, error: remindersError } = await useReminders()
 
 /** 点一条：标记已读，跳到关联对象 */
 async function openReminder(item: ReminderItem) {
@@ -34,7 +34,7 @@ async function readAll() {
   }
 }
 
-const { data: todos, pending: todosPending, refresh: refreshTodos } = await useTodos()
+const { data: todos, pending: todosPending, error: todosError, refresh: refreshTodos } = await useTodos()
 const { data: master } = await useMaster()
 const { data: me } = await useMe()
 type Todo = (typeof todos.value)[number]
@@ -186,7 +186,12 @@ const counts = computed(() => ({
 }))
 const statDenom = computed(() => Math.max(1, allCards.value.length))
 const heroTitle = computed(() => (me.value?.name ? `${me.value.name}，今日工作概览` : '今日工作概览'))
+const loadError = computed(() => Boolean(remindersError.value || todosError.value))
+async function retryLoad() {
+  await Promise.all([refreshTodos(), refreshReminders()])
+}
 const heroSummary = computed(() => {
+  if (loadError.value) return '待办与提醒数据加载失败，暂无法汇总，请重试。'
   if ((pending.value || todosPending.value) && !allCards.value.length) return '正在同步待办事项与预警提醒…'
   const c = counts.value
   const parts: string[] = []
@@ -232,6 +237,7 @@ function onCardClick(c: Card) {
   <div class="wb">
     <UiPageHero :title="heroTitle" :summary="heroSummary">
       <template #actions>
+        <a-button v-if="loadError" size="small" :loading="pending || todosPending" @click="retryLoad">重试</a-button>
         <NuxtLink v-if="active" :to="{ query: { ...route.query, f: undefined } }">
           <a-button size="small">清除筛选：{{ FILTER_TEXT[active] }}</a-button>
         </NuxtLink>
