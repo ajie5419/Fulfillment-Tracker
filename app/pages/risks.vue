@@ -365,7 +365,7 @@ function clearFilters() {
   align-items: flex-start;
   gap: 13px;
   padding: 14px 20px;
-  background: var(--ft-card-bg);
+  background: transparent;
   transition: background-color 0.14s;
 }
 .rrow + .rrow { border-top: 1px solid var(--card-border-subtle); }
@@ -382,7 +382,9 @@ function clearFilters() {
   height: 34px;
   margin-top: 1px;
   border-radius: 9px;
-  border: 1px solid var(--card-border-subtle);
+  background-clip: padding-box;
+  border: 1px solid var(--card-hairline);
+  box-shadow: var(--card-badge-shadow);
 }
 .badge-late { background: var(--ft-late-bg); color: var(--ft-late-text); }
 .badge-risk { background: var(--ft-risk-bg); color: var(--ft-risk-text); }

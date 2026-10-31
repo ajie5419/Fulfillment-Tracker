@@ -33,7 +33,9 @@ const kind = computed(() => props.icon ?? DEFAULT_ICON[props.tone])
   width: 34px;
   height: 34px;
   border-radius: 9px;
-  border: 1px solid var(--card-border-subtle);
+  background-clip: padding-box;
+  border: 1px solid var(--card-hairline);
+  box-shadow: var(--card-badge-shadow);
 }
 .main { flex: 1; min-width: 0; }
 .title { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 14px; font-weight: 500; color: var(--ft-text); }

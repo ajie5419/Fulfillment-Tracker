@@ -282,7 +282,7 @@ onBeforeUnmount(() => {
 .brand-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 12px 8px 14px; }
 .brand { display: inline-flex; align-items: center; gap: 9px; min-width: 0; color: var(--ft-text); white-space: nowrap; }
 .brand:hover { color: var(--ft-text); }
-.brand-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 8px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); box-shadow: var(--ft-card-shadow); }
+.brand-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 8px; background: var(--card-keycap-surface); background-clip: padding-box; border: 1px solid var(--card-hairline); border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom); box-shadow: var(--card-keycap-shadow); }
 .logo { display: block; width: 20px; height: 17px; object-fit: contain; }
 .brand-title { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: var(--ft-text); }
 .brand-dot { color: var(--ft-primary); margin-left: 1px; }
@@ -298,34 +298,34 @@ onBeforeUnmount(() => {
 .item-ico { flex: none; display: inline-flex; align-items: center; color: var(--ft-text-3); transition: color 0.12s; }
 .item-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* Ember 式纯白细描边数字小方牌 */
-.badge { flex: none; min-width: 20px; height: 19px; padding: 0 5px; border-radius: 6px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); box-shadow: var(--ft-card-shadow); color: var(--ft-text-2); font-size: 11px; line-height: 17px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.badge { flex: none; min-width: 20px; height: 19px; padding: 0 5px; border-radius: 6px; background: var(--card-keycap-surface); background-clip: padding-box; border: 1px solid var(--card-hairline); border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom); box-shadow: var(--card-keycap-shadow); color: var(--ft-text-2); font-size: 11px; line-height: 17px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
 .item:hover { color: var(--ft-text); background: color-mix(in srgb, var(--ft-text) 4.5%, transparent); }
 .item:hover .item-ico { color: var(--ft-text-2); }
 /* 选中项：柔和浅灰圆角条 + 深墨字 + 品牌色图标，克制不刺眼 */
-.item.active { color: var(--ft-text); background: color-mix(in srgb, var(--ft-text) 6.5%, var(--ft-card-bg)); font-weight: 600; }
+.item.active { color: var(--ft-text); background: color-mix(in srgb, var(--ft-text) 5.5%, var(--ft-card-bg)); font-weight: 600; }
 .item.active .item-ico { color: var(--ft-primary); }
-.item.active .badge { border-color: var(--ft-border-hover); color: var(--ft-text); }
+.item.active .badge { border-color: var(--card-hairline-hover); color: var(--ft-text); }
 .item:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: -2px; }
 
 /* 侧栏底部个人名片白卡 */
-.user-card { flex: none; display: flex; align-items: center; gap: 9px; margin: 4px 10px 10px; padding: 8px 9px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: 11px; box-shadow: var(--ft-card-shadow); min-width: 0; }
+.user-card { flex: none; display: flex; align-items: center; gap: 9px; margin: 4px 10px 10px; padding: 8px 9px; background: var(--card-surface-sheen); background-clip: padding-box; border: 1px solid var(--card-hairline); border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom); border-radius: 11px; box-shadow: var(--ft-card-shadow); min-width: 0; }
 .avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--ft-primary-bg); color: var(--ft-primary-text); border: 1px solid color-mix(in srgb, var(--ft-primary) 18%, transparent); font-size: 13px; font-weight: 600; }
 .user-meta { flex: 1; min-width: 0; line-height: 1.28; }
 .user-name { font-size: 13px; font-weight: 600; color: var(--ft-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .user-dept { margin-top: 1px; font-size: 11.5px; color: var(--ft-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .logout-btn { width: 26px; height: 26px; }
 
-/* 右侧独立圆角纯白工作台画板 */
-.main { min-width: 0; height: calc(100% - 16px); margin: 8px 8px 8px 0; display: flex; flex-direction: column; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: 16px; box-shadow: var(--ft-card-shadow); overflow: hidden; }
+/* 右侧独立圆角白瓷工作台画板（与内部纯白高光卡片拉开微亮度层级，保留顶部 1px 内高光） */
+.main { min-width: 0; height: calc(100% - 16px); margin: 8px 8px 8px 0; display: flex; flex-direction: column; background: var(--card-sheet-bg); background-clip: padding-box; border: 1px solid var(--card-hairline); border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom); border-radius: 16px; box-shadow: var(--card-sheet-shadow); overflow: hidden; }
 .main.main-full { margin-left: 8px; }
-.header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 50px; line-height: 50px; margin: 0; padding: 0 22px; background: var(--ft-card-bg); border-bottom: 1px solid var(--card-border-subtle); }
+.header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 50px; line-height: 50px; margin: 0; padding: 0 22px; background: transparent; border-bottom: 1px solid var(--card-border-subtle); }
 .left { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .page-name { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 500; color: var(--ft-text); white-space: nowrap; }
-.page-ico { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: var(--ft-fill); border: 1px solid var(--card-border-subtle); color: var(--ft-text-2); }
+.page-ico { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: var(--card-keycap-surface); background-clip: padding-box; border: 1px solid var(--card-hairline); box-shadow: var(--card-keycap-shadow); color: var(--ft-text-2); }
 .header-right { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; }
 .search { width: 290px; max-width: 42vw; }
-.top-action { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); color: var(--ft-text-2); transition: border-color 0.15s, color 0.15s, background-color 0.15s; }
-.top-action:hover { color: var(--ft-text); border-color: var(--ft-border-hover); background: var(--ft-fill); }
+.top-action { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; background: var(--card-keycap-surface); background-clip: padding-box; border: 1px solid var(--card-hairline); border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom); box-shadow: var(--card-keycap-shadow); color: var(--ft-text-2); transition: border-color 0.15s, color 0.15s, box-shadow 0.15s; }
+.top-action:hover { color: var(--ft-text); border-color: var(--card-hairline-hover-top) var(--card-hairline-hover) var(--card-hairline-hover-bottom); }
 .top-action:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 1px; }
 .bell-dot { position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--ft-late); box-shadow: 0 0 0 1.5px var(--ft-card-bg); }
 

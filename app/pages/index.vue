@@ -403,7 +403,7 @@ function onCardClick(c: Card) {
 .total-pill { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 6px; background: var(--ft-fill); border: 1px solid var(--ft-border); font-size: 12px; font-weight: 500; color: var(--ft-text-2); font-variant-numeric: tabular-nums; }
 .empty-box { padding: 36px 20px; }
 
-/* Ember Payouts 式左侧 34×34 圆角方形状态块 */
+/* Ember Payouts 式左侧 34×34 圆角方形状态块（带 1px 顶部内发光与细描边） */
 .row-badge {
   flex: none;
   display: inline-flex;
@@ -412,7 +412,9 @@ function onCardClick(c: Card) {
   width: 34px;
   height: 34px;
   border-radius: 9px;
-  border: 1px solid var(--card-border-subtle);
+  background-clip: padding-box;
+  border: 1px solid var(--card-hairline);
+  box-shadow: var(--card-badge-shadow);
 }
 .badge-late { background: var(--ft-late-bg); color: var(--ft-late-text); }
 .badge-risk { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
@@ -437,8 +439,8 @@ function onCardClick(c: Card) {
 .sq-none { background: var(--ft-fill); color: var(--ft-text-2); }
 
 /* 置顶：每日汇总、同步故障 */
-.digest { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; background: var(--ft-card-bg); border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); border: 1px solid var(--ft-border); padding: 13px 16px; transition: border-color 0.15s, box-shadow 0.15s; }
-.digest:hover { border-color: var(--ft-border-hover); box-shadow: var(--card-shadow-hover); }
+.digest { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; background: var(--card-surface-sheen); background-clip: padding-box; border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); border: 1px solid var(--card-hairline); border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom); padding: 13px 16px; transition: border-color 0.16s, box-shadow 0.16s, transform 0.16s; }
+.digest:hover { border-color: var(--card-hairline-hover-top) var(--card-hairline-hover) var(--card-hairline-hover-bottom); box-shadow: var(--card-shadow-hover); transform: translateY(-1px); }
 .digest-body { flex: 1; min-width: 0; }
 .digest-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; line-height: 22px; }
 .digest-title b { color: var(--ft-text); }
@@ -465,7 +467,7 @@ function onCardClick(c: Card) {
 .b-TODAY .dot { background: var(--ft-risk); }
 .b-WEEK .dot { background: var(--ft-primary); }
 .b-LATER .dot { background: color-mix(in srgb, var(--ft-primary) 50%, var(--ft-card-bg)); }
-.cnt { padding: 0 6px; border-radius: 5px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); color: var(--ft-text-2); font-size: 11.5px; font-weight: 600; line-height: 17px; font-variant-numeric: tabular-nums; }
+.cnt { padding: 0 6px; border-radius: 5px; background: var(--card-keycap-surface); background-clip: padding-box; border: 1px solid var(--card-hairline); box-shadow: var(--card-keycap-shadow); color: var(--ft-text-2); font-size: 11.5px; font-weight: 600; line-height: 17px; font-variant-numeric: tabular-nums; }
 .hint { font-size: 12px; font-weight: normal; color: var(--ft-text-3); }
 
 .feed-rows { display: flex; flex-direction: column; }
@@ -475,7 +477,7 @@ function onCardClick(c: Card) {
   align-items: center;
   gap: 13px;
   padding: 13px 20px;
-  background: var(--ft-card-bg);
+  background: transparent;
   transition: background-color 0.14s;
 }
 .wrow + .wrow { border-top: 1px solid var(--card-border-subtle); }

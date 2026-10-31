@@ -15,13 +15,30 @@ describe('Frontend audit P2: accessibility, motion preferences, narrow-screen dr
     expect(app).toContain('transition-duration: 0.01ms !important')
   })
 
-  it('upgrades default.vue with 100dvh, Ember inset white workspace sheet + bottom profile card, and narrow-screen overlay drawer + Escape', () => {
+  it('upgrades default.vue with 100dvh, Ember inset workspace sheet + bottom profile card, and narrow-screen overlay drawer + Escape', () => {
     const layout = readFileSync('app/layouts/default.vue', 'utf8')
     expect(layout).toContain('height: 100dvh')
     expect(layout).toContain('border-radius: 16px')
+    expect(layout).toContain('var(--card-sheet-bg)')
     expect(layout).toContain('class="user-card"')
     expect(layout).toContain('class="sider-mask"')
     expect(layout).toContain("e.key === 'Escape'")
+  })
+
+  it('enforces 90-degree top-lit tactile card tokens (1px optical hairline, top inner glow, and multi-layer elevation shadows)', () => {
+    const baseCss = readFileSync('app/assets/base.css', 'utf8')
+    expect(baseCss).toContain('--card-hairline-top:')
+    expect(baseCss).toContain('--card-hairline-bottom:')
+    expect(baseCss).toContain('inset 0 1px 0 0 #FFFFFF')
+    expect(baseCss).toContain('background-clip: padding-box')
+
+    const statCard = readFileSync('app/components/ui/StatCard.vue', 'utf8')
+    expect(statCard).toContain('var(--card-tray-shadow)')
+    expect(statCard).toContain('var(--card-panel-shadow)')
+
+    const sectionCard = readFileSync('app/components/ui/SectionCard.vue', 'utf8')
+    expect(sectionCard).toContain('var(--card-surface-sheen)')
+    expect(sectionCard).toContain('background-clip: padding-box')
   })
 
   it('keeps WoGroupHead count text at AA contrast (--ft-text-2) on gray --ft-fill background', () => {

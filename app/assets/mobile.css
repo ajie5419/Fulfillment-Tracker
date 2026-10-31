@@ -98,7 +98,7 @@
 .ft-m { min-height: 100vh; min-height: 100dvh; max-width: 640px; margin: 0 auto; background: var(--ft-page-bg); color: var(--ft-text); overflow-x: clip; }
 .ft-m .van-tabbar--fixed { max-width: 640px; left: 50%; transform: translateX(-50%); }
 .ft-m .van-nav-bar__title { font-weight: 600; }
-.ft-m .van-cell-group--inset { border: 1px solid var(--ft-border); box-shadow: var(--card-shadow); background: var(--card-surface-bg); }
+.ft-m .van-cell-group--inset { background: var(--card-surface-sheen); background-clip: padding-box; border: 1px solid var(--card-hairline); border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom); box-shadow: var(--card-shadow); }
 .ft-m .van-cell-group__title--inset { padding: 16px 16px 8px; font-size: 13px; font-weight: 600; }
 .ft-m .van-tabs__nav { background: var(--ft-card-bg); }
 .ft-m .van-tab--active { font-weight: 600; }

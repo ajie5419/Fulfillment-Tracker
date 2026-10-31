@@ -56,7 +56,7 @@ const ringColor = computed(() => {
 .muted { color: var(--ft-text-2); font-size: 12px; }
 .warn { color: var(--ft-late-text); }
 .node { margin-bottom: 12px; }
-.node.focus { border-color: var(--ft-primary); box-shadow: 0 0 0 2px rgba(42, 120, 214, 0.2); }
+.node.focus, .ft-app .ft-content .ant-card.node.focus { border-color: var(--ft-primary); box-shadow: 0 0 0 2px rgba(42, 120, 214, 0.2); }
 .node-name { font-weight: 600; margin-right: 6px; }
 .progress { display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
 .progress :deep(.txt) { font-size: 14px; }
