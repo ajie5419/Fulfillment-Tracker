@@ -28,11 +28,10 @@ const theme = {
     colorInfo: STATUS_COLOR.onTrack,
     colorTextBase: THEME_COLOR.textBase,
     colorBorder: THEME_COLOR.border,
-    // 大圆角与 base.css 的 --card-radius-outer 对齐。
-    borderRadius: 10,
-    borderRadiusLG: 16,
-    borderRadiusSM: 8,
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif",
+    borderRadius: 8,
+    borderRadiusLG: 12,
+    borderRadiusSM: 6,
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif",
   },
 }
 </script>

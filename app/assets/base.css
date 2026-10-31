@@ -5,26 +5,23 @@
  * 页面底色只加在电脑端布局（.ft-app，layouts/default.vue）上，手机端 /m 不受影响。
  */
 :root {
-  /* 暖色极简 Bento：画布、托盘与表面 */
+  /* 清爽冷白企业风（Linear / Stripe 质感）：冷白画布 #F8FAFC + 纯白单层卡片 + 清透石板蓝 #2563EB + 低饱和状态色 */
   /* 文字与边框两色另在 shared/theme.ts 有同值来源（Ant 主题用），改一处要两处一起改。 */
-  --card-canvas-bg: #F5F5F4;
-  --card-tray-bg: #F6F6F4;
+  --card-canvas-bg: #F4F5F7;
+  --card-tray-bg: #F3F5F8;
   --card-surface-bg: #FFFFFF;
-  --card-border: #ECECE9;
-  --card-border-subtle: rgba(0, 0, 0, 0.04);
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-  --card-radius-outer: 16px;
-  --card-radius-inner: 12px;
-  /* 托盘内缩由外圆角减内圆角推导：16px - 12px = 4px */
-  --card-tray-padding: 4px;
-  --card-text-primary: #18181B;
-  --card-text-secondary: #52525B;
-  --card-text-muted: #71717A;
-  /* 仅登记备用，不替换主色/状态色——橙色在本系统已表示「受上游影响」 */
-  --card-accent: #EA580C;
+  --card-border: #E2E8F0;
+  --card-border-hover: #CBD5E1;
+  --card-border-subtle: #E6ECF2;
+  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --card-shadow-hover: 0 4px 12px rgba(15, 23, 42, 0.06);
+  --card-radius-outer: 12px;
+  --card-radius-inner: 10px;
+  --card-text-primary: #0F172A;
+  --card-text-secondary: #475569;
+  --card-text-muted: #64748B;
 
-  --ft-primary: #2a78d6;
-  /* 设计规范定稿：暖色画布、极轻阴影与细边框（电脑端和手机端共用） */
+  --ft-primary: #2563EB;
   --ft-page-bg: var(--card-canvas-bg);
   --ft-card-bg: var(--card-surface-bg);
   --ft-card-radius: var(--card-radius-outer);
@@ -33,33 +30,37 @@
   --ft-text-2: var(--card-text-secondary);
   --ft-text-3: var(--card-text-muted);
   --ft-border: var(--card-border);
+  --ft-border-hover: var(--card-border-hover);
   --ft-fill: var(--card-tray-bg);
-  --ft-sider-bg: #16202e;
+  --ft-sider-bg: #0F172A;
 
-  /* 状态色：已完成/正常、有风险（黄）、受上游影响、延误（红）、未开始/未建计划、按计划 */
-  --ft-done: #0ca30c;
-  --ft-risk: #fab219;
-  --ft-upstream: #ec835a;
-  --ft-late: #d03b3b;
-  --ft-none: #b3bac6;
-  --ft-on-track: #2a78d6;
-  /* 浅底（标签、提示条） */
-  --ft-done-bg: #e8f6e8;
-  --ft-risk-bg: #fff6e0;
-  --ft-upstream-bg: #fdeee8;
-  --ft-late-bg: #fbeaea;
-  --ft-none-bg: #f1f3f6;
-  /* 状态色做文字时用深一档，白底和浅底上对比度都 ≥ 4.5:1（上面的色只用于圆点、色条等非文字） */
-  --ft-risk-text: #9a6700;
-  --ft-done-text: #0a7a0a;
-  --ft-upstream-text: #a8481f;
-  --ft-late-text: #b42828;
-  /* 主色浅底与主色文字（设计改版试点：把页面里重复出现的这两个值提升为变量） */
-  --ft-primary-bg: #e7f0fb;
-  --ft-primary-text: #1d5fae;
+  /* 状态色（与 shared/status.ts 保持一致）：清透低浑浊度色阶 */
+  --ft-done: #10B981;
+  --ft-risk: #F59E0B;
+  --ft-upstream: #F97316;
+  --ft-late: #E11D48;
+  --ft-none: #94A3B8;
+  --ft-on-track: #2563EB;
+  --ft-indigo: #6366F1;
+  /* 浅底（标签、轻提示条）：干净通透的极浅冷调/柔调色阶 */
+  --ft-done-bg: #ECFDF5;
+  --ft-risk-bg: #FFFBEB;
+  --ft-upstream-bg: #FFF7ED;
+  --ft-late-bg: #FFF1F2;
+  --ft-none-bg: #F1F5F9;
+  --ft-indigo-bg: #EEF2FF;
+  /* 状态色做文字时深一档，白底和浅底上对比度均 ≥ 4.5:1 */
+  --ft-risk-text: #B45309;
+  --ft-done-text: #047857;
+  --ft-upstream-text: #C2410C;
+  --ft-late-text: #BE123C;
+  --ft-indigo-text: #4338CA;
+  /* 主色浅底与主色文字 */
+  --ft-primary-bg: #EFF6FF;
+  --ft-primary-text: #1D4ED8;
 }
 
-html, body { margin: 0; background: var(--ft-page-bg); font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+html, body { margin: 0; background: var(--ft-page-bg); color: var(--ft-text); font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif; -webkit-font-smoothing: antialiased; }
 
 /* ───── 电脑端通用 ───── */
 .ft-app { background: var(--ft-page-bg); color: var(--ft-text); }
@@ -110,22 +111,27 @@ html, body { margin: 0; background: var(--ft-page-bg); font-family: -apple-syste
 .ft-app .ant-table-wrapper .ant-table-thead > tr > th:not(:last-child):not(.ant-table-selection-column):not(.ant-table-row-expand-icon-cell):not([colspan])::before { display: none; }
 
 /* ───── 设计规范通用类（docs/前端设计规范.md） ───── */
-/* 卡片里的浅灰区域：图表、列表都放在里面 */
-.ft-well { background: var(--ft-fill); border: 1px solid var(--card-border-subtle); border-radius: var(--card-radius-inner); padding: 16px; }
-.ft-well.list { display: flex; flex-direction: column; padding: 4px 16px; }
+/* 严禁卡片叠卡片：
+   - 独立放在冷白画布上的 .ft-well 为单层纯白卡片；
+   - 若位于单层白卡（UiSectionCard / a-card / a-drawer）内部，自动退化为无框平铺容器，只靠留白或细分割线分区 */
+.ft-well { background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); padding: 16px; }
+.ft-well.list { display: flex; flex-direction: column; padding: 4px 18px; }
 .ft-well.list > .ant-empty { margin: 24px 0; }
+:is(.ft-section:not(.flat), .ant-card-body) .ft-well { background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 0; }
+.ant-drawer-body .ft-well { background: var(--ft-fill); border: 1px solid var(--ft-border); box-shadow: none; padding: 12px 14px; border-radius: var(--card-radius-inner); }
+.ant-drawer-body .ft-well.list { background: transparent; border: none; padding: 0; }
 /* 筛选面板里的一行：左边条件名，右边控件 */
 .ft-filter-row { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: center; gap: 8px; font-size: 13px; color: var(--ft-text-2); }
 .ft-filter-group { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--ft-text-2); }
 
-/* Ant 标签统一成状态色胶囊（设计规范）：页面里 a-tag 用的 Ant 具名色（red / orange / green / blue …）按状态归到 --ft-* 颜色，
-   外观和 UiStatusTag 一致（带色点的胶囊）。不带颜色的 a-tag 是中性灰标签（工序名、分类等），不加色点。
-   :root 前缀只为盖过 Ant 自带样式（同样一层类名，加载先后不确定）。弹窗、抽屉挂在 body 下，所以不限定在 .ft-app 里；手机端用的是 vant 标签，不受影响 */
+/* Ant 标签统一成状态色胶囊（设计规范）：
+   red→延误玫红、volcano→上游阻塞橙、orange/gold→风险琥珀黄、green→完成翡翠绿、blue/cyan→主色石板蓝、purple→流转靛蓝 */
 :root .ant-tag { display: inline-flex; align-items: center; gap: 6px; height: 22px; margin-inline-end: 6px; padding: 0 9px; border: none; border-radius: 999px; background: var(--ft-none-bg); color: var(--ft-text-2); font-size: 12px; font-weight: 500; line-height: 22px; }
 :root .ant-tag .anticon-close { color: inherit; opacity: 0.7; }
 :root .ant-tag:is(.ant-tag-red, .ant-tag-error, .ant-tag-volcano, .ant-tag-magenta, .ant-tag-orange, .ant-tag-warning, .ant-tag-gold, .ant-tag-yellow, .ant-tag-green, .ant-tag-success, .ant-tag-lime, .ant-tag-blue, .ant-tag-processing, .ant-tag-geekblue, .ant-tag-cyan, .ant-tag-purple)::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tag-dot); }
 :root .ant-tag:is(.ant-tag-red, .ant-tag-error, .ant-tag-magenta) { --tag-dot: var(--ft-late); background: var(--ft-late-bg); color: var(--ft-late-text); }
-:root .ant-tag:is(.ant-tag-volcano, .ant-tag-purple) { --tag-dot: var(--ft-upstream); background: var(--ft-upstream-bg); color: var(--ft-upstream-text); }
+:root .ant-tag:is(.ant-tag-volcano) { --tag-dot: var(--ft-upstream); background: var(--ft-upstream-bg); color: var(--ft-upstream-text); }
+:root .ant-tag:is(.ant-tag-purple) { --tag-dot: var(--ft-indigo); background: var(--ft-indigo-bg); color: var(--ft-indigo-text); }
 :root .ant-tag:is(.ant-tag-orange, .ant-tag-warning, .ant-tag-gold, .ant-tag-yellow) { --tag-dot: var(--ft-risk); background: var(--ft-risk-bg); color: var(--ft-risk-text); }
 :root .ant-tag:is(.ant-tag-green, .ant-tag-success, .ant-tag-lime) { --tag-dot: var(--ft-done); background: var(--ft-done-bg); color: var(--ft-done-text); }
 :root .ant-tag:is(.ant-tag-blue, .ant-tag-processing, .ant-tag-geekblue, .ant-tag-cyan) { --tag-dot: var(--ft-primary); background: var(--ft-primary-bg); color: var(--ft-primary-text); }

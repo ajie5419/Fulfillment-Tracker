@@ -215,7 +215,7 @@ function clearFilters() {
       </UiSectionCard>
     </div>
 
-    <UiSectionCard>
+    <UiSectionCard flat>
       <template #title>
         <span class="ft-title">
           风险
@@ -251,7 +251,7 @@ function clearFilters() {
 
       <a-spin :spinning="alertsPending || issuesPending">
         <a-empty v-if="!items.length" :description="tab === 'alerts' ? '没有活动中的预警' : tab === 'issues' ? '没有符合条件的异常' : '没有符合条件的预警和异常'" />
-        <div v-else class="ft-well list">
+        <div v-else class="list">
           <template v-for="it in items.slice(0, shown)" :key="it.key">
             <!-- 预警 -->
             <article v-if="it.kind === 'alert'" class="rcard" :class="`tone-${it.tone}`">
@@ -315,16 +315,16 @@ function clearFilters() {
 </template>
 
 <style scoped>
-.risks { display: flex; flex-direction: column; gap: 16px; }
+.risks { display: flex; flex-direction: column; gap: 20px; }
 .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .muted { color: var(--ft-text-2); font-size: 12px; }
 .tabs { font-weight: normal; }
-.list { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.list { display: flex; flex-direction: column; gap: 8px; padding: 0; }
 .more { margin-top: 12px; text-align: center; }
 
-.rcard { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); background: var(--ft-card-bg); overflow: hidden; transition: border-color 0.15s, background-color 0.15s; }
+.rcard { position: relative; display: flex; align-items: flex-start; gap: 12px; padding: 13px 16px; border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); background: var(--ft-card-bg); box-shadow: var(--ft-card-shadow); overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
 .rcard.clickable { cursor: pointer; }
-.rcard.clickable:hover { border-color: var(--ft-text-3); background: var(--ft-fill); }
+.rcard.clickable:hover { border-color: var(--ft-border-hover); box-shadow: var(--card-shadow-hover); }
 .rcard:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
 /* 设计改版：去掉左侧色条（用户意见），状态由图标 + 标签表达 */
 .icon { margin-top: 3px; }

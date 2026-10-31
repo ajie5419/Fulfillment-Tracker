@@ -184,6 +184,7 @@ const counts = computed(() => ({
   today: allCards.value.filter((c) => c.bucket === 'TODAY').length,
   unread: data.value?.unread ?? 0,
 }))
+const statDenom = computed(() => Math.max(1, allCards.value.length))
 const cards = computed(() => {
   const f = active.value
   if (!f) return allCards.value
@@ -219,10 +220,10 @@ function onCardClick(c: Card) {
   <div>
   <div class="wb">
     <div class="stats">
-      <UiStatCard label="我的待办" :value="counts.todo" unit="条" tone="primary" accent icon="dot" :to="filterTo('todo')" :active="active === 'todo'" sub="点开只看待办" />
-      <UiStatCard label="已过期" :value="counts.overdue" unit="条" tone="late" accent icon="alert" :to="filterTo('overdue')" :active="active === 'overdue'" sub="截止日已过" />
-      <UiStatCard label="今天到期" :value="counts.today" unit="条" tone="risk" accent icon="warn" :to="filterTo('today')" :active="active === 'today'" sub="截止日就是今天" />
-      <UiStatCard label="未读提醒" :value="counts.unread" unit="条" tone="primary" accent icon="dot" :to="filterTo('unread')" :active="active === 'unread'" sub="含每日汇总" />
+      <UiStatCard label="我的待办" :value="counts.todo" :ratio="counts.todo / statDenom" unit="条" tone="primary" accent icon="dot" :to="filterTo('todo')" :active="active === 'todo'" sub="点开只看待办" />
+      <UiStatCard label="已过期" :value="counts.overdue" :ratio="counts.overdue / statDenom" unit="条" tone="late" accent icon="alert" :to="filterTo('overdue')" :active="active === 'overdue'" sub="截止日已过" />
+      <UiStatCard label="今天到期" :value="counts.today" :ratio="counts.today / statDenom" unit="条" tone="risk" accent icon="warn" :to="filterTo('today')" :active="active === 'today'" sub="截止日就是今天" />
+      <UiStatCard label="未读提醒" :value="counts.unread" :ratio="counts.unread / Math.max(statDenom, counts.unread)" unit="条" tone="primary" accent icon="dot" :to="filterTo('unread')" :active="active === 'unread'" sub="含每日汇总" />
     </div>
 
     <!-- QMS 同步连续失败（管理员）：未读时置顶 -->
@@ -254,7 +255,7 @@ function onCardClick(c: Card) {
     <!-- 项目日历（zhao 10-21）：本周 / 下周 / 本月计划与实际完成台数，所有人都显示 -->
     <WorkbenchCalendarCard />
 
-    <UiSectionCard title="待办与提醒" :sub="active ? `只看：${FILTER_TEXT[active]}` : '按截止日分组；提醒点开即标为已读并跳到对应页面'">
+    <UiSectionCard flat title="待办与提醒" :sub="active ? `只看：${FILTER_TEXT[active]}` : '按截止日分组；提醒点开即标为已读并跳到对应页面'">
       <template #extra>
         <NuxtLink v-if="active" :to="{ query: { ...route.query, f: undefined } }" class="clear">清除筛选</NuxtLink>
         <a-button size="small" :disabled="!data?.unread" @click="readAll">全部已读</a-button>
@@ -266,7 +267,7 @@ function onCardClick(c: Card) {
             <span class="dot" />{{ WORK_BUCKET_TEXT[g.bucket] }}<span class="cnt">{{ g.items.length }}</span>
             <span v-if="g.bucket === 'NO_DUE'" class="hint">没有截止日的待办和提醒、已消除的预警；红、黄色仍排在前面</span>
           </h3>
-          <div class="ft-well cards">
+          <div class="cards">
             <article
               v-for="c in g.items"
               :key="c.key"
@@ -349,15 +350,14 @@ function onCardClick(c: Card) {
 </template>
 
 <style scoped>
-.wb { display: flex; flex-direction: column; gap: 16px; }
-.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.wb { display: flex; flex-direction: column; gap: 22px; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .muted { color: var(--ft-text-2); font-size: 12px; }
 .clear { font-size: 13px; }
 
 /* 置顶：每日汇总、同步故障 */
-/* 设计改版：去掉左侧色条（用户意见），级别由标题前的图标和标签表达 */
-.digest { cursor: pointer; background: var(--ft-card-bg); border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); border: 1px solid var(--ft-border); padding: 12px 16px; transition: border-color 0.15s; }
-.digest:hover { border-color: var(--ft-text-3); }
+.digest { cursor: pointer; background: var(--ft-card-bg); border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); border: 1px solid var(--ft-border); padding: 12px 16px; transition: border-color 0.15s, box-shadow 0.15s; }
+.digest:hover { border-color: var(--ft-border-hover); box-shadow: var(--card-shadow-hover); }
 .digest-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .digest-title b { color: var(--ft-text); }
 .digest:not(.unread) .digest-title b { font-weight: normal; color: var(--ft-text-2); }
@@ -365,21 +365,21 @@ function onCardClick(c: Card) {
 .digest:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
 
 /* 分组 */
-.group + .group { margin-top: 20px; }
-.group-title { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--ft-text); }
-.group-title .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ft-none); }
+.group + .group { margin-top: 18px; }
+.group-title { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--ft-text-2); }
+.group-title .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ft-none); }
 .b-OVERDUE .dot { background: var(--ft-late); }
 .b-TODAY .dot { background: var(--ft-risk); }
 .b-WEEK .dot { background: var(--ft-primary); }
 .b-LATER .dot { background: color-mix(in srgb, var(--ft-primary) 50%, var(--ft-card-bg)); }
-.cnt { padding: 0 8px; border-radius: 10px; background: var(--ft-fill); color: var(--ft-text-2); font-size: 12px; font-weight: normal; line-height: 20px; font-variant-numeric: tabular-nums; }
-.hint { font-size: 12px; font-weight: normal; color: var(--ft-text-2); }
-.cards { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.cnt { padding: 0 7px; border-radius: 999px; background: var(--ft-fill); color: var(--ft-text-2); font-size: 12px; font-weight: 500; line-height: 18px; font-variant-numeric: tabular-nums; }
+.hint { font-size: 12px; font-weight: normal; color: var(--ft-text-3); }
+.cards { display: flex; flex-direction: column; gap: 8px; padding: 0; }
 
-/* 卡片：状态由图标 + 级别标签表达（设计改版去掉了左侧色条） */
-.wcard { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); background: var(--ft-card-bg); overflow: hidden; transition: border-color 0.15s, background-color 0.15s; }
+/* 单层纯白事项卡片直接落在 var(--ft-page-bg) 冷白画布上 */
+.wcard { position: relative; display: flex; align-items: flex-start; gap: 12px; padding: 13px 16px; border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); background: var(--ft-card-bg); box-shadow: var(--ft-card-shadow); overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
 .wcard.clickable { cursor: pointer; }
-.wcard.clickable:hover { border-color: var(--ft-text-3); background: var(--ft-fill); }
+.wcard.clickable:hover { border-color: var(--ft-border-hover); box-shadow: var(--card-shadow-hover); }
 .wcard:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
 .icon { margin-top: 3px; }
 .main { flex: 1; min-width: 0; }

@@ -7,7 +7,7 @@ import { paymentText, pickMainAssembly, reasonCounts, taskListLink, taskState } 
 describe('状态色口径', () => {
   it('看板红黄绿用同一套状态色', () => {
     expect(BOARD_COLOR).toEqual({ RED: STATUS_COLOR.late, YELLOW: STATUS_COLOR.risk, GREEN: STATUS_COLOR.done })
-    expect(STATUS_COLOR).toMatchObject({ done: '#0ca30c', risk: '#fab219', upstream: '#ec835a', late: '#d03b3b', none: '#b3bac6' })
+    expect(STATUS_COLOR).toMatchObject({ done: '#10B981', risk: '#F59E0B', upstream: '#F97316', late: '#E11D48', none: '#94A3B8', onTrack: '#2563EB' })
   })
 })
 

@@ -109,16 +109,18 @@ describe('P0 图表几何精度', () => {
 describe('P0 状态标签语义拆分', () => {
   const bucketOf = (antColor: string) => {
     if (['red', 'error', 'magenta'].includes(antColor)) return 'late'
-    if (['volcano', 'purple'].includes(antColor)) return 'upstream'
+    if (antColor === 'volcano') return 'upstream'
+    if (antColor === 'purple') return 'indigo'
     if (['orange', 'warning', 'gold', 'yellow'].includes(antColor)) return 'risk'
     if (['green', 'success', 'lime'].includes(antColor)) return 'done'
     if (['blue', 'processing', 'geekblue', 'cyan'].includes(antColor)) return 'primary'
     return 'none'
   }
 
-  it('base.css 将 volcano 与 purple 独立映射为 upstream 状态色而非混入主色蓝', () => {
+  it('base.css 将 volcano 映射为 upstream 橙、purple 映射为清透靛紫而非混入主色蓝', () => {
     const css = readFileSync('app/assets/base.css', 'utf8')
-    expect(css).toContain(':root .ant-tag:is(.ant-tag-volcano, .ant-tag-purple) { --tag-dot: var(--ft-upstream); background: var(--ft-upstream-bg); color: var(--ft-upstream-text); }')
+    expect(css).toContain(':root .ant-tag:is(.ant-tag-volcano) { --tag-dot: var(--ft-upstream); background: var(--ft-upstream-bg); color: var(--ft-upstream-text); }')
+    expect(css).toContain(':root .ant-tag:is(.ant-tag-purple) { --tag-dot: var(--ft-indigo); background: var(--ft-indigo-bg); color: var(--ft-indigo-text); }')
   })
 
   it('设计任务 5 个状态映射到 5 种互不重叠的语义色调', () => {

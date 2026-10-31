@@ -5,7 +5,7 @@ const top = computed(() => data.value?.top.filter((e) => !props.redOnly || e.lev
 </script>
 
 <template>
-  <UiSectionCard title="在制分布" sub="全部在履约工单 · 点击状态数字查看清单" class="monitoring-panel">
+  <UiSectionCard flat title="在制分布" sub="全部在履约工单 · 点击状态数字查看清单" class="monitoring-panel">
     <template #extra><UiRefreshButton :loading="pending" @click="refresh()" /></template>
     <a-result v-if="error" status="error" title="状态监控加载失败" :sub-title="apiError(error)">
       <template #extra><a-button @click="refresh()">重试</a-button></template>

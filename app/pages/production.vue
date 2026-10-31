@@ -228,7 +228,7 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
               <UiStatusTag :tone="COLUMN_TONE[col.key]">{{ COLUMN_TEXT[col.key] }}</UiStatusTag>
               <span class="count">{{ col.cards.length }}</span>
             </header>
-            <div class="ft-well col-body">
+            <div class="col-body">
               <p v-if="!col.cards.length" class="empty">无</p>
               <article v-for="c in col.cards" :key="c.stepId" class="card" :class="{ late: isOverdue(c), focus: c.stepId === focusStep }">
                 <div class="card-top">
@@ -279,7 +279,7 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
 .col { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .col-head { display: flex; align-items: center; gap: 8px; }
 .count { font-size: 14px; font-weight: 600; color: var(--ft-text); }
-.col-body { display: flex; flex-direction: column; gap: 8px; min-height: 120px; }
+.col-body { display: flex; flex-direction: column; gap: 8px; min-height: 120px; padding: 10px; background: var(--card-canvas-bg); border-radius: var(--card-radius-inner); }
 .empty { margin: 8px 0; color: var(--ft-text-2); font-size: 13px; text-align: center; }
 .card { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); color: var(--ft-text); }
 .card.late { border-color: var(--ft-late); }
