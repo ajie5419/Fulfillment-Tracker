@@ -6,6 +6,7 @@
  */
 :root {
   /* 暖色极简 Bento：画布、托盘与表面 */
+  /* 文字与边框两色另在 shared/theme.ts 有同值来源（Ant 主题用），改一处要两处一起改。 */
   --card-canvas-bg: #F5F5F4;
   --card-tray-bg: #F6F6F4;
   --card-surface-bg: #FFFFFF;

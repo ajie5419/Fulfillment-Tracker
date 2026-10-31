@@ -73,7 +73,7 @@ function onKey(e: KeyboardEvent) {
 .ft-stat { display: flex; flex-direction: column; position: relative; background: var(--card-tray-bg); border: 1px solid var(--card-border); border-radius: var(--card-radius-outer); box-shadow: none; padding: 0; height: 100%; box-sizing: border-box; color: var(--ft-text); min-width: 0; overflow: hidden; }
 .ft-stat-head { display: flex; align-items: center; gap: 9px; padding: 10px 12px 9px; flex: none; }
 .ft-stat-iconbox { flex: none; width: 26px; height: 26px; border-radius: 8px; background: var(--card-surface-bg); border: 1px solid var(--card-border-subtle); box-shadow: var(--card-shadow); display: flex; align-items: center; justify-content: center; }
-.ft-stat-label { min-width: 0; font-size: 14px; font-weight: 500; color: var(--ft-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ft-stat-label { min-width: 0; font-size: 14px; font-weight: 500; color: var(--ft-text); line-height: 18px; }
 .ft-stat-inner { margin: 0 var(--card-tray-padding) var(--card-tray-padding); flex: 1; background: var(--card-surface-bg); border: 1px solid var(--card-border-subtle); border-radius: var(--card-radius-inner); box-shadow: var(--card-shadow); box-sizing: border-box; padding: 14px 16px; }
 .ft-stat.link { cursor: pointer; }
 .ft-stat.link .ft-stat-inner { transition: box-shadow 0.15s; }

@@ -3,6 +3,7 @@ import zhCN from 'ant-design-vue/es/locale/zh_CN'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import { STATUS_COLOR } from '#shared/status'
+import { THEME_COLOR } from '#shared/theme'
 
 // Nuxt Suspense resolves async page setup before replacing the previous page.
 // Hide that previous content as soon as navigation starts.
@@ -25,8 +26,8 @@ const theme = {
     colorWarning: STATUS_COLOR.risk,
     colorError: STATUS_COLOR.late,
     colorInfo: STATUS_COLOR.onTrack,
-    colorTextBase: '#18181b',
-    colorBorder: '#ecece9',
+    colorTextBase: THEME_COLOR.textBase,
+    colorBorder: THEME_COLOR.border,
     // 大圆角与 base.css 的 --card-radius-outer 对齐。
     borderRadius: 10,
     borderRadiusLG: 16,
