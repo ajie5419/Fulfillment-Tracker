@@ -9,7 +9,7 @@ import type { PartDetail } from '~~/server/services/flow/steps'
 import { WORK_BUCKET_TEXT, factoryTimeText, groupByBucket, type WorkBucket } from '#shared/workbench'
 
 const route = useRoute()
-const { data, pending } = await useReminders()
+const { data, pending, error: remindersError } = await useReminders()
 
 /** 点一条：标记已读，跳到关联对象 */
 async function openReminder(item: ReminderItem) {
@@ -34,7 +34,7 @@ async function readAll() {
   }
 }
 
-const { data: todos, pending: todosPending, refresh: refreshTodos } = await useTodos()
+const { data: todos, pending: todosPending, error: todosError, refresh: refreshTodos } = await useTodos()
 const { data: master } = await useMaster()
 const { data: me } = await useMe()
 type Todo = (typeof todos.value)[number]
@@ -185,6 +185,22 @@ const counts = computed(() => ({
   unread: data.value?.unread ?? 0,
 }))
 const statDenom = computed(() => Math.max(1, allCards.value.length))
+const heroTitle = computed(() => (me.value?.name ? `${me.value.name}，今日工作概览` : '今日工作概览'))
+const loadError = computed(() => Boolean(remindersError.value || todosError.value))
+async function retryLoad() {
+  await Promise.all([refreshTodos(), refreshReminders()])
+}
+const heroSummary = computed(() => {
+  if (loadError.value) return '待办与提醒数据加载失败，暂无法汇总，请重试。'
+  if ((pending.value || todosPending.value) && !allCards.value.length) return '正在同步待办事项与预警提醒…'
+  const c = counts.value
+  const parts: string[] = []
+  if (c.overdue > 0) parts.push(`有 ${c.overdue} 项已过期事项急需跟进`)
+  if (c.today > 0) parts.push(`${c.today} 项今天到期`)
+  if (c.todo > 0) parts.push(`待办共 ${c.todo} 条`)
+  if (c.unread > 0) parts.push(`未读提醒 ${c.unread} 条`)
+  return parts.length ? `当前${parts.join('，')}。` : '当前所有待办均已清零，暂无未读预警提醒。'
+})
 const cards = computed(() => {
   const f = active.value
   if (!f) return allCards.value
@@ -219,6 +235,17 @@ function onCardClick(c: Card) {
 <template>
   <div>
   <div class="wb">
+    <UiPageHero :title="heroTitle" :summary="heroSummary">
+      <template #actions>
+        <a-button v-if="loadError" size="small" :loading="pending || todosPending" @click="retryLoad">重试</a-button>
+        <NuxtLink v-if="active" :to="{ query: { ...route.query, f: undefined } }">
+          <a-button size="small">清除筛选：{{ FILTER_TEXT[active] }}</a-button>
+        </NuxtLink>
+        <NuxtLink to="/board"><a-button size="small">项目总览</a-button></NuxtLink>
+        <a-button size="small" type="primary" class="ft-btn-ink" :disabled="!data?.unread" @click="readAll">全部已读</a-button>
+      </template>
+    </UiPageHero>
+
     <div class="stats">
       <UiStatCard label="我的待办" :value="counts.todo" :ratio="counts.todo / statDenom" unit="条" tone="primary" accent icon="dot" :to="filterTo('todo')" :active="active === 'todo'" sub="点开只看待办" />
       <UiStatCard label="已过期" :value="counts.overdue" :ratio="counts.overdue / statDenom" unit="条" tone="late" accent icon="alert" :to="filterTo('overdue')" :active="active === 'overdue'" sub="截止日已过" />
@@ -228,50 +255,58 @@ function onCardClick(c: Card) {
 
     <!-- QMS 同步连续失败（管理员）：未读时置顶 -->
     <div v-for="p in data?.pinned ?? []" :key="p.id" class="digest lv-RED unread" role="button" tabindex="0" @click="openPinned(p)" @keydown.enter="openPinned(p)" @keydown.space.prevent="openPinned(p)">
-      <div class="digest-title">
-        <UiStatusIcon kind="alert" />
-        <a-tag color="red">同步故障</a-tag>
-        <b>{{ p.title }}</b>
-        <span class="muted">{{ factoryTimeText(p.createdAt) }}</span>
+      <span class="row-badge badge-late" aria-hidden="true"><UiStatusIcon kind="alert" tone="late" :size="15" /></span>
+      <div class="digest-body">
+        <div class="digest-title">
+          <span class="sq-badge sq-late">同步故障</span>
+          <b>{{ p.title }}</b>
+          <span class="muted">{{ factoryTimeText(p.createdAt) }}</span>
+        </div>
+        <ol class="digest-lines">
+          <li v-for="(l, i) in p.lines" :key="i">{{ l }}</li>
+        </ol>
       </div>
-      <ol class="digest-lines">
-        <li v-for="(l, i) in p.lines" :key="i">{{ l }}</li>
-      </ol>
     </div>
     <!-- 每日汇总置顶（方案 6.3）：每天早上生成，红黄数量 + 前 5 项 -->
     <div v-if="data?.digest" class="digest" :class="[`lv-${data.digest.level}`, { unread: !data.digest.readAt }]" role="button" tabindex="0" @click="openDigest" @keydown.enter="openDigest" @keydown.space.prevent="openDigest">
-      <div class="digest-title">
-        <UiStatusIcon :kind="data.digest.level === 'RED' ? 'alert' : data.digest.level === 'YELLOW' ? 'warn' : 'dot'" />
-        <a-tag color="geekblue">每日汇总</a-tag>
-        <b>{{ data.digest.title }}</b>
-        <span v-if="!data.digest.readAt" class="new">未读</span>
-        <span class="muted">{{ factoryTimeText(data.digest.createdAt) }}</span>
+      <span class="row-badge" :class="data.digest.level === 'RED' ? 'badge-late' : data.digest.level === 'YELLOW' ? 'badge-risk' : 'badge-primary'" aria-hidden="true">
+        <UiStatusIcon :kind="data.digest.level === 'RED' ? 'alert' : data.digest.level === 'YELLOW' ? 'warn' : 'dot'" :tone="data.digest.level === 'RED' ? 'late' : data.digest.level === 'YELLOW' ? 'risk' : 'primary'" :size="15" />
+      </span>
+      <div class="digest-body">
+        <div class="digest-title">
+          <span class="sq-badge sq-primary">每日汇总</span>
+          <b>{{ data.digest.title }}</b>
+          <span v-if="!data.digest.readAt" class="new">未读</span>
+          <span class="muted">{{ factoryTimeText(data.digest.createdAt) }}</span>
+        </div>
+        <ol v-if="digestOpen || !data.digest.readAt" class="digest-lines">
+          <li v-for="(l, i) in data.digest.lines" :key="i">{{ l }}</li>
+        </ol>
       </div>
-      <ol v-if="digestOpen || !data.digest.readAt" class="digest-lines">
-        <li v-for="(l, i) in data.digest.lines" :key="i">{{ l }}</li>
-      </ol>
     </div>
 
     <!-- 项目日历（zhao 10-21）：本周 / 下周 / 本月计划与实际完成台数，所有人都显示 -->
     <WorkbenchCalendarCard />
 
-    <UiSectionCard flat title="待办与提醒" :sub="active ? `只看：${FILTER_TEXT[active]}` : '按截止日分组；提醒点开即标为已读并跳到对应页面'">
+    <UiSectionCard icon="inbox" padding="none" title="待办与提醒" :sub="active ? `只看：${FILTER_TEXT[active]}` : '按截止日分组；提醒点开即标为已读并跳到对应页面'">
       <template #extra>
+        <span class="total-pill">共 {{ cards.length }} 条</span>
         <NuxtLink v-if="active" :to="{ query: { ...route.query, f: undefined } }" class="clear">清除筛选</NuxtLink>
-        <a-button size="small" :disabled="!data?.unread" @click="readAll">全部已读</a-button>
       </template>
       <a-spin :spinning="pending || todosPending">
-        <a-empty v-if="!groups.length" :description="active ? '没有符合条件的待办或提醒' : '暂时没有待办和提醒'" />
+        <div v-if="!groups.length" class="empty-box">
+          <a-empty :description="active ? '没有符合条件的待办或提醒' : '暂时没有待办和提醒'" />
+        </div>
         <section v-for="g in groups" :key="g.bucket" class="group">
           <h3 class="group-title" :class="`b-${g.bucket}`">
             <span class="dot" />{{ WORK_BUCKET_TEXT[g.bucket] }}<span class="cnt">{{ g.items.length }}</span>
             <span v-if="g.bucket === 'NO_DUE'" class="hint">没有截止日的待办和提醒、已消除的预警；红、黄色仍排在前面</span>
           </h3>
-          <div class="cards">
+          <div class="feed-rows">
             <article
               v-for="c in g.items"
               :key="c.key"
-              class="wcard"
+              class="wrow"
               :class="[`tone-${c.tone}`, { unread: c.unread, read: c.kind === 'reminder' && !c.unread, clickable: !!c.reminder }]"
               :role="c.reminder ? 'button' : undefined"
               :tabindex="c.reminder ? 0 : undefined"
@@ -279,10 +314,15 @@ function onCardClick(c: Card) {
               @keydown.enter="onCardClick(c)"
               @keydown.space.prevent="onCardClick(c)"
             >
-              <UiStatusIcon :kind="toneIcon(c.tone)" :tone="c.tone === 'normal' ? 'primary' : c.tone" :size="16" class="icon" />
+              <span
+                class="row-badge"
+                :class="c.tone === 'late' ? 'badge-late' : c.tone === 'risk' ? 'badge-risk' : c.kind === 'todo' || c.unread ? 'badge-primary' : 'badge-none'"
+                aria-hidden="true"
+              >
+                <UiStatusIcon :kind="toneIcon(c.tone)" :tone="c.tone === 'normal' ? (c.kind === 'todo' || c.unread ? 'primary' : 'none') : c.tone" :size="15" />
+              </span>
               <div class="main">
                 <div class="title-row">
-                  <span class="kind" :class="c.kind">{{ c.kind === 'todo' ? '待办' : LEVEL_LABEL[c.reminder!.level] }}</span>
                   <span class="title">{{ c.title }}</span>
                   <span v-if="c.unread" class="new">未读</span>
                   <a-tag v-if="c.reminder?.cleared" class="tag">已消除</a-tag>
@@ -298,6 +338,12 @@ function onCardClick(c: Card) {
                 <div v-if="c.todo?.suggestion" class="suggest">{{ c.todo.suggestion }}</div>
               </div>
               <div class="ops" @click.stop>
+                <span
+                  class="sq-badge"
+                  :class="c.kind === 'todo' ? 'sq-primary' : c.tone === 'late' ? 'sq-late' : c.tone === 'risk' ? 'sq-risk' : 'sq-none'"
+                >
+                  {{ c.kind === 'todo' ? '待办' : LEVEL_LABEL[c.reminder!.level] }}
+                </span>
                 <template v-if="c.todo">
                   <a-button v-if="c.todo.link" type="primary" size="small" @click="navigateTo(c.todo.link)">查看采购计划</a-button>
                   <a-button v-else-if="c.todo.action === 'ARRANGE_SEND' && c.todo.step" type="primary" size="small" @click="openSend(c.todo)">登记发出</a-button>
@@ -321,7 +367,7 @@ function onCardClick(c: Card) {
                 </template>
                 <template v-else-if="c.reminder">
                   <a-button v-if="c.unread" size="small" @click="readReminder(c.reminder)">标已读</a-button>
-                  <a-button v-if="c.reminder.link" size="small" type="primary" ghost @click="openReminder(c.reminder)">去处理 ›</a-button>
+                  <a-button v-if="c.reminder.link" size="small" @click="openReminder(c.reminder)">去处理 ›</a-button>
                 </template>
               </div>
             </article>
@@ -350,63 +396,115 @@ function onCardClick(c: Card) {
 </template>
 
 <style scoped>
-.wb { display: flex; flex-direction: column; gap: 22px; }
+.wb { display: flex; flex-direction: column; gap: 20px; }
 .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
-.muted { color: var(--ft-text-2); font-size: 12px; }
+.muted { color: var(--ft-text-3); font-size: 12px; }
 .clear { font-size: 13px; }
+.total-pill { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 6px; background: var(--ft-fill); border: 1px solid var(--ft-border); font-size: 12px; font-weight: 500; color: var(--ft-text-2); font-variant-numeric: tabular-nums; }
+.empty-box { padding: 36px 20px; }
+
+/* Ember Payouts 式左侧 34×34 圆角方形状态块 */
+.row-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--card-border-subtle);
+}
+.badge-late { background: var(--ft-late-bg); color: var(--ft-late-text); }
+.badge-risk { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
+.badge-primary { background: var(--ft-primary-bg); color: var(--ft-primary-text); }
+.badge-none { background: var(--ft-fill); color: var(--ft-text-3); }
+
+/* Ember Payouts 式右侧紧凑圆角方形状态小牌 */
+.sq-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 21px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 21px;
+  white-space: nowrap;
+}
+.sq-late { background: var(--ft-late-bg); color: var(--ft-late-text); }
+.sq-risk { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
+.sq-primary { background: var(--ft-primary-bg); color: var(--ft-primary-text); }
+.sq-none { background: var(--ft-fill); color: var(--ft-text-2); }
 
 /* 置顶：每日汇总、同步故障 */
-.digest { cursor: pointer; background: var(--ft-card-bg); border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); border: 1px solid var(--ft-border); padding: 12px 16px; transition: border-color 0.15s, box-shadow 0.15s; }
+.digest { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; background: var(--ft-card-bg); border-radius: var(--ft-card-radius); box-shadow: var(--ft-card-shadow); border: 1px solid var(--ft-border); padding: 13px 16px; transition: border-color 0.15s, box-shadow 0.15s; }
 .digest:hover { border-color: var(--ft-border-hover); box-shadow: var(--card-shadow-hover); }
-.digest-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.digest-body { flex: 1; min-width: 0; }
+.digest-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; line-height: 22px; }
 .digest-title b { color: var(--ft-text); }
-.digest:not(.unread) .digest-title b { font-weight: normal; color: var(--ft-text-2); }
-.digest-lines { margin: 8px 0 0 24px; padding: 0; color: var(--ft-text-2); font-size: 13px; }
+.digest:not(.unread) .digest-title b { font-weight: 500; color: var(--ft-text-2); }
+.digest-lines { margin: 8px 0 0 18px; padding: 0; color: var(--ft-text-2); font-size: 13px; }
 .digest:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
 
-/* 分组 */
-.group + .group { margin-top: 18px; }
-.group-title { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--ft-text-2); }
+/* 卡片内的分组条与去框平铺行 */
+.group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 7px 20px;
+  background: var(--ft-fill);
+  border-top: 1px solid var(--ft-border);
+  border-bottom: 1px solid var(--card-border-subtle);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ft-text-2);
+}
 .group-title .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ft-none); }
 .b-OVERDUE .dot { background: var(--ft-late); }
 .b-TODAY .dot { background: var(--ft-risk); }
 .b-WEEK .dot { background: var(--ft-primary); }
 .b-LATER .dot { background: color-mix(in srgb, var(--ft-primary) 50%, var(--ft-card-bg)); }
-.cnt { padding: 0 7px; border-radius: 999px; background: var(--ft-fill); color: var(--ft-text-2); font-size: 12px; font-weight: 500; line-height: 18px; font-variant-numeric: tabular-nums; }
+.cnt { padding: 0 6px; border-radius: 5px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); color: var(--ft-text-2); font-size: 11.5px; font-weight: 600; line-height: 17px; font-variant-numeric: tabular-nums; }
 .hint { font-size: 12px; font-weight: normal; color: var(--ft-text-3); }
-.cards { display: flex; flex-direction: column; gap: 8px; padding: 0; }
 
-/* 单层纯白事项卡片直接落在 var(--ft-page-bg) 冷白画布上 */
-.wcard { position: relative; display: flex; align-items: flex-start; gap: 12px; padding: 13px 16px; border: 1px solid var(--ft-border); border-radius: var(--ft-card-radius); background: var(--ft-card-bg); box-shadow: var(--ft-card-shadow); overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
-.wcard.clickable { cursor: pointer; }
-.wcard.clickable:hover { border-color: var(--ft-border-hover); box-shadow: var(--card-shadow-hover); }
-.wcard:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
-.icon { margin-top: 3px; }
+.feed-rows { display: flex; flex-direction: column; }
+.wrow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 20px;
+  background: var(--ft-card-bg);
+  transition: background-color 0.14s;
+}
+.wrow + .wrow { border-top: 1px solid var(--card-border-subtle); }
+.wrow.clickable { cursor: pointer; }
+.wrow:hover { background: color-mix(in srgb, var(--ft-fill) 65%, transparent); }
+.wrow:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: -2px; }
+
 .main { flex: 1; min-width: 0; }
-/* 标题一行：标签、标题、未读、附加标签都是行内的，长标题自然折行，不把标签挤到单独一行 */
 .title-row { line-height: 22px; }
 .title-row > * { vertical-align: middle; }
 .title-row > * + * { margin-left: 8px; }
-.kind { display: inline-flex; align-items: center; height: 22px; font-size: 12px; font-weight: 500; line-height: 22px; padding: 0 9px; border-radius: 999px; background: var(--ft-none-bg); color: var(--ft-text-2); }
-.kind.todo { background: var(--ft-primary-bg); color: var(--ft-primary-text); }
-.tone-late .kind.reminder { background: var(--ft-late-bg); color: var(--ft-late-text); }
-.tone-risk .kind.reminder { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
-.title { color: var(--ft-text); font-size: 14px; line-height: 22px; word-break: break-word; }
+.title { color: var(--ft-text); font-size: 14px; font-weight: 500; line-height: 22px; word-break: break-word; }
 .unread .title { font-weight: 600; }
-.read .title { color: var(--ft-text-2); }
-.new { font-size: 12px; color: var(--ft-primary-text); white-space: nowrap; }
+.read .title { color: var(--ft-text-2); font-weight: 400; }
+.new { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: var(--ft-primary-text); white-space: nowrap; }
+.new::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--ft-primary); }
 .tag { margin-inline-end: 0; }
-.meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; font-size: 12px; color: var(--ft-text-2); }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 3px; font-size: 12px; color: var(--ft-text-2); }
 .meta .late { color: var(--ft-late-text); font-weight: 500; }
 .suggest { margin-top: 4px; font-size: 12px; color: var(--ft-text-2); }
-.ops { flex: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 280px; }
+.ops { flex: none; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: flex-end; max-width: 300px; }
 .go { font-size: 13px; white-space: nowrap; }
 
 @media (max-width: 991px) {
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 }
 @media (max-width: 575px) {
-  .wcard { flex-wrap: wrap; }
-  .ops { width: 100%; max-width: none; justify-content: flex-start; padding-left: 26px; }
+  .group-title { padding: 7px 14px; flex-wrap: wrap; }
+  .wrow { align-items: flex-start; flex-wrap: wrap; padding: 12px 14px; }
+  .ops { width: 100%; max-width: none; justify-content: flex-start; padding-left: 47px; }
 }
 </style>

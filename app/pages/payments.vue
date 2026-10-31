@@ -162,30 +162,21 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
     <UiStatCard label="已付" :value="stats ? stats.paid : '—'" unit="笔" tone="done" accent icon="check" clickable :active="filter.status === 'PAID' && !filter.blocking" @click="applyStatus('PAID')" />
   </div>
   <a-card v-if="!error">
-    <template #title>
-      <span class="ft-title">付款申请
-        <UiHelpTip label="付款申请说明">"未付"包括待付和暂缓。排序：卡交期的在前，再按关联物料里离需求日最近的。不做审批：{{ canSetStatus ? '你可以直接标记 已付 / 暂缓。' : '财务标记 已付 / 暂缓（财务在设置页"人员与角色"里配置）。' }}</UiHelpTip>
-      </span>
-    </template>
-    <template #extra>
-      <a-space wrap>
+    <div class="ft-toolbar">
+      <a-segmented v-model:value="filter.status" :options="statusOptions" />
+      <div class="ft-toolbar-right">
+        <a-tag v-if="filter.blocking" color="red" closable @close="filter.blocking = undefined">只看卡交期</a-tag>
         <a-select
           v-model:value="filter.workOrderNumber"
           allow-clear
           show-search
           placeholder="全部工单"
-          style="width: 170px"
+          style="width: 168px"
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
-        <UiRefreshButton @click="refreshAll()" />
-        <a-button v-if="canDoAny(me, 'payment')" type="primary" @click="creating = true">申请付款</a-button>
-      </a-space>
-    </template>
-    <div class="ft-toolbar">
-      <a-segmented v-model:value="filter.status" :options="statusOptions" />
-      <div class="ft-toolbar-right">
-        <a-tag v-if="filter.blocking" color="red" closable @close="filter.blocking = undefined">只看卡交期</a-tag>
         <a-segmented v-model:value="layout" :options="LAYOUT_OPTIONS" />
+        <UiRefreshButton @click="refreshAll()" />
+        <a-button v-if="canDoAny(me, 'payment')" type="primary" class="ft-btn-ink" @click="creating = true">申请付款</a-button>
       </div>
     </div>
     <a-space size="large" class="totals">

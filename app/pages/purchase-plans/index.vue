@@ -25,17 +25,17 @@ async function create() {
 
 <template>
   <div class="purchase-plans-page">
-  <UiSectionCard title="采购计划下发" sub="技术部下发清单，采购部转入采购行执行">
-    <template #extra>
-      <a-space wrap>
-        <UiRefreshButton :loading="pending" @click="refresh()" />
-        <a-button v-if="me?.can.purchasePlan" type="primary" @click="Object.assign(form, { workOrderNumber: wo || '', title: '', category: '', planNodeId: null, note: '' }); creating = true">新建采购计划</a-button>
-      </a-space>
-    </template>
+  <UiSectionCard>
     <a-alert v-if="workOrderError" type="error" message="工单选项加载失败"><template #action><a-button size="small" @click="refreshWorkOrders()">重试</a-button></template></a-alert>
     <div class="ft-toolbar">
-      <a-select :value="wo" allow-clear show-search option-filter-prop="label" placeholder="全部工单" :options="workOrders?.map(w => ({ value: w.workOrderNumber, label: w.workOrderNumber }))" style="min-width: 210px" @change="filter('wo', $event)" />
-      <a-select :value="status" allow-clear placeholder="全部状态" :options="statusOptions" style="min-width: 130px" @change="filter('status', $event)" />
+      <div class="ft-toolbar-left">
+        <a-select :value="wo" allow-clear show-search option-filter-prop="label" placeholder="全部工单" :options="workOrders?.map(w => ({ value: w.workOrderNumber, label: w.workOrderNumber }))" style="min-width: 190px" @change="filter('wo', $event)" />
+        <a-select :value="status" allow-clear placeholder="全部状态" :options="statusOptions" style="min-width: 130px" @change="filter('status', $event)" />
+      </div>
+      <div class="ft-toolbar-right">
+        <UiRefreshButton :loading="pending" @click="refresh()" />
+        <a-button v-if="me?.can.purchasePlan" type="primary" class="ft-btn-ink" @click="Object.assign(form, { workOrderNumber: wo || '', title: '', category: '', planNodeId: null, note: '' }); creating = true">新建采购计划</a-button>
+      </div>
     </div>
     <a-result v-if="error" status="error" title="采购计划加载失败"><template #extra><a-button @click="refresh()">重试</a-button></template></a-result>
     <a-spin v-else :spinning="pending">

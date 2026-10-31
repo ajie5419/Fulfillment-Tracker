@@ -233,39 +233,33 @@ const loadColumns = [
     </UiStatCard>
   </div>
   <a-card v-if="!error">
-    <template #title>
-      <span class="ft-title">设计任务
-        <UiHelpTip label="设计任务说明">设计完成后点"一键发放"生成图纸发放单（R9）。关联工件的设计任务全部完成（设计完成、已发放、需要时客户已确认）后，物料也齐了才给第一道工序发"可以开工"。没指定设计负责人的派给技术部负责人。</UiHelpTip>
-      </span>
-    </template>
-    <template #extra>
-      <a-space wrap>
+    <div class="ft-toolbar">
+      <div class="ft-toolbar-left">
         <a-segmented v-model:value="tab" :options="[{ value: 'list', label: '设计任务' }, { value: 'load', label: '设计负荷' }]" />
+        <a-segmented v-if="tab === 'list'" v-model:value="filter.view" :options="VIEWS.map((v) => ({ value: v.value, label: v.label }))" />
+      </div>
+      <div class="ft-toolbar-right">
         <a-select
           v-model:value="filter.workOrderNumber"
           allow-clear
           show-search
           placeholder="全部工单"
-          style="width: 170px"
+          style="width: 150px"
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
+        <template v-if="tab === 'list'">
+          <a-select v-model:value="filter.ownerId" allow-clear show-search option-filter-prop="label" placeholder="全部负责人" style="width: 136px" :options="ownerOptions" />
+          <a-input-search v-model:value="keyword" allow-clear placeholder="部件 / 工单 / 备注" style="width: 160px" />
+          <a-segmented v-model:value="layout" :options="LAYOUT_OPTIONS" />
+        </template>
         <UiRefreshButton @click="reload()" />
-        <a-button v-if="canEditTask" type="primary" @click="openEdit(null)">新建设计任务</a-button>
-      </a-space>
-    </template>
+        <a-button v-if="canEditTask" type="primary" class="ft-btn-ink" @click="openEdit(null)">新建设计任务</a-button>
+      </div>
+    </div>
 
-    <!-- 页签切换已挪到右上角的分段按钮，这里隐藏页签栏 -->
+    <!-- 页签栏隐藏，由上方统一单行工具栏切换 -->
     <a-tabs v-model:active-key="tab" class="no-nav">
       <a-tab-pane key="list" tab="设计任务">
-        <!-- 左边按状态切换，右边是负责人、搜索和显示方式 -->
-        <div class="ft-toolbar">
-          <a-segmented v-model:value="filter.view" :options="VIEWS.map((v) => ({ value: v.value, label: v.label }))" />
-          <div class="ft-toolbar-right">
-            <a-select v-model:value="filter.ownerId" allow-clear show-search option-filter-prop="label" placeholder="全部负责人" style="width: 160px" :options="ownerOptions" />
-            <a-input-search v-model:value="keyword" allow-clear placeholder="部件 / 工单 / 备注" style="width: 180px" />
-            <a-segmented v-model:value="layout" :options="LAYOUT_OPTIONS" />
-          </div>
-        </div>
         <p v-if="!pending && !error && data.total > rows.length" class="warn">共 {{ data.total }} 项，只显示前 {{ rows.length }} 项，请按工单或负责人筛选</p>
 
         <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty v-if="!pending" :description="filter.view === 'open' ? '没有未完成的设计任务' : '没有记录'" /></a-spin>

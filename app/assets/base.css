@@ -71,6 +71,7 @@ html, body { margin: 0; background: var(--ft-page-bg); color: var(--ft-text); fo
 /* 右上角筛选多时换行，不把标题挤成省略号 */
 .ft-app :is(.ft-content > .ant-card, .ft-page > .ant-card) > .ant-card-head .ant-card-head-wrapper { flex-wrap: wrap; row-gap: 8px; }
 .ft-app :is(.ft-content > .ant-card, .ft-page > .ant-card) > .ant-card-head .ant-card-extra { margin-inline-start: auto; }
+.ft-app :is(.ft-content > .ant-card, .ft-page > .ant-card) > .ant-card-body:only-child { padding: 16px 20px 20px; }
 
 /* 状态文字（永远带文字，颜色只是辅助） */
 .ft-text-done { color: var(--ft-done-text); }
@@ -137,6 +138,9 @@ html, body { margin: 0; background: var(--ft-page-bg); color: var(--ft-text); fo
 :root .ant-tag:is(.ant-tag-blue, .ant-tag-processing, .ant-tag-geekblue, .ant-tag-cyan) { --tag-dot: var(--ft-primary); background: var(--ft-primary-bg); color: var(--ft-primary-text); }
 /* 卡片标题 + 说明问号 */
 .ft-title { display: inline-flex; align-items: center; gap: 6px; }
+/* Ember 式深墨黑主操作按钮：把彩色留给数据状态，主操作按钮沉稳高对比 */
+.ft-app .ft-btn-ink.ant-btn-primary:not(:disabled) { background: var(--ft-text); border-color: var(--ft-text); color: var(--ft-card-bg); box-shadow: var(--ft-card-shadow); }
+.ft-app .ft-btn-ink.ant-btn-primary:not(:disabled):hover { background: color-mix(in srgb, var(--ft-text) 86%, var(--ft-card-bg)); border-color: color-mix(in srgb, var(--ft-text) 86%, var(--ft-card-bg)); color: var(--ft-card-bg); }
 /* 卡片内的工具栏：左边状态切换，右边搜索 / 次要筛选 / 显示方式，一行放不下时自动换行 */
 .ft-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 14px; }
-.ft-toolbar-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ft-toolbar-left, .ft-toolbar-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

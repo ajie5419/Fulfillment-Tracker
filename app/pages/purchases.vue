@@ -276,34 +276,24 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
     <UiStatCard label="卡付款" :value="stats ? stats.blockedByPayment : '—'" unit="项" tone="upstream" accent icon="warn" clickable :active="filter.view === 'blocked'" sub="未到货，有没付的卡交期付款申请" @click="applyView('blocked')" />
   </div>
   <a-card>
-    <template #title>
-      <span class="ft-title">采购到货（关键物料）
-        <UiHelpTip label="采购到货说明">只跟踪关键物料（长周期、进口、大件）。QMS 进货检验按"工单 + 物料名称（+ 供应商）"自动确认到货；也可以在这里或手机上手工确认。没指定采购负责人的派给采购部负责人。</UiHelpTip>
-      </span>
-    </template>
-    <template #extra>
-      <a-space wrap>
+    <!-- 左边按状态切换，右边是工单、搜索、显示方式和操作按钮（统一单行工具栏） -->
+    <div class="ft-toolbar">
+      <a-segmented v-model:value="filter.view" :options="VIEWS.map((v) => ({ value: v.value, label: v.label }))" />
+      <div class="ft-toolbar-right">
         <a-select
           v-model:value="filter.workOrderNumber"
           allow-clear
           show-search
           placeholder="全部工单"
-          style="width: 170px"
+          style="width: 156px"
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
+        <a-input-search v-model:value="keyword" allow-clear placeholder="物料 / 规格 / 供应商" style="width: 164px" />
+        <a-segmented v-model:value="layout" :options="LAYOUT_OPTIONS" />
         <UiRefreshButton @click="refresh()" />
         <a-button v-if="canDoAny(me, 'purchase')" @click="importing = true">Excel 导入</a-button>
         <a-button v-if="canDoAny(me, 'payment')" :disabled="!selectedKeys.length" @click="openPay">申请付款{{ selectedKeys.length ? `（${selectedKeys.length}）` : '' }}</a-button>
-        <a-button v-if="canDoAny(me, 'purchase')" type="primary" @click="openEdit(null)">登记关键物料</a-button>
-      </a-space>
-    </template>
-
-    <!-- 左边按状态切换，右边是搜索和显示方式（设计规范：工具栏一行） -->
-    <div class="ft-toolbar">
-      <a-segmented v-model:value="filter.view" :options="VIEWS.map((v) => ({ value: v.value, label: v.label }))" />
-      <div class="ft-toolbar-right">
-        <a-input-search v-model:value="keyword" allow-clear placeholder="物料 / 规格 / 供应商" style="width: 180px" />
-        <a-segmented v-model:value="layout" :options="LAYOUT_OPTIONS" />
+        <a-button v-if="canDoAny(me, 'purchase')" type="primary" class="ft-btn-ink" @click="openEdit(null)">登记关键物料</a-button>
       </div>
     </div>
     <p v-if="stats?.delay.late" class="muted">
