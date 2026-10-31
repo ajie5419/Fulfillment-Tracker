@@ -123,10 +123,11 @@ async function onCreated(no: string) {
 <template>
   <div class="page">
     <div class="page-head">
-      <h1 class="page-title">项目总览</h1>
-      <div class="tools">
+      <div class="head-left">
         <a-segmented v-if="me?.can.overview" :value="view" :options="BOARD_VIEWS" aria-label="项目总览视图" @change="changeView($event as BoardView)" />
         <span v-if="view === 'board'" class="ft-muted sync-time" :title="data.syncOldest ? `最旧的是：${data.syncOldest}` : undefined">QMS 最后同步：{{ syncText }}</span>
+      </div>
+      <div class="tools">
         <a-select
           v-if="view === 'board'"
           :value="undefined"
@@ -205,9 +206,9 @@ async function onCreated(no: string) {
 </template>
 
 <style scoped>
-.page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 8px 0 16px; }
-.page-title { font-size: 22px; font-weight: 600; margin: 0; color: var(--ft-text); }
-.tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 16px; }
+.head-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }
 .sync-time { font-size: 12px; }
 .sync-error { margin-bottom: 16px; }
 .summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, 1.6fr); gap: 16px; margin-bottom: 20px; }

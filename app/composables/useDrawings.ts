@@ -1,7 +1,7 @@
 /** 设计任务（R11）页面共用：文案、颜色、接口调用。 */
 
 export const DRAWING_STATUS_TEXT = { PENDING: '设计中', DRAWN: '设计完成', CUSTOMER_PENDING: '待客户确认', DONE: '已完成', CANCELLED: '已取消' } as const
-export const DRAWING_STATUS_COLOR = { PENDING: 'blue', DRAWN: 'cyan', CUSTOMER_PENDING: 'purple', DONE: 'green', CANCELLED: 'default' } as const
+export const DRAWING_STATUS_COLOR = { PENDING: 'blue', DRAWN: 'orange', CUSTOMER_PENDING: 'purple', DONE: 'green', CANCELLED: 'default' } as const
 /** Vant 标签类型 */
 export const DRAWING_STATUS_TYPE = { PENDING: 'primary', DRAWN: 'success', CUSTOMER_PENDING: 'warning', DONE: 'success', CANCELLED: 'default' } as const
 

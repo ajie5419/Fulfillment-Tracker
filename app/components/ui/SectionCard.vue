@@ -30,7 +30,7 @@ withDefaults(defineProps<{ title?: string; sub?: string; padding?: 'normal' | 't
 .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px 10px; margin-bottom: 0; }
 .titles { min-width: 0; }
 .title { margin: 0; font-size: 16px; font-weight: 600; color: var(--ft-text); line-height: 24px; }
-.sub { margin-top: 2px; font-size: 12px; color: var(--ft-text-3); }
+.sub { margin-top: 2px; font-size: 12px; color: var(--ft-text-2); }
 .extra { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 575px) {
   .ft-section-panel.pad-normal { padding: 16px; }

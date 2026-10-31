@@ -69,12 +69,13 @@ const product = computed(() => r.value.projectName ?? r.value.customerName)
 </template>
 
 <style scoped>
-.card { display: block; position: relative; padding: 14px 16px 12px; border: 1px solid var(--ft-border); background: var(--ft-card-bg); border-radius: 12px; box-shadow: var(--ft-card-shadow); color: var(--ft-text); min-width: 0; overflow: hidden; transition: box-shadow 0.15s; }
+.card { display: block; position: relative; padding: 14px 16px 12px; border: 1px solid var(--ft-border); background: var(--ft-card-bg); border-radius: 12px; box-shadow: var(--ft-card-shadow); color: var(--ft-text); min-width: 0; overflow: hidden; transition: border-color 0.15s, background-color 0.15s; }
 /* 设计改版：去掉左侧色条（用户意见）；卡片已按状态分组（组标题带图标），卡内有拖期天数和预警标签 */
-a.card:hover { color: var(--ft-text); box-shadow: 0 2px 4px rgba(16, 24, 40, 0.06), 0 6px 16px rgba(16, 24, 40, 0.1); }
+a.card:hover { color: var(--ft-text); border-color: var(--ft-text-3); background: var(--ft-fill); }
+a.card:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
 .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .title { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
-.right { flex: none; font-size: 13px; font-weight: 600; }
+.right { flex: none; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .right.ft-muted { font-weight: normal; font-size: 12px; }
 .sub { margin-top: 2px; font-size: 12px; color: var(--ft-text-2); }
 .statuses { margin-top: 10px; }

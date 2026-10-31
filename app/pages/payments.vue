@@ -155,11 +155,11 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
   <div>
   <div class="ft-page">
   <a-result v-if="error" status="error" title="列表加载失败" :sub-title="apiError(error)"><template #extra><a-button @click="refresh()">重试</a-button></template></a-result>
-  <div v-if="stats && !statsPending && !statsError && !error" class="ft-stats">
-    <UiStatCard label="待付" :value="stats.pending" unit="笔" tone="primary" accent icon="dot" clickable :active="filter.status === 'PENDING' && !filter.blocking" sub="财务还没处理的" @click="applyStatus('PENDING')" />
-    <UiStatCard label="卡交期未付" :value="stats.blockingUnpaid" unit="笔" tone="late" accent icon="alert" clickable :active="filter.status === 'UNPAID' && filter.blocking === '1'" sub="待付 + 暂缓里卡交期的" @click="applyStatus('UNPAID', '1')" />
-    <UiStatCard label="暂缓" :value="stats.onHold" unit="笔" tone="risk" accent icon="warn" clickable :active="filter.status === 'ON_HOLD' && !filter.blocking" @click="applyStatus('ON_HOLD')" />
-    <UiStatCard label="已付" :value="stats.paid" unit="笔" tone="done" accent icon="check" clickable :active="filter.status === 'PAID' && !filter.blocking" @click="applyStatus('PAID')" />
+  <div v-if="!statsError && !error" class="ft-stats">
+    <UiStatCard label="待付" :value="stats ? stats.pending : '—'" unit="笔" tone="primary" accent icon="dot" clickable :active="filter.status === 'PENDING' && !filter.blocking" sub="财务还没处理的" @click="applyStatus('PENDING')" />
+    <UiStatCard label="卡交期未付" :value="stats ? stats.blockingUnpaid : '—'" unit="笔" tone="late" accent icon="alert" clickable :active="filter.status === 'UNPAID' && filter.blocking === '1'" sub="待付 + 暂缓里卡交期的" @click="applyStatus('UNPAID', '1')" />
+    <UiStatCard label="暂缓" :value="stats ? stats.onHold : '—'" unit="笔" tone="risk" accent icon="warn" clickable :active="filter.status === 'ON_HOLD' && !filter.blocking" @click="applyStatus('ON_HOLD')" />
+    <UiStatCard label="已付" :value="stats ? stats.paid : '—'" unit="笔" tone="done" accent icon="check" clickable :active="filter.status === 'PAID' && !filter.blocking" @click="applyStatus('PAID')" />
   </div>
   <a-card v-if="!error">
     <template #title>
@@ -197,6 +197,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
     <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
     <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" v-bind="paidOf(t)" label="已付" :count="t.rows.length" unit="笔" />
     <a-table
+      class="ft-table"
       :columns="layout === 'group' ? groupColumns : columns"
       :data-source="t.rows"
       :loading="pending"
@@ -263,9 +264,9 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
 </template>
 
 <style scoped>
-.totals { margin-bottom: 8px; }
+.totals { margin-bottom: 8px; font-variant-numeric: tabular-nums; }
 .muted { color: var(--ft-text-2); font-size: 12px; }
-.warn { color: var(--ft-late); }
+.warn { color: var(--ft-late-text); }
 .line { line-height: 22px; }
 .small-tag { margin-left: 6px; font-size: 11px; line-height: 16px; }
 </style>

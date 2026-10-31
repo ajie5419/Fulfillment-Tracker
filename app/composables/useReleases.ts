@@ -1,7 +1,7 @@
 /** 发放签收（R9）页面共用：文案、颜色、提交、上传附件。 */
 
 export const RELEASE_TYPE_TEXT = { DRAWING: '图纸', CHANGE: '设计变更', PROCESS: '工艺文件' } as const
-export const RELEASE_TYPE_COLOR = { DRAWING: 'blue', CHANGE: 'volcano', PROCESS: 'cyan' } as const
+export const RELEASE_TYPE_COLOR = { DRAWING: 'blue', CHANGE: 'volcano', PROCESS: 'default' } as const
 export const RECEIPT_STATUS_TEXT = { PENDING: '待签收', SIGNED: '已签收', REJECTED: '已拒收', CANCELLED: '已作废' } as const
 export const RECEIPT_STATUS_COLOR = { PENDING: 'orange', SIGNED: 'green', REJECTED: 'red', CANCELLED: 'default' } as const
 /** Vant 标签类型 */

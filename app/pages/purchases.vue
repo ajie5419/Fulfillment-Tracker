@@ -265,15 +265,15 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
 <template>
   <div>
   <div class="ft-page">
-  <div v-if="stats" class="ft-stats">
-    <UiStatCard label="未到货" :value="stats.open" unit="项" tone="primary" accent icon="dot" clickable :active="filter.view === 'open'" @click="applyView('open')">
-      <template #sub>其中无承诺日 <span :class="{ warn: stats.noPromise }">{{ stats.noPromise }}</span></template>
+  <div class="ft-stats">
+    <UiStatCard label="未到货" :value="stats ? stats.open : '—'" unit="项" tone="primary" accent icon="dot" clickable :active="filter.view === 'open'" @click="applyView('open')">
+      <template #sub>其中无承诺日 <span :class="{ warn: stats?.noPromise }">{{ stats ? stats.noPromise : '—' }}</span></template>
     </UiStatCard>
-    <UiStatCard label="缺料" :value="stats.shortage" unit="项" tone="late" accent icon="alert" clickable :active="filter.view === 'shortage'" sub="未到货且已到需求日" @click="applyView('shortage')" />
-    <UiStatCard label="延误" :value="stats.delay.late" unit="项" tone="risk" accent icon="warn" clickable :active="filter.view === 'late'" @click="applyView('late')">
-      <template #sub>付款原因 {{ stats.delay.payment }} · 管理原因 {{ stats.delay.management }}<template v-if="stats.delay.unfilled"> · <span class="warn">未填原因 {{ stats.delay.unfilled }}</span></template></template>
+    <UiStatCard label="缺料" :value="stats ? stats.shortage : '—'" unit="项" tone="late" accent icon="alert" clickable :active="filter.view === 'shortage'" sub="未到货且已到需求日" @click="applyView('shortage')" />
+    <UiStatCard label="延误" :value="stats ? stats.delay.late : '—'" unit="项" tone="risk" accent icon="warn" clickable :active="filter.view === 'late'" @click="applyView('late')">
+      <template #sub>付款原因 {{ stats ? stats.delay.payment : '—' }} · 管理原因 {{ stats ? stats.delay.management : '—' }}<template v-if="stats?.delay.unfilled"> · <span class="warn">未填原因 {{ stats.delay.unfilled }}</span></template></template>
     </UiStatCard>
-    <UiStatCard label="卡付款" :value="stats.blockedByPayment" unit="项" tone="upstream" accent icon="warn" clickable :active="filter.view === 'blocked'" sub="未到货，有没付的卡交期付款申请" @click="applyView('blocked')" />
+    <UiStatCard label="卡付款" :value="stats ? stats.blockedByPayment : '—'" unit="项" tone="upstream" accent icon="warn" clickable :active="filter.view === 'blocked'" sub="未到货，有没付的卡交期付款申请" @click="applyView('blocked')" />
   </div>
   <a-card>
     <template #title>
@@ -314,6 +314,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
     <div v-for="t in error ? [] : tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
     <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" :nodes="distinctPlanNodes(t.rows)" :done="arrivedOf(t).done" :total="arrivedOf(t).total" :matched-count="arrivedOf(t).count" label="到货" :count="t.rows.length" />
     <a-table
+      class="ft-table"
       :columns="layout === 'group' ? groupColumns : columns"
       :data-source="t.rows"
       :loading="pending"
@@ -326,7 +327,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
       <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未到货的关键物料' : '没有记录'" /></template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'material'">
-          <a v-if="canEdit(record as PurchaseRow)" @click="openEdit(record as PurchaseRow)">{{ record.materialName }}</a>
+          <button v-if="canEdit(record as PurchaseRow)" type="button" class="link-btn" @click="openEdit(record as PurchaseRow)">{{ record.materialName }}</button>
           <span v-else>{{ record.materialName }}</span>
           <div class="muted">{{ [record.spec, record.partName ? `用于 ${record.partName}` : ''].filter(Boolean).join(' · ') }}</div>
           <button type="button" class="comment-link" @click="commenting = { id: record.id, name: record.materialName }">{{ record.commentCount ? `留言 ${record.commentCount}` : '留言' }}</button>
@@ -361,7 +362,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
             <a-tag :color="record.delayReason === 'PAYMENT' ? 'purple' : 'default'">{{ record.delayReasonText }}</a-tag>
             <div v-if="record.delayNote" class="muted ellipsis" :title="record.delayNote">{{ record.delayNote }}</div>
           </template>
-          <a v-else-if="record.late && canEdit(record as PurchaseRow)" class="warn" @click="openEdit(record as PurchaseRow)">待填</a>
+          <button v-else-if="record.late && canEdit(record as PurchaseRow)" type="button" class="link-btn warn" @click="openEdit(record as PurchaseRow)">待填</button>
           <span v-else-if="record.late" class="warn">待填</span>
           <span v-else class="muted">—</span>
         </template>
@@ -414,8 +415,11 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
 
 <style scoped>
 .muted { color: var(--ft-text-2); font-size: 12px; }
+.link-btn { padding: 0; border: 0; background: none; font: inherit; color: var(--ft-primary); text-align: left; cursor: pointer; }
+.link-btn:hover { text-decoration: underline; }
+.link-btn:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; border-radius: 2px; }
 .comment-link { padding: 0; border: 0; background: none; font-size: 12px; color: var(--ft-primary); cursor: pointer; }
 .comment-link:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; border-radius: 2px; }
-.warn { color: var(--ft-late); }
+.warn { color: var(--ft-late-text); }
 .ellipsis { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
