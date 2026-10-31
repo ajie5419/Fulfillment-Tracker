@@ -8,7 +8,7 @@ export const PAYMENT_STATUS_COLOR = { PENDING: 'orange', PAID: 'green', ON_HOLD:
 /** 列表进度文字（服务端 lineProgress）的颜色 */
 export const PURCHASE_PROGRESS_COLOR: Record<string, string> = {
   缺料: 'red',
-  超承诺日: 'volcano',
+  超承诺日: 'red',
   无承诺日: 'orange',
   待到货: 'blue',
   已到货: 'green',
