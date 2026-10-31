@@ -75,22 +75,22 @@ function onKey(e: KeyboardEvent) {
 .ft-stat-iconbox { flex: none; width: 26px; height: 26px; border-radius: 8px; background: var(--card-surface-bg); border: 1px solid var(--card-border-subtle); box-shadow: var(--card-shadow); display: flex; align-items: center; justify-content: center; }
 .ft-stat-label { min-width: 0; font-size: 14px; font-weight: 500; color: var(--ft-text); line-height: 18px; }
 .ft-stat-inner { margin: 0 var(--card-tray-padding) var(--card-tray-padding); flex: 1; background: var(--card-surface-bg); border: 1px solid var(--card-border-subtle); border-radius: var(--card-radius-inner); box-shadow: var(--card-shadow); box-sizing: border-box; padding: 14px 16px; }
-.ft-stat.link { cursor: pointer; }
-.ft-stat.link .ft-stat-inner { transition: box-shadow 0.15s; }
-.ft-stat.link:hover { color: var(--ft-text); }
-.ft-stat.link:hover .ft-stat-inner { box-shadow: 0 2px 4px rgba(16, 24, 40, 0.06), 0 6px 16px rgba(16, 24, 40, 0.08); }
-.ft-stat.active { outline: 2px solid var(--ft-primary); }
+.ft-stat.link { cursor: pointer; transition: border-color 0.15s, background-color 0.15s; }
+.ft-stat.link .ft-stat-inner { transition: border-color 0.15s, background-color 0.15s; }
+.ft-stat.link:hover { color: var(--ft-text); border-color: var(--ft-text-3); }
+.ft-stat.link:hover .ft-stat-inner { border-color: var(--ft-border); background: var(--ft-fill); }
+.ft-stat.active { border-color: var(--ft-primary); background: var(--ft-primary-bg); }
+.ft-stat.active .ft-stat-inner { border-color: var(--ft-primary); }
 .ft-stat.link:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
 /* 设计改版：顶部色条（accent）按用户意见去掉，状态由标签前的图标和文字表达（用到 accent 的卡片都带 icon）；
    改成和 chip 一样的细边框，accent 属性保留以免各页面改调用 */
 .accent { border: 1px solid var(--ft-border); }
-.value { margin-top: 0; line-height: 1.2; }
-.value b { font-size: 28px; font-weight: 600; letter-spacing: -0.5px; }
+.value { margin-top: 0; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.value b { font-size: 28px; font-weight: 600; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
 .unit { margin-left: 6px; font-size: 13px; color: var(--ft-text-2); }
-.tone-late .value b { color: var(--ft-late); }
+.tone-late .value b { color: var(--ft-late-text); }
 .sub { margin-top: 6px; font-size: 12px; color: var(--ft-text-2); }
 /* chip：放在分组大卡片里用，内面板保留更宽的内边距 */
 .chip .ft-stat-inner { padding: 16px 18px; }
-.chip.link:hover .ft-stat-inner { box-shadow: 0 4px 14px rgba(16, 24, 40, 0.08); border-color: transparent; }
 .chip .value b, .chip.tone-late .value b { color: var(--ft-text); }
 </style>

@@ -90,11 +90,11 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
 <template>
   <div>
   <div class="ft-page">
-  <div v-if="stats" class="ft-stats">
-    <UiStatCard label="发放单" :value="stats.all" unit="张" tone="primary" accent icon="dot" clickable :active="!filter.progress" sub="当前工单 / 类型 / 范围下全部" @click="filter.progress = undefined" />
-    <UiStatCard label="有人未签收" :value="stats.pending" unit="张" tone="risk" accent icon="warn" clickable :active="filter.progress === 'PENDING'" sub="超时没签收按 W5 预警" @click="applyProgress('PENDING')" />
-    <UiStatCard label="有拒收" :value="stats.rejected" unit="张" tone="late" accent icon="alert" clickable :active="filter.progress === 'REJECTED'" sub="接收人拒收，需发放人处理" @click="applyProgress('REJECTED')" />
-    <UiStatCard label="待我签收" :value="stats.minePending" unit="张" tone="upstream" accent icon="warn" clickable :active="filter.progress === 'MINE_PENDING'" sub="发给我、我还没签收的" @click="applyProgress('MINE_PENDING')" />
+  <div class="ft-stats">
+    <UiStatCard label="发放单" :value="stats ? stats.all : '—'" unit="张" tone="primary" accent icon="dot" clickable :active="!filter.progress" sub="当前工单 / 类型 / 范围下全部" @click="filter.progress = undefined" />
+    <UiStatCard label="有人未签收" :value="stats ? stats.pending : '—'" unit="张" tone="risk" accent icon="warn" clickable :active="filter.progress === 'PENDING'" sub="超时没签收按 W5 预警" @click="applyProgress('PENDING')" />
+    <UiStatCard label="有拒收" :value="stats ? stats.rejected : '—'" unit="张" tone="late" accent icon="alert" clickable :active="filter.progress === 'REJECTED'" sub="接收人拒收，需发放人处理" @click="applyProgress('REJECTED')" />
+    <UiStatCard label="待我签收" :value="stats ? stats.minePending : '—'" unit="张" tone="upstream" accent icon="warn" clickable :active="filter.progress === 'MINE_PENDING'" sub="发给我、我还没签收的" @click="applyProgress('MINE_PENDING')" />
   </div>
   <a-card>
     <template #title>
@@ -128,6 +128,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
     <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
     <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" v-bind="signedOf(t)" label="已全部签收" :count="t.rows.length" unit="张" />
     <a-table
+      class="ft-table"
       :columns="layout === 'group' ? groupColumns : columns"
       :data-source="t.rows"
       :loading="pending"

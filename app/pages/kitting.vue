@@ -127,14 +127,14 @@ const crossColumns = [
 <template>
   <div>
   <div class="ft-page">
-  <div v-if="stats" class="ft-stats">
-    <UiStatCard label="装配节点" :value="stats.all" unit="个" tone="primary" accent icon="dot" clickable :active="!filter.incomplete" :sub="filter.workOrderNumber ? `工单 ${filter.workOrderNumber}` : '全部工单'" @click="applyCard('all')" />
-    <UiStatCard label="未齐套" :value="stats.incomplete" unit="个" tone="risk" accent icon="warn" clickable :active="filter.incomplete && !filter.dueSoon" @click="applyCard('incomplete')" />
-    <UiStatCard label="需求日临近未齐套" :value="stats.dueSoon" unit="个" tone="late" accent icon="alert" clickable :active="filter.dueSoon" :sub="`需求日前 ${stats.windowDays} 天内（含已过）`" @click="applyCard('dueSoon')" />
+  <div class="ft-stats">
+    <UiStatCard label="装配节点" :value="stats ? stats.all : '—'" unit="个" tone="primary" accent icon="dot" clickable :active="!filter.incomplete" :sub="filter.workOrderNumber ? `工单 ${filter.workOrderNumber}` : '全部工单'" @click="applyCard('all')" />
+    <UiStatCard label="未齐套" :value="stats ? stats.incomplete : '—'" unit="个" tone="risk" accent icon="warn" clickable :active="filter.incomplete && !filter.dueSoon" @click="applyCard('incomplete')" />
+    <UiStatCard label="需求日临近未齐套" :value="stats ? stats.dueSoon : '—'" unit="个" tone="late" accent icon="alert" clickable :active="filter.dueSoon" :sub="stats ? `需求日前 ${stats.windowDays} 天内（含已过）` : '需求日临近（含已过）'" @click="applyCard('dueSoon')" />
     <UiStatCard label="平均齐套率" tone="done" accent icon="check" :sub="`按当前列表 ${rows.filter((r) => r.percent != null).length} 个节点（清单为空的不算）`">
       <template #value>
         <span class="avg">
-          <UiRing :value="avgPercent ?? 0" :total="100" :size="44" :stroke="6" color="var(--ft-done)"  label="" />
+          <UiRing :value="avgPercent ?? 0" :total="100" :size="44" :stroke="6" color="var(--ft-done)" label="" />
           <b>{{ avgPercent == null ? '—' : `${avgPercent}%` }}</b>
         </span>
       </template>
@@ -165,7 +165,7 @@ const crossColumns = [
     </template>
 
     <template v-if="standalone">
-      <div class="section muted">提醒的节点（你是负责人；该工单不在你的可见范围，只能看这个节点）<a @click="standalone = null">收起</a></div>
+      <div class="section muted">提醒的节点（你是负责人；该工单不在你的可见范围，只能看这个节点）<button type="button" class="link-btn" @click="standalone = null">收起</button></div>
       <KittingNodeCard :node="standalone" focus :linkable="false" :window-days="stats?.windowDays ?? 5" @edit="openEdit" @remove="remove" />
     </template>
     <p v-if="data.total > rows.length" class="warn">共 {{ data.total }} 个节点，只显示前 {{ rows.length }} 个，请按工单筛选</p>
@@ -189,6 +189,7 @@ const crossColumns = [
     <!-- 跨工单：按需求日 -->
     <a-table
       v-else
+      class="ft-table"
       :columns="crossColumns"
       :data-source="rows"
       :loading="pending"
@@ -209,7 +210,7 @@ const crossColumns = [
           <div :class="record.incomplete && record.daysLeft <= (stats?.windowDays ?? 5) ? 'warn small' : 'muted'">{{ daysLeftText(record.daysLeft) }}</div>
         </template>
         <template v-else-if="column.key === 'name'">
-          <a @click="showWorkOrder(record.workOrderNumber, record.id)">{{ record.name }}</a>
+          <button type="button" class="link-btn" @click="showWorkOrder(record.workOrderNumber, record.id)">{{ record.name }}</button>
         </template>
         <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
         <template v-else-if="column.key === 'planNode'"><PlanNodeCell :work-order-number="record.workOrderNumber" :node="record.planNode" /></template>
@@ -244,7 +245,10 @@ const crossColumns = [
 .reasons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .reason { margin: 0; font-size: 11px; line-height: 18px; }
 .muted { color: var(--ft-text-2); font-size: 12px; }
-.warn { color: var(--ft-late); }
+.link-btn { padding: 0; border: 0; background: none; font: inherit; color: var(--ft-primary); text-align: left; cursor: pointer; }
+.link-btn:hover { text-decoration: underline; }
+.link-btn:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; border-radius: 2px; }
+.warn { color: var(--ft-late-text); }
 .small { font-size: 12px; }
 .ready { margin-top: 6px; }
 .section { display: flex; justify-content: space-between; margin-bottom: 6px; }
