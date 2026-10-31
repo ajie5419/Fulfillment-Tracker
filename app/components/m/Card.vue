@@ -8,12 +8,24 @@
 import { TONE_ICON, type Tone } from '#shared/mobile-todo'
 
 const props = withDefaults(defineProps<{ tone?: Tone; label?: string; link?: boolean; icon?: boolean }>(), { tone: 'none', label: '', link: false, icon: true })
-defineEmits<{ click: [MouseEvent] }>()
+const emit = defineEmits<{ click: [MouseEvent | KeyboardEvent] }>()
 const kind = computed(() => TONE_ICON[props.tone])
+function onKey(e: KeyboardEvent) {
+  if (!props.link) return
+  e.preventDefault()
+  emit('click', e)
+}
 </script>
 
 <template>
-  <div :class="['m-card', `tone-${tone}`, { link }]" :role="link ? 'button' : undefined" @click="$emit('click', $event)">
+  <div
+    :class="['m-card', `tone-${tone}`, { link }]"
+    :role="link ? 'button' : undefined"
+    :tabindex="link ? 0 : undefined"
+    @click="emit('click', $event)"
+    @keydown.enter="onKey"
+    @keydown.space="onKey"
+  >
     <div v-if="icon || label" class="m-card-status">
       <UiStatusIcon :kind="kind" :tone="tone" :size="14" />
       <span v-if="label" :class="`m-text-${tone}`">{{ label }}</span>
@@ -39,6 +51,7 @@ const kind = computed(() => TONE_ICON[props.tone])
 }
 .link { cursor: pointer; }
 .link:active { background: var(--ft-fill); }
+.link:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
 .m-card-status { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 2px; font-size: 11px; line-height: 1.2; }
 .m-card-body { flex: 1; min-width: 0; }
 .m-card-arrow { flex: none; align-self: center; color: var(--ft-text-3); }

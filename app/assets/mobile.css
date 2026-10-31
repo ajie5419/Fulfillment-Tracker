@@ -95,13 +95,14 @@
 /* 顶部导航栏：白底 + 细底线（设计规范：中性灰白，不用渐变和阴影） */
 .ft-m .van-nav-bar { background: var(--ft-card-bg); }
 .ft-m .van-hairline--bottom::after { border-color: var(--ft-border); }
-.ft-m { min-height: 100vh; max-width: 640px; margin: 0 auto; background: var(--ft-page-bg); color: var(--ft-text); overflow-x: clip; }
+.ft-m { min-height: 100vh; min-height: 100dvh; max-width: 640px; margin: 0 auto; background: var(--ft-page-bg); color: var(--ft-text); overflow-x: clip; }
+.ft-m .van-tabbar--fixed { max-width: 640px; left: 50%; transform: translateX(-50%); }
 .ft-m .van-nav-bar__title { font-weight: 600; }
 .ft-m .van-cell-group--inset { border: 1px solid var(--ft-border); box-shadow: var(--card-shadow); background: var(--card-surface-bg); }
 .ft-m .van-cell-group__title--inset { padding: 16px 16px 8px; font-size: 13px; font-weight: 600; }
 .ft-m .van-tabs__nav { background: var(--ft-card-bg); }
 .ft-m .van-tab--active { font-weight: 600; }
-.ft-m .van-empty__description { color: var(--ft-text-3); }
+.ft-m .van-empty__description { color: var(--ft-text-2); }
 .ft-m .van-button { font-weight: 500; }
 
 /* 分组标题（区块标题） */
