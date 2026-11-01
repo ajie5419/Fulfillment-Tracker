@@ -585,11 +585,6 @@ export async function assertCanViewRelease(id: string, viewerId: string, canSeeW
   if (!canSeeWorkOrder(rel.workOrderNumber) && !(await isReleaseParty(id, viewerId))) throw new FlowForbidden('无权查看该工单的数据')
 }
 
-/** 签收记录所属发放单的 ID（接口层做可见性检查用）；不存在时 null */
-export async function releaseIdOfReceipt(receiptId: string) {
-  return (await prisma.releaseReceipt.findUnique({ where: { id: receiptId }, select: { releaseId: true } }))?.releaseId ?? null
-}
-
 /** 发放单详情：内容、附件、每个接收人的签收状态、设计变更影响的工序，以及当前用户能做的操作 */
 export async function getRelease(id: string, viewer: Actor) {
   const rel = await prisma.release.findUnique({ where: { id }, include: { receipts: { orderBy: { createdAt: 'asc' } } } })

@@ -1,3 +1,4 @@
+import { ALERT_LEVEL_TEXT as SHARED_ALERT_LEVEL_TEXT } from '../../../shared/alert-rules'
 /**
  * 预警转异常（方案 5.2、6.2）：红色预警由扫描任务自动转，黄色预警由责任人、项目经理、管理员手动转，共用这里。
  *
@@ -29,7 +30,7 @@ export interface ConvertTarget {
   meta?: { stepMode?: StepMode; supplierId?: string | null }
 }
 
-const LEVEL_NAME = { REMIND: '提醒', YELLOW: '黄色', RED: '红色' } as const
+const LEVEL_NAME = SHARED_ALERT_LEVEL_TEXT
 
 export function categoryFor(target: ConvertTarget): { category: IssueCategory; supplierId: string | null } {
   if (target.rule === 'W2' || target.rule === 'W10') {

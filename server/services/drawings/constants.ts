@@ -1,3 +1,4 @@
+import { DRAWING_STATUS_TEXT as SHARED_DRAWING_STATUS_TEXT } from '../../../shared/drawing'
 /**
  * 设计任务（R11）的常量与纯函数：文案、状态推导、W7 判定、逾期口径。不碰数据库，便于单测。
  */
@@ -8,13 +9,7 @@ import { BUSINESS_DEPT_NAME } from '../../../shared/business-depts'
 /** 默认责任部门：设计任务没指定设计负责人时派给这个部门的负责人（notify_role DEPT_HEAD + 部门名称）；W7 黄色起通知它的负责人 */
 export const TECH_DEPT = BUSINESS_DEPT_NAME.TECH
 
-export const DRAWING_STATUS_TEXT: Record<DrawingTaskStatus, string> = {
-  PENDING: '设计中',
-  DRAWN: '设计完成',
-  CUSTOMER_PENDING: '待客户确认',
-  DONE: '已完成',
-  CANCELLED: '已取消',
-}
+export const DRAWING_STATUS_TEXT: Record<DrawingTaskStatus, string> = SHARED_DRAWING_STATUS_TEXT
 
 /** 还在跟踪（未完成、未取消）的状态：挂在工件上时不发"可以开工" */
 export const OPEN_DRAWING_STATUSES: DrawingTaskStatus[] = ['PENDING', 'DRAWN', 'CUSTOMER_PENDING']

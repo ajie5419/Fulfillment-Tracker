@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { CONFIRM_TONE } from '~/utils/plan-status'
+
 /**
  * 总计划编辑（R14）：一个工单一份主线计划，部门记录（设计 / 采购 / 工序 / 装配节点）挂到节点上。
  * 用在"项目计划"页 /plan?wo=（zhao 10-22：一度并进工单详情的页签，测试后又单独成菜单页；旧的 /wo/:no?tab=plan 跳过来）。
@@ -339,7 +341,6 @@ const columns = [
 const rowClass = (n: TableRow) =>
   isPhaseRow(n) ? 'phase-row' : [n.id === focusNode.value ? 'focus-row' : '', !n.done && n.delayDays > 0 ? 'late-row' : '', n.parentId ? 'child-row' : '', n.childCount ? 'summary-row' : ''].join(' ')
 const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ? 'orange' : l === 'REMIND' ? 'blue' : undefined)
-const CONFIRM_TONE = { PENDING: 'risk', CONFIRMED: 'done', REJECTED: 'late' } as const
 const logColumns = [
   { title: '时间', key: 'createdAt', width: 160 },
   { title: '节点', dataIndex: 'nodeName', width: 160 },

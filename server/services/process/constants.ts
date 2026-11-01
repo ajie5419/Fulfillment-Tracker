@@ -1,3 +1,4 @@
+import { MATERIAL_STATUS_TEXT as SHARED_MATERIAL_STATUS_TEXT, PROCESS_STATUS_TEXT as SHARED_PROCESS_STATUS_TEXT } from '../../../shared/process'
 /**
  * 工艺模块（10-27，zhao 定）的常量与纯函数：料单 / 工艺状态的文案、允许的状态变化。不碰数据库，便于单测。
  *
@@ -14,19 +15,9 @@ export type { ProcessAction } from '../../../shared/process'
 /** 料单、工艺的负责部门：设计变更自动改"修改中"时提醒它的负责人 */
 export const PROCESS_DEPT = BUSINESS_DEPT_NAME.PROCESS
 
-export const MATERIAL_STATUS_TEXT: Record<MaterialListStatus, string> = {
-  NOT_STARTED: '未开始',
-  DRAFTING: '编制中',
-  REVISING: '修改中',
-  ISSUED: '已下发',
-}
+export const MATERIAL_STATUS_TEXT: Record<MaterialListStatus, string> = SHARED_MATERIAL_STATUS_TEXT
 
-export const PROCESS_STATUS_TEXT: Record<ProcessDocStatus, string> = {
-  NONE: '无',
-  DRAFTING: '编制中',
-  REVISING: '修改中',
-  ISSUED: '已下发',
-}
+export const PROCESS_STATUS_TEXT: Record<ProcessDocStatus, string> = SHARED_PROCESS_STATUS_TEXT
 
 export const KIND_TEXT: Record<ProcessDocKind, string> = { MATERIAL: '料单', PROCESS: '工艺' }
 

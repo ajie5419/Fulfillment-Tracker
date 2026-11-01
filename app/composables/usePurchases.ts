@@ -1,9 +1,10 @@
+import { PURCHASE_STATUS_TEXT as SHARED_PURCHASE_STATUS_TEXT, DELAY_REASON_TEXT as SHARED_DELAY_REASON_TEXT, PAYMENT_STATUS_TEXT as SHARED_PAYMENT_STATUS_TEXT } from '#shared/purchases'
 /** 关键物料与付款（R10）页面共用：文案、颜色、接口调用。 */
 
-export const PURCHASE_STATUS_TEXT = { OPEN: '未到货', ARRIVED: '已到货', CANCELLED: '已取消' } as const
-export const DELAY_REASON_TEXT = { PAYMENT: '付款', SUPPLIER: '供应商', DEMAND_CHANGE: '我方需求变化', OTHER: '其他' } as const
+export const PURCHASE_STATUS_TEXT = SHARED_PURCHASE_STATUS_TEXT
+export const DELAY_REASON_TEXT = SHARED_DELAY_REASON_TEXT
 export const DELAY_REASON_OPTIONS = Object.entries(DELAY_REASON_TEXT).map(([value, label]) => ({ value, label }))
-export const PAYMENT_STATUS_TEXT = { PENDING: '待付', PAID: '已付', ON_HOLD: '暂缓' } as const
+export const PAYMENT_STATUS_TEXT = SHARED_PAYMENT_STATUS_TEXT
 export const PAYMENT_STATUS_COLOR = { PENDING: 'orange', PAID: 'green', ON_HOLD: 'default' } as const
 /** 列表进度文字（服务端 lineProgress）的颜色 */
 export const PURCHASE_PROGRESS_COLOR: Record<string, string> = {

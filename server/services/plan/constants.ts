@@ -20,15 +20,14 @@ import { isDesignComplete } from '../../../shared/drawing'
  */
 import type { AlertLevel, BusinessDept, DrawingTaskStatus, PlanNodeConfirm, PurchaseStatus, StepMode, StepStatus } from '@prisma/client'
 import { type RuleThreshold, alertKey, dayDiff } from '../alerts/rules'
-import { BUSINESS_DEPT_NAME } from '../auth/departments'
+import { PLAN_CONFIRM_TEXT } from '../../../shared/plan'
 
 /** 待办："确认总计划节点"（refType = planNode，refId = 节点 ID），发给节点责任部门负责人 */
 export const CONFIRM_PLAN_NODE = 'CONFIRM_PLAN_NODE'
 export const PLAN_REF = 'planNode'
 
-export const PLAN_DEPT_TEXT = BUSINESS_DEPT_NAME
 /** 页面上叫"接收"（10-23 zhao：发布后各部门在"部门计划"页接收本部门的节点再分解）；库里仍是确认状态 */
-export const CONFIRM_TEXT: Record<PlanNodeConfirm, string> = { PENDING: '待接收', CONFIRMED: '已接收', REJECTED: '已退回' }
+export const CONFIRM_TEXT: Record<PlanNodeConfirm, string> = PLAN_CONFIRM_TEXT
 
 /** 总计划页：选中工单并定位到节点 */
 export const planLink = (workOrderNumber: string, nodeId?: string | null) =>

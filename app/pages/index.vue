@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ALERT_LEVEL_TEXT as LEVEL_LABEL } from '#shared/alert-rules'
+
 /**
  * 工作台（前端改版第二轮）：顶部统计卡（我的待办 / 已过期 / 今天到期 / 未读提醒，点了按它筛选，?f= 便于分享），
  * 下面待办和提醒合成一条卡片流，按"已过期 / 今天 / 本周 / 以后 / 未定截止日"分组（只按真实截止日，由服务端按工厂时区算好，见 shared/workbench.ts）。
@@ -213,7 +215,6 @@ const groups = computed(() => groupByBucket(cards.value))
 /** 点统计卡：套用筛选；再点同一张取消 */
 const filterTo = (f: Filter) => ({ query: { ...route.query, f: active.value === f ? undefined : f } })
 
-const LEVEL_LABEL: Record<AlertLevelKey, string> = { RED: '红色', YELLOW: '黄色', REMIND: '提醒' }
 const toneIcon = (t: Tone) => (t === 'late' ? 'alert' : t === 'risk' ? 'warn' : 'dot')
 /** 待办的"查看"跳转：工序 → 工件抽屉（工序编排页）；发放 → 发放单；总计划 → 工单详情的总计划页签 */
 function todoLink(t: Todo): string | null {

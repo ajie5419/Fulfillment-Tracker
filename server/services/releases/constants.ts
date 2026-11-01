@@ -1,11 +1,14 @@
+import { STEP_STATUS_TEXT as SHARED_STEP_STATUS_TEXT } from '../../../shared/flow'
+import { RELEASE_TYPE_TEXT as SHARED_RELEASE_TYPE_TEXT, RECEIPT_STATUS_TEXT as SHARED_RECEIPT_STATUS_TEXT } from '../../../shared/releases'
 /** 发放签收（R9）的常量与纯函数：文案、编号、按"部门 + 角色"选人、设计变更影响的工序。不碰数据库，便于单测。 */
 import type { NotifyRoleKind, ReceiptStatus, ReleaseType, StepStatus } from '@prisma/client'
 import { shanghaiDay } from '../alerts/rules'
 import { BUSINESS_DEPT_NAME } from '../../../shared/business-depts'
+import { MAX_RELEASE_ATTACHMENTS } from '../../../shared/upload-policy'
 
-export const TYPE_TEXT: Record<ReleaseType, string> = { DRAWING: '图纸', CHANGE: '设计变更', PROCESS: '工艺文件' }
-export const STEP_STATUS_TEXT: Record<StepStatus, string> = { PENDING: '待开工', OUT: '在外加工', IN_PROGRESS: '加工中', DONE: '已完成', BLOCKED: '有异常' }
-export const RECEIPT_STATUS_TEXT: Record<ReceiptStatus, string> = { PENDING: '待签收', SIGNED: '已签收', REJECTED: '已拒收', CANCELLED: '已作废' }
+export const TYPE_TEXT: Record<ReleaseType, string> = SHARED_RELEASE_TYPE_TEXT
+export const STEP_STATUS_TEXT: Record<StepStatus, string> = SHARED_STEP_STATUS_TEXT
+export const RECEIPT_STATUS_TEXT: Record<ReceiptStatus, string> = SHARED_RECEIPT_STATUS_TEXT
 
 /** 待办：接收人签收（refType = receipt，refId = 签收记录 ID） */
 export const SIGN_RELEASE = 'SIGN_RELEASE'
@@ -26,7 +29,7 @@ export const ROLE_TEXT: Record<NotifyRoleKind, string> = {
 /** 一次发放最多多少接收人（防误选"全部人员"时一下发几百条待办） */
 export const MAX_RECIPIENTS = 200
 /** 附件最多几个 */
-export const MAX_ATTACHMENTS = 5
+export const MAX_ATTACHMENTS = MAX_RELEASE_ATTACHMENTS
 
 /** 编号前缀：FF-YYMMDD-（工厂时区当天）。序号格式与异常编号相同（至少 3 位） */
 export function releaseNoPrefix(now: Date): string {

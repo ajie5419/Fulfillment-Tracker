@@ -1,19 +1,15 @@
+import { ISSUE_STATUS_TEXT as SHARED_ISSUE_STATUS_TEXT, ISSUE_SOURCE_TEXT as SHARED_ISSUE_SOURCE_TEXT, ISSUE_CATEGORY_TEXT as SHARED_ISSUE_CATEGORY_TEXT } from '../../../shared/issues'
 /** 异常模块的常量与纯函数：分类、默认责任部门（方案 6.4）、编号、默认要求解决日。不碰数据库，便于单测。 */
 import type { IssueCategory, IssueSource, IssueStatus } from '@prisma/client'
 import { DAY_MS, shanghaiDay } from '../alerts/rules'
 import { BUSINESS_DEPT_NAME, type BusinessDeptCode } from '../../../shared/business-depts'
 
-export const CATEGORY_TEXT: Record<IssueCategory, string> = {
-  DESIGN: '设计',
-  CHANGE: '变更',
-  MATERIAL_PAYMENT: '物料-付款原因',
-  MATERIAL_MGMT: '物料-管理原因',
-  OUTSOURCE_SCHEDULE: '外协-进度',
-  OUTSOURCE_QUALITY: '外协-质量',
-  WORKSHOP: '车间',
-  CUSTOMER: '客户',
-  OTHER: '其他',
-}
+/** 未指定要求解决日时，从受理当天起顺延的自然日数。 */
+export const DEFAULT_ISSUE_DUE_DAYS = 3
+/** 编号唯一键冲突时额外重试次数（首次尝试不计入）。 */
+export const ISSUE_NUMBER_CONFLICT_RETRIES = 5
+
+export const CATEGORY_TEXT: Record<IssueCategory, string> = SHARED_ISSUE_CATEGORY_TEXT
 
 /** 按分类默认的责任部门（业务部门编码，方案 6.4） */
 export const DEFAULT_DEPT: Record<IssueCategory, BusinessDeptCode> = {
@@ -36,8 +32,8 @@ export const DEFAULT_DEPT_NAME = Object.fromEntries(
 /** 可以指定外协单位（责任方）的分类 */
 export const SUPPLIER_CATEGORIES: IssueCategory[] = ['OUTSOURCE_SCHEDULE', 'OUTSOURCE_QUALITY']
 
-export const STATUS_TEXT: Record<IssueStatus, string> = { OPEN: '待受理', ACCEPTED: '处理中', RESOLVED: '待确认', CLOSED: '已关闭' }
-export const SOURCE_TEXT: Record<IssueSource, string> = { MANUAL: '手工上报', ALERT: '预警转入', QMS_NONCONFORMING: 'QMS 不合格', SCRAP: '完工报废' }
+export const STATUS_TEXT: Record<IssueStatus, string> = SHARED_ISSUE_STATUS_TEXT
+export const SOURCE_TEXT: Record<IssueSource, string> = SHARED_ISSUE_SOURCE_TEXT
 
 /** 未关闭的状态 */
 export const OPEN_STATUSES: IssueStatus[] = ['OPEN', 'ACCEPTED', 'RESOLVED']
@@ -66,5 +62,5 @@ export function nextSeq(prefix: string, maxIssueNo: string | null): number {
  * 所以过了这一天（工厂时区）才算超期。
  */
 export function defaultDueDate(now: Date): Date {
-  return new Date(`${shanghaiDay(+now + 3 * DAY_MS)}T00:00:00.000Z`)
+  return new Date(`${shanghaiDay(+now + DEFAULT_ISSUE_DUE_DAYS * DAY_MS)}T00:00:00.000Z`)
 }

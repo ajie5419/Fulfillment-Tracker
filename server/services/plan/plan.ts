@@ -1,3 +1,4 @@
+import { STEP_STATUS_TEXT as SHARED_STEP_STATUS_TEXT } from '../../../shared/flow'
 /**
  * 项目部总计划（R14，总计划设计.md）：每个工单一份，按模板倒推生成 → 项目经理调整 → 发布（锁基线、各部门确认）→
  * 部门记录挂节点 → 预计完成日沿前置节点顺延（10-22 起支持多条线并行，默认前置 = 上一个节点）→ 预计交期 / 拖期天数、余量、W9 预警。
@@ -64,7 +65,7 @@ type Db = Tx | typeof prisma
 
 const day = (d: Date) => dateFieldDay(d)
 const parse = (d: string) => new Date(`${d}T00:00:00.000Z`)
-const STEP_STATUS_TEXT = { PENDING: '待开工', OUT: '在外加工', IN_PROGRESS: '加工中', DONE: '已完成', BLOCKED: '有异常' } as const
+const STEP_STATUS_TEXT = SHARED_STEP_STATUS_TEXT
 
 // ───────────── 读：节点 + 挂靠任务 → 预计 ─────────────
 

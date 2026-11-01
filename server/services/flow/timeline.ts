@@ -1,3 +1,4 @@
+import { FLOW_EVENT_TEXT as SHARED_FLOW_EVENT_TEXT, FLOW_SOURCE_TEXT as SHARED_FLOW_SOURCE_TEXT } from '../../../shared/flow'
 /**
  * 工件时间线和关联记录数（借鉴 ERPNext 单据的"活动"和顶部关联计数，10-26）。
  * 把散在各模块的记录按时间串起来：建档、设计任务、关键物料、工序流转、异常、留言。只读，不新增数据。
@@ -8,8 +9,8 @@ import { countComments } from '../comments/comments'
 import { RETURN_TYPES } from './flow'
 import { loadNames } from './names'
 
-const EVENT_TEXT = { SEND: '发出', RETURN: '返厂（QMS 报检）', RETURN_MANUAL: '补登返厂', START: '开工', FINISH: '完工', REPORT: '部分完工', SCRAP: '报废' } as const
-const SOURCE_TEXT = { MOBILE: '手机', QMS_INSPECTION: 'QMS', PC: '电脑' } as const
+const EVENT_TEXT = SHARED_FLOW_EVENT_TEXT
+const SOURCE_TEXT = SHARED_FLOW_SOURCE_TEXT
 
 export interface TimelineEntry {
   at: Date

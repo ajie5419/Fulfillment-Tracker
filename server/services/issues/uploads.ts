@@ -14,17 +14,12 @@ import { prisma } from '../../utils/prisma'
 import { FlowError } from '../flow/errors'
 import { isReleaseParty } from '../releases/releases'
 import { XLSX_MIME } from '../bom/excel'
+import { MAX_PHOTO_BYTES, MAX_ATTACHMENT_BYTES, MAX_FILES_PER_REQUEST, MAX_BOM_BYTES } from '../../../shared/upload-policy'
 
 export { XLSX_MIME }
 
-export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024
-/** 发放单附件（图纸 PDF 可能较大）每个的上限 */
-export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
-/** 一次请求最多几个文件（上报异常最多 3 张照片；附件分批传） */
-export const MAX_FILES_PER_REQUEST = 3
-
-/** BOM 表（CAD 导出的 Excel）的上限 */
-export const MAX_BOM_BYTES = 5 * 1024 * 1024
+export const MAX_UPLOAD_BYTES = MAX_PHOTO_BYTES
+export { MAX_ATTACHMENT_BYTES, MAX_FILES_PER_REQUEST, MAX_BOM_BYTES }
 
 /** photo = 异常照片（只收图片）；attachment = 发放单附件（图片或 PDF）；bom = 图纸发放单的 BOM 表（只收 .xlsx） */
 export type UploadKind = 'photo' | 'attachment' | 'bom'

@@ -11,6 +11,7 @@
  */
 import type { Issue, IssueCategory, IssueSource, IssueStatus, NotifyRole, Prisma } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
+import { MAX_ISSUE_PHOTOS } from '../../../shared/upload-policy'
 import { clearAlertKeys } from '../alerts/clear'
 import { loadOffDays, loadThresholds } from '../alerts/config'
 import { alertKey, dateFieldDay, judgeW4 } from '../alerts/rules'
@@ -21,6 +22,7 @@ import { loadNames } from '../flow/names'
 import {
   CATEGORY_TEXT,
   DEFAULT_DEPT_NAME,
+  ISSUE_NUMBER_CONFLICT_RETRIES,
   type IssueRefType,
   OPEN_STATUSES,
   STATUS_TEXT,
@@ -40,7 +42,7 @@ export interface Actor {
   isAdmin: boolean
 }
 
-export const MAX_PHOTOS = 3
+export const MAX_PHOTOS = MAX_ISSUE_PHOTOS
 
 const uniqueOn = (err: unknown, field: string) => {
   const e = err as { code?: string; meta?: { target?: unknown } }
@@ -55,7 +57,7 @@ export async function issueTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T
     try {
       return await prisma.$transaction(fn)
     } catch (err) {
-      if (attempt < 5 && uniqueOn(err, 'issueNo')) continue
+      if (attempt < ISSUE_NUMBER_CONFLICT_RETRIES && uniqueOn(err, 'issueNo')) continue
       throw err
     }
   }

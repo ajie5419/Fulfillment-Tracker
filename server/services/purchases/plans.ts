@@ -7,6 +7,7 @@ import { createLine, lockParts, purchaseTx } from './purchases'
 import { PURCHASE_DEPT } from './constants'
 import { PURCHASE_PLAN_ISSUED, purchasePlanEditable, purchasePlanProgress, purchasePlanTransition } from '../../../shared/purchase-plans'
 import type { newPlanBody, planHeadBody, planItemBody } from '../../schemas/purchase-plans'
+import { DEFAULT_PAGE_SIZE } from '../../../shared/pagination'
 
 type Tx = Prisma.TransactionClient
 const itemInclude = { convertedLine: { select: { id: true, status: true } }, part: { select: { id: true, name: true, drawingNo: true } } } as const
@@ -136,7 +137,7 @@ export async function getPurchasePlan(id: string) {
 export async function listPurchasePlans(filter: { workOrderNumber?: string; status?: 'DRAFT' | 'ISSUED' | 'WITHDRAWN'; page?: number; pageSize?: number; visibleWorkOrders?: string[] }) {
   const where: Prisma.PurchasePlanWhereInput = { AND: [filter.visibleWorkOrders ? { workOrderNumber: { in: filter.visibleWorkOrders } } : {}, filter.workOrderNumber ? { workOrderNumber: filter.workOrderNumber } : {}, filter.status ? { status: filter.status } : {}] }
   const total = await prisma.purchasePlan.count({ where })
-  const pageSize = filter.pageSize ?? 50
+  const pageSize = filter.pageSize ?? DEFAULT_PAGE_SIZE
   const page = Math.min(filter.page ?? 1, Math.max(1, Math.ceil(total / pageSize)))
   const rows = await prisma.purchasePlan.findMany({ where, include: { planNode: include.planNode, items: { select: { convertedLineId: true, convertedLine: { select: { status: true } } } } }, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize })
   return { rows: rows.map(({ items, ...plan }) => ({ ...plan, progress: purchasePlanProgress(items) })), total, page, pageSize }
