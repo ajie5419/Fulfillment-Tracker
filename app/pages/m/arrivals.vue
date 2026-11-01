@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const requestFetch = useRequestFetch()
 import { toneOfVant } from '#shared/mobile-todo'
 
 /** 手机：到货确认（R10）。未到货的关键物料（缺料、超期的在前）/ 已到货；点一条进入确认页。仓库、使用部门、采购都可以确认 */
@@ -19,6 +20,7 @@ watch(keyword, (v) => {
 watch(q, (value) => { keyword.value = value })
 onBeforeUnmount(() => clearTimeout(timer))
 const list = usePagedList<PurchaseRow>('/api/purchases', {
+  read: (_url, options) => clientRequest('/api/purchases', options, requestFetch),
   key: 'purchase-mobile', mode: 'append', pageSize: ref(20),
   query: computed(() => ({ view: tab.value, q: q.value || undefined })),
 })

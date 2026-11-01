@@ -1,3 +1,4 @@
+import type { ClientBodyArgs, ClientResponse } from '../utils/transport'
 import { ISSUE_STATUS_TEXT as SHARED_ISSUE_STATUS_TEXT, ISSUE_SOURCE_TEXT as SHARED_ISSUE_SOURCE_TEXT, ISSUE_CATEGORY_TEXT as SHARED_ISSUE_CATEGORY_TEXT } from '#shared/issues'
 /** 异常页面共用：文案、颜色、操作按钮、上传照片。 */
 import { BOARD_COLOR as SHARED_BOARD_COLOR, BOARD_TEXT as SHARED_BOARD_TEXT } from '#shared/status'
@@ -35,9 +36,9 @@ export function useIssueOptions() {
 }
 
 /** 提交异常操作；body 里 undefined 的字段不改 */
-export function issueAction(id: string, action: IssueAction, body: Record<string, unknown>) {
-  const send = $fetch as unknown as (url: string, opts: { method: 'POST'; body: object }) => Promise<unknown>
-  return send(`/api/issues/${encodeURIComponent(id)}/${action}`, { method: 'POST', body })
+export function issueAction<A extends IssueAction>(id: string, action: A, body: ClientBodyArgs<`/api/issues/${string}/${A}`, 'POST'>[0]): Promise<ClientResponse<`/api/issues/${string}/${A}`, 'POST'>>
+export function issueAction(id: string, action: IssueAction, body: unknown) {
+  return sendClientRequest(`/api/issues/${encodeURIComponent(id)}/${action}`, { method: 'POST', body })
 }
 
 /** 上传照片（multipart，字段 file），返回 upload_file id */
@@ -45,7 +46,7 @@ export async function uploadPhotos(files: File[]): Promise<string[]> {
   if (!files.length) return []
   const form = new FormData()
   for (const f of files) form.append('file', f, f.name || 'photo')
-  const send = $fetch as unknown as (url: string, opts: { method: 'POST'; body: FormData }) => Promise<{ id: string }[]>
+  const send = clientRequest
   const saved = await send('/api/uploads', { method: 'POST', body: form })
   return saved.map((s) => s.id)
 }

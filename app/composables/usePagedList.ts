@@ -10,7 +10,7 @@ export function invalidatePagedList(key: string) {
  * for one filter identity; it does not implement another request cache. */
 export function usePagedList<T extends { id: string }, P extends PageResult<T> = PageResult<T>>(
   url: string,
-  options: { key: string; query: MaybeRefOrGetter<Record<string, unknown>>; mode?: 'replace' | 'append'; page?: Ref<number>; pageSize?: Ref<number>; enabled?: MaybeRefOrGetter<boolean> },
+  options: { key: string; query: MaybeRefOrGetter<Record<string, unknown>>; mode?: 'replace' | 'append'; page?: Ref<number>; pageSize?: Ref<number>; enabled?: MaybeRefOrGetter<boolean>; read: (url: string, options: { query: Record<string, unknown>; signal: AbortSignal }) => Promise<P> },
 ) {
   const revision = useState<number>(`paged:${options.key}:revision`, () => 0)
   const reconciled = useState<number>(`paged:${options.key}:reconciled`, () => 0)
@@ -43,7 +43,7 @@ export function usePagedList<T extends { id: string }, P extends PageResult<T> =
     if (append) page.value = 1
   }, { immediate: true, flush: 'sync' })
   const query = computed(() => ({ ...toValue(options.query), page: page.value, pageSize: pageSize.value }))
-  const read = useRequestFetch() as unknown as (url: string, opts: { query: Record<string, unknown>; signal: AbortSignal }) => Promise<P>
+  const read = options.read
   const request = useAsyncData(
     computed(() => `${options.key}:${enabled.value}:${scope.value}:${page.value}`),
     async (_app, { signal }) => {

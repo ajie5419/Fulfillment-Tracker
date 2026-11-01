@@ -110,8 +110,7 @@ it('mobile issue deep-link detail fetch forwards the SSR request', () => {
   const source = readFileSync('app/pages/m/issues.vue', 'utf8')
   expect(source).toContain('const requestFetch = useRequestFetch()')
   const fetcher = source.slice(source.indexOf('await useAsyncData<Detail'), source.indexOf('watch([tab, selected]'))
-  expect(fetcher).toContain('(requestFetch as unknown as')
-  expect(fetcher).toContain('encodeURIComponent(selected.value)')
+  expect(fetcher).toContain('clientRequest(`/api/issues/${encodeURIComponent(selected.value)}`, undefined, requestFetch)')
   expect(fetcher).not.toContain('$fetch')
 })
 
@@ -147,6 +146,6 @@ it('release drawer forwards the scoped request through its detail helper', () =>
   expect(source).toContain('const requestFetch = useRequestFetch()')
   expect(source).toContain('fetchRelease(id, requestFetch)')
   const helper = readFileSync('app/composables/useReleases.ts', 'utf8')
-  expect(helper).toContain('fetchRelease(id: string, request?: (url: string) => Promise<unknown>)')
-  expect(helper).toContain('const get = (request ?? $fetch) as')
+  expect(helper).toContain('fetchRelease(id: string, request?: ClientFetch)')
+  expect(helper).toContain('clientRequest(`/api/releases/${encodeURIComponent(id)}`, undefined, request)')
 })

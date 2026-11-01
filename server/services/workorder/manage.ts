@@ -76,7 +76,7 @@ async function withConflictText<T>(p: Promise<T>): Promise<T> {
 /** 本地副本：不存在或已删除 → 404 */
 async function loadLocal(db: ManageDb, workOrderNumber: string) {
   const wo = await db.qmsWorkOrder.findUnique({ where: { workOrderNumber } })
-  if (!wo || wo.isDeleted) throw new FlowHttpError('工单不存在', 404)
+  if (!wo || wo.isDeleted) throw new FlowHttpError('工单不存在', 404, 'NOT_FOUND')
   return wo
 }
 

@@ -16,10 +16,12 @@ import { CONFIRM_TONE } from '~/utils/plan-status'
  * 地址栏 ?node= 定位节点（W9 提醒、任务待办跳过来）。所有人可见（看不到的工单接口会拒绝；手里有接收待办的部门负责人例外，见 server/utils/auth.ts）。
  */
 import dayjs, { type Dayjs } from 'dayjs'
+import type { ClientResponse } from '../utils/transport'
+import type { BusinessDeptCode } from '#shared/business-depts'
 import { BUSINESS_DEPT_OPTIONS } from '#shared/business-depts'
 
 import { factoryDay } from '#shared/mobile-todo'
-import type { PlanNodeRow, PlanView } from '#shared/plan-view'
+import type { PlanNodeRow } from '#shared/plan-view'
 
 const DEPTS = BUSINESS_DEPT_OPTIONS
 const DRIVER_TEXT: Record<string, string> = { self: '', task: '挂靠任务拖后', prev: '前置节点顺延', today: '计划日已过仍未完成', actual: '' }
@@ -32,10 +34,10 @@ const route = useRoute()
 const wo = computed(() => props.wo)
 const focusNode = ref<string | null>((route.query.node as string) || null)
 
-const get = $fetch as unknown as <T>(url: string, opts?: { query?: object }) => Promise<T>
-const send = $fetch as unknown as <T = unknown>(url: string, opts: { method: 'POST' | 'PATCH' | 'DELETE'; body?: object }) => Promise<T>
+const get = clientRequest
+const send = clientRequest
 
-const data = ref<PlanView | null>(null)
+const data = ref<ClientResponse<'/api/plan', 'GET'> | null>(null)
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 async function load() {
@@ -46,7 +48,7 @@ async function load() {
   loading.value = true
   loadError.value = null
   try {
-    data.value = await get<PlanView>('/api/plan', { query: { workOrderNumber: wo.value } })
+    data.value = await get('/api/plan', { query: { workOrderNumber: wo.value } })
     if (focusNode.value && data.value.nodes.some((n) => n.id === focusNode.value)) {
       reveal(focusNode.value)
       expanded.value = [focusNode.value]
@@ -92,7 +94,7 @@ const templateId = ref<string | undefined>()
 watch(templates, (list) => (templateId.value ??= list[0]?.id), { immediate: true })
 function generate() {
   if (!templateId.value) return message.warning('请选择模板')
-  const run = () => act(() => send<{ created: number }>('/api/plan/generate', { method: 'POST', body: { workOrderNumber: wo.value, templateId: templateId.value } }), (r) => `已生成 ${r.created} 个节点`)
+  const run = () => act(() => send('/api/plan/generate', { method: 'POST', body: { workOrderNumber: wo.value, templateId: templateId.value as string } }), (r) => `已生成 ${r.created} 个节点`)
   if (!data.value?.nodes.length) return run()
   Modal.confirm({ title: '按模板重新生成？', content: '现有节点会被替换，挂在上面的部门记录变成未挂', onOk: run })
 }
@@ -104,7 +106,7 @@ function publish() {
     content: '发布后当前计划日记为基线，各责任部门负责人在“部门计划”里接收本部门的节点、分解任务；之后改日期、加删节点都要写原因。已发布工单新建部门记录必须选所属节点。',
     onOk: () =>
       act(
-        () => send<{ todos: number; deptsWithoutHead: string[] }>('/api/plan/publish', { method: 'POST', body: { workOrderNumber: wo.value } }),
+        () => send('/api/plan/publish', { method: 'POST', body: { workOrderNumber: wo.value } }),
         (r) => `已发布，发出 ${r.todos} 条接收待办${r.deptsWithoutHead.length ? `（${r.deptsWithoutHead.join('、')}没有负责人，没人收到）` : ''}`,
       ),
   })
@@ -115,7 +117,7 @@ const editOpen = ref(false)
 const editing = ref<PlanNodeRow | null>(null)
 const form = reactive<{
   name: string
-  dept: string
+  dept: BusinessDeptCode
   phase: string
   startDate: Dayjs | undefined
   planDate: Dayjs | undefined
@@ -191,8 +193,8 @@ async function saveNode() {
     reason: form.reason || null,
   }
   const ok = await act(
-    () => (editing.value ? send<{ reconfirm?: boolean }>(`/api/plan/nodes/${editing.value.id}`, { method: 'PATCH', body }) : send<{ reconfirm?: boolean }>('/api/plan/nodes', { method: 'POST', body: { workOrderNumber: wo.value, ...body } })),
-    (r) => (r.reconfirm || (!editing.value && published.value) ? '已保存，已重新请责任部门接收' : '已保存'),
+    () => (editing.value ? send(`/api/plan/nodes/${editing.value.id}`, { method: 'PATCH', body }) : send('/api/plan/nodes', { method: 'POST', body: { workOrderNumber: wo.value, ...body } })),
+    (r) => (('reconfirm' in r && r.reconfirm) || (!editing.value && published.value) ? '已保存，已重新请责任部门接收' : '已保存'),
   )
   if (ok) editOpen.value = false
 }

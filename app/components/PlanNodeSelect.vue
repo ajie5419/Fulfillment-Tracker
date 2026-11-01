@@ -20,7 +20,7 @@ const props = withDefaults(
 const value = defineModel<string | null | undefined>('value')
 const emit = defineEmits<{ pick: [planDate: string] }>()
 
-const get = useRequestFetch() as unknown as <T>(url: string, opts?: { query?: object }) => Promise<T>
+const requestFetch = useRequestFetch()
 const opts = ref<{ published: boolean; nodes: Opt[] }>({ published: false, nodes: [] })
 async function load() {
   const wo = props.workOrderNumber
@@ -30,7 +30,7 @@ async function load() {
   }
   let next: { published: boolean; nodes: Opt[] }
   try {
-    next = await get('/api/plan/options', { query: { workOrderNumber: wo } })
+    next = await clientRequest('/api/plan/options', { query: { workOrderNumber: wo } }, requestFetch)
   } catch {
     next = { published: false, nodes: [] }
   }

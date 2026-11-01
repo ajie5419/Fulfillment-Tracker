@@ -1,3 +1,4 @@
+import { clientErrorMessage } from '../utils/transport'
 import { STEP_STATUS_TEXT as SHARED_STEP_STATUS_TEXT, STEP_MODE_TEXT as SHARED_STEP_MODE_TEXT, FLOW_EVENT_TEXT as SHARED_FLOW_EVENT_TEXT, FLOW_SOURCE_TEXT as SHARED_FLOW_SOURCE_TEXT } from '#shared/flow'
 /** 外协主链路页面共用：文案、颜色、接口错误信息、主数据下拉。 */
 
@@ -13,8 +14,7 @@ export type StepModeKey = keyof typeof MODE_TEXT
 
 /** 接口返回的中文错误信息 */
 export function apiError(e: unknown): string {
-  const data = (e as { data?: { message?: string; statusMessage?: string } })?.data
-  return data?.message || data?.statusMessage || (e as Error)?.message || '操作失败'
+  return clientErrorMessage(e)
 }
 
 /** 'YYYY-MM-DD'；日期字段存的是当天 UTC 零点 */

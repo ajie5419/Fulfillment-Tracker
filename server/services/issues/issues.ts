@@ -174,12 +174,12 @@ const RULES: Record<Action, { from: IssueStatus[]; verb: string; denied: string 
   reject: { from: ['RESOLVED'], verb: '退回', denied: '只有上报人、该工单项目经理、项目部负责人或管理员可以退回' },
 }
 
-/** 读出异常，检查状态和权限。状态不对 → 400；无权 → 403 */
+/** 读出异常，检查状态和权限。状态不对 → 409；无权 → 403 */
 async function guard(tx: Tx, id: string, actor: Actor, action: Action) {
   const issue = await tx.issue.findUnique({ where: { id } })
-  if (!issue) throw new FlowError('异常不存在')
+  if (!issue) throw new FlowError('异常不存在', 'NOT_FOUND')
   const rule = RULES[action]
-  if (!rule.from.includes(issue.status)) throw new FlowError(`该异常当前是"${STATUS_TEXT[issue.status]}"，不能${rule.verb}，请刷新`)
+  if (!rule.from.includes(issue.status)) throw new FlowError(`该异常当前是"${STATUS_TEXT[issue.status]}"，不能${rule.verb}，请刷新`, 'CONFLICT')
   const ctx = await loadPermContext(tx, actor, [issue])
   if (!issuePermissions(issue, ctx)[action]) throw new FlowForbidden(rule.denied)
   return issue
@@ -188,7 +188,7 @@ async function guard(tx: Tx, id: string, actor: Actor, action: Action) {
 /** 乐观并发：只有状态仍是读到时的状态才更新；写日志。to 与原状态相同时（改派）日志不记状态 */
 async function move(tx: Tx, issue: Issue, to: IssueStatus, data: Prisma.IssueUncheckedUpdateManyInput, note: string | null, actorId: string | null) {
   const r = await tx.issue.updateMany({ where: { id: issue.id, status: issue.status }, data: { ...data, status: to } })
-  if (!r.count) throw new FlowError('状态已变化，请刷新')
+  if (!r.count) throw new FlowError('状态已变化，请刷新', 'CONFLICT')
   const changed = to !== issue.status
   await tx.issueLog.create({
     data: { issueId: issue.id, fromStatus: changed ? issue.status : null, toStatus: changed ? to : null, note, actorId },
@@ -221,9 +221,9 @@ async function assertSupplier(db: Db, category: IssueCategory, supplierId: strin
 /** 手工上报（来源 MANUAL）：按分类默认责任部门和责任人；照片只能用自己刚上传、还没被用过的 */
 export async function createIssue(input: NewIssueInput, reporterId: string) {
   const description = input.description.trim()
-  if (!description) throw new FlowError('请填写一句话描述')
+  if (!description) throw new FlowError('请填写一句话描述', 'VALIDATION')
   const photoIds = [...new Set(input.photoIds ?? [])]
-  if (photoIds.length > MAX_PHOTOS) throw new FlowError(`照片最多 ${MAX_PHOTOS} 张`)
+  if (photoIds.length > MAX_PHOTOS) throw new FlowError(`照片最多 ${MAX_PHOTOS} 张`, 'VALIDATION')
   return issueTransaction(async (tx) => {
     const wo = await tx.qmsWorkOrder.findFirst({ where: { workOrderNumber: input.workOrderNumber, isDeleted: false }, select: { workOrderNumber: true } })
     if (!wo) throw new FlowError('工单不存在或已删除')
@@ -438,7 +438,7 @@ export async function closeIssue(id: string, actor: Actor, note?: string | null)
 export async function addIssueNote(id: string, actor: Actor, note: string) {
   if (!note.trim()) throw new FlowError('请填写备注')
   const issue = await prisma.issue.findUnique({ where: { id }, select: { id: true } })
-  if (!issue) throw new FlowError('异常不存在')
+  if (!issue) throw new FlowError('异常不存在', 'NOT_FOUND')
   await prisma.issueLog.create({ data: { issueId: id, note: note.trim(), actorId: actor.userId } })
   return { ok: true }
 }
@@ -578,7 +578,7 @@ export async function listIssues(filter: IssueFilter, actor: Actor, now = new Da
 /** 详情：附处理日志（时间线）、照片地址 */
 export async function getIssue(id: string, actor: Actor, now = new Date()) {
   const issue = await prisma.issue.findUnique({ where: { id }, include: { logs: { orderBy: { createdAt: 'asc' } } } })
-  if (!issue) throw new FlowError('异常不存在')
+  if (!issue) throw new FlowError('异常不存在', 'NOT_FOUND')
   const [row] = await decorate([issue], actor, now)
   const names = await loadNames({ user: issue.logs.map((l) => l.actorId) })
   const photoIds = Array.isArray(issue.photos) ? (issue.photos as string[]) : []

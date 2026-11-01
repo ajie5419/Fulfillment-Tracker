@@ -69,12 +69,12 @@ export interface ProcessLog {
 
 /** 绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"） */
 export function processAction(id: string, body: { kind: ProcessKind; action: ProcessAction; note?: string | null }) {
-  const send = $fetch as unknown as (u: string, o: { method: string; body: object }) => Promise<{ id: string; status: string; statusText: string }>
+  const send = clientRequest
   return send(`/api/process/${encodeURIComponent(id)}/action`, { method: 'POST', body })
 }
 
 export function fetchProcessLogs(id: string) {
-  const get = $fetch as unknown as (u: string) => Promise<{ id: string; componentName: string; workOrderNumber: string; logs: ProcessLog[] }>
+  const get = clientRequest
   return get(`/api/process/${encodeURIComponent(id)}/logs`)
 }
 

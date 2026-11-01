@@ -9,3 +9,6 @@ export default defineFlowHandler(async (event) => {
   if (q.workOrderNumber) await assertCanSee(event, q.workOrderNumber)
   return paymentStats({ workOrderNumber: q.workOrderNumber || undefined, visibleWorkOrders: scopeWorkOrders(await getScope(event)) })
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestQuery = z.input<typeof query>

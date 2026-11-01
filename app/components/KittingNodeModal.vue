@@ -33,7 +33,7 @@ async function loadOptions(wo: string | undefined) {
   if (!wo) return
   loadingOptions.value = true
   try {
-    const get = $fetch as unknown as (u: string, o: { query: object }) => Promise<Options>
+    const get = clientRequest
     const r = await get('/api/kitting/options', { query: { workOrderNumber: wo } })
     // 打开期间又换了工单：丢掉旧结果
     if (form.workOrderNumber === wo) options.value = r
@@ -104,7 +104,7 @@ async function submit() {
   if (!form.workOrderNumber) return message.warning('请选择工单')
   if (!form.name.trim()) return message.warning('请填写节点名称')
   if (!form.needDate) return message.warning('请选择需求日')
-  const body: Record<string, unknown> = {
+  const body = {
     name: form.name.trim(),
     needDate: form.needDate,
     planNodeId: form.planNodeId ?? null,
@@ -117,12 +117,12 @@ async function submit() {
   saving.value = true
   try {
     if (props.node) {
-      const r = await kittingSend<{ id: string; percent: number | null; ready: number; total: number; planWarning?: string | null }>(`/api/kitting/${props.node.id}`, 'PATCH', body)
+      const r = await kittingSend(`/api/kitting/${props.node.id}`, 'PATCH', body)
       message.success(r.total ? `已保存，齐套 ${r.ready}/${r.total}（${r.percent}%）` : '已保存（清单为空）')
       if (r.planWarning) message.warning(r.planWarning)
       emit('done', props.node.id)
     } else {
-      const r = await kittingSend<{ id: string; planWarning?: string | null }>('/api/kitting', 'POST', { ...body, workOrderNumber: form.workOrderNumber })
+      const r = await kittingSend('/api/kitting', 'POST', { ...body, workOrderNumber: form.workOrderNumber })
       message.success('已新建装配节点')
       if (r.planWarning) message.warning(r.planWarning)
       emit('done', r.id)

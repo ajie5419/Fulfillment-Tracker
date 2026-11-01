@@ -19,3 +19,6 @@ export default defineFlowHandler(async (event) => {
   requireDevTools(event)
   return createDemoInspection(await parseBody(event, body))
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestBody = z.input<typeof body>

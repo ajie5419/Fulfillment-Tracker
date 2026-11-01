@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, effectScope, nextTick, ref, shallowRef, toValue, watch, type EffectScope } from 'vue'
-import { invalidatePagedList, usePagedList } from '../../app/composables/usePagedList'
+import { invalidatePagedList, usePagedList as originalUsePagedList } from '../../app/composables/usePagedList'
+
+// Request binding is supplied by the domain; the adapter still owns only page state.
+function usePagedList<T extends { id: string }>(url: string, options: Omit<Parameters<typeof originalUsePagedList<T>>[1], 'read'>) {
+  return originalUsePagedList<T>(url, { ...options, read: (path, opts) => useRequestFetch()<import('../../shared/pagination').PageResult<T>, string>(path, opts) })
+}
 
 type Row = { id: string }
 const reads: { query: Record<string, unknown>; resolve: (rows: Row[], total?: number, page?: number) => void; reject: () => void }[] = []

@@ -29,3 +29,6 @@ export default defineFlowHandler(async (event, user) => {
   const row = await saveUpload(useRuntimeConfig(event).uploadDir, buf, user.qmsUserId, 'bom')
   return { ...preview, fileId: row.id }
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestBody = z.input<typeof body>

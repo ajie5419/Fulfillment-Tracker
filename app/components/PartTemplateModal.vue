@@ -8,8 +8,8 @@ const props = defineProps<{ target: { partId: string; partName: string; mode: 'a
 const emit = defineEmits<{ close: []; done: [] }>()
 
 interface TemplateRow { id: string; name: string; description: string | null; steps: { processName: string; mode: StepModeKey; supplierName: string | null; defaultDays: number | null }[] }
-const get = useRequestFetch() as unknown as (url: string) => Promise<TemplateRow[]>
-const post = $fetch as unknown as (url: string, opts: { method: 'POST'; body: object }) => Promise<{ copied?: number }>
+const requestFetch = useRequestFetch()
+const post = clientRequest
 
 const templates = ref<TemplateRow[]>([])
 const form = reactive({ templateId: undefined as string | undefined, startDate: undefined as string | undefined, name: '', description: '' })
@@ -22,7 +22,7 @@ watch(
     Object.assign(form, { templateId: undefined, startDate: undefined, name: '', description: '' })
     if (t.mode === 'apply') {
       try {
-        templates.value = await get('/api/templates')
+        templates.value = await clientRequest('/api/templates', undefined, requestFetch)
       } catch (e) {
         message.error(apiError(e))
       }

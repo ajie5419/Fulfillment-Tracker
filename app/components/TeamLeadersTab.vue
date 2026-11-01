@@ -11,7 +11,7 @@ const { data, pending, error, refresh } = await useFetch<Row[]>('/api/team-leade
 const canEdit = computed(() => !!me.value && (me.value.isAdmin || !!me.value.can?.teamLeader))
 const userOptions = computed(() => master.value.users.map((u) => ({ value: u.id, label: `${u.name}（${u.department}）` })))
 const saving = ref<string | null>(null)
-const send = $fetch as unknown as (url: string, opts: { method: 'PUT'; body: object }) => Promise<unknown>
+const send = clientRequest
 
 async function save(r: Row, userId: string | null) {
   saving.value = r.teamId

@@ -17,3 +17,6 @@ export default defineAdminHandler(async (event) => {
   if (!r.success) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: '规则只能是 W1–W11' })
   return saveThreshold(r.data, await parseBody(event, body))
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestBody = z.input<typeof body>
