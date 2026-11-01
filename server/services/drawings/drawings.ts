@@ -61,12 +61,19 @@ export const drawingTx = purchaseTx
 
 const uniq = <T>(xs: T[]) => [...new Set(xs)]
 
+/** lockTask 专用的不存在标记；保留无 code 的 FlowError，其他调用方仍按原来的 400 映射。 */
+export class DrawingTaskNotFoundError extends FlowError {
+  constructor() {
+    super('设计任务不存在')
+  }
+}
+
 /** 先锁关联工件（及 alsoParts，如编辑后要关联的新工件），再锁设计任务行并读最新数据 */
 export async function lockTask(tx: Tx, id: string, alsoParts: string[] = []): Promise<TaskWithParts> {
   const cur = await tx.drawingTaskPart.findMany({ where: { taskId: id }, select: { partId: true } })
   await lockParts(tx, [...cur.map((p) => p.partId), ...alsoParts])
   const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM drawing_task WHERE id = ${id} FOR UPDATE`
-  if (!rows.length) throw new FlowError('设计任务不存在')
+  if (!rows.length) throw new DrawingTaskNotFoundError()
   const task = await tx.drawingTask.findUniqueOrThrow({ where: { id }, include: { parts: { select: { partId: true } } } })
   // 极少见：锁之前关联工件刚被改过
   const extra = task.parts.map((p) => p.partId).filter((p) => !cur.some((c) => c.partId === p))
