@@ -54,7 +54,6 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
 
 <template>
   <a-table
-    v-else
     v-model:expanded-row-keys="expanded"
     :columns="columns"
     :data-source="tableRows"
