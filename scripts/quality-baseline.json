@@ -6,19 +6,14 @@
     "doubleAssertions": 6,
     "nonNullAssertions": 249,
     "duplicateStatusDictionaryGroups": 0,
-    "runtimeCycleGroups": 1,
+    "runtimeCycleGroups": 0,
     "oversizedFiles": 1
   },
-  "runtimeCycles": [
-    [
-      "server/services/flow/responsible.ts",
-      "server/utils/auth.ts"
-    ]
-  ],
+  "runtimeCycles": [],
   "oversizedFiles": [
     {
       "file": "server/services/plan/plan.ts",
-      "lines": 874
+      "lines": 878
     }
   ]
 }

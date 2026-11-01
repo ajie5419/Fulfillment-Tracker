@@ -7,7 +7,7 @@ import { ALERT_LEVEL_TEXT as LEVEL_LABEL } from '#shared/alert-rules'
  * 原有操作全部保留：待办的登记发出 / 开工 / 签收 / 确认变更影响 / 去确认 / 转交，提醒的点开（标已读并跳转）、标已读、全部已读，
  * 每日汇总和同步故障置顶。
  */
-import type { PartDetail } from '~~/server/services/flow/steps'
+import type { PartDetail } from '#shared/flow-view'
 import { WORK_BUCKET_TEXT, factoryTimeText, groupByBucket, type WorkBucket } from '#shared/workbench'
 
 const route = useRoute()

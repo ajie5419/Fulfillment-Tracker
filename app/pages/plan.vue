@@ -6,7 +6,7 @@
  *   带 ?wo（&node= 定位节点）：该工单的总计划编制 / 发布 / 调整（PlanEditor；接收、分解在部门计划页 /dept-plan）。
  *   提醒、待办、W9 通知里的链接一直是 /plan?wo=&node=，直接落在这里；旧的 /wo/:no?tab=plan 跳过来。
  */
-import type { PlanListStatus } from '~~/server/services/plan/list'
+import type { PlanListStatus } from '#shared/plan'
 
 const route = useRoute()
 const router = useRouter()

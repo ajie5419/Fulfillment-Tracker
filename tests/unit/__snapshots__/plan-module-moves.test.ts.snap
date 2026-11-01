@@ -1,0 +1,295 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`plan/constants 搬移前固定输入 / 固定输出 > 前置、层级、拓扑、余量、影响范围、大纲与最后一级节点 1`] = `
+{
+  "downstream": Map {
+    "A" => [],
+    "C" => [
+      "A",
+    ],
+    "B" => [
+      "A",
+      "C",
+    ],
+  },
+  "float": 2,
+  "kids": Map {
+    "A" => [
+      "C",
+    ],
+    "C" => [],
+    "B" => [],
+  },
+  "last": "B",
+  "order": [
+    "A",
+    "C",
+    "B",
+  ],
+  "outline": Map {
+    "A" => "1.1",
+    "C" => "1.1.1",
+    "B" => "1.2",
+  },
+  "parents": Map {
+    "A" => null,
+    "B" => null,
+    "C" => "A",
+  },
+  "preds": Map {
+    "A" => [],
+    "C" => [
+      "B",
+    ],
+    "B" => [
+      "A",
+    ],
+  },
+  "topo": null,
+  "waits": Map {
+    "A" => [
+      "C",
+    ],
+    "C" => [
+      "B",
+    ],
+    "B" => [
+      "A",
+    ],
+  },
+}
+`;
+
+exports[`plan/constants 搬移前固定输入 / 固定输出 > 各任务事实、估算、排除、未知完成日及自动完成 1`] = `
+{
+  "auto": {
+    "day": "2027-01-01",
+    "done": true,
+  },
+  "estimates": [
+    {
+      "expectedDay": "2026-12-29",
+      "lateForNode": true,
+      "overdue": false,
+    },
+    {
+      "expectedDay": null,
+      "lateForNode": false,
+      "overdue": false,
+    },
+    {
+      "expectedDay": "2027-01-01",
+      "lateForNode": true,
+      "overdue": false,
+    },
+    {
+      "expectedDay": "2026-12-31",
+      "lateForNode": true,
+      "overdue": false,
+    },
+    {
+      "expectedDay": "2027-01-01",
+      "lateForNode": false,
+      "overdue": true,
+    },
+  ],
+  "facts": [
+    {
+      "done": true,
+      "doneDay": "2026-12-29",
+      "excluded": false,
+      "id": "D",
+      "kind": "drawing",
+      "planDay": "2027-01-02",
+    },
+    {
+      "done": false,
+      "doneDay": null,
+      "excluded": true,
+      "id": "P",
+      "kind": "purchase",
+      "planDay": "2026-12-30",
+    },
+    {
+      "done": true,
+      "doneDay": "2027-01-01",
+      "excluded": false,
+      "id": "S",
+      "kind": "step",
+      "planDay": "2026-12-31",
+    },
+    {
+      "done": true,
+      "doneDay": "2026-12-31",
+      "excluded": false,
+      "id": "K",
+      "kind": "assembly",
+      "planDay": "2027-01-02",
+    },
+    {
+      "done": false,
+      "doneDay": null,
+      "excluded": false,
+      "id": "T",
+      "kind": "task",
+      "planDay": "2026-12-30",
+    },
+  ],
+}
+`;
+
+exports[`plan/constants 搬移前固定输入 / 固定输出 > 源头延误、顺延、余量与交期预测 1`] = `
+{
+  "delayedNodes": 2,
+  "deliveryDelayDays": 3,
+  "expectedDelivery": "2027-01-03",
+  "lastNodeId": "B",
+  "nodes": [
+    {
+      "actualDay": null,
+      "children": [],
+      "delayDays": 3,
+      "done": false,
+      "doneBy": null,
+      "doneCount": 0,
+      "driver": "task",
+      "expectedDay": "2027-01-02",
+      "id": "A",
+      "lateCount": 1,
+      "overdueCount": 0,
+      "preds": [],
+      "pushedBy": null,
+      "selfDelayDays": 3,
+      "selfDriver": "task",
+      "selfExpectedDay": "2027-01-02",
+      "slackDays": -3,
+      "source": true,
+      "taskCount": 1,
+      "tasks": [
+        {
+          "done": false,
+          "doneDay": null,
+          "excluded": false,
+          "expectedDay": "2027-01-02",
+          "id": "P",
+          "kind": "purchase",
+          "lateForNode": true,
+          "overdue": false,
+          "planDay": "2027-01-02",
+        },
+      ],
+      "upstream": false,
+    },
+    {
+      "actualDay": null,
+      "children": [],
+      "delayDays": 3,
+      "done": false,
+      "doneBy": null,
+      "doneCount": 0,
+      "driver": "prev",
+      "expectedDay": "2027-01-03",
+      "id": "B",
+      "lateCount": 0,
+      "overdueCount": 0,
+      "preds": [
+        "A",
+      ],
+      "pushedBy": "A",
+      "selfDelayDays": 0,
+      "selfDriver": "self",
+      "selfExpectedDay": "2026-12-31",
+      "slackDays": -3,
+      "source": false,
+      "taskCount": 0,
+      "tasks": [],
+      "upstream": true,
+    },
+  ],
+  "sourceNodes": 1,
+}
+`;
+
+exports[`plan/constants 搬移前固定输入 / 固定输出 > 环兜底仍按原顺序一条主线估算 1`] = `
+[
+  {
+    "actualDay": null,
+    "children": [],
+    "delayDays": 3,
+    "done": false,
+    "doneBy": null,
+    "doneCount": 0,
+    "driver": "task",
+    "expectedDay": "2027-01-02",
+    "id": "A",
+    "lateCount": 1,
+    "overdueCount": 0,
+    "preds": [],
+    "pushedBy": null,
+    "selfDelayDays": 3,
+    "selfDriver": "task",
+    "selfExpectedDay": "2027-01-02",
+    "slackDays": null,
+    "source": true,
+    "taskCount": 1,
+    "tasks": [
+      {
+        "done": false,
+        "doneDay": null,
+        "excluded": false,
+        "expectedDay": "2027-01-02",
+        "id": "P",
+        "kind": "purchase",
+        "lateForNode": true,
+        "overdue": false,
+        "planDay": "2027-01-02",
+      },
+    ],
+    "upstream": false,
+  },
+  {
+    "actualDay": null,
+    "children": [],
+    "delayDays": 3,
+    "done": false,
+    "doneBy": null,
+    "doneCount": 0,
+    "driver": "prev",
+    "expectedDay": "2027-01-03",
+    "id": "B",
+    "lateCount": 0,
+    "overdueCount": 0,
+    "preds": [
+      "A",
+    ],
+    "pushedBy": "A",
+    "selfDelayDays": 0,
+    "selfDriver": "self",
+    "selfExpectedDay": "2026-12-31",
+    "slackDays": null,
+    "source": false,
+    "taskCount": 0,
+    "tasks": [],
+    "upstream": true,
+  },
+]
+`;
+
+exports[`plan/constants 搬移前固定输入 / 固定输出 > 预警级别与文案 1`] = `
+{
+  "critical": [
+    true,
+    true,
+  ],
+  "delayed": [
+    true,
+    true,
+  ],
+  "delivery": "合同交期 2026-12-31，按总计划预计 2027-01-03 交付，拖期 3 天；源头延误节点：采购",
+  "plan": "RED",
+  "split": "REMIND",
+  "summary": "计划 2026-12-30，预计 2027-01-02 完成，晚 3 天（部门任务延误）",
+  "w9": "RED",
+  "warning": "到货日 2027-01-02 晚于总计划节点"采购"的计划日 2026-12-30（晚 3 天），已保存，总计划里会标红",
+}
+`;

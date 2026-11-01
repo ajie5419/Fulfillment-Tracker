@@ -22,10 +22,8 @@
 import type { AlertLevel } from '@prisma/client'
 import type { AlertRuleKey } from '../../../shared/alert-rules'
 
-export const HOUR_MS = 3_600_000
-export const DAY_MS = 86_400_000
-/** Asia/Shanghai 固定 UTC+8（1991 年起不用夏令时），按偏移直接算日界，比逐日调 Intl 简单 */
-const TZ_OFFSET_MS = 8 * HOUR_MS
+import { HOUR_MS, DAY_MS, shanghaiDay, shanghaiDayStart, dateFieldDay, dayDiff, elapsedExcludingOffDays } from '../../../shared/dates'
+export { HOUR_MS, DAY_MS, shanghaiDay, shanghaiDayStart, dateFieldDay, dayDiff, elapsedExcludingOffDays } from '../../../shared/dates'
 
 export type ScanRule = AlertRuleKey
 
@@ -72,39 +70,6 @@ export function maxLevel(a: AlertLevel | null, b: AlertLevel | null): AlertLevel
 export const isHigher = (next: AlertLevel, prev: AlertLevel) => RANK[next] > RANK[prev]
 
 // ───────────── 日期与计时 ─────────────
-
-/** 工厂时区里 t 所在的那一天，'YYYY-MM-DD' */
-export function shanghaiDay(t: Date | number): string {
-  return new Date(+t + TZ_OFFSET_MS).toISOString().slice(0, 10)
-}
-
-/** 工厂时区某天 00:00 的时刻（毫秒） */
-export function shanghaiDayStart(day: string): number {
-  return Date.parse(`${day}T00:00:00.000Z`) - TZ_OFFSET_MS
-}
-
-/** 日期字段（存为当天 UTC 零点）→ 'YYYY-MM-DD' */
-export const dateFieldDay = (d: Date) => d.toISOString().slice(0, 10)
-
-/** 两个 'YYYY-MM-DD' 相差几天（b - a） */
-export const dayDiff = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY_MS)
-
-/**
- * from → to 经过的毫秒数，停工日（工厂时区的整天）不计入。to ≤ from 时为 0。
- * offDays 为 'YYYY-MM-DD'。只遍历停工日，不逐日遍历区间。
- */
-export function elapsedExcludingOffDays(from: Date | number, to: Date | number, offDays: Iterable<string>): number {
-  const a = +from
-  const b = +to
-  if (!(b > a)) return 0
-  let ms = b - a
-  for (const day of new Set(offDays)) {
-    const start = shanghaiDayStart(day)
-    const overlap = Math.min(b, start + DAY_MS) - Math.max(a, start)
-    if (overlap > 0) ms -= overlap
-  }
-  return ms
-}
 
 // ───────────── 判定 ─────────────
 

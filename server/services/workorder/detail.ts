@@ -1,3 +1,4 @@
+import type { WorkOrderDetail } from '../../../shared/workorder-view'
 /**
  * 工单详情（前端改版第一轮，以工单为中心的页面）：一个工单的总计划、各部门挂在节点上的记录、齐套、预警、异常聚合在一起。
  * 只读，不另立统计口径：
@@ -20,7 +21,7 @@ import { getPlan } from '../plan/plan'
 import { type NodeState, lagByDept, nodeState, sortActions, stuckNode } from '../../../shared/status'
 import { paymentText, pickMainAssembly, reasonCounts, taskListLink, taskState } from './rules'
 
-export async function getWorkOrderDetail(workOrderNumber: string, ctx: RoleContext, viewer: Viewer, visibleWorkOrders: string[] | undefined, now = new Date()) {
+export async function getWorkOrderDetail(workOrderNumber: string, ctx: RoleContext, viewer: Viewer, visibleWorkOrders: string[] | undefined, now = new Date()): Promise<WorkOrderDetail | null> {
   const wo = await prisma.qmsWorkOrder.findUnique({ where: { workOrderNumber } })
   if (!wo) return null
   const today = shanghaiDay(now)
@@ -180,4 +181,4 @@ export async function getWorkOrderDetail(workOrderNumber: string, ctx: RoleConte
   }
 }
 
-export type WorkOrderDetail = NonNullable<Awaited<ReturnType<typeof getWorkOrderDetail>>>
+export type { WorkOrderDetail } from '../../../shared/workorder-view'

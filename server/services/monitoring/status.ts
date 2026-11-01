@@ -1,3 +1,4 @@
+import type { MonitoredEntity, StatusSinceSource } from '../../../shared/monitoring'
 import type { MonitoringEntityType, MonitoringStatus, MonitoringLevel } from '../../../shared/monitoring'
 import { MONITORING_STEP_STATUSES, MONITORING_PART_STATUSES, MONITORING_STATUS_TEXT, monitoringDetailLink, monitoringListLink } from '../../../shared/monitoring'
 import { prisma } from '../../utils/prisma'
@@ -7,26 +8,9 @@ import { userDeptNames } from '../auth/departments'
 import { loadNames } from '../flow/names'
 import { resolveStepResponsibles } from '../flow/responsible'
 import { ACTIVE_WO_WHERE } from '../workorder/active'
-import { partStatusSince, residenceDays, stagnationLevel, stepStatusSince, type StatusSinceSource } from './rules'
+import { partStatusSince, residenceDays, stagnationLevel, stepStatusSince } from './rules'
 
-export interface MonitoredEntity {
-  entityType: MonitoringEntityType
-  id: string
-  partId: string
-  name: string
-  drawingNo: string | null
-  workOrderNumber: string
-  status: MonitoringStatus
-  statusText: string
-  since: Date
-  sinceSource: StatusSinceSource
-  days: number
-  level: MonitoringLevel
-  ownerIds: string[]
-  owners: { id: string; name: string | null }[]
-  deptNames: string[]
-  link: string
-}
+export type { MonitoredEntity } from '../../../shared/monitoring'
 
 /** 总览、下钻清单、W11 扫描唯一数据口径；只算仍在履约的工单下的非终态对象。 */
 export async function loadMonitoredEntities(now: Date, threshold: RuleThreshold, visibleWorkOrders?: string[]): Promise<MonitoredEntity[]> {

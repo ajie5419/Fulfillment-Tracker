@@ -1,4 +1,6 @@
 import { STEP_STATUS_TEXT as SHARED_STEP_STATUS_TEXT } from '../../../shared/flow'
+import { isPlanStartLate, planAdjustmentNeedsReason, isPlanAdjustmentReasonMissing } from '../../../shared/plan-validation'
+import { parseDay as parse } from '../../../shared/dates'
 /**
  * 项目部总计划（R14，总计划设计.md）：每个工单一份，按模板倒推生成 → 项目经理调整 → 发布（锁基线、各部门确认）→
  * 部门记录挂节点 → 预计完成日沿前置节点顺延（10-22 起支持多条线并行，默认前置 = 上一个节点）→ 预计交期 / 拖期天数、余量、W9 预警。
@@ -64,7 +66,6 @@ type Tx = Prisma.TransactionClient
 type Db = Tx | typeof prisma
 
 const day = (d: Date) => dateFieldDay(d)
-const parse = (d: string) => new Date(`${d}T00:00:00.000Z`)
 const STEP_STATUS_TEXT = SHARED_STEP_STATUS_TEXT
 
 // ───────────── 读：节点 + 挂靠任务 → 预计 ─────────────
@@ -485,7 +486,10 @@ async function assertNoCycle(tx: Tx, workOrderNumber: string) {
 }
 
 const startCheck = (start: Date | null | undefined, plan: Date) => {
-  if (start && day(start) > day(plan)) throw new FlowError(`计划开始日 ${day(start)} 不能晚于计划完成日 ${day(plan)}`)
+  if (!start) return
+  const startDay = day(start)
+  const planDay = day(plan)
+  if (isPlanStartLate(startDay, planDay)) throw new FlowError(`计划开始日 ${startDay} 不能晚于计划完成日 ${planDay}`)
 }
 
 /** 上级节点校验（只有一层）：同一工单、不是自己、上级自己不是子节点、本节点下面没有子节点。返回上级（null = 一级节点） */
@@ -540,7 +544,7 @@ const summaryDateCheck = (hasKids: boolean, changed: boolean, name: string) => {
 }
 
 const needReason = (published: boolean, reason: string | null | undefined, what: string) => {
-  if (published && !reason?.trim()) throw new FlowError(`总计划已发布，${what}要写调整原因`)
+  if (isPlanAdjustmentReasonMissing(planAdjustmentNeedsReason(published), reason)) throw new FlowError(`总计划已发布，${what}要写调整原因`)
 }
 
 /**
@@ -668,7 +672,7 @@ export async function updateNode(id: string, input: Partial<NodeInput>, actorId:
     const startChanged = input.startDate !== undefined && (input.startDate ? day(input.startDate) : null) !== (old.startDate ? day(old.startDate) : null)
     const hasKids = (await tx.planNode.count({ where: { parentId: id } })) > 0
     summaryDateCheck(hasKids, dateChanged || startChanged, old.name)
-    if (dateChanged) needReason(published, input.reason, '改计划日期')
+    if (planAdjustmentNeedsReason(published, day(old.planDate), input.planDate !== undefined ? day(input.planDate) : undefined)) needReason(published, input.reason, '改计划日期')
     const data: Prisma.PlanNodeUpdateInput = {}
     if (input.name !== undefined) data.name = input.name.trim()
     if (input.dept !== undefined) data.dept = input.dept

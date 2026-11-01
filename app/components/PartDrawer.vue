@@ -8,7 +8,7 @@
  */
 import { chainTones, type ChainTone } from '#shared/production'
 import { factoryDay } from '#shared/mobile-todo'
-import type { PartDetail } from '~~/server/services/flow/steps'
+import type { PartDetail } from '#shared/flow-view'
 
 const props = defineProps<{ partId: string | null; tab?: 'info' | 'timeline' | 'comments'; focusStepId?: string | null }>()
 const emit = defineEmits<{ close: []; changed: []; edit: [part: { id: string; workOrderNumber: string }] }>()

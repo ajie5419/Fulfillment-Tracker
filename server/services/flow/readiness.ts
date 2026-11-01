@@ -15,16 +15,8 @@ export interface PartPrereq {
   drawings: { status: DrawingTaskStatus; materialStatus: MaterialListStatus }[]
 }
 
-export interface PrereqState {
-  /** 挂了至少一项（未取消的）物料或设计任务 */
-  tracked: boolean
-  /** 还没到货的物料数 */
-  missingMaterial: number
-  /** 还没下发的料单数（修改中也未满足） */
-  missingMaterialList: number
-  /** 还没完成的设计任务数 */
-  missingDrawing: number
-}
+import type { PrereqState } from '../../../shared/flow-view'
+export type { PrereqState } from '../../../shared/flow-view'
 
 export function prereqState(p: PartPrereq): PrereqState {
   const lines = p.purchases.filter((s) => s !== 'CANCELLED')

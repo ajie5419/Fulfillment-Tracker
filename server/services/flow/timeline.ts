@@ -1,3 +1,4 @@
+import type { RelatedCounts } from '../../../shared/flow-view'
 import { FLOW_EVENT_TEXT as SHARED_FLOW_EVENT_TEXT, FLOW_SOURCE_TEXT as SHARED_FLOW_SOURCE_TEXT } from '../../../shared/flow'
 /**
  * 工件时间线和关联记录数（借鉴 ERPNext 单据的"活动"和顶部关联计数，10-26）。
@@ -117,11 +118,4 @@ export async function partRelatedCounts(partIds: string[]) {
   return out
 }
 
-export interface RelatedCounts {
-  drawings: number
-  drawingsDone: number
-  purchases: number
-  purchasesArrived: number
-  openIssues: number
-  comments: number
-}
+export type { RelatedCounts } from '../../../shared/flow-view'

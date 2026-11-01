@@ -11,7 +11,7 @@
  * 编辑 / 取消工单（履约新建工单 10-27，写入 QMS 工单库）：项目部、项目部负责人、管理员（me.can.workOrder）在顶栏看到"编辑工单""取消工单"；
  *   取消要二次确认，只取消不删除；已取消的工单不再显示这两个按钮。手机端不加入口。
  */
-import type { WorkOrderDetail } from '~~/server/services/workorder/detail'
+import type { WorkOrderDetail } from '#shared/workorder-view'
 import { BOARD_GROUP_TEXT, NODE_STATE_COLOR, NODE_STATE_TEXT, type NodeState, boardGroup, isClosedWorkOrder, woStatusText } from '#shared/status'
 import { deliveryBar, ganttRange, monthTicks, nodeBars, pct } from '#shared/gantt'
 

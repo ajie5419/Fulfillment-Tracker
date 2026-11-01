@@ -20,3 +20,24 @@ export function monitoringDetailLink(workOrderNumber: string, partId: string, st
   if (stepId) q.set('step', stepId)
   return `/parts?${q}`
 }
+
+export type StatusSinceSource = 'statusSince' | 'flowEvent' | 'startedAt' | 'createdAt'
+
+export interface MonitoredEntity {
+  entityType: MonitoringEntityType
+  id: string
+  partId: string
+  name: string
+  drawingNo: string | null
+  workOrderNumber: string
+  status: MonitoringStatus
+  statusText: string
+  since: Date
+  sinceSource: StatusSinceSource
+  days: number
+  level: MonitoringLevel
+  ownerIds: string[]
+  owners: { id: string; name: string | null }[]
+  deptNames: string[]
+  link: string
+}
