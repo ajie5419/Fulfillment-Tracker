@@ -3,6 +3,7 @@ import { prisma } from '../../utils/prisma'
 import { MAX_ISSUE_PHOTOS } from '../../../shared/upload-policy'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey, dateFieldDay } from '../alerts/rules'
+import { loadDeptIndex, resolveDeptName } from '../auth/departments'
 import { FlowError, FlowForbidden } from '../flow/errors'
 import { lockStep, restoreBlockedStep } from '../flow/flow'
 import { loadNames } from '../flow/names'
@@ -141,8 +142,11 @@ async function assignment(tx: Tx, issue: Issue, input: AssignInput) {
     if (input.responsibleDeptId && (!dept || dept.isDeleted)) throw new FlowError('责任部门不存在')
     data.responsibleDeptId = input.responsibleDeptId
     text.push(`责任部门 ${deptName(issue.responsibleDeptId)} → ${deptName(input.responsibleDeptId)}`)
-    // 换了部门、没指定责任人：默认新部门的负责人
-    if (userId === undefined) userId = await deptHeadOf(tx, dept?.name)
+    // 换了部门、没指定责任人：按业务部门名称查新部门的负责人
+    if (userId === undefined) {
+      const name = dept ? resolveDeptName(dept.id, await loadDeptIndex()) : null
+      userId = await deptHeadOf(tx, name)
+    }
   }
   if (userId !== undefined && userId !== issue.responsibleUserId) {
     if (userId) {

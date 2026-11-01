@@ -4,7 +4,7 @@ import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
 import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadNames } from '../flow/names'
-import { assertReleasable, lockTask, settleTask } from '../drawings/drawings'
+import { assertReleasable, DrawingTaskNotFoundError, lockTask, settleTask } from '../drawings/drawings'
 import { lockMaterialChangeParts, markRevisingByChange, markRevisingByVoid } from '../process/process'
 import { lockParts, refreshPartReady } from '../purchases/purchases'
 import { XLSX_MIME, applyTechBom, type TechBomResult } from '../bom/excel'
@@ -281,7 +281,10 @@ export async function voidRelease(id: string, actor: Actor) {
   // 关联了设计任务的：先锁任务（及其工件）再锁发放单，作废后任务回到"设计完成"，重新评估"可以开工"
   const taskId = (await prisma.release.findUnique({ where: { id }, select: { drawingTaskId: true } }))?.drawingTaskId ?? null
   return prisma.$transaction(async (tx) => {
-    const task = taskId ? await lockTask(tx, taskId).catch(() => null) : null
+    const task = taskId ? await lockTask(tx, taskId).catch((error: unknown) => {
+      if (error instanceof DrawingTaskNotFoundError) return null
+      throw error
+    }) : null
     const rel = await lockRelease(tx, id)
     if (!actor.isAdmin && rel.issuerId !== actor.userId) throw new FlowForbidden('只有发放人或管理员可以作废')
     if (rel.status === 'VOID') throw new FlowError('发放单已经作废了')
