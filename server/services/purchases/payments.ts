@@ -95,10 +95,6 @@ export async function deletePayment(id: string, actor: Actor) {
   })
 }
 
-export async function workOrderOfPayment(id: string) {
-  return (await prisma.paymentRequest.findUnique({ where: { id }, select: { workOrderNumber: true } }))?.workOrderNumber ?? null
-}
-
 /** 列表最多返回的条数 */
 const MAX_PAYMENT_ROWS = 500
 

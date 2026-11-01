@@ -1,8 +1,10 @@
+import { RELEASE_TYPE_TEXT as SHARED_RELEASE_TYPE_TEXT, RECEIPT_STATUS_TEXT as SHARED_RECEIPT_STATUS_TEXT } from '#shared/releases'
 /** 发放签收（R9）页面共用：文案、颜色、提交、上传附件。 */
+import { MAX_ATTACHMENT_BYTES as SHARED_MAX_ATTACHMENT_BYTES, MAX_RELEASE_ATTACHMENTS } from '#shared/upload-policy'
 
-export const RELEASE_TYPE_TEXT = { DRAWING: '图纸', CHANGE: '设计变更', PROCESS: '工艺文件' } as const
+export const RELEASE_TYPE_TEXT = SHARED_RELEASE_TYPE_TEXT
 export const RELEASE_TYPE_COLOR = { DRAWING: 'blue', CHANGE: 'volcano', PROCESS: 'default' } as const
-export const RECEIPT_STATUS_TEXT = { PENDING: '待签收', SIGNED: '已签收', REJECTED: '已拒收', CANCELLED: '已作废' } as const
+export const RECEIPT_STATUS_TEXT = SHARED_RECEIPT_STATUS_TEXT
 export const RECEIPT_STATUS_COLOR = { PENDING: 'orange', SIGNED: 'green', REJECTED: 'red', CANCELLED: 'default' } as const
 /** Vant 标签类型 */
 export const RECEIPT_STATUS_TYPE = { PENDING: 'warning', SIGNED: 'success', REJECTED: 'danger', CANCELLED: 'default' } as const
@@ -33,8 +35,8 @@ export interface ReleasePrefill {
 export type ReceiptStatusKey = keyof typeof RECEIPT_STATUS_TEXT
 
 /** 附件上限（与服务端一致），选择时先拦一道 */
-export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
-export const MAX_ATTACHMENTS = 5
+export const MAX_ATTACHMENT_BYTES = SHARED_MAX_ATTACHMENT_BYTES
+export const MAX_ATTACHMENTS = MAX_RELEASE_ATTACHMENTS
 
 /** POST 发放相关接口；绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"） */
 export function releasePost<T = unknown>(url: string, body: object = {}): Promise<T> {

@@ -564,11 +564,6 @@ export async function getLine(id: string, now = new Date(), amountVisible?: Amou
   return { ...row!, projectName: wo?.projectName ?? null, customerName: wo?.customerName ?? null }
 }
 
-/** 采购行所属工单（接口层做可见性检查用）；不存在时 null */
-export async function workOrderOfLine(id: string) {
-  return (await prisma.purchaseLine.findUnique({ where: { id }, select: { workOrderNumber: true } }))?.workOrderNumber ?? null
-}
-
 /** 我的待办里的"可以开工"：附上工件和第一道工序，页面按工序方式给"登记发出"或"开工"按钮 */
 export async function describeReadyTodos(partIds: string[]) {
   if (!partIds.length) return new Map<string, Awaited<ReturnType<typeof readyPart>>>()

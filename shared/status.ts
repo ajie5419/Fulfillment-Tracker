@@ -119,7 +119,6 @@ export function woStatusText(status: string | null | undefined): string {
 /** 项目总览按状态分组：预计拖期 / 有风险 / 正常 / 未建总计划（没有已发布的总计划） */
 export type BoardGroup = 'LATE' | 'RISK' | 'OK' | 'NO_PLAN'
 export const BOARD_GROUP_TEXT: Readonly<Record<BoardGroup, string>> = { LATE: '预计拖期', RISK: '有风险', OK: '正常', NO_PLAN: '未建总计划' }
-export const BOARD_GROUP_COLOR: Readonly<Record<BoardGroup, string>> = { LATE: STATUS_COLOR.late, RISK: STATUS_COLOR.risk, OK: STATUS_COLOR.done, NO_PLAN: STATUS_COLOR.none }
 
 /**
  * 分组规则：

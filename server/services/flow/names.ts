@@ -1,3 +1,4 @@
+import { STEP_MODE_TEXT as SHARED_STEP_MODE_TEXT } from '../../../shared/flow'
 /** 把 QMS 主数据 ID 翻译成名称，供列表展示。主数据表都不大，按需批量查。 */
 import { prisma } from '../../utils/prisma'
 
@@ -26,7 +27,7 @@ export async function loadNames(
   }
 }
 
-export const MODE_TEXT = { SELF: '自制', IN_PLANT_OUTSOURCE: '厂内外协', EXTERNAL_OUTSOURCE: '厂外外协' } as const
+export const MODE_TEXT = SHARED_STEP_MODE_TEXT
 
 /**
  * 用户所在部门的名称：QMS 的 users.department 存的是部门 ID，经 qms_department 换成名称。

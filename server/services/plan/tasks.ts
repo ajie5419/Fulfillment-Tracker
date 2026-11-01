@@ -131,12 +131,6 @@ export async function transferPlanTaskOwner(tx: Tx, id: string, toUserId: string
   await tx.planTask.updateMany({ where: { id }, data: { ownerId: toUserId } })
 }
 
-/** 任务所属工单、节点责任部门、负责人（接口层判断权限用） */
-export async function planTaskTarget(id: string) {
-  const t = await prisma.planTask.findUnique({ where: { id }, select: { workOrderNumber: true, ownerId: true, planNode: { select: { dept: true } } } })
-  return t ? { workOrderNumber: t.workOrderNumber, ownerId: t.ownerId, dept: t.planNode.dept } : null
-}
-
 /**
  * 把工序挂到节点（节点"分解"里的"挂工序"）：只能挂同一工单的工序；已挂别的节点的改挂到这个节点。
  * 工序日期晚于节点照样挂（总计划里标红）。

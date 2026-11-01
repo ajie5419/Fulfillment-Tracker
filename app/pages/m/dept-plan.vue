@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { CONFIRM_TONE } from '~/utils/plan-status'
+
 /**
  * 手机：部门计划（zhao 10-23）。和电脑端 /dept-plan 同一个接口：本部门在已发布项目计划里负责的节点，
  *   待接收：接收 / 退回（写原因）；执行中：看分解的任务、新增任务（名称 / 责任人 / 计划完成日）、任务负责人标完成。
@@ -121,7 +123,6 @@ async function saveTask() {
 const doneTask = (t: PlanTask) => run(() => send(`/api/plan/tasks/${t.id}/complete`, { method: 'POST', body: {} }), '已完成')
 
 const CONFIRM_TYPE = { PENDING: 'warning', CONFIRMED: 'success', REJECTED: 'danger' } as const
-const CONFIRM_TONE = { PENDING: 'risk', CONFIRMED: 'done', REJECTED: 'late' } as const
 const toneOf = (n: DeptPlanNode) => (n.done ? 'done' : !n.done && n.delayDays > 0 ? 'late' : n.confirmStatus ? CONFIRM_TONE[n.confirmStatus] : 'none')
 const md = (d: string | null) => (d ? d.slice(5) : '')
 </script>

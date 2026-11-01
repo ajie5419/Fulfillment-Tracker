@@ -1,3 +1,4 @@
+import { MATERIAL_STATUS_TEXT as SHARED_MATERIAL_STATUS_TEXT, PROCESS_STATUS_TEXT as SHARED_PROCESS_STATUS_TEXT } from '#shared/process'
 /** 工艺模块（料单、工艺状态，10-27）页面共用：文案、状态色、接口调用。与 server/services/process/constants.ts 一致 */
 import type { ProcessKind, ProcessAction } from '#shared/process'
 export type { ProcessKind, ProcessAction } from '#shared/process'
@@ -5,8 +6,8 @@ export type { ProcessKind, ProcessAction } from '#shared/process'
 export type MaterialStatusKey = 'NOT_STARTED' | 'DRAFTING' | 'REVISING' | 'ISSUED'
 export type ProcessStatusKey = 'NONE' | 'DRAFTING' | 'REVISING' | 'ISSUED'
 
-export const MATERIAL_STATUS_TEXT: Record<MaterialStatusKey, string> = { NOT_STARTED: '未开始', DRAFTING: '编制中', REVISING: '修改中', ISSUED: '已下发' }
-export const PROCESS_STATUS_TEXT: Record<ProcessStatusKey, string> = { NONE: '无', DRAFTING: '编制中', REVISING: '修改中', ISSUED: '已下发' }
+export const MATERIAL_STATUS_TEXT: Record<MaterialStatusKey, string> = SHARED_MATERIAL_STATUS_TEXT
+export const PROCESS_STATUS_TEXT: Record<ProcessStatusKey, string> = SHARED_PROCESS_STATUS_TEXT
 
 export const PROCESS_KIND_TEXT: Record<ProcessKind, string> = { MATERIAL: '料单', PROCESS: '工艺' }
 

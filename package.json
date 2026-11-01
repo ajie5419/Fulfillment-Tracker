@@ -13,6 +13,8 @@
     "postinstall": "nuxt prepare && prisma generate",
     "typecheck": "nuxt typecheck && vue-tsc --noEmit -p server/tsconfig.json",
     "test": "vitest run tests/unit",
+    "quality:check": "node scripts/quality-gate.mjs",
+    "quality:baseline": "node scripts/quality-gate.mjs --write-baseline",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "cert:local": "node scripts/local-cert.mjs",

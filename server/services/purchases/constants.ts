@@ -1,3 +1,4 @@
+import { PURCHASE_STATUS_TEXT as SHARED_PURCHASE_STATUS_TEXT, DELAY_REASON_TEXT as SHARED_DELAY_REASON_TEXT, PAYMENT_STATUS_TEXT as SHARED_PAYMENT_STATUS_TEXT } from '../../../shared/purchases'
 /**
  * 关键物料与付款（R10）的常量与纯函数：文案、到货进度、W6 判定、进货检验匹配、付款排序、延误统计。
  * 不碰数据库，便于单测。
@@ -13,9 +14,9 @@ export const PURCHASE_DEPT = BUSINESS_DEPT_NAME.PURCHASE
 /** 待办：工件的关键物料全部到货，给第一道工序负责人发"可以开工"（refType = part，refId = 工件 ID） */
 export const READY_TO_START = 'READY_TO_START'
 
-export const PURCHASE_STATUS_TEXT: Record<PurchaseStatus, string> = { OPEN: '未到货', ARRIVED: '已到货', CANCELLED: '已取消' }
-export const DELAY_REASON_TEXT: Record<DelayReason, string> = { PAYMENT: '付款', SUPPLIER: '供应商', DEMAND_CHANGE: '我方需求变化', OTHER: '其他' }
-export const PAYMENT_STATUS_TEXT: Record<PaymentStatus, string> = { PENDING: '待付', PAID: '已付', ON_HOLD: '暂缓' }
+export const PURCHASE_STATUS_TEXT: Record<PurchaseStatus, string> = SHARED_PURCHASE_STATUS_TEXT
+export const DELAY_REASON_TEXT: Record<DelayReason, string> = SHARED_DELAY_REASON_TEXT
+export const PAYMENT_STATUS_TEXT: Record<PaymentStatus, string> = SHARED_PAYMENT_STATUS_TEXT
 
 /** 一次导入最多多少行；一张付款申请最多关联多少采购行 */
 export const MAX_IMPORT_ROWS = 500

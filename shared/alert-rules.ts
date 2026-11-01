@@ -18,3 +18,6 @@ export const RULE_TEXT: Record<AlertRuleKey, string> = {
   W10: 'W10 厂内工序逾期未完',
   W11: 'W11 在制状态停滞',
 }
+
+/** 预警级别（与看板红黄绿的简称文字不同）。 */
+export const ALERT_LEVEL_TEXT = { RED: '红色', YELLOW: '黄色', REMIND: '提醒' } as const

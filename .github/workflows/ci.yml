@@ -35,6 +35,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Quality gate
+        run: node scripts/quality-gate.mjs
+
       - name: Typecheck
         run: pnpm typecheck
 

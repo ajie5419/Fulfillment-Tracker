@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { CONFIRM_TONE } from '~/utils/plan-status'
+
 /**
  * 部门计划（zhao 10-23："发布项目计划 → 各部门模块接收自己这部分的计划，然后分解任务，委派责任人、给出分解后的计划日期"）。
  *   本部门在已发布项目计划里负责的末级节点，按工单分组；页签 待接收 / 执行中 / 已完成。
@@ -106,7 +108,6 @@ async function submitDone() {
 }
 const undoDone = (n: DeptPlanNode) => act(() => send(`/api/plan/nodes/${n.id}/undo-complete`, { method: 'POST', body: {} }), '已撤销完成')
 
-const CONFIRM_TONE = { PENDING: 'risk', CONFIRMED: 'done', REJECTED: 'late' } as const
 const md = (d: string | null) => (d ? d.slice(5) : '')
 const planText = (n: DeptPlanNode) => (n.startDate && n.startDate !== n.planDate ? `${md(n.startDate)} ~ ${md(n.planDate)}` : md(n.planDate))
 </script>
