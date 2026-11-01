@@ -11,7 +11,9 @@
  * W3 / W10 预警、改负责人 / 班组时转交待办（steps.updateStepTx）都走这里。W2 的接收人是待办负责人，待办本身已按这里发。
  */
 import { Prisma, type StepMode } from '@prisma/client'
-import { canSee, resolveScope } from '../../utils/auth'
+// 后台负责人解析只需要工单可见范围，不依赖请求鉴权与角色加载（auth 会反过来加载班组长）。
+import { canSee, resolveScope } from '../auth/scope'
+import { leaderTeamOfStep } from '../../../shared/permissions'
 import { prisma } from '../../utils/prisma'
 
 type Db = Prisma.TransactionClient | typeof prisma
@@ -25,7 +27,7 @@ export interface ResponsibleStep {
 }
 
 /** 工序所属的班组：只有自制工序派到的班组算 */
-export const teamOfStep = (s: Pick<ResponsibleStep, 'mode' | 'supplierId'>) => (s.mode === 'SELF' ? s.supplierId : null)
+export const teamOfStep = (s: Pick<ResponsibleStep, 'mode' | 'supplierId'>) => leaderTeamOfStep(s)
 
 /**
  * 纯函数（单测用）：负责人优先，其次班组长（看得到这个工单才算）；都没有返回 null。

@@ -1,3 +1,5 @@
+import { isProjectManagerOf, isProjectManagerOperation, isObjectOwner, canLeadStepAction, type StepActionTarget } from '#shared/permissions'
+
 export interface Me {
   id: string
   name: string
@@ -65,32 +67,19 @@ export type Operation = 'purchasePlan' | 'purchasePlanConvert' | 'drawing' | 'pr
 export function canDo(me: Me | null | undefined, op: Operation, target: StepTarget = {}): boolean {
   if (!me) return false
   if (me.isAdmin || me.can?.[op]) return true
-  const pm = !!target.workOrderNumber && !!me.pmOf?.includes(target.workOrderNumber)
-  if (op === 'purchase' || op === 'payment' || op === 'route' || op === 'plan') return pm
-  if (op === 'stepAction') return (!!target.ownerId && target.ownerId === me.id) || isTeamLeaderOf(me, target)
+  if (isProjectManagerOperation(op)) return isProjectManagerOf(me.pmOf, target.workOrderNumber)
+  if (op === 'stepAction') return isObjectOwner(me.id, target.ownerId) || canLeadStepAction(me.leadTeams?.map(x => x.id), target)
   return false
 }
 
-interface StepTarget {
-  workOrderNumber?: string | null
-  ownerId?: string | null
-  /** 工序方式和班组：班组长只能登记本班组自制工序的开工、完工、报工（与服务端 assertCanOperateStep 的 teamLeader 一致） */
-  mode?: string | null
-  supplierId?: string | null
-  /** 这次操作班组长能不能做：开工、完工（含报工）是；发出、登记返厂不是 */
-  leaderAction?: boolean
-}
-
-/** 本人是这道自制工序所派班组的班组长，且是开工 / 完工 / 报工 */
-function isTeamLeaderOf(me: Me, t: StepTarget) {
-  return !!t.leaderAction && t.mode === 'SELF' && !!t.supplierId && !!me.leadTeams?.some((x) => x.id === t.supplierId)
-}
+type StepTarget = StepActionTarget
 
 /** 是否可能在某些工单上有该操作的权限（列表页顶部"新建/导入"按钮：本人是任何工单的项目经理也显示） */
 export function canDoAny(me: Me | null | undefined, op: Operation): boolean {
   if (!me) return false
   if (me.isAdmin || me.can?.[op]) return true
-  return (op === 'purchase' || op === 'payment' || op === 'route' || op === 'plan') && !!me.pmOf?.length
+  // 列表按钮表示“某个工单上可能有权限”；不等同于对当前对象授权。
+  return isProjectManagerOperation(op) && !!me.pmOf?.length
 }
 
 /** 退出并回到 QMS 登录页重新输入账号密码（可换人登录）。不带 prompt=login 的话，QMS 已登录时会直接以原账号再登录进来 */

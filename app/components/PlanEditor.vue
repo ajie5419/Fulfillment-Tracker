@@ -21,6 +21,7 @@ import type { BusinessDeptCode } from '#shared/business-depts'
 import { BUSINESS_DEPT_OPTIONS } from '#shared/business-depts'
 
 import { factoryDay } from '#shared/mobile-todo'
+import { isPlanStartLate, planAdjustmentNeedsReason, isPlanAdjustmentReasonMissing } from '#shared/plan-validation'
 import type { PlanNodeRow } from '#shared/plan-view'
 
 const DEPTS = BUSINESS_DEPT_OPTIONS
@@ -172,14 +173,14 @@ const defaultPredText = computed(() => {
 })
 /** 汇总行（有子节点）：日期由子节点算、不设前置 */
 const isSummary = computed(() => !!editing.value?.childCount)
-const startLate = computed(() => !!form.startDate && !!form.planDate && form.startDate.isAfter(form.planDate, 'day'))
+const startLate = computed(() => isPlanStartLate(form.startDate?.isValid() ? form.startDate.format('YYYY-MM-DD') : undefined, form.planDate?.isValid() ? form.planDate.format('YYYY-MM-DD') : undefined))
 /** 发布后：加节点、改计划日都要写原因 */
-const needReason = computed(() => published.value && (!editing.value || (!!form.planDate && form.planDate.format('YYYY-MM-DD') !== editing.value.planDate)))
+const needReason = computed(() => planAdjustmentNeedsReason(published.value, editing.value?.planDate ?? null, form.planDate?.format('YYYY-MM-DD')))
 async function saveNode() {
   if (!form.name.trim()) return message.warning('请填写节点名称')
   if (!form.planDate) return message.warning('请选择计划日期')
   if (startLate.value) return message.warning('计划开始日不能晚于计划完成日')
-  if (needReason.value && !form.reason.trim()) return message.warning('总计划已发布，请写调整原因')
+  if (isPlanAdjustmentReasonMissing(needReason.value, form.reason)) return message.warning('总计划已发布，请写调整原因')
   const body = {
     name: form.name,
     dept: form.dept,

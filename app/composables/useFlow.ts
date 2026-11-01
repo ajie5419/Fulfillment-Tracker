@@ -21,11 +21,8 @@ export function apiError(e: unknown): string {
 export const dayText = (v: string | Date | null | undefined) => (v ? new Date(v).toISOString().slice(0, 10) : '')
 export const timeText = (v: string | Date | null | undefined) => (v ? new Date(v).toLocaleString('zh-CN', { hour12: false }) : '')
 
-/** 今天往后 n 天（本地时区），'YYYY-MM-DD' */
-export function dayAfter(n: number) {
-  const d = new Date(Date.now() + n * 86_400_000)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+/** 兼容入口：保留经过小时数后取本地日期的原口径。 */
+export { localDayAfter as dayAfter } from '#shared/dates'
 
 export function useMaster() {
   return useFetch('/api/master', { key: 'master', default: () => ({ suppliers: [], processes: [], users: [] }) })

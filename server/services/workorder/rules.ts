@@ -1,3 +1,4 @@
+import type { TaskState } from '../../../shared/workorder-view'
 /**
  * 工单详情（前端改版第一轮）的纯函数：选"总装"节点、缺件原因分布、挂靠记录跳转地址、部门记录的状态。
  * 不碰数据库，便于单测。
@@ -44,7 +45,7 @@ export function taskListLink(kind: TaskKind, workOrderNumber: string, id: string
 }
 
 /** 挂靠记录的状态：DONE 已完成；OVERDUE 自己的日期已过还没完成；LATE 日期晚于节点计划日；EXCLUDED 已取消不计入；NORMAL 其他 */
-export type TaskState = 'DONE' | 'OVERDUE' | 'LATE' | 'EXCLUDED' | 'NORMAL'
+export type { TaskState } from '../../../shared/workorder-view'
 
 export function taskState(t: { done: boolean; excluded: boolean; overdue: boolean; lateForNode: boolean }): TaskState {
   if (t.excluded) return 'EXCLUDED'

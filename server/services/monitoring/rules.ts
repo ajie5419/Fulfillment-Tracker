@@ -1,7 +1,8 @@
+import type { StatusSinceSource } from '../../../shared/monitoring'
 import type { MonitoringLevel } from '../../../shared/monitoring'
 import { alertKey, dayDiff, shanghaiDay, type RuleThreshold } from '../alerts/rules'
 
-export type StatusSinceSource = 'statusSince' | 'flowEvent' | 'startedAt' | 'createdAt'
+export type { StatusSinceSource } from '../../../shared/monitoring'
 
 /**
  * 工序没有 statusSince 字段，按最近一条 FlowEvent.occurredAt 推导；无事件才依次回退 startedAt、createdAt。
