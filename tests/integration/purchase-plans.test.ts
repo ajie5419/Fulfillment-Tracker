@@ -1,7 +1,9 @@
 import { execFileSync } from 'node:child_process'
 import type { PrismaClient } from '@prisma/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-const DB = process.env.TEST_DATABASE_URL
+import { getTestDatabaseUrl } from '../helpers/test-database'
+
+const DB = getTestDatabaseUrl(process.env.TEST_DATABASE_URL)
 const WO = 'T-PURCHASE-PLAN'
 describe.skipIf(!DB)('采购计划下发集成', () => {
   let db: PrismaClient

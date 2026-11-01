@@ -84,6 +84,8 @@ node scripts/mock-identity-bridge.mjs         # 监听 4100，授权页上选择
 | `pnpm test` | 核心单元测试 |
 | `pnpm build && TEST_DATABASE_URL=mysql://…/fulfillment_test pnpm test:integration` | 集成测试：登录走通与设置页权限（真实构建产物 + 模拟身份桥）、外协主链路和预警（服务层直连 MySQL）。测试库必须是专用库，测试会清空其中的业务表 |
 
+集成测试统一在迁移和清表前校验 `TEST_DATABASE_URL`：必须是 `mysql://` 连接串，数据库名仅含字母、数字、下划线，且 `test` 必须是独立的下划线分段（如 `fulfillment_test`、`fulfillment_test_1`）。不满足时直接报错；未配置时继续跳过。
+
 
 ## 关键物料到货 + 付款（R10）
 
