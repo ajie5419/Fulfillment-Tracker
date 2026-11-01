@@ -56,12 +56,12 @@ function onOversize() {
 const submitting = ref(false)
 const canSubmit = computed(() => !!workOrderNumber.value && !!category.value && !!title.value.trim() && !!description.value.trim())
 async function submit() {
-  if (!canSubmit.value) return showToast('请选工单、分类，并填写标题和说明')
+  if (!category.value || !canSubmit.value) return showToast('请选工单、分类，并填写标题和说明')
   submitting.value = true
   try {
     const files = photos.value.map((p) => p.file).filter((f): f is File => !!f)
     const photoIds = await uploadPhotos(files)
-    const send = $fetch as unknown as (url: string, opts: { method: 'POST'; body: object }) => Promise<{ id: string; issueNo: string }>
+    const send = clientRequest
     const r = await send('/api/issues', {
       method: 'POST',
       body: {

@@ -11,3 +11,6 @@ export default defineFlowHandler(async (event) => {
   const rows = await loadWorkOrderBom(workOrderNumber, { config: qmsSyncConfig(event), devTools: Boolean(useRuntimeConfig(event).devTools) })
   return previewBom(workOrderNumber, rows)
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestQuery = z.input<typeof query>

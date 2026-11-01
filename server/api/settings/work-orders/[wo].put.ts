@@ -8,3 +8,6 @@ export default defineAdminHandler(async (event) => {
   const { projectManagerId } = await parseBody(event, body)
   return setProjectManager(routeId(event, 'wo'), projectManagerId || null)
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestBody = z.input<typeof body>

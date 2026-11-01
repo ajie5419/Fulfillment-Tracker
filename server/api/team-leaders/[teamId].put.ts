@@ -10,3 +10,6 @@ export default defineFlowHandler(async (event, user) => {
   const b = await parseBody(event, body)
   return setTeamLeader(teamId, b.userId, user.qmsUserId)
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestBody = z.input<typeof body>

@@ -59,7 +59,7 @@ const tabOptions = computed(() => [
   { value: 'done', label: '已完成' },
 ])
 
-const send = $fetch as unknown as <T = unknown>(url: string, opts: { method: 'POST'; body?: object }) => Promise<T>
+const send = clientRequest
 async function act(fn: () => Promise<unknown>, ok: string) {
   try {
     await fn()

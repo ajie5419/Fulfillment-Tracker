@@ -71,12 +71,12 @@ export interface PlanNodeRow {
   doneCount: number
   overdueCount: number
   lateCount: number
-  alertLevel: 'YELLOW' | 'RED' | null
+  alertLevel: 'REMIND' | 'YELLOW' | 'RED' | null
   confirmAlertLevel: 'REMIND' | 'YELLOW' | 'RED' | null
   tasks: PlanTask[]
   /** 未分解：节点下还没有任何部门任务；splitAlertLevel = W9 未分解提醒 */
   unsplit: boolean
-  splitAlertLevel: 'REMIND' | null
+  splitAlertLevel: 'REMIND' | 'YELLOW' | 'RED' | null
   canSplit: boolean
   canConfirm: boolean
   canComplete: boolean
@@ -88,7 +88,7 @@ export interface PlanView {
   deliveryDelayDays: number | null
   delayedNodes: number
   sourceNodes: number
-  planAlertLevel: 'YELLOW' | 'RED' | null
+  planAlertLevel: 'REMIND' | 'YELLOW' | 'RED' | null
   unlinked: { drawing: number; purchase: number; step: number; assembly: number; total: number }
   /** 用了前置节点或开始日（多条线并行） */
   network: boolean

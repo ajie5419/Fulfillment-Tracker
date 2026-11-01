@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ClientOptions } from '../utils/transport'
 /**
  * 设计任务（R11）：按部件拆的设计任务列表（筛选：工单 / 设计负责人 / 视图含"逾期"）、新建 / 编辑、标记设计完成、录客户确认、
  * 一键发放（打开 R9 新建发放单并预填）；"设计负荷"页签按设计负责人列在手、逾期、本周到期。
@@ -12,9 +13,9 @@ import { distinctPlanNodes, groupByWorkOrder, groupProgress } from '#shared/work
 
 const route = useRoute()
 const router = useRouter()
-const { data: workOrders } = await useWorkOrders()
-const { data: master } = await useMaster()
-const { data: me } = await useMe()
+const { data: workOrders, pending: ordersPending, error: ordersError, refresh: refreshOrders } = await useWorkOrders()
+const { data: master, pending: masterPending, error: masterError, refresh: refreshMaster } = await useMaster()
+const { data: me, error: meError, refresh: refreshMe } = await useMe()
 const canEditTask = computed(() => canDo(me.value, 'drawing'))
 const canRelease = computed(() => canDo(me.value, 'release'))
 
@@ -29,10 +30,11 @@ const VIEWS = [
 /** 只由统计卡套用的视图（不在上面的单选里）：设计中、本周到期 */
 const CARD_VIEWS = ['pending', 'week']
 const tab = ref(route.query.tab === 'load' ? 'load' : 'list')
+type DrawingView = NonNullable<NonNullable<ClientOptions<'/api/drawings', 'GET'>['query']>['view']>
 const filter = reactive({
   workOrderNumber: (route.query.wo as string) || undefined,
   ownerId: (route.query.owner as string) || undefined,
-  view: VIEWS.some((v) => v.value === route.query.view) || CARD_VIEWS.includes(route.query.view as string) ? (route.query.view as string) : route.query.id ? 'all' : 'open',
+  view: VIEWS.some((v) => v.value === route.query.view) || CARD_VIEWS.includes(route.query.view as string) ? (route.query.view as DrawingView) : route.query.id ? 'all' : 'open',
   q: '',
 })
 const keyword = ref('')
@@ -49,27 +51,24 @@ watch(
 watch(() => route.query, (q) => {
   filter.workOrderNumber = typeof q.wo === 'string' ? q.wo : undefined
   filter.ownerId = typeof q.owner === 'string' ? q.owner : undefined
-  filter.view = typeof q.view === 'string' ? q.view : q.id ? 'all' : 'open'
+  filter.view = typeof q.view === 'string' ? q.view as DrawingView : q.id ? 'all' : 'open'
   tab.value = q.tab === 'load' ? 'load' : 'list'
 })
 
 const listQuery = computed(() => ({ workOrderNumber: filter.workOrderNumber, ownerId: filter.ownerId, view: filter.view, q: filter.q || undefined }))
-// 限定返回类型，避免 Nitro 全站路由联合在 useAsyncData 泛型推导中递归展开。
-const requestFetch = useRequestFetch() as unknown as (
-  url: string, options: { query: typeof listQuery.value; signal: AbortSignal },
-) => Promise<{ rows: DrawingRow[]; total: number; stats: DrawingStats | null }>
+const requestFetch = useRequestFetch()
 // 只由筛选 key 驱动请求，让不同筛选的结果与加载状态隔离。
 const { data, pending, error, refresh } = await useAsyncData(
   computed(() => `drawings:${JSON.stringify(listQuery.value)}`),
-  (_app, { signal }) => requestFetch('/api/drawings', { query: listQuery.value, signal }),
+  (_app, { signal }) => clientRequest('/api/drawings', { query: listQuery.value, signal }, requestFetch),
   { default: () => ({ rows: [] as DrawingRow[], total: 0, stats: null as DrawingStats | null }) },
 )
 const rows = computed(() => pending.value ? [] : data.value.rows as DrawingRow[])
-const stats = computed(() => data.value.stats as DrawingStats | null)
+const stats = computed(() => pending.value || error.value ? null : data.value.stats as DrawingStats | null)
 
 // ───── 统计卡、按工单分组 ─────
 /** 点统计卡：套用对应视图并回到列表；再点一次回到"未完成" */
-function applyView(view: string) {
+function applyView(view: DrawingView) {
   filter.view = filter.view === view ? 'open' : view
   tab.value = 'list'
 }
@@ -80,14 +79,14 @@ const tables = computed(() =>
 )
 const doneOf = (g: { rows: DrawingRow[] }) => groupProgress(g.rows, (r) => isDesignComplete(r.status), (r) => r.status !== 'CANCELLED')
 
-const { data: load, pending: loadPending, refresh: refreshLoad } = await useFetch('/api/drawings/load', {
+const { data: load, pending: loadPending, error: loadError, refresh: refreshLoad } = await useFetch('/api/drawings/load', {
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber })),
   default: () => ({ week: { monday: '', sunday: '' }, rows: [] as { ownerId: string | null; ownerName: string; open: number; pendingDraw: number; overdue: number; dueThisWeek: number; customerPending: number }[] }),
 })
 async function reload() {
   await Promise.all([refresh(), refreshLoad()])
 }
-function showOwner(ownerId: string | null, view = 'open') {
+function showOwner(ownerId: string | null, view: DrawingView = 'open') {
   if (!ownerId) return message.info('没指定设计负责人的任务请在列表里按"全部负责人"查看')
   Object.assign(filter, { ownerId, view })
   tab.value = 'list'
@@ -223,8 +222,10 @@ const loadColumns = [
 <template>
   <div>
   <div class="ft-page">
-  <a-result v-if="error" status="error" title="列表加载失败" :sub-title="apiError(error)"><template #extra><a-button @click="refresh()">重试</a-button></template></a-result>
-  <div v-if="!error" class="ft-stats">
+  <a-alert v-if="ordersError" type="error" message="工单选项加载失败" :description="apiError(ordersError)"><template #action><a-button @click="refreshOrders()">重试</a-button></template></a-alert>
+  <a-alert v-if="masterError" type="error" message="负责人选项加载失败" :description="apiError(masterError)"><template #action><a-button @click="refreshMaster()">重试</a-button></template></a-alert>
+  <a-alert v-if="meError" type="error" message="用户权限加载失败" :description="apiError(meError)"><template #action><a-button @click="refreshMe()">重试</a-button></template></a-alert>
+  <div class="ft-stats">
     <UiStatCard label="设计中" :value="stats ? stats.pending : '—'" unit="项" tone="primary" accent icon="dot" clickable :active="filter.view === 'pending'" sub="还没完成设计的任务" @click="applyView('pending')" />
     <UiStatCard label="逾期" :value="stats ? stats.overdue : '—'" unit="项" tone="late" accent icon="alert" clickable :active="filter.view === 'overdue'" sub="设计中过计划完成日，或客户确认过计划日" @click="applyView('overdue')" />
     <UiStatCard label="本周到期" :value="stats ? stats.dueThisWeek : '—'" unit="项" tone="risk" accent icon="warn" clickable :active="filter.view === 'week'" sub="设计中且计划完成日在本周" @click="applyView('week')" />
@@ -232,7 +233,7 @@ const loadColumns = [
       <template #sub>待发放 {{ stats ? stats.drawn : '—' }} · 待客户确认 {{ stats ? stats.customerPending : '—' }}</template>
     </UiStatCard>
   </div>
-  <a-card v-if="!error">
+  <a-card>
     <div class="ft-toolbar">
       <div class="ft-toolbar-left">
         <a-segmented v-model:value="tab" :options="[{ value: 'list', label: '设计任务' }, { value: 'load', label: '设计负荷' }]" />
@@ -241,6 +242,7 @@ const loadColumns = [
       <div class="ft-toolbar-right">
         <a-select
           v-model:value="filter.workOrderNumber"
+          :loading="ordersPending" :disabled="!!ordersError"
           allow-clear
           show-search
           placeholder="全部工单"
@@ -248,7 +250,7 @@ const loadColumns = [
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
         <template v-if="tab === 'list'">
-          <a-select v-model:value="filter.ownerId" allow-clear show-search option-filter-prop="label" placeholder="全部负责人" style="width: 136px" :options="ownerOptions" />
+          <a-select :loading="masterPending" :disabled="!!masterError" v-model:value="filter.ownerId" allow-clear show-search option-filter-prop="label" placeholder="全部负责人" style="width: 136px" :options="ownerOptions" />
           <a-input-search v-model:value="keyword" allow-clear placeholder="部件 / 工单 / 备注" style="width: 160px" />
           <a-segmented v-model:value="layout" :options="LAYOUT_OPTIONS" />
         </template>
@@ -260,6 +262,8 @@ const loadColumns = [
     <!-- 页签栏隐藏，由上方统一单行工具栏切换 -->
     <a-tabs v-model:active-key="tab" class="no-nav">
       <a-tab-pane key="list" tab="设计任务">
+        <a-result v-if="error && !pending" status="error" title="列表加载失败" :sub-title="apiError(error)"><template #extra><a-button @click="refresh()">重试</a-button></template></a-result>
+        <template v-else>
         <p v-if="!pending && !error && data.total > rows.length" class="warn">共 {{ data.total }} 项，只显示前 {{ rows.length }} 项，请按工单或负责人筛选</p>
 
         <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty v-if="!pending" :description="filter.view === 'open' ? '没有未完成的设计任务' : '没有记录'" /></a-spin>
@@ -338,9 +342,13 @@ const loadColumns = [
           </template>
         </a-table>
         </div>
+        </template>
       </a-tab-pane>
 
       <a-tab-pane key="load" tab="设计负荷">
+        <a-spin v-if="loadPending" />
+        <a-result v-else-if="loadError" status="error" title="设计负荷加载失败" :sub-title="apiError(loadError)"><template #extra><a-button @click="refreshLoad()">重试</a-button></template></a-result>
+        <template v-else>
         <p class="muted">按设计负责人统计{{ filter.workOrderNumber ? `（工单 ${filter.workOrderNumber}）` : '' }}。逾期 = 设计中已过计划完成日，或客户确认已过计划日；本周到期 = 设计中且计划完成日在本周（{{ load.week.monday }} ~ {{ load.week.sunday }}）。点数字看明细。</p>
         <a-table class="ft-table" :columns="loadColumns" :data-source="load.rows" :loading="loadPending" :row-key="loadKey" size="middle" :pagination="false">
           <template #emptyText><a-empty description="没有未完成的设计任务" /></template>
@@ -356,6 +364,7 @@ const loadColumns = [
             </template>
           </template>
         </a-table>
+        </template>
       </a-tab-pane>
     </a-tabs>
   </a-card>

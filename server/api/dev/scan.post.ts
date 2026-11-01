@@ -12,3 +12,6 @@ export default defineFlowHandler(async (event) => {
   const nonconforming = await syncNonconforming()
   return { now, nonconforming: nonconforming.created.length, ...(await scanRules(now)) }
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestBody = z.input<typeof body>

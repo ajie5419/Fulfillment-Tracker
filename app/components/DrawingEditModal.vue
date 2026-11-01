@@ -101,7 +101,7 @@ async function submit() {
   if (!form.workOrderNumber) return message.warning('请选择工单')
   if (!form.componentName.trim()) return message.warning('请填写部件名称')
   if (!form.planDate) return message.warning('请选择计划完成日')
-  const body: Record<string, unknown> = {
+  const body = {
     partIds: [...form.partIds],
     componentName: form.componentName.trim(),
     ownerId: form.ownerId ?? null,
@@ -114,13 +114,13 @@ async function submit() {
   saving.value = true
   try {
     if (task) {
-      const r = await drawingSend<DrawingResult & { planWarning?: string | null }>(`/api/drawings/${task.id}`, 'PATCH', { ...body, cancelled: form.cancelled })
+      const r = await drawingSend(`/api/drawings/${task.id}`, 'PATCH', { ...body, cancelled: form.cancelled })
       if (version !== formVersion) return
       message.success(drawingResultText(r, '已保存'))
       if (r.planWarning) message.warning(r.planWarning)
       emit('done', task.id)
     } else {
-      const r = await drawingSend<{ id: string; planWarning?: string | null }>('/api/drawings', 'POST', { ...body, workOrderNumber: form.workOrderNumber })
+      const r = await drawingSend('/api/drawings', 'POST', { ...body, workOrderNumber: form.workOrderNumber })
       if (version !== formVersion) return
       message.success('已新建设计任务')
       if (r.planWarning) message.warning(r.planWarning)

@@ -12,7 +12,7 @@ import { averagePercent, shortageReasonCounts } from '#shared/workbench'
 
 const route = useRoute()
 const router = useRouter()
-const { data: workOrders } = await useWorkOrders()
+const { data: workOrders, pending: ordersPending, error: ordersError, refresh: refreshOrders } = await useWorkOrders()
 
 const filter = reactive({
   workOrderNumber: (route.query.wo as string) || undefined,
@@ -26,10 +26,11 @@ watch(
   () => router.replace({ query: { ...route.query, wo: filter.workOrderNumber || undefined, incomplete: filter.incomplete ? '1' : '0', dueSoon: filter.dueSoon ? '1' : undefined } }),
 )
 
-const { data, pending, refresh } = await useFetch('/api/kitting', {
+const { data, pending, error, refresh } = await useFetch('/api/kitting', {
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber, incomplete: filter.incomplete ? '1' : '0', dueSoon: filter.dueSoon ? '1' : undefined })),
   default: (): KitList => ({ rows: [], total: 0, stats: null, canCreate: false }),
 })
+const { state, displayStat } = useRequestState({ pending, error }, () => !data.value.rows.length)
 const rows = computed(() => data.value.rows as KitNode[])
 const stats = computed(() => data.value.stats as KitStats | null)
 const avgPercent = computed(() => averagePercent(rows.value))
@@ -50,9 +51,13 @@ function applyCard(kind: 'all' | 'incomplete' | 'dueSoon') {
 const focusId = ref<string | null>(null)
 /** 从提醒打开、但该工单不在我的可见范围（我是节点负责人）：单独显示 */
 const standalone = ref<KitNode | null>(null)
+const nodeError = ref('')
+const nodePending = ref(false)
 async function openFromQuery() {
   const id = route.query.id as string | undefined
   if (!id) return
+  nodeError.value = ''
+  nodePending.value = true
   try {
     const n = await fetchKitNode(id)
     focusId.value = n.id
@@ -65,7 +70,9 @@ async function openFromQuery() {
     await nextTick()
     document.getElementById(`node-${n.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   } catch (e) {
-    message.error(apiError(e))
+    nodeError.value = apiError(e)
+  } finally {
+    nodePending.value = false
   }
 }
 onMounted(openFromQuery)
@@ -86,7 +93,7 @@ function openEdit(n: KitNode | null) {
 async function saved() {
   editOpen.value = false
   await refresh()
-  if (standalone.value) standalone.value = await fetchKitNode(standalone.value.id).catch(() => null)
+  if (standalone.value) await openFromQuery()
 }
 function remove(n: KitNode) {
   Modal.confirm({
@@ -128,18 +135,19 @@ const crossColumns = [
   <div>
   <div class="ft-page">
   <div class="ft-stats">
-    <UiStatCard label="装配节点" :value="stats ? stats.all : '—'" unit="个" tone="primary" accent icon="dot" clickable :active="!filter.incomplete" :sub="filter.workOrderNumber ? `工单 ${filter.workOrderNumber}` : '全部工单'" @click="applyCard('all')" />
-    <UiStatCard label="未齐套" :value="stats ? stats.incomplete : '—'" unit="个" tone="risk" accent icon="warn" clickable :active="filter.incomplete && !filter.dueSoon" @click="applyCard('incomplete')" />
-    <UiStatCard label="需求日临近未齐套" :value="stats ? stats.dueSoon : '—'" unit="个" tone="late" accent icon="alert" clickable :active="filter.dueSoon" :sub="stats ? `需求日前 ${stats.windowDays} 天内（含已过）` : '需求日临近（含已过）'" @click="applyCard('dueSoon')" />
-    <UiStatCard label="平均齐套率" tone="done" accent icon="check" :sub="`按当前列表 ${rows.filter((r) => r.percent != null).length} 个节点（清单为空的不算）`">
+    <UiStatCard label="装配节点" :value="displayStat(stats?.all)" unit="个" tone="primary" accent icon="dot" clickable :active="!filter.incomplete" :sub="filter.workOrderNumber ? `工单 ${filter.workOrderNumber}` : '全部工单'" @click="applyCard('all')" />
+    <UiStatCard label="未齐套" :value="displayStat(stats?.incomplete)" unit="个" tone="risk" accent icon="warn" clickable :active="filter.incomplete && !filter.dueSoon" @click="applyCard('incomplete')" />
+    <UiStatCard label="需求日临近未齐套" :value="displayStat(stats?.dueSoon)" unit="个" tone="late" accent icon="alert" clickable :active="filter.dueSoon" :sub="stats ? `需求日前 ${stats.windowDays} 天内（含已过）` : '需求日临近（含已过）'" @click="applyCard('dueSoon')" />
+    <UiStatCard label="平均齐套率" tone="done" accent icon="check" :sub="pending || error ? '当前列表未加载' : `按当前列表 ${rows.filter((r) => r.percent != null).length} 个节点（清单为空的不算）`">
       <template #value>
         <span class="avg">
-          <UiRing :value="avgPercent ?? 0" :total="100" :size="44" :stroke="6" color="var(--ft-done)" label="" />
-          <b>{{ avgPercent == null ? '—' : `${avgPercent}%` }}</b>
+          <UiRing v-if="!pending && !error && avgPercent != null" :value="avgPercent" :total="100" :size="44" :stroke="6" color="var(--ft-done)" label="" />
+          <b>{{ pending || error || avgPercent == null ? '—' : `${avgPercent}%` }}</b>
         </span>
       </template>
     </UiStatCard>
   </div>
+  <a-alert v-if="ordersError" type="error" message="工单选项加载失败" :description="apiError(ordersError)"><template #action><a-button @click="refreshOrders()">重试</a-button></template></a-alert>
   <a-card>
     <template #title>
       <span class="ft-title">齐套
@@ -151,6 +159,7 @@ const crossColumns = [
       <a-space wrap>
         <a-select
           v-model:value="filter.workOrderNumber"
+          :loading="ordersPending" :disabled="!!ordersError"
           allow-clear
           show-search
           placeholder="全部工单（按需求日）"
@@ -164,12 +173,17 @@ const crossColumns = [
       </a-space>
     </template>
 
-    <template v-if="standalone">
+    <a-spin v-if="nodePending" />
+    <a-alert v-else-if="nodeError" type="error" message="提醒节点加载失败" :description="nodeError"><template #action><a-button @click="openFromQuery()">重试</a-button></template></a-alert>
+    <template v-else-if="standalone">
       <div class="section muted">提醒的节点（你是负责人；该工单不在你的可见范围，只能看这个节点）<button type="button" class="link-btn" @click="standalone = null">收起</button></div>
       <KittingNodeCard :node="standalone" focus :linkable="false" :window-days="stats?.windowDays ?? 5" @edit="openEdit" @remove="remove" />
     </template>
-    <p v-if="data.total > rows.length" class="warn">共 {{ data.total }} 个节点，只显示前 {{ rows.length }} 个，请按工单筛选</p>
+    <p v-if="state === 'success' && data.total > rows.length" class="warn">共 {{ data.total }} 个节点，只显示前 {{ rows.length }} 个，请按工单筛选</p>
 
+    <a-spin v-if="state === 'loading'" />
+    <a-result v-else-if="state === 'error'" status="error" title="齐套数据加载失败" :sub-title="apiError(error)"><template #extra><a-button @click="refresh()">重试</a-button></template></a-result>
+    <template v-else>
     <!-- 单个工单：节点卡片 -->
     <template v-if="filter.workOrderNumber">
       <a-spin :spinning="pending">
@@ -232,6 +246,7 @@ const crossColumns = [
         </template>
       </template>
     </a-table>
+    </template>
   </a-card>
   </div>
 

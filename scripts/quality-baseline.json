@@ -3,7 +3,7 @@
   "lineLimit": 800,
   "counts": {
     "explicitAny": 0,
-    "doubleAssertions": 53,
+    "doubleAssertions": 6,
     "nonNullAssertions": 249,
     "duplicateStatusDictionaryGroups": 0,
     "runtimeCycleGroups": 1,

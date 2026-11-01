@@ -35,7 +35,7 @@ async function submit() {
   try {
     const form = new FormData()
     form.append('file', file.value, file.value.name || 'import.xlsx')
-    const send = $fetch as unknown as (u: string, o: { method: 'POST'; body: FormData }) => Promise<NonNullable<typeof result.value>>
+    const send = clientRequest
     result.value = await send('/api/purchases/import', { method: 'POST', body: form })
     if (!result.value.errors.length) {
       message.success(`已导入 ${result.value.imported} 项`)

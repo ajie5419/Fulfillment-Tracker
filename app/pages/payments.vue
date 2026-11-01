@@ -7,6 +7,7 @@
  * 前端改版第二轮：顶部统计卡（待付 / 暂缓 / 卡交期未付 / 已付，点了套用状态筛选；数字来自 GET /api/payments/stats，与列表同一范围、
  * 同一口径，不受状态筛选影响）；列表默认按工单分组（?layout=group|table），组标题带本组已付完成度。
  */
+import type { ClientResponse } from '../utils/transport'
 import { factoryDateTimeText, groupByWorkOrder, groupProgress } from '#shared/workbench'
 
 const route = useRoute()
@@ -24,26 +25,8 @@ watch(
   () => [filter.status, filter.workOrderNumber, filter.blocking],
   () => router.replace({ query: { ...route.query, status: filter.status, wo: filter.workOrderNumber || undefined, blocking: filter.blocking } }),
 )
-type PaymentRow = {
-  id: string
-  paymentNo: string
-  workOrderDeleted: boolean
-  workOrderNumber: string
-  amount: number | null
-  requestDate: string
-  blocksDelivery: boolean
-  status: PaymentStatusKey
-  statusText: string
-  note: string | null
-  financeNote: string | null
-  requesterName: string
-  statusByName: string | null
-  statusAt: string | null
-  nearestNeedDate: string | null
-  suppliers: string[]
-  lines: { id: string; materialName: string; spec: string | null; needDate: string; status: string; progressText: string }[]
-  permissions: { setStatus: boolean; delete: boolean }
-}
+type PaymentRow = ClientResponse<'/api/payments', 'GET'>[number]
+
 watch(() => route.query, (q) => {
   filter.workOrderNumber = typeof q.wo === 'string' ? q.wo : undefined
   filter.status = typeof q.status === 'string' ? q.status : 'UNPAID'
@@ -54,7 +37,7 @@ const { data, pending, error, refresh } = await useFetch('/api/payments', {
   query: computed(() => ({ status: filter.status, workOrderNumber: filter.workOrderNumber, blocking: filter.blocking })),
   default: () => [],
 })
-const rows = computed(() => pending.value ? [] : data.value as unknown as PaymentRow[])
+const rows = computed(() => pending.value ? [] : data.value)
 const { data: stats, pending: statsPending, error: statsError, refresh: refreshStats } = await useFetch('/api/payments/stats', {
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber })),
   default: () => null,

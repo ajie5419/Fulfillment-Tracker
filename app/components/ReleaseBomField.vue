@@ -77,7 +77,7 @@ async function load() {
       const form = new FormData()
       form.append('workOrderNumber', wo)
       form.append('file', f, f.name || 'bom.xlsx')
-      const send = $fetch as unknown as (u: string, o: { method: 'POST'; body: FormData }) => Promise<Preview>
+      const send = clientRequest
       r = await send('/api/bom/excel', { method: 'POST', body: form })
     } else {
       r = await postText(sent, false)

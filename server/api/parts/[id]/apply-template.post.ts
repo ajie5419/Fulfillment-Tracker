@@ -17,3 +17,6 @@ export default defineFlowHandler(async (event, user) => {
   const { templateId, startDate } = await parseBody(event, body)
   return applyTemplate(id, templateId, user.qmsUserId, startDate)
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestBody = z.input<typeof body>

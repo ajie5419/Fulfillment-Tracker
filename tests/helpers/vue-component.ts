@@ -1,3 +1,4 @@
+import { clientRequest, sendClientRequest } from '../../app/utils/transport'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
@@ -18,9 +19,9 @@ export function loadComponent(file: string, modules: Record<string, unknown> = {
   })
   if (template.errors.length) throw new Error(template.errors.join('\n'))
   const evaluate = (source: string) => {
-    const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
+    const code = ts.transpileModule(source.replaceAll('import.meta.client', 'true').replaceAll('import.meta.server', 'false'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
     const mod = { exports: {} as any }
-    new Function('require', 'module', 'exports', code)((id: string) => modules[id] ?? require(id), mod, mod.exports)
+    new Function('require', 'module', 'exports', 'clientRequest', 'sendClientRequest', code)((id: string) => modules[id] ?? require(id), mod, mod.exports, clientRequest, sendClientRequest)
     return mod.exports
   }
   const component = evaluate(script.content).default as ComponentOptions

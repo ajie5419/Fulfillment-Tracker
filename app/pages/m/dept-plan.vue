@@ -53,7 +53,7 @@ function onDept({ selectedValues }: { selectedValues: string[] }) {
 }
 
 const busy = ref(false)
-const send = $fetch as unknown as <T = unknown>(url: string, opts: { method: 'POST'; body?: object }) => Promise<T>
+const send = clientRequest
 async function run(fn: () => Promise<unknown>, ok: string) {
   busy.value = true
   try {

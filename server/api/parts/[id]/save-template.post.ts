@@ -5,3 +5,6 @@ const body = z.object({ name: z.string().trim().min(1, '请填写模板名称').
 
 /** 把工件当前的工序链另存为模板（模板维护仅管理员） */
 export default defineAdminHandler(async (event, user) => saveTemplateFromPart(routeId(event), await parseBody(event, body), user.qmsUserId))
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestBody = z.input<typeof body>

@@ -8,3 +8,6 @@ export default defineFlowHandler(async (event) => {
   const { closed } = parseQuery(event, query)
   return listPlans(scopeWorkOrders(await getScope(event)), await getRoleContext(event), new Date(), { withClosed: closed === '1' })
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestQuery = z.input<typeof query>

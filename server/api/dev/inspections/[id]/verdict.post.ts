@@ -9,3 +9,6 @@ export default defineFlowHandler(async (event) => {
   const { unqualifiedQuantity } = await parseBody(event, body)
   return failDemoInspection(routeId(event), unqualifiedQuantity)
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestBody = z.input<typeof body>

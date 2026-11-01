@@ -13,3 +13,6 @@ export default defineFlowHandler(async (event, user) => {
   const q = parseQuery(event, query)
   return releaseStats({ ...q, workOrderNumber: q.workOrderNumber || undefined, visibleWorkOrders: scopeWorkOrders(await getScope(event)) }, user.qmsUserId)
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestQuery = z.input<typeof query>

@@ -1,3 +1,4 @@
+import type { ClientBodyArgs, ClientMethod, ClientResponse } from '../utils/transport'
 import { DRAWING_STATUS_TEXT as SHARED_DRAWING_STATUS_TEXT } from '#shared/drawing'
 /** 设计任务（R11）页面共用：文案、颜色、接口调用。 */
 
@@ -57,15 +58,14 @@ export interface DrawingResult {
   readySent: number
 }
 
-/** 绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"） */
-export function drawingSend<T = DrawingResult>(url: string, method: 'POST' | 'PATCH', body: object = {}): Promise<T> {
-  const send = $fetch as unknown as (u: string, o: { method: string; body?: object }) => Promise<T>
-  return send(url, { method, body })
+/** 端点契约来自原有 schema 与响应，调用者不能指定返回类型。 */
+export function drawingSend<P extends `/api/drawings${string}`, M extends ClientMethod<P> & ('POST' | 'PATCH')>(url: P, method: M, ...args: ClientBodyArgs<P, M>): Promise<ClientResponse<P, M>>
+export function drawingSend(url: string, method: 'POST' | 'PATCH', body: unknown = {}) {
+  return sendClientRequest(url, { method, body })
 }
 
 export function fetchDrawing(id: string) {
-  const get = $fetch as unknown as (u: string) => Promise<DrawingRow>
-  return get(`/api/drawings/${encodeURIComponent(id)}`)
+  return clientRequest(`/api/drawings/${encodeURIComponent(id)}`)
 }
 
 /** 操作结果提示：状态变成什么、有没有因此发"可以开工" */
