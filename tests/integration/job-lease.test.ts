@@ -2,8 +2,9 @@ import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import type { PrismaClient } from '@prisma/client'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { getTestDatabaseUrl } from '../helpers/test-database'
 
-const DB = process.env.TEST_DATABASE_URL
+const DB = getTestDatabaseUrl(process.env.TEST_DATABASE_URL)
 
 describe.skipIf(!DB)('job lease fencing in MySQL', () => {
   let db: PrismaClient

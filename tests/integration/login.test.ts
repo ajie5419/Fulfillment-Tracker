@@ -8,8 +8,9 @@ import { createServer } from 'node:net'
 import { PrismaClient } from '@prisma/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startMockIdentityBridge } from '../../scripts/mock-identity-bridge.mjs'
+import { getTestDatabaseUrl } from '../helpers/test-database'
 
-const DB = process.env.TEST_DATABASE_URL
+const DB = getTestDatabaseUrl(process.env.TEST_DATABASE_URL)
 const SERVER_ENTRY = '.output/server/index.mjs'
 
 function freePort(): Promise<number> {

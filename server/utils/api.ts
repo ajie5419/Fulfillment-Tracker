@@ -42,7 +42,11 @@ function invalid(error: z.ZodError): never {
 }
 
 export async function parseBody<S extends z.ZodTypeAny>(event: H3Event, schema: S): Promise<z.output<S>> {
-  const r = schema.safeParse((await readBody(event).catch(() => undefined)) ?? {})
+  const body = await readBody(event).catch(() => {
+    throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: '请求体读取或解析失败' })
+  })
+  // H3 读取合法空体时返回 undefined；只有读取成功后才保留原有的空体默认值语义。
+  const r = schema.safeParse(body ?? {})
   return r.success ? r.data : invalid(r.error)
 }
 

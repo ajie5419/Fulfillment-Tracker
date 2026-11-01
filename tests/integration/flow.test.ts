@@ -6,8 +6,9 @@ import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import type { PrismaClient, StepMode } from '@prisma/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { getTestDatabaseUrl } from '../helpers/test-database'
 
-const DB = process.env.TEST_DATABASE_URL
+const DB = getTestDatabaseUrl(process.env.TEST_DATABASE_URL)
 
 type Services = {
   steps: typeof import('../../server/services/flow/steps')

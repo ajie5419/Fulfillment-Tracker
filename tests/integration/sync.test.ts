@@ -10,8 +10,9 @@ import type { PrismaClient } from '@prisma/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startMockIdentityBridge } from '../../scripts/mock-identity-bridge.mjs'
 import { loadFixture } from '../../scripts/mock-qms-sync.mjs'
+import { getTestDatabaseUrl } from '../helpers/test-database'
 
-const DB = process.env.TEST_DATABASE_URL
+const DB = getTestDatabaseUrl(process.env.TEST_DATABASE_URL)
 const SECRET = 'local-dev-secret-local-dev-secret-0'
 const WO1 = 'QMS-WO-2026-001'
 const WO2 = 'QMS-WO-2026-002'
