@@ -1,0 +1,2589 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`plan service 搬移前特征 > complete 命令的完整副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "planNode.findMany",
+      {
+        "select": {
+          "id": true,
+          "name": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "parentId": "n1",
+        },
+      },
+    ],
+    [
+      "transaction.begin",
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT id FROM plan_node WHERE id = ",
+        " FOR UPDATE",
+      ],
+      "n1",
+    ],
+    [
+      "planNode.findUniqueOrThrow",
+      {
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "workOrderPlan.findUnique",
+      {
+        "select": {
+          "status": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.update",
+      {
+        "data": {
+          "actualDate": 2026-11-01T00:00:00.000Z,
+          "manualDoneAt": 2026-11-01T04:00:00.000Z,
+          "manualDoneBy": "actor",
+        },
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planNode:n1",
+              "W9:planSplit:n1",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planNode:n1",
+              "W9:planSplit:n1",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "actualDate": "2026-11-01",
+    "id": "n1",
+  },
+}
+`;
+
+exports[`plan service 搬移前特征 > confirm 命令的完整副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT id FROM plan_node WHERE id = ",
+        " FOR UPDATE",
+      ],
+      "n1",
+    ],
+    [
+      "planNode.findUniqueOrThrow",
+      {
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "workOrderPlan.findUnique",
+      {
+        "select": {
+          "status": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.update",
+      {
+        "data": {
+          "confirmStatus": "CONFIRMED",
+          "confirmedAt": 2026-11-01T04:00:00.000Z,
+          "confirmedBy": "actor",
+          "rejectReason": null,
+        },
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "todo.updateMany",
+      {
+        "data": {
+          "doneAt": 2026-11-01T04:00:00.000Z,
+          "status": "DONE",
+        },
+        "where": {
+          "action": "CONFIRM_PLAN_NODE",
+          "refId": "n1",
+          "refType": "planNode",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planConfirm:n1",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planConfirm:n1",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "confirmStatus": "CONFIRMED",
+    "id": "n1",
+  },
+}
+`;
+
+exports[`plan service 搬移前特征 > create 命令的完整副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "qmsWorkOrder.findFirst",
+      {
+        "select": {
+          "deliveryDate": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "isDeleted": false,
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "workOrderPlan.upsert",
+      {
+        "create": {
+          "createdBy": "actor",
+          "workOrderNumber": "WO 1",
+        },
+        "update": {},
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT workOrderNumber FROM work_order_plan WHERE workOrderNumber = ",
+        " FOR UPDATE",
+      ],
+      "WO 1",
+    ],
+    [
+      "workOrderPlan.findUniqueOrThrow",
+      {
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.aggregate",
+      {
+        "_max": {
+          "seq": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.create",
+      {
+        "data": {
+          "dept": "TECH",
+          "name": "新节点",
+          "note": null,
+          "parentId": null,
+          "phase": null,
+          "planDate": 2026-11-04T00:00:00.000Z,
+          "seq": 2,
+          "startDate": null,
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "orderBy": [
+          {
+            "seq": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+          {
+            "id": "asc",
+          },
+        ],
+        "select": {
+          "customDeps": true,
+          "id": true,
+          "name": true,
+          "parentId": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNodeDep.findMany",
+      {
+        "where": {
+          "nodeId": {
+            "in": [],
+          },
+        },
+      },
+    ],
+    [
+      "planChangeLog.create",
+      {
+        "data": {
+          "actorId": "actor",
+          "kind": "ADD",
+          "newDate": 2026-11-02T00:00:00.000Z,
+          "nodeId": "n1",
+          "nodeName": "节点",
+          "reason": "新增",
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.update",
+      {
+        "data": {
+          "confirmStatus": "PENDING",
+          "confirmedAt": null,
+          "confirmedBy": null,
+          "rejectReason": null,
+        },
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "todo.updateMany",
+      {
+        "data": {
+          "doneAt": 2026-11-01T04:00:00.000Z,
+          "status": "CANCELLED",
+        },
+        "where": {
+          "action": "CONFIRM_PLAN_NODE",
+          "refId": "n1",
+          "refType": "planNode",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planConfirm:n1",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planConfirm:n1",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "userId": true,
+        },
+        "where": {
+          "OR": [
+            {
+              "department": "技术部",
+              "role": "DEPT_HEAD",
+            },
+          ],
+        },
+      },
+    ],
+    [
+      "todo.createMany",
+      {
+        "data": [
+          {
+            "action": "CONFIRM_PLAN_NODE",
+            "ownerId": "head",
+            "refId": "n1",
+            "refType": "planNode",
+          },
+        ],
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "id": "n1",
+  },
+}
+`;
+
+exports[`plan service 搬移前特征 > delete 命令的完整副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "planNode.findUnique",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "workOrderPlan.upsert",
+      {
+        "create": {
+          "createdBy": "actor",
+          "workOrderNumber": "WO 1",
+        },
+        "update": {},
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT workOrderNumber FROM work_order_plan WHERE workOrderNumber = ",
+        " FOR UPDATE",
+      ],
+      "WO 1",
+    ],
+    [
+      "workOrderPlan.findUniqueOrThrow",
+      {
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.findUnique",
+      {
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "planNode.count",
+      {
+        "where": {
+          "parentId": "n1",
+        },
+      },
+    ],
+    [
+      "planChangeLog.create",
+      {
+        "data": {
+          "actorId": "actor",
+          "kind": "DELETE",
+          "nodeId": "n1",
+          "nodeName": "节点",
+          "oldDate": 2026-11-02T00:00:00.000Z,
+          "reason": "删除",
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "todo.updateMany",
+      {
+        "data": {
+          "doneAt": 2026-11-01T04:00:00.000Z,
+          "status": "CANCELLED",
+        },
+        "where": {
+          "refId": "n1",
+          "refType": "planNode",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "planTask.findMany",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "planNodeId": "n1",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planNode:n1",
+              "W9:planConfirm:n1",
+              "W9:planSplit:n1",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planNode:n1",
+              "W9:planConfirm:n1",
+              "W9:planSplit:n1",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "planNode.delete",
+      {
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "orderBy": [
+          {
+            "seq": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+          {
+            "id": "asc",
+          },
+        ],
+        "select": {
+          "customDeps": true,
+          "id": true,
+          "name": true,
+          "parentId": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNodeDep.findMany",
+      {
+        "where": {
+          "nodeId": {
+            "in": [],
+          },
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "ok": true,
+  },
+}
+`;
+
+exports[`plan service 搬移前特征 > publishedOnly 的空集合直接返回；工单缺失先报错 1`] = `
+[
+  [
+    "workOrderPlan.findMany",
+    {
+      "where": {
+        "status": "PUBLISHED",
+        "workOrderNumber": {
+          "in": [
+            "WO 1",
+          ],
+        },
+      },
+    },
+  ],
+  [
+    "qmsWorkOrder.findUnique",
+    {
+      "where": {
+        "workOrderNumber": "missing",
+      },
+    },
+  ],
+]
+`;
+
+exports[`plan service 搬移前特征 > reject 命令的完整副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT id FROM plan_node WHERE id = ",
+        " FOR UPDATE",
+      ],
+      "n1",
+    ],
+    [
+      "planNode.findUniqueOrThrow",
+      {
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "workOrderPlan.findUnique",
+      {
+        "select": {
+          "status": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.update",
+      {
+        "data": {
+          "confirmStatus": "REJECTED",
+          "confirmedAt": 2026-11-01T04:00:00.000Z,
+          "confirmedBy": "actor",
+          "rejectReason": "原因",
+        },
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "todo.updateMany",
+      {
+        "data": {
+          "doneAt": 2026-11-01T04:00:00.000Z,
+          "status": "DONE",
+        },
+        "where": {
+          "action": "CONFIRM_PLAN_NODE",
+          "refId": "n1",
+          "refType": "planNode",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planConfirm:n1",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planConfirm:n1",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "workOrderExt.findUnique",
+      {
+        "select": {
+          "projectManagerId": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "reminder.createMany",
+      {
+        "data": [
+          {
+            "dedupeKey": "PLAN_REJECT:n1:1793505600000:owner",
+            "kind": "PLAN",
+            "level": "YELLOW",
+            "link": "/plan?wo=WO%201&node=n1",
+            "title": "【退回】actor（技术部）退回了总计划节点"节点"（计划 2026-11-02）：原因（WO 1）",
+            "userId": "owner",
+          },
+        ],
+        "skipDuplicates": true,
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "confirmStatus": "REJECTED",
+    "id": "n1",
+    "notified": 1,
+  },
+}
+`;
+
+exports[`plan service 搬移前特征 > undo 命令的完整副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT id FROM plan_node WHERE id = ",
+        " FOR UPDATE",
+      ],
+      "n1",
+    ],
+    [
+      "planNode.findUniqueOrThrow",
+      {
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "workOrderPlan.findUnique",
+      {
+        "select": {
+          "status": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.update",
+      {
+        "data": {
+          "actualDate": null,
+          "manualDoneAt": null,
+          "manualDoneBy": null,
+        },
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "id": "n1",
+  },
+}
+`;
+
+exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与完整展示 DTO（含权限与预警） 1`] = `
+{
+  "calls": [
+    [
+      "workOrderPlan.findMany",
+      {
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "orderBy": [
+          {
+            "seq": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+          {
+            "id": "asc",
+          },
+        ],
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "qmsWorkOrder.findMany",
+      {
+        "select": {
+          "deliveryDate": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "drawingTask.findMany",
+      {
+        "orderBy": {
+          "planDate": "asc",
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n2",
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "purchaseLine.findMany",
+      {
+        "orderBy": {
+          "needDate": "asc",
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n2",
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "include": {
+          "part": {
+            "select": {
+              "name": true,
+            },
+          },
+        },
+        "orderBy": [
+          {
+            "partId": "asc",
+          },
+          {
+            "seq": "asc",
+          },
+        ],
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n2",
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "assemblyNode.findMany",
+      {
+        "include": {
+          "parts": {
+            "select": {
+              "partId": true,
+            },
+          },
+          "purchases": {
+            "select": {
+              "purchaseLineId": true,
+            },
+          },
+        },
+        "orderBy": {
+          "needDate": "asc",
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n2",
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planTask.findMany",
+      {
+        "orderBy": [
+          {
+            "planDate": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+        ],
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n2",
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planNodeDep.findMany",
+      {
+        "where": {
+          "nodeId": {
+            "in": [
+              "n2",
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "qmsWorkOrder.findUnique",
+      {
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "workOrderPlan.findMany",
+      {
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "workOrderPlan.findUnique",
+      {
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "workOrderExt.findUnique",
+      {
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planChangeLog.findMany",
+      {
+        "orderBy": {
+          "createdAt": "desc",
+        },
+        "take": 200,
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "drawingTask.count",
+      {
+        "where": {
+          "planNodeId": null,
+          "status": {
+            "not": "CANCELLED",
+          },
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "purchaseLine.count",
+      {
+        "where": {
+          "planNodeId": null,
+          "status": {
+            "not": "CANCELLED",
+          },
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "routeStep.count",
+      {
+        "where": {
+          "part": {
+            "workOrderNumber": "WO 1",
+          },
+          "planNodeId": null,
+        },
+      },
+    ],
+    [
+      "assemblyNode.count",
+      {
+        "where": {
+          "planNodeId": null,
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "orderBy": [
+          {
+            "seq": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+          {
+            "id": "asc",
+          },
+        ],
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "qmsWorkOrder.findMany",
+      {
+        "select": {
+          "deliveryDate": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "drawingTask.findMany",
+      {
+        "orderBy": {
+          "planDate": "asc",
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n2",
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "purchaseLine.findMany",
+      {
+        "orderBy": {
+          "needDate": "asc",
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n2",
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "include": {
+          "part": {
+            "select": {
+              "name": true,
+            },
+          },
+        },
+        "orderBy": [
+          {
+            "partId": "asc",
+          },
+          {
+            "seq": "asc",
+          },
+        ],
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n2",
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "assemblyNode.findMany",
+      {
+        "include": {
+          "parts": {
+            "select": {
+              "partId": true,
+            },
+          },
+          "purchases": {
+            "select": {
+              "purchaseLineId": true,
+            },
+          },
+        },
+        "orderBy": {
+          "needDate": "asc",
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n2",
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planTask.findMany",
+      {
+        "orderBy": [
+          {
+            "planDate": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+        ],
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n2",
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planNodeDep.findMany",
+      {
+        "where": {
+          "nodeId": {
+            "in": [
+              "n2",
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "todo.findMany",
+      {
+        "select": {
+          "refId": true,
+        },
+        "where": {
+          "action": "CONFIRM_PLAN_NODE",
+          "ownerId": "owner",
+          "refId": {
+            "in": [
+              "n1",
+              "n2",
+            ],
+          },
+          "refType": "planNode",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "alert.findMany",
+      {
+        "select": {
+          "activeKey": true,
+          "level": true,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:plan:WO 1",
+              "W9:planNode:n1",
+              "W9:planNode:n2",
+              "W9:planConfirm:n1",
+              "W9:planConfirm:n2",
+              "W9:planSplit:n1",
+              "W9:planSplit:n2",
+            ],
+          },
+        },
+      },
+    ],
+  ],
+  "loaded": Map {
+    "WO 1" => {
+      "deliveryDay": "2026-11-03",
+      "forecast": {
+        "delayedNodes": 2,
+        "deliveryDelayDays": 2,
+        "expectedDelivery": "2026-11-05",
+        "lastNodeId": "n1",
+        "nodes": [
+          {
+            "actualDay": null,
+            "children": [
+              "n2",
+            ],
+            "delayDays": 3,
+            "done": false,
+            "doneBy": null,
+            "doneCount": 1,
+            "driver": "prev",
+            "expectedDay": "2026-11-05",
+            "id": "n1",
+            "lateCount": 1,
+            "overdueCount": 0,
+            "preds": [],
+            "pushedBy": "n2",
+            "selfDelayDays": 0,
+            "selfDriver": "self",
+            "selfExpectedDay": "2026-11-02",
+            "slackDays": -2,
+            "source": false,
+            "taskCount": 1,
+            "tasks": [
+              {
+                "done": true,
+                "doneDay": "2026-10-31",
+                "excluded": false,
+                "expectedDay": "2026-10-31",
+                "id": "drawing",
+                "kind": "drawing",
+                "lateForNode": true,
+                "overdue": false,
+                "planDay": "2026-11-04",
+              },
+            ],
+            "upstream": true,
+          },
+          {
+            "actualDay": null,
+            "children": [],
+            "delayDays": 2,
+            "done": false,
+            "doneBy": null,
+            "doneCount": 0,
+            "driver": "task",
+            "expectedDay": "2026-11-05",
+            "id": "n2",
+            "lateCount": 2,
+            "overdueCount": 0,
+            "preds": [],
+            "pushedBy": null,
+            "selfDelayDays": 2,
+            "selfDriver": "task",
+            "selfExpectedDay": "2026-11-05",
+            "slackDays": -2,
+            "source": true,
+            "taskCount": 4,
+            "tasks": [
+              {
+                "done": false,
+                "doneDay": null,
+                "excluded": false,
+                "expectedDay": "2026-11-05",
+                "id": "purchase",
+                "kind": "purchase",
+                "lateForNode": true,
+                "overdue": false,
+                "planDay": "2026-11-05",
+              },
+              {
+                "done": false,
+                "doneDay": null,
+                "excluded": false,
+                "expectedDay": "2026-11-04",
+                "id": "step",
+                "kind": "step",
+                "lateForNode": true,
+                "overdue": false,
+                "planDay": "2026-11-04",
+              },
+              {
+                "done": false,
+                "doneDay": null,
+                "excluded": false,
+                "expectedDay": "2026-11-02",
+                "id": "kit",
+                "kind": "assembly",
+                "lateForNode": false,
+                "overdue": false,
+                "planDay": "2026-11-02",
+              },
+              {
+                "done": false,
+                "doneDay": null,
+                "excluded": false,
+                "expectedDay": "2026-11-02",
+                "id": "task",
+                "kind": "task",
+                "lateForNode": false,
+                "overdue": false,
+                "planDay": "2026-11-02",
+              },
+            ],
+            "upstream": false,
+          },
+        ],
+        "sourceNodes": 1,
+      },
+      "nodes": [
+        {
+          "actualDate": null,
+          "baselineDate": null,
+          "confirmStatus": "PENDING",
+          "confirmedAt": null,
+          "confirmedBy": null,
+          "createdAt": 2026-11-01T04:00:00.000Z,
+          "customDeps": false,
+          "dept": "TECH",
+          "id": "n1",
+          "manualDoneAt": null,
+          "manualDoneBy": null,
+          "name": "节点",
+          "note": null,
+          "parentId": null,
+          "phase": "设计",
+          "planDate": 2026-11-02T00:00:00.000Z,
+          "rejectReason": null,
+          "seq": 1,
+          "startDate": null,
+          "workOrderNumber": "WO 1",
+        },
+        {
+          "actualDate": null,
+          "baselineDate": null,
+          "confirmStatus": "PENDING",
+          "confirmedAt": null,
+          "confirmedBy": null,
+          "createdAt": 2026-11-01T04:00:00.000Z,
+          "customDeps": true,
+          "dept": "PRODUCTION",
+          "id": "n2",
+          "manualDoneAt": null,
+          "manualDoneBy": null,
+          "name": "节点",
+          "note": null,
+          "parentId": "n1",
+          "phase": "设计",
+          "planDate": 2026-11-03T00:00:00.000Z,
+          "rejectReason": null,
+          "seq": 2,
+          "startDate": null,
+          "workOrderNumber": "WO 1",
+        },
+      ],
+      "publishedAt": 2026-11-01T04:00:00.000Z,
+      "status": "PUBLISHED",
+      "tasks": [
+        {
+          "dateLabel": "客户确认计划日",
+          "facts": {
+            "done": true,
+            "doneDay": "2026-10-31",
+            "excluded": false,
+            "id": "drawing",
+            "kind": "drawing",
+            "planDay": "2026-11-04",
+          },
+          "id": "drawing",
+          "kind": "drawing",
+          "link": "/drawings?id=drawing",
+          "name": "图纸",
+          "nodeId": "n1",
+          "statusText": "设计完成 · 料单未开始 · 工艺无",
+        },
+        {
+          "dateLabel": "承诺到货日",
+          "facts": {
+            "done": false,
+            "doneDay": null,
+            "excluded": false,
+            "id": "purchase",
+            "kind": "purchase",
+            "planDay": "2026-11-05",
+          },
+          "id": "purchase",
+          "kind": "purchase",
+          "link": "/purchases?id=purchase",
+          "name": "钢板（10mm）",
+          "nodeId": "n2",
+          "statusText": "未到货",
+        },
+        {
+          "dateLabel": "承诺返回日",
+          "facts": {
+            "done": false,
+            "doneDay": null,
+            "excluded": false,
+            "id": "step",
+            "kind": "step",
+            "planDay": "2026-11-04",
+          },
+          "id": "step",
+          "kind": "step",
+          "link": "/parts?wo=WO%201",
+          "name": "工件 · 车削（外协）",
+          "nodeId": "n2",
+          "statusText": "在外加工",
+        },
+        {
+          "dateLabel": "需求日",
+          "facts": {
+            "done": false,
+            "doneDay": null,
+            "excluded": false,
+            "id": "kit",
+            "kind": "assembly",
+            "planDay": "2026-11-02",
+          },
+          "id": "kit",
+          "kind": "assembly",
+          "link": "/kitting?id=kit",
+          "name": "装配",
+          "nodeId": "n2",
+          "statusText": "齐套 1/2",
+        },
+        {
+          "dateLabel": "计划完成日",
+          "facts": {
+            "done": false,
+            "doneDay": null,
+            "excluded": false,
+            "id": "task",
+            "kind": "task",
+            "planDay": "2026-11-02",
+          },
+          "id": "task",
+          "kind": "task",
+          "link": "/plan?wo=WO%201&node=n2",
+          "name": "其他任务",
+          "nodeId": "n2",
+          "note": "备注",
+          "owner": {
+            "id": "owner",
+            "name": "负责人",
+          },
+          "statusText": "负责人 负责人",
+        },
+      ],
+      "workOrderNumber": "WO 1",
+    },
+  },
+  "result": {
+    "canCreate": {
+      "drawing": false,
+      "kitting": false,
+      "purchase": false,
+      "route": false,
+    },
+    "canEdit": false,
+    "changeLogs": [
+      {
+        "actorName": "负责人",
+        "createdAt": 2026-11-01T04:00:00.000Z,
+        "id": "log",
+        "kind": "DATE",
+        "newDate": "2026-11-03",
+        "nodeId": "n2",
+        "nodeName": "节点",
+        "oldDate": "2026-11-02",
+        "reason": "调整",
+      },
+    ],
+    "dangling": [],
+    "delayedNodes": 2,
+    "deliveryDelayDays": 2,
+    "expectedDelivery": "2026-11-05",
+    "lastNodeId": "n1",
+    "network": true,
+    "nodes": [
+      {
+        "actualDate": null,
+        "affects": [],
+        "alertLevel": null,
+        "baselineDate": null,
+        "canComplete": false,
+        "canConfirm": true,
+        "canSplit": false,
+        "childCount": 1,
+        "code": "1.1",
+        "confirmAlertLevel": "YELLOW",
+        "confirmStatus": "PENDING",
+        "confirmText": "待接收",
+        "confirmedAt": null,
+        "confirmedByName": null,
+        "critical": true,
+        "customDeps": false,
+        "delayDays": 3,
+        "dept": "TECH",
+        "deptText": "技术部",
+        "done": false,
+        "doneBy": null,
+        "doneCount": 1,
+        "driver": "prev",
+        "expectedDate": "2026-11-05",
+        "id": "n1",
+        "lateCount": 1,
+        "manualDoneByName": null,
+        "name": "节点",
+        "note": null,
+        "overdueCount": 0,
+        "parentId": null,
+        "phase": "设计",
+        "planDate": "2026-11-02",
+        "preds": [],
+        "pushedBy": {
+          "child": true,
+          "code": "1.1.1",
+          "name": "节点",
+          "seq": 2,
+        },
+        "rejectReason": null,
+        "selfDelayDays": 0,
+        "selfExpectedDate": "2026-11-02",
+        "seq": 1,
+        "slackDays": -2,
+        "source": false,
+        "splitAlertLevel": null,
+        "startDate": null,
+        "taskCount": 1,
+        "tasks": [
+          {
+            "canDone": false,
+            "canEdit": false,
+            "dateLabel": "客户确认计划日",
+            "done": true,
+            "doneDate": "2026-10-31",
+            "excluded": false,
+            "expectedDate": "2026-10-31",
+            "id": "drawing",
+            "kind": "drawing",
+            "kindText": "设计",
+            "lateForNode": true,
+            "link": "/drawings?id=drawing",
+            "name": "图纸",
+            "note": null,
+            "overdue": false,
+            "ownerId": null,
+            "ownerName": null,
+            "planDate": "2026-11-04",
+            "statusText": "设计完成 · 料单未开始 · 工艺无",
+          },
+        ],
+        "unsplit": false,
+        "upstream": true,
+      },
+      {
+        "actualDate": null,
+        "affects": [
+          {
+            "code": "1.1",
+            "name": "节点",
+            "seq": 1,
+          },
+        ],
+        "alertLevel": null,
+        "baselineDate": null,
+        "canComplete": false,
+        "canConfirm": false,
+        "canSplit": false,
+        "childCount": 0,
+        "code": "1.1.1",
+        "confirmAlertLevel": null,
+        "confirmStatus": "PENDING",
+        "confirmText": "待接收",
+        "confirmedAt": null,
+        "confirmedByName": null,
+        "critical": true,
+        "customDeps": true,
+        "delayDays": 2,
+        "dept": "PRODUCTION",
+        "deptText": "生产部",
+        "done": false,
+        "doneBy": null,
+        "doneCount": 0,
+        "driver": "task",
+        "expectedDate": "2026-11-05",
+        "id": "n2",
+        "lateCount": 2,
+        "manualDoneByName": null,
+        "name": "节点",
+        "note": null,
+        "overdueCount": 0,
+        "parentId": "n1",
+        "phase": "设计",
+        "planDate": "2026-11-03",
+        "preds": [],
+        "pushedBy": null,
+        "rejectReason": null,
+        "selfDelayDays": 2,
+        "selfExpectedDate": "2026-11-05",
+        "seq": 2,
+        "slackDays": -2,
+        "source": true,
+        "splitAlertLevel": null,
+        "startDate": null,
+        "taskCount": 4,
+        "tasks": [
+          {
+            "canDone": false,
+            "canEdit": false,
+            "dateLabel": "承诺到货日",
+            "done": false,
+            "doneDate": null,
+            "excluded": false,
+            "expectedDate": "2026-11-05",
+            "id": "purchase",
+            "kind": "purchase",
+            "kindText": "采购",
+            "lateForNode": true,
+            "link": "/purchases?id=purchase",
+            "name": "钢板（10mm）",
+            "note": null,
+            "overdue": false,
+            "ownerId": null,
+            "ownerName": null,
+            "planDate": "2026-11-05",
+            "statusText": "未到货",
+          },
+          {
+            "canDone": false,
+            "canEdit": false,
+            "dateLabel": "承诺返回日",
+            "done": false,
+            "doneDate": null,
+            "excluded": false,
+            "expectedDate": "2026-11-04",
+            "id": "step",
+            "kind": "step",
+            "kindText": "工序",
+            "lateForNode": true,
+            "link": "/parts?wo=WO%201",
+            "name": "工件 · 车削（外协）",
+            "note": null,
+            "overdue": false,
+            "ownerId": null,
+            "ownerName": null,
+            "planDate": "2026-11-04",
+            "statusText": "在外加工",
+          },
+          {
+            "canDone": false,
+            "canEdit": false,
+            "dateLabel": "需求日",
+            "done": false,
+            "doneDate": null,
+            "excluded": false,
+            "expectedDate": "2026-11-02",
+            "id": "kit",
+            "kind": "assembly",
+            "kindText": "装配",
+            "lateForNode": false,
+            "link": "/kitting?id=kit",
+            "name": "装配",
+            "note": null,
+            "overdue": false,
+            "ownerId": null,
+            "ownerName": null,
+            "planDate": "2026-11-02",
+            "statusText": "齐套 1/2",
+          },
+          {
+            "canDone": true,
+            "canEdit": false,
+            "dateLabel": "计划完成日",
+            "done": false,
+            "doneDate": null,
+            "excluded": false,
+            "expectedDate": "2026-11-02",
+            "id": "task",
+            "kind": "task",
+            "kindText": "其他任务",
+            "lateForNode": false,
+            "link": "/plan?wo=WO%201&node=n2",
+            "name": "其他任务",
+            "note": "备注",
+            "overdue": false,
+            "ownerId": "owner",
+            "ownerName": "负责人",
+            "planDate": "2026-11-02",
+            "statusText": "负责人 负责人",
+          },
+        ],
+        "unsplit": false,
+        "upstream": false,
+      },
+    ],
+    "phases": [
+      "设计",
+    ],
+    "plan": {
+      "publishedAt": 2026-11-01T04:00:00.000Z,
+      "publishedByName": "负责人",
+      "status": "PUBLISHED",
+      "templateName": "模板",
+    },
+    "planAlertLevel": "RED",
+    "sourceNodes": 1,
+    "unlinked": {
+      "assembly": 1,
+      "drawing": 1,
+      "purchase": 1,
+      "step": 1,
+      "total": 4,
+    },
+    "workOrder": {
+      "customerName": "客户",
+      "deliveryDate": "2026-11-03",
+      "projectManagerId": "owner",
+      "projectManagerName": "负责人",
+      "projectName": "项目",
+      "workOrderNumber": "WO 1",
+    },
+  },
+}
+`;
+
+exports[`plan service 搬移前特征 > 发布：先锁计划、逐节点锁基线与发送确认、最后发布；汇总节点跳过确认 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "qmsWorkOrder.findFirst",
+      {
+        "select": {
+          "deliveryDate": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "isDeleted": false,
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "workOrderPlan.upsert",
+      {
+        "create": {
+          "createdBy": "actor",
+          "workOrderNumber": "WO 1",
+        },
+        "update": {},
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT workOrderNumber FROM work_order_plan WHERE workOrderNumber = ",
+        " FOR UPDATE",
+      ],
+      "WO 1",
+    ],
+    [
+      "workOrderPlan.findUniqueOrThrow",
+      {
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "orderBy": [
+          {
+            "seq": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+        ],
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.update",
+      {
+        "data": {
+          "baselineDate": 2026-11-02T00:00:00.000Z,
+        },
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "planNode.update",
+      {
+        "data": {
+          "baselineDate": 2026-11-02T00:00:00.000Z,
+        },
+        "where": {
+          "id": "n2",
+        },
+      },
+    ],
+    [
+      "planNode.update",
+      {
+        "data": {
+          "confirmStatus": "PENDING",
+          "confirmedAt": null,
+          "confirmedBy": null,
+          "rejectReason": null,
+        },
+        "where": {
+          "id": "n2",
+        },
+      },
+    ],
+    [
+      "todo.updateMany",
+      {
+        "data": {
+          "doneAt": 2026-11-01T04:00:00.000Z,
+          "status": "CANCELLED",
+        },
+        "where": {
+          "action": "CONFIRM_PLAN_NODE",
+          "refId": "n2",
+          "refType": "planNode",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planConfirm:n2",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planConfirm:n2",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "userId": true,
+        },
+        "where": {
+          "OR": [
+            {
+              "department": "技术部",
+              "role": "DEPT_HEAD",
+            },
+          ],
+        },
+      },
+    ],
+    [
+      "todo.createMany",
+      {
+        "data": [
+          {
+            "action": "CONFIRM_PLAN_NODE",
+            "ownerId": "head",
+            "refId": "n2",
+            "refType": "planNode",
+          },
+        ],
+      },
+    ],
+    [
+      "workOrderPlan.update",
+      {
+        "data": {
+          "publishedAt": 2026-11-01T04:00:00.000Z,
+          "publishedBy": "actor",
+          "status": "PUBLISHED",
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "deptsWithoutHead": [],
+    "nodes": 2,
+    "todos": 1,
+  },
+}
+`;
+
+exports[`plan service 搬移前特征 > 已发布节点改日期：锁、校验、写日志、重新确认、汇总、清除延误预警 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "planNode.findUnique",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "workOrderPlan.upsert",
+      {
+        "create": {
+          "createdBy": "actor",
+          "workOrderNumber": "WO 1",
+        },
+        "update": {},
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT workOrderNumber FROM work_order_plan WHERE workOrderNumber = ",
+        " FOR UPDATE",
+      ],
+      "WO 1",
+    ],
+    [
+      "workOrderPlan.findUniqueOrThrow",
+      {
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.findUnique",
+      {
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "planNode.count",
+      {
+        "where": {
+          "parentId": "n1",
+        },
+      },
+    ],
+    [
+      "planNode.update",
+      {
+        "data": {
+          "planDate": 2026-11-04T00:00:00.000Z,
+        },
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "planChangeLog.create",
+      {
+        "data": {
+          "actorId": "actor",
+          "kind": "DATE",
+          "newDate": 2026-11-04T00:00:00.000Z,
+          "nodeId": "n1",
+          "nodeName": "节点",
+          "oldDate": 2026-11-02T00:00:00.000Z,
+          "reason": "调整",
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.update",
+      {
+        "data": {
+          "confirmStatus": "PENDING",
+          "confirmedAt": null,
+          "confirmedBy": null,
+          "rejectReason": null,
+        },
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "todo.updateMany",
+      {
+        "data": {
+          "doneAt": 2026-11-01T04:00:00.000Z,
+          "status": "CANCELLED",
+        },
+        "where": {
+          "action": "CONFIRM_PLAN_NODE",
+          "refId": "n1",
+          "refType": "planNode",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planConfirm:n1",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planConfirm:n1",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "userId": true,
+        },
+        "where": {
+          "OR": [
+            {
+              "department": "技术部",
+              "role": "DEPT_HEAD",
+            },
+          ],
+        },
+      },
+    ],
+    [
+      "todo.createMany",
+      {
+        "data": [
+          {
+            "action": "CONFIRM_PLAN_NODE",
+            "ownerId": "head",
+            "refId": "n1",
+            "refType": "planNode",
+          },
+        ],
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "select": {
+          "confirmStatus": true,
+          "dept": true,
+          "id": true,
+          "parentId": true,
+          "planDate": true,
+          "startDate": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planNode:n1",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W9:planNode:n1",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "id": "n1",
+    "reconfirm": true,
+  },
+}
+`;
+
+exports[`plan service 搬移前特征 > 模板生成：取消旧任务、逐节点创建、连接前置和上级、汇总后查环 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "qmsWorkOrder.findFirst",
+      {
+        "select": {
+          "deliveryDate": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "isDeleted": false,
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "workOrderPlan.upsert",
+      {
+        "create": {
+          "createdBy": "actor",
+          "workOrderNumber": "WO 1",
+        },
+        "update": {},
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT workOrderNumber FROM work_order_plan WHERE workOrderNumber = ",
+        " FOR UPDATE",
+      ],
+      "WO 1",
+    ],
+    [
+      "workOrderPlan.findUniqueOrThrow",
+      {
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planTemplate.findUnique",
+      {
+        "include": {
+          "nodes": {
+            "orderBy": {
+              "seq": "asc",
+            },
+          },
+        },
+        "where": {
+          "id": "tpl",
+        },
+      },
+    ],
+    [
+      "planTask.findMany",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.deleteMany",
+      {
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.create",
+      {
+        "data": {
+          "customDeps": true,
+          "dept": "TECH",
+          "name": "A",
+          "phase": "设计",
+          "planDate": 2026-11-01T00:00:00.000Z,
+          "seq": 1,
+          "startDate": 2026-10-31T00:00:00.000Z,
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.create",
+      {
+        "data": {
+          "customDeps": true,
+          "dept": "TECH",
+          "name": "B",
+          "phase": null,
+          "planDate": 2026-11-02T00:00:00.000Z,
+          "seq": 2,
+          "startDate": null,
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNodeDep.createMany",
+      {
+        "data": [
+          {
+            "nodeId": "n1",
+            "predId": "new1",
+          },
+        ],
+        "skipDuplicates": true,
+      },
+    ],
+    [
+      "planNode.update",
+      {
+        "data": {
+          "parentId": "new1",
+          "phase": "设计",
+        },
+        "where": {
+          "id": "n1",
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "select": {
+          "confirmStatus": true,
+          "dept": true,
+          "id": true,
+          "parentId": true,
+          "planDate": true,
+          "startDate": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "orderBy": [
+          {
+            "seq": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+          {
+            "id": "asc",
+          },
+        ],
+        "select": {
+          "customDeps": true,
+          "id": true,
+          "name": true,
+          "parentId": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNodeDep.findMany",
+      {
+        "where": {
+          "nodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "workOrderPlan.update",
+      {
+        "data": {
+          "templateName": "模板",
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "created": 2,
+    "replaced": 2,
+  },
+}
+`;
+
+exports[`plan service 搬移前特征 > 错误校验顺序：调整原因先于开始日和父节点；未来完成日先于查子节点 1`] = `
+[
+  [
+    "transaction.begin",
+  ],
+  [
+    "qmsWorkOrder.findFirst",
+    {
+      "select": {
+        "deliveryDate": true,
+        "workOrderNumber": true,
+      },
+      "where": {
+        "isDeleted": false,
+        "workOrderNumber": "WO 1",
+      },
+    },
+  ],
+  [
+    "workOrderPlan.upsert",
+    {
+      "create": {
+        "createdBy": "actor",
+        "workOrderNumber": "WO 1",
+      },
+      "update": {},
+      "where": {
+        "workOrderNumber": "WO 1",
+      },
+    },
+  ],
+  [
+    "$queryRaw",
+    [
+      "SELECT workOrderNumber FROM work_order_plan WHERE workOrderNumber = ",
+      " FOR UPDATE",
+    ],
+    "WO 1",
+  ],
+  [
+    "workOrderPlan.findUniqueOrThrow",
+    {
+      "where": {
+        "workOrderNumber": "WO 1",
+      },
+    },
+  ],
+  [
+    "transaction.rollback",
+  ],
+]
+`;

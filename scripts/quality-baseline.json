@@ -7,13 +7,8 @@
     "nonNullAssertions": 249,
     "duplicateStatusDictionaryGroups": 0,
     "runtimeCycleGroups": 0,
-    "oversizedFiles": 1
+    "oversizedFiles": 0
   },
   "runtimeCycles": [],
-  "oversizedFiles": [
-    {
-      "file": "server/services/plan/plan.ts",
-      "lines": 878
-    }
-  ]
+  "oversizedFiles": []
 }

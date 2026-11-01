@@ -5,7 +5,7 @@ import { FlowError } from '../../server/services/flow/errors'
 import { pureDeclarations } from '../helpers/pure-declarations'
 import * as validation from '../../shared/plan-validation'
 
-const server = () => pureDeclarations('server/services/plan/plan.ts', ['startCheck', 'needReason'], { day: dateFieldDay, FlowError, ...validation })
+const server = () => pureDeclarations('server/services/plan/commands.ts', ['startCheck', 'needReason'], { day: dateFieldDay, FlowError, ...validation })
 const editor = (published: boolean, editing: { planDate: string } | null, planDate?: string, startDate?: string) => pureDeclarations(
   'app/components/PlanEditor.vue', ['startLate', 'needReason'], {
     ...validation, computed: (fn: () => boolean) => fn(), published: { value: published }, editing: { value: editing },
