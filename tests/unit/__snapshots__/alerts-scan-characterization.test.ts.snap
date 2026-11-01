@@ -1,0 +1,1481 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`alerts scan 搬移前特征 > W1 固定查询、命中集合、级别与完整文案 1`] = `
+{
+  "calls": [
+    [
+      "unmatchedInspection.findMany",
+      {
+        "where": {
+          "status": "PENDING",
+        },
+      },
+    ],
+    [
+      "qmsInspection.findMany",
+      {
+        "where": {
+          "id": {
+            "in": [
+              "inspection",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "userId": true,
+        },
+        "where": {
+          "role": "OUTSOURCE_COORDINATOR",
+        },
+      },
+    ],
+  ],
+  "closedInput": [
+    [
+      [],
+    ],
+  ],
+  "result": [
+    {
+      "key": "W1:unmatched:inspection",
+      "level": "RED",
+      "meta": {
+        "supplierId": "supplier",
+      },
+      "ownerIds": [
+        "head",
+        "pdh",
+        "leader",
+        "finance",
+      ],
+      "refId": "inspection",
+      "refType": "unmatched",
+      "rule": "W1",
+      "startAt": 2026-10-20T00:00:00.000Z,
+      "subject": "待确认匹配 工件 · 车削",
+      "summary": "返厂报检 11 天未确认关联",
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`alerts scan 搬移前特征 > W2 固定查询、命中集合、级别与完整文案 1`] = `
+{
+  "calls": [
+    [
+      "todo.findMany",
+      {
+        "where": {
+          "action": {
+            "in": [
+              "ARRANGE_SEND",
+              "ARRANGE_START",
+            ],
+          },
+          "refType": "step",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "include": {
+          "part": true,
+        },
+        "where": {
+          "holdReleaseId": null,
+          "id": {
+            "in": [
+              "step",
+            ],
+          },
+          "status": "PENDING",
+        },
+      },
+    ],
+    [
+      "todo.findMany",
+      {
+        "select": {
+          "createdAt": true,
+          "refId": true,
+        },
+        "where": {
+          "action": {
+            "in": [
+              "ARRANGE_SEND",
+              "ARRANGE_START",
+            ],
+          },
+          "refId": {
+            "in": [
+              "step",
+            ],
+          },
+          "refType": "step",
+          "status": "TRANSFERRED",
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "orderBy": {
+          "seq": "desc",
+        },
+        "where": {
+          "OR": [
+            {
+              "partId": "part",
+              "seq": {
+                "lt": 2,
+              },
+            },
+          ],
+        },
+      },
+    ],
+    [
+      "issueLog.findMany",
+      {
+        "select": {
+          "createdAt": true,
+          "issue": {
+            "select": {
+              "refId": true,
+            },
+          },
+        },
+        "where": {
+          "issue": {
+            "refId": {
+              "in": [
+                "previous",
+              ],
+            },
+            "refType": "STEP",
+          },
+          "toStatus": "CLOSED",
+        },
+      },
+    ],
+  ],
+  "closedInput": [
+    [
+      [
+        "WO",
+      ],
+    ],
+  ],
+  "result": [
+    {
+      "key": "W2:step:step",
+      "level": "RED",
+      "meta": {
+        "stepMode": "EXTERNAL_OUTSOURCE",
+        "supplierId": "supplier",
+      },
+      "ownerIds": [
+        "owner",
+      ],
+      "refId": "step",
+      "refType": "step",
+      "rule": "W2",
+      "startAt": 2026-10-21T00:00:00.000Z,
+      "subject": "工件 · 车削",
+      "summary": "车削返厂 10 天仍未发出",
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`alerts scan 搬移前特征 > W3 固定查询、命中集合、级别与完整文案 1`] = `
+{
+  "calls": [
+    [
+      "routeStep.findMany",
+      {
+        "include": {
+          "part": true,
+        },
+        "where": {
+          "holdReleaseId": null,
+          "promisedReturnDate": {
+            "not": null,
+          },
+          "status": "OUT",
+        },
+      },
+    ],
+  ],
+  "closedInput": [
+    [
+      [
+        "WO",
+      ],
+    ],
+  ],
+  "result": [
+    {
+      "key": "W3:step:step",
+      "level": "RED",
+      "meta": {
+        "stepMode": "EXTERNAL_OUTSOURCE",
+        "supplierId": "supplier",
+      },
+      "ownerIds": [
+        "owner",
+      ],
+      "refId": "step",
+      "refType": "step",
+      "rule": "W3",
+      "startAt": 2026-10-20T00:00:00.000Z,
+      "subject": "工件 · 车削",
+      "summary": "已过要求完成日 2026-10-20，供应商仍未返回",
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`alerts scan 搬移前特征 > W4 固定查询、命中集合、级别与完整文案 1`] = `
+{
+  "calls": [
+    [
+      "issue.findMany",
+      {
+        "where": {
+          "status": {
+            "in": [
+              "OPEN",
+              "ACCEPTED",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "userId": true,
+        },
+        "where": {
+          "role": "PROJECT_DEPT_HEAD",
+        },
+      },
+    ],
+  ],
+  "closedInput": [
+    [
+      [],
+    ],
+  ],
+  "result": [
+    {
+      "deptNames": [
+        "技术部",
+      ],
+      "key": "W4:issue:issue",
+      "level": "RED",
+      "ownerIds": [
+        "head",
+        "pdh",
+        "leader",
+        "finance",
+      ],
+      "refId": "issue",
+      "refType": "issue",
+      "rule": "W4",
+      "startAt": 2026-10-20T00:00:00.000Z,
+      "subject": "异常 YC-1（设计）",
+      "summary": "超要求解决日 2026-10-20 11 天未解决",
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`alerts scan 搬移前特征 > W5 固定查询、命中集合、级别与完整文案 1`] = `
+{
+  "calls": [
+    [
+      "releaseReceipt.findMany",
+      {
+        "include": {
+          "release": true,
+        },
+        "where": {
+          "release": {
+            "status": "ACTIVE",
+          },
+          "status": "PENDING",
+        },
+      },
+    ],
+    [
+      "release.findMany",
+      {
+        "where": {
+          "changeConfirmedAt": null,
+          "status": "ACTIVE",
+          "type": "CHANGE",
+        },
+      },
+    ],
+    [
+      "todo.findMany",
+      {
+        "select": {
+          "createdAt": true,
+          "ownerId": true,
+          "refId": true,
+          "status": true,
+        },
+        "where": {
+          "action": "CONFIRM_CHANGE",
+          "refId": {
+            "in": [
+              "release",
+              "rejected",
+            ],
+          },
+          "refType": "release",
+          "status": {
+            "in": [
+              "OPEN",
+              "TRANSFERRED",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.groupBy",
+      {
+        "_count": {
+          "_all": true,
+        },
+        "by": [
+          "holdReleaseId",
+        ],
+        "where": {
+          "holdReleaseId": {
+            "in": [
+              "release",
+              "rejected",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "releaseReceipt.groupBy",
+      {
+        "_count": {
+          "_all": true,
+        },
+        "by": [
+          "releaseId",
+        ],
+        "where": {
+          "releaseId": {
+            "in": [
+              "release",
+              "rejected",
+            ],
+          },
+          "status": "PENDING",
+        },
+      },
+    ],
+  ],
+  "closedInput": [
+    [
+      [
+        "WO",
+        "WO",
+        "WO",
+      ],
+    ],
+  ],
+  "result": [
+    {
+      "key": "W5:receipt:receipt",
+      "level": "RED",
+      "meta": {
+        "releaseId": "release",
+      },
+      "ownerIds": [
+        "owner",
+      ],
+      "refId": "receipt",
+      "refType": "receipt",
+      "rule": "W5",
+      "startAt": 2026-10-20T00:00:00.000Z,
+      "subject": "设计变更 FF-1（A）",
+      "summary": "已发放 11 天，负责人仍未签收",
+      "watcherIds": [
+        "issuer",
+      ],
+      "workOrderNumber": "WO",
+    },
+    {
+      "key": "W5:release:release",
+      "level": "RED",
+      "meta": {
+        "releaseId": "release",
+      },
+      "ownerIds": [
+        "owner",
+      ],
+      "refId": "release",
+      "refType": "release",
+      "rule": "W5",
+      "startAt": 2026-10-20T00:00:00.000Z,
+      "subject": "设计变更 FF-1（A）",
+      "summary": "已发放 11 天，变更影响仍未确认（待 负责人 确认）",
+      "watcherIds": [
+        "issuer",
+      ],
+      "workOrderNumber": "WO",
+    },
+    {
+      "key": "W5:release:rejected",
+      "level": "RED",
+      "meta": {
+        "releaseId": "rejected",
+      },
+      "ownerIds": [
+        "issuer",
+      ],
+      "refId": "rejected",
+      "refType": "release",
+      "rule": "W5",
+      "startAt": 2026-10-20T00:00:00.000Z,
+      "subject": "设计变更 FF-1（A）",
+      "summary": "已发放 11 天，变更影响仍未确认（待 issuer 确认）",
+      "watcherIds": [
+        "issuer",
+      ],
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`alerts scan 搬移前特征 > W6 固定查询、命中集合、级别与完整文案 1`] = `
+{
+  "calls": [
+    [
+      "purchaseLine.findMany",
+      {
+        "include": {
+          "payments": {
+            "select": {
+              "payment": {
+                "select": {
+                  "blocksDelivery": true,
+                  "status": true,
+                },
+              },
+            },
+          },
+        },
+        "where": {
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "qmsWorkOrder.findMany",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "isDeleted": false,
+          "workOrderNumber": {
+            "in": [
+              "WO",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "role": true,
+          "userId": true,
+        },
+        "where": {
+          "OR": [
+            {
+              "role": "FINANCE",
+            },
+            {
+              "department": "采购部",
+              "role": "DEPT_HEAD",
+            },
+          ],
+        },
+      },
+    ],
+  ],
+  "closedInput": [
+    [
+      [
+        "WO",
+      ],
+    ],
+  ],
+  "result": [
+    {
+      "deptNames": [
+        "采购部",
+      ],
+      "key": "W6:purchase:purchase",
+      "level": "RED",
+      "ownerIds": [
+        "head",
+      ],
+      "refId": "purchase",
+      "refType": "purchase",
+      "rule": "W6",
+      "startAt": 2026-10-20T00:00:00.000Z,
+      "subject": "关键物料 钢板（10mm）",
+      "summary": "供应商承诺 2026-10-20 到货，已超 11 天未到（需求日 2026-10-20 已过）；卡交期付款暂缓，原因：付款",
+      "watcherIds": [
+        "finance",
+      ],
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`alerts scan 搬移前特征 > W7 固定查询、命中集合、级别与完整文案 1`] = `
+{
+  "calls": [
+    [
+      "drawingTask.findMany",
+      {
+        "where": {
+          "status": {
+            "in": [
+              "PENDING",
+              "DRAWN",
+              "CUSTOMER_PENDING",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "qmsWorkOrder.findMany",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "isDeleted": false,
+          "workOrderNumber": {
+            "in": [
+              "WO",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "userId": true,
+        },
+        "where": {
+          "department": "技术部",
+          "role": "DEPT_HEAD",
+        },
+      },
+    ],
+  ],
+  "closedInput": [
+    [
+      [
+        "WO",
+      ],
+    ],
+  ],
+  "result": [
+    {
+      "deptNames": [
+        "技术部",
+      ],
+      "key": "W7:drawing:drawing",
+      "level": "RED",
+      "ownerIds": [
+        "head",
+        "pdh",
+        "leader",
+        "finance",
+      ],
+      "refId": "drawing",
+      "refType": "drawing",
+      "rule": "W7",
+      "startAt": 2026-10-20T00:00:00.000Z,
+      "subject": "设计 设计图（设计中）",
+      "summary": "计划 2026-10-20 完成，已超 11 天仍未完成设计（技术部负责人）",
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`alerts scan 搬移前特征 > W8 固定查询、命中集合、级别与完整文案 1`] = `
+{
+  "calls": [
+    [
+      "assemblyNode.findMany",
+      {
+        "include": {},
+        "where": {
+          "AND": [
+            {
+              "incomplete": true,
+            },
+            {
+              "window": true,
+            },
+          ],
+        },
+      },
+    ],
+    [
+      "qmsWorkOrder.findMany",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "isDeleted": false,
+          "workOrderNumber": {
+            "in": [
+              "WO",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "userId": true,
+        },
+        "where": {
+          "department": "生产部",
+          "role": "DEPT_HEAD",
+        },
+      },
+    ],
+  ],
+  "closedInput": [
+    [
+      [
+        "WO",
+      ],
+    ],
+  ],
+  "result": [
+    {
+      "deptNames": [
+        "生产部",
+      ],
+      "key": "W8:node:node",
+      "level": "RED",
+      "ownerIds": [
+        "head",
+        "pdh",
+        "leader",
+        "finance",
+      ],
+      "refId": "node",
+      "refType": "node",
+      "rule": "W8",
+      "startAt": 2026-10-20T00:00:00.000Z,
+      "subject": "装配节点 节点",
+      "summary": "需求日 2026-10-20（已过 12 天），齐套 1/2（50%），缺 1 项（生产经理）",
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`alerts scan 搬移前特征 > W9 固定查询、命中集合、级别与完整文案 1`] = `
+{
+  "calls": [
+    [
+      "qmsWorkOrder.findMany",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "isDeleted": false,
+          "workOrderNumber": {
+            "in": [
+              "WO",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "department": true,
+          "role": true,
+          "userId": true,
+        },
+        "where": {
+          "role": {
+            "in": [
+              "DEPT_HEAD",
+              "PROJECT_DEPT_HEAD",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "todo.findMany",
+      {
+        "select": {
+          "createdAt": true,
+          "ownerId": true,
+          "refId": true,
+          "status": true,
+        },
+        "where": {
+          "action": "CONFIRM_PLAN_NODE",
+          "refId": {
+            "in": [
+              "node",
+            ],
+          },
+          "refType": "planNode",
+          "status": {
+            "in": [
+              "OPEN",
+              "TRANSFERRED",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "workOrderExt.findMany",
+      {
+        "select": {
+          "projectManagerId": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO",
+            ],
+          },
+        },
+      },
+    ],
+  ],
+  "closedInput": [
+    [
+      [
+        "WO",
+        "WO",
+        "WO",
+        "WO",
+      ],
+    ],
+  ],
+  "result": [
+    {
+      "deptNames": [],
+      "key": "W9:plan:WO",
+      "level": "RED",
+      "ownerIds": [
+        "pm",
+      ],
+      "refId": "WO",
+      "refType": "plan",
+      "rule": "W9",
+      "startAt": 2026-11-01T04:00:00.000Z,
+      "subject": "总计划预计交期",
+      "summary": "合同交期 2026-10-21，按总计划预计 2026-11-01 交付，拖期 11 天；源头延误节点：节点",
+      "workOrderNumber": "WO",
+    },
+    {
+      "deptNames": [
+        "技术部",
+      ],
+      "key": "W9:planNode:node",
+      "level": "RED",
+      "ownerIds": [
+        "head",
+      ],
+      "refId": "node",
+      "refType": "planNode",
+      "rule": "W9",
+      "startAt": 2026-10-20T00:00:00.000Z,
+      "subject": "总计划节点 节点（技术部）",
+      "summary": "计划 2026-10-20，预计 2026-11-01 完成，晚 12 天（计划日已过仍未完成）",
+      "workOrderNumber": "WO",
+    },
+    {
+      "deptNames": [
+        "技术部",
+      ],
+      "key": "W9:planSplit:node",
+      "level": "REMIND",
+      "ownerIds": [
+        "head",
+      ],
+      "refId": "node",
+      "refType": "planSplit",
+      "rule": "W9",
+      "startAt": 2026-10-20T00:00:00.000Z,
+      "subject": "总计划节点 节点（技术部）",
+      "summary": "计划 2026-10-20，总计划发布已 11 天，还没有分解部门任务（请在"部门计划"里分解：设计任务、采购行、工序、装配节点或其他任务）",
+      "workOrderNumber": "WO",
+    },
+    {
+      "deptNames": [
+        "技术部",
+      ],
+      "key": "W9:planConfirm:node",
+      "level": "RED",
+      "ownerIds": [
+        "owner",
+      ],
+      "refId": "node",
+      "refType": "planConfirm",
+      "rule": "W9",
+      "startAt": 2026-10-20T00:00:00.000Z,
+      "subject": "总计划节点 节点（技术部）",
+      "summary": "计划 2026-10-20，发布已 11 天，部门还没接收（待 负责人 在"部门计划"里接收）",
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`alerts scan 搬移前特征 > W10 固定查询、命中集合、级别与完整文案 1`] = `
+{
+  "calls": [
+    [
+      "routeStep.findMany",
+      {
+        "include": {
+          "part": true,
+        },
+        "where": {
+          "dueDate": {
+            "not": null,
+          },
+          "mode": {
+            "in": [
+              "SELF",
+              "IN_PLANT_OUTSOURCE",
+            ],
+          },
+          "status": "IN_PROGRESS",
+        },
+      },
+    ],
+  ],
+  "closedInput": [
+    [
+      [
+        "WO",
+      ],
+    ],
+  ],
+  "result": [
+    {
+      "deptNames": [
+        "生产部",
+      ],
+      "key": "W10:step:step",
+      "level": "RED",
+      "meta": {
+        "stepMode": "EXTERNAL_OUTSOURCE",
+        "supplierId": "supplier",
+      },
+      "ownerIds": [
+        "owner",
+      ],
+      "refId": "step",
+      "refType": "step",
+      "rule": "W10",
+      "startAt": 2026-10-20T00:00:00.000Z,
+      "subject": "工件 · 车削",
+      "summary": "供应商超要求完成日 2026-10-20 11 天仍未完工",
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`alerts scan 搬移前特征 > W11 固定查询、命中集合、级别与完整文案 1`] = `
+{
+  "calls": [],
+  "closedInput": [
+    [
+      [
+        "WO",
+      ],
+    ],
+  ],
+  "result": [
+    {
+      "deptNames": [
+        "生产部",
+      ],
+      "key": "W11:step:step:OUT:1792454400000",
+      "level": "RED",
+      "meta": {
+        "link": "/parts",
+      },
+      "ownerIds": [
+        "owner",
+      ],
+      "refId": "step",
+      "refType": "step",
+      "rule": "W11",
+      "startAt": 2026-10-20T00:00:00.000Z,
+      "subject": "工序",
+      "summary": "工序处于“在外加工”已停 12 天",
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`alerts scan 搬移前特征 > 执行器：创建、加锁、升级、提醒、转异常、清理按原序执行 1`] = `
+{
+  "calls": [
+    [
+      "threshold.findMany",
+      {
+        "where": {
+          "rule": {
+            "in": [
+              "W1",
+              "W2",
+              "W3",
+              "W4",
+              "W5",
+              "W6",
+              "W7",
+              "W8",
+              "W9",
+              "W10",
+              "W11",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "offDay.findMany",
+    ],
+    [
+      "unmatchedInspection.findMany",
+      {
+        "where": {
+          "status": "PENDING",
+        },
+      },
+    ],
+    [
+      "todo.findMany",
+      {
+        "where": {
+          "action": {
+            "in": [
+              "ARRANGE_SEND",
+              "ARRANGE_START",
+            ],
+          },
+          "refType": "step",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "include": {
+          "part": true,
+        },
+        "where": {
+          "holdReleaseId": null,
+          "promisedReturnDate": {
+            "not": null,
+          },
+          "status": "OUT",
+        },
+      },
+    ],
+    [
+      "issue.findMany",
+      {
+        "where": {
+          "status": {
+            "in": [
+              "OPEN",
+              "ACCEPTED",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "releaseReceipt.findMany",
+      {
+        "include": {
+          "release": true,
+        },
+        "where": {
+          "release": {
+            "status": "ACTIVE",
+          },
+          "status": "PENDING",
+        },
+      },
+    ],
+    [
+      "release.findMany",
+      {
+        "where": {
+          "changeConfirmedAt": null,
+          "status": "ACTIVE",
+          "type": "CHANGE",
+        },
+      },
+    ],
+    [
+      "purchaseLine.findMany",
+      {
+        "include": {
+          "payments": {
+            "select": {
+              "payment": {
+                "select": {
+                  "blocksDelivery": true,
+                  "status": true,
+                },
+              },
+            },
+          },
+        },
+        "where": {
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "drawingTask.findMany",
+      {
+        "where": {
+          "status": {
+            "in": [
+              "PENDING",
+              "DRAWN",
+              "CUSTOMER_PENDING",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "assemblyNode.findMany",
+      {
+        "include": {},
+        "where": {
+          "AND": [
+            {
+              "incomplete": true,
+            },
+            {
+              "window": true,
+            },
+          ],
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "include": {
+          "part": true,
+        },
+        "where": {
+          "dueDate": {
+            "not": null,
+          },
+          "mode": {
+            "in": [
+              "SELF",
+              "IN_PLANT_OUTSOURCE",
+            ],
+          },
+          "status": "IN_PROGRESS",
+        },
+      },
+    ],
+    [
+      "qmsInspection.findMany",
+      {
+        "where": {
+          "id": {
+            "in": [
+              "new",
+              "old",
+              "converted",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "userId": true,
+        },
+        "where": {
+          "role": "OUTSOURCE_COORDINATOR",
+        },
+      },
+    ],
+    [
+      "alert.findMany",
+      {
+        "where": {
+          "activeKey": {
+            "not": null,
+          },
+          "rule": {
+            "in": [
+              "W1",
+              "W2",
+              "W3",
+              "W4",
+              "W5",
+              "W6",
+              "W7",
+              "W8",
+              "W9",
+              "W10",
+              "W11",
+            ],
+          },
+          "status": {
+            "in": [
+              "ACTIVE",
+              "CONVERTED",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+    ],
+    [
+      "workOrderExt.findMany",
+      {
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "alert.create",
+      {
+        "data": {
+          "activeKey": "W1:unmatched:new",
+          "firstAt": 2026-11-01T04:00:00.000Z,
+          "level": "RED",
+          "levelAt": 2026-11-01T04:00:00.000Z,
+          "refId": "new",
+          "refType": "unmatched",
+          "rule": "W1",
+        },
+      },
+    ],
+    [
+      "transaction.begin",
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT id FROM alert WHERE id = ",
+        " FOR UPDATE",
+      ],
+      "new-alert",
+    ],
+    [
+      "alert.findUnique",
+      {
+        "where": {
+          "id": "new-alert",
+        },
+      },
+    ],
+    [
+      "reminder.createMany",
+      {
+        "data": [
+          {
+            "alertId": "new-alert",
+            "level": "RED",
+            "title": "【红】待确认匹配 new：返厂报检 12 天未确认关联（WO）",
+            "userId": "head",
+          },
+          {
+            "alertId": "new-alert",
+            "level": "RED",
+            "title": "【红】待确认匹配 new：返厂报检 12 天未确认关联（WO）",
+            "userId": "pdh",
+          },
+          {
+            "alertId": "new-alert",
+            "level": "RED",
+            "title": "【红】待确认匹配 new：返厂报检 12 天未确认关联（WO）",
+            "userId": "leader",
+          },
+          {
+            "alertId": "new-alert",
+            "level": "RED",
+            "title": "【红】待确认匹配 new：返厂报检 12 天未确认关联（WO）",
+            "userId": "finance",
+          },
+        ],
+        "skipDuplicates": true,
+      },
+    ],
+    [
+      "alert.update",
+      {
+        "data": {
+          "lastNotifiedAt": 2026-11-01T04:00:00.000Z,
+        },
+        "where": {
+          "id": "new-alert",
+        },
+      },
+    ],
+    [
+      "convertAlertInTx",
+      {
+        "id": "new-alert",
+        "level": "RED",
+        "status": "ACTIVE",
+      },
+      {
+        "key": "W1:unmatched:new",
+        "level": "RED",
+        "meta": {
+          "supplierId": null,
+        },
+        "ownerIds": [
+          "head",
+          "pdh",
+          "leader",
+          "finance",
+        ],
+        "refId": "new",
+        "refType": "unmatched",
+        "rule": "W1",
+        "startAt": 2026-10-20T00:00:00.000Z,
+        "subject": "待确认匹配 new",
+        "summary": "返厂报检 12 天未确认关联",
+        "workOrderNumber": "WO",
+      },
+      null,
+    ],
+    [
+      "transaction.commit",
+    ],
+    [
+      "transaction.begin",
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT id FROM alert WHERE id = ",
+        " FOR UPDATE",
+      ],
+      "old-alert",
+    ],
+    [
+      "alert.findUnique",
+      {
+        "where": {
+          "id": "old-alert",
+        },
+      },
+    ],
+    [
+      "alert.update",
+      {
+        "data": {
+          "level": "RED",
+          "levelAt": 2026-11-01T04:00:00.000Z,
+        },
+        "where": {
+          "id": "old-alert",
+        },
+      },
+    ],
+    [
+      "reminder.createMany",
+      {
+        "data": [
+          {
+            "alertId": "old-alert",
+            "level": "RED",
+            "title": "【红】待确认匹配 old：返厂报检 12 天未确认关联（WO）",
+            "userId": "head",
+          },
+          {
+            "alertId": "old-alert",
+            "level": "RED",
+            "title": "【红】待确认匹配 old：返厂报检 12 天未确认关联（WO）",
+            "userId": "pdh",
+          },
+          {
+            "alertId": "old-alert",
+            "level": "RED",
+            "title": "【红】待确认匹配 old：返厂报检 12 天未确认关联（WO）",
+            "userId": "leader",
+          },
+          {
+            "alertId": "old-alert",
+            "level": "RED",
+            "title": "【红】待确认匹配 old：返厂报检 12 天未确认关联（WO）",
+            "userId": "finance",
+          },
+        ],
+        "skipDuplicates": true,
+      },
+    ],
+    [
+      "alert.update",
+      {
+        "data": {
+          "lastNotifiedAt": 2026-11-01T04:00:00.000Z,
+        },
+        "where": {
+          "id": "old-alert",
+        },
+      },
+    ],
+    [
+      "convertAlertInTx",
+      {
+        "activeKey": "W1:unmatched:old",
+        "id": "old-alert",
+        "level": "RED",
+        "status": "ACTIVE",
+      },
+      {
+        "key": "W1:unmatched:old",
+        "level": "RED",
+        "meta": {
+          "supplierId": null,
+        },
+        "ownerIds": [
+          "head",
+          "pdh",
+          "leader",
+          "finance",
+        ],
+        "refId": "old",
+        "refType": "unmatched",
+        "rule": "W1",
+        "startAt": 2026-10-20T00:00:00.000Z,
+        "subject": "待确认匹配 old",
+        "summary": "返厂报检 12 天未确认关联",
+        "workOrderNumber": "WO",
+      },
+      null,
+    ],
+    [
+      "transaction.commit",
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "id": {
+            "in": [
+              "gone",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "gone-converted",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+  ],
+  "result": {
+    "active": 0,
+    "cleared": 1,
+    "converted": 2,
+    "created": 1,
+    "escalated": 1,
+    "reminders": 4,
+    "skipped": false,
+  },
+}
+`;
