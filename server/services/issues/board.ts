@@ -3,7 +3,7 @@
  * 顶部显示 QMS 最后同步时间：各类资源最后成功追平时间（sync_cursor.lastSyncedAt）的最小值，即最旧的那类；
  * 有资源从没同步成功过时为空（页面显示"未同步"）；有资源正在报错时附带错误（syncErrors）。
  *
- *   超期数 = 在外加工且已过承诺返回日的步骤 + 已过要求解决日的未关闭异常（待受理、处理中；待确认不算超期，与 W4 一致）
+ *   超期数 = 在外加工且已过承诺返回日的步骤 + 超期异常（待受理满 W4 黄阈值、或过要求解决日；待确认、已关闭不算）
  *   红 = 有活动红色预警（含已转异常、但对象仍停在原状态的），或有超期 ≥ W4 红色阈值（默认 3 天）的异常
  *   黄 = 有活动黄色预警，或有超期的异常（含待受理超时）
  *   否则绿
@@ -20,7 +20,7 @@
  */
 import { prisma } from '../../utils/prisma'
 import { loadOffDays, loadThresholds } from '../alerts/config'
-import { judgeW4 } from '../alerts/rules'
+import { judgeIssueOverdue } from './overdue'
 import { overdueWhere } from '../drawings/drawings'
 import { dueWindowWhere, incompleteWhere } from '../kitting/kitting'
 import { todayDate } from '../purchases/constants'
@@ -158,23 +158,24 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
   const purchasePendingOf = new Map(purchasePending.map((p) => [p.workOrderNumber, p._count._all]))
   const unsignedOf = new Map(unsigned.map((u) => [u.workOrderNumber, u._count._all]))
   const alertWo = await alertWorkOrders(alerts)
-  const pmOf = new Map(exts.map((e) => [e.workOrderNumber, e.projectManagerId]))
-  const names = await loadNames({ user: workOrders.map((w) => pmOf.get(w.workOrderNumber) ?? null) })
+  const extOf = new Map(exts.map((e) => [e.workOrderNumber, e]))
+  const names = await loadNames({ user: workOrders.map((w) => extOf.get(w.workOrderNumber)?.projectManagerId ?? null) })
 
   const rows = workOrders.map((w) => {
     const wo = w.workOrderNumber
     const out = outSteps.filter((s) => s.part.workOrderNumber === wo)
     const overdueSteps = out.filter((s) => overdueDays(s.promisedReturnDate, now) > 0).length
     const open = issues.filter((i) => i.workOrderNumber === wo)
-    const judged = open.map((i) => judgeW4({ status: i.status, createdAt: i.createdAt, dueDate: i.dueDate, now, offDays }, thresholds.W4))
-    const overdueIssues = judged.filter((j) => j.overdueDays > 0).length
-    const issueRed = judged.some((j) => j.overdueDays >= thresholds.W4.redDays)
-    const issueYellow = judged.some((j) => !!j.level || j.overdueDays > 0)
+    const judged = open.map((i) => judgeIssueOverdue({ status: i.status, createdAt: i.createdAt, dueDate: i.dueDate, now, offDays }, thresholds.W4))
+    const overdueIssues = judged.filter((j) => j.overdue).length
+    const issueRed = judged.some((j) => j.color === 'RED')
+    const issueYellow = judged.some((j) => j.color === 'YELLOW')
     const mine = alerts.filter((a) => alertWo.get(a.id) === wo)
     const red = mine.filter((a) => a.level === 'RED').length
     const yellow = mine.length - red
     const color: BoardColor = red || issueRed ? 'RED' : yellow || issueYellow ? 'YELLOW' : 'GREEN'
-    const pm = pmOf.get(wo) ?? null
+    const ext = extOf.get(wo)
+    const pm = ext?.projectManagerId ?? null
     const plan = plans.get(wo)
     const est = new Map((plan?.forecast.nodes ?? []).map((e) => [e.id, e]))
     const planNodes = (plan?.nodes ?? []).map((n) => {
@@ -194,6 +195,7 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
       closed: isClosedWorkOrder(w.status),
       projectManagerId: pm,
       projectManagerName: pm ? (names.user.get(pm) ?? pm) : null,
+      productLine: ext?.productLine ?? null,
       color,
       redAlerts: red,
       yellowAlerts: yellow,

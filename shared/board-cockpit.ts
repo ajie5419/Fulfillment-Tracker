@@ -57,7 +57,8 @@ export interface CockpitStagnation {
   owners: { name: string | null }[]
   link: string
 }
-export interface CockpitItem {
+/** 一项具体问题；附加项保留各自的责任方、时长和详情入口。 */
+export interface CockpitConcern {
   key: string
   kind: 'workOrder' | 'issue' | 'stagnation'
   label: string
@@ -70,44 +71,41 @@ export interface CockpitItem {
   to: string
   workOrder?: CockpitRedWorkOrder
 }
+export interface CockpitItem extends CockpitConcern {
+  /** 主项以外的所有问题（包括同类型的其他异常 / 停滞对象）。 */
+  also: CockpitConcern[]
+}
 
 /**
  * 管理优先级固定为：红色工单（工单级协调）→ 超期异常（处理闭环）→ W11 红线（在制停滞）。
- * 组内按接口给出的异常超期 / 停滞天数倒序；工单取其超期异常的最大 overdueDays。
- * 没有超期异常的红色工单无可靠已超时长，排组内末尾；同天数按稳定 key 排。
- * 三种时钟口径不同，不跨类别比较天数。最后才截取 10 条；同工单的不同事项保留，不按工单去重。
- * status.top 的红线对象已按停滞天数倒序，前 10 足够参与这份最多 10 条的合流，不能用于总数。
+ * 按工单分组，一单一行；同优先级取天数最大的问题为主项，其余全部进入 also。
+ * 行 days 为该单已知超期 / 停滞 / 预计拖期天数的最大值，仅用于排序；duration 保留主项的时钟文案。
+ * 先按主类型、再按行 days 倒序、同天数按工单 key 排，最后截取 10 单。
+ * 待受理超时也属于超期异常，但 overdueDays = 0 时不编造解决日超期时长。
+ * 调用方应提供完整候选集合；按对象截断的 monitoring.top 可能被同一工单占满，不能保证填满 10 单。
  */
 export function mergeCockpitItems(input: {
   redWorkOrders: readonly CockpitRedWorkOrder[]
   issues: readonly CockpitIssue[]
   stagnation: readonly CockpitStagnation[]
 }): CockpitItem[] {
-  // board.stuck.days 是预测相对计划的偏差，不能冒充已经逾期的时长。
-  const daysOf = new Map<string, number>()
-  for (const issue of input.issues) {
-    if (issue.overdue && issue.overdueDays > 0) daysOf.set(issue.workOrderNumber, Math.max(daysOf.get(issue.workOrderNumber) ?? 0, issue.overdueDays))
-  }
-  const rows: CockpitItem[] = [
-    ...input.redWorkOrders.map((r): CockpitItem => {
-      const days = daysOf.get(r.workOrderNumber) ?? null
-      return {
-        key: `wo:${r.workOrderNumber}`, kind: 'workOrder', label: '红色工单',
-        title: r.projectName || r.workOrderNumber, detail: r.reason, workOrderNumber: r.workOrderNumber,
-        responsibility: r.projectManagerName ? `项目经理 ${r.projectManagerName}` : '未设置项目经理',
-        days, duration: days === null ? '时长未提供' : `异常最长已超 ${days} 天`,
-        to: `/wo/${encodeURIComponent(r.workOrderNumber)}`,
-        workOrder: r,
-      }
-    }),
-    ...input.issues.filter((i) => i.overdue && i.overdueDays > 0).map((i): CockpitItem => ({
+  const rows: CockpitConcern[] = [
+    ...input.redWorkOrders.map((r): CockpitConcern => ({
+      key: `wo:${r.workOrderNumber}`, kind: 'workOrder', label: '红色工单',
+      title: r.projectName || r.workOrderNumber, detail: r.reason, workOrderNumber: r.workOrderNumber,
+      responsibility: r.projectManagerName ? `项目经理 ${r.projectManagerName}` : '未设置项目经理',
+      days: null, duration: '时长未提供',
+      to: `/wo/${encodeURIComponent(r.workOrderNumber)}`,
+      workOrder: r,
+    })),
+    ...input.issues.filter((i) => i.overdue).map((i): CockpitConcern => ({
       key: `issue:${i.id}`, kind: 'issue', label: '超期异常', title: `${i.issueNo} · ${i.description}`, detail: '',
       workOrderNumber: i.workOrderNumber,
       responsibility: [i.responsibleDeptName, i.responsibleUserName].filter(Boolean).join(' · ') || '未指定责任方',
-      days: i.overdueDays, duration: `已超期 ${i.overdueDays} 天`,
+      days: i.overdueDays > 0 ? i.overdueDays : null, duration: i.overdueDays > 0 ? `已超期 ${i.overdueDays} 天` : '待受理超时',
       to: `${OVERDUE_ISSUES_LINK}&id=${encodeURIComponent(i.id)}`,
     })),
-    ...input.stagnation.filter((e) => e.level === 'RED').map((e): CockpitItem => ({
+    ...input.stagnation.filter((e) => e.level === 'RED').map((e): CockpitConcern => ({
       key: `${e.entityType}:${e.id}`, kind: 'stagnation', label: '停滞红线', title: e.name,
       detail: `${e.entityType === 'step' ? '工序' : '工件'} · ${e.statusText}`, workOrderNumber: e.workOrderNumber,
       responsibility: [...e.deptNames, ...e.owners.map((o) => o.name)].filter(Boolean).join(' · ') || '未指定责任方',
@@ -115,7 +113,34 @@ export function mergeCockpitItems(input: {
     })),
   ]
   const rank = { workOrder: 0, issue: 1, stagnation: 2 }
-  return rows.sort((a, b) => rank[a.kind] - rank[b.kind] || (b.days ?? -1) - (a.days ?? -1) || a.key.localeCompare(b.key)).slice(0, 10)
+  const compare = (a: CockpitConcern, b: CockpitConcern) => rank[a.kind] - rank[b.kind] || (b.days ?? -1) - (a.days ?? -1) || a.key.localeCompare(b.key)
+  const groups = new Map<string, [CockpitConcern, ...CockpitConcern[]]>()
+  for (const row of rows) {
+    const group = groups.get(row.workOrderNumber)
+    if (group) group.push(row)
+    else groups.set(row.workOrderNumber, [row])
+  }
+  const items = [...groups.entries()].map(([wo, concerns]): CockpitItem => {
+    concerns.sort(compare)
+    const main = concerns[0]
+    const also = concerns.slice(1)
+    const durations = concerns.flatMap((r) => r.days === null ? [] : [{ days: r.days, duration: r.kind === 'issue' ? `异常最长已超 ${r.days} 天` : r.duration }])
+    // 工单字段已有完整集合的停滞摘要，即使停滞对象没在调用方 Top 中，也保留其排序权重。
+    for (const r of concerns) if (r.workOrder) {
+      for (const days of [r.workOrder.stagnationRedDays, r.workOrder.stagnationYellowDays]) {
+        if (days != null && days > 0) durations.push({ days, duration: `已停 ${days} 天` })
+      }
+      const delayDays = r.workOrder.delayDays
+      if (delayDays != null && delayDays > 0) durations.push({ days: delayDays, duration: `预计拖期 ${delayDays} 天` })
+    }
+    durations.sort((a, b) => b.days - a.days || a.duration.localeCompare(b.duration))
+    return {
+      ...main, key: `wo:${wo}`, days: durations[0]?.days ?? null,
+      duration: main.kind === 'workOrder' ? durations[0]?.duration ?? main.duration : main.duration,
+      also,
+    }
+  })
+  return items.sort(compare).slice(0, 10)
 }
 export const RED_STAGE_LABELS = { drawing: '设计', purchase: '采购', kitting: '齐套', outsource: '外协', production: '生产', other: '其他' } as const
 type RedStage = keyof typeof RED_STAGE_LABELS

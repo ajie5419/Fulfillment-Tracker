@@ -10,7 +10,8 @@
  */
 import { prisma } from '../../utils/prisma'
 import { loadOffDays, loadThresholds } from '../alerts/config'
-import { judgeW4, shanghaiDay, shanghaiDayStart } from '../alerts/rules'
+import { shanghaiDay, shanghaiDayStart } from '../alerts/rules'
+import { judgeIssueOverdue } from './overdue'
 import { BUSINESS_DEPTS, BUSINESS_DEPT_NAME, resolveDeptNames } from '../auth/departments'
 import { loadPlans } from '../plan/plan'
 import { getBoard } from './board'
@@ -62,7 +63,7 @@ export async function getOverview(now = new Date()) {
     const dept = (i.responsibleDeptId && (deptName.get(i.responsibleDeptId) ?? i.responsibleDeptId)) || '未指定'
     const row = byDept.get(dept) ?? { dept, open: 0, overdue: 0 }
     row.open++
-    if (judgeW4({ status: i.status, createdAt: i.createdAt, dueDate: i.dueDate, now, offDays }, thresholds.W4).overdueDays > 0) row.overdue++
+    if (judgeIssueOverdue({ status: i.status, createdAt: i.createdAt, dueDate: i.dueDate, now, offDays }, thresholds.W4).overdue) row.overdue++
     byDept.set(dept, row)
   }
 

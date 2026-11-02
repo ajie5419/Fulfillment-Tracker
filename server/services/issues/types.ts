@@ -88,7 +88,7 @@ export interface IssueFilter {
   deptIds?: string[]
   /** responsible = 我负责；reported = 我上报；todo = 等我操作（受理/处理/确认） */
   mine?: 'responsible' | 'reported' | 'todo'
-  /** 只看超期（W4 意义上：待受理超 1 天或过要求解决日） */
+  /** 只看超期（待受理满 W4 黄阈值，或已过要求解决日；待确认、已关闭不算） */
   overdue?: boolean
   /** 可见工单（undefined = 全部） */
   visibleWorkOrders?: string[]

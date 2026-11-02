@@ -1,23 +1,53 @@
 <script setup lang="ts">
 import { cockpitMetrics, mergeCockpitItems, OVERDUE_ISSUES_LINK, RED_WORK_ORDERS_LINK } from '#shared/board-cockpit'
+import type { MonitoredEntity } from '#shared/monitoring'
 
-const [overview, monitoring, releases, issues] = await Promise.all([
+async function fetchAllRedEntities(): Promise<MonitoredEntity[]> {
+  // SSR 时 $fetch 不会自动带上浏览器的会话 cookie，必须显式透传，否则接口会判未登录
+  const headers = useRequestHeaders(['cookie'])
+  const all: MonitoredEntity[] = []
+  let page = 1
+  const pageSize = 100
+  while (true) {
+    const res = await $fetch<{ asOf: string; threshold: unknown; total: number; rows: MonitoredEntity[] }>(
+      '/api/monitoring/entities',
+      { query: { level: 'RED', page, pageSize }, headers },
+    )
+    const rows = res?.rows ?? []
+    all.push(...rows)
+    if (!rows.length || all.length >= (res?.total ?? 0) || rows.length < pageSize) {
+      break
+    }
+    page++
+  }
+  return all
+}
+
+const [overview, monitoring, releases, issues, stagnationEntities] = await Promise.all([
   useFetch('/api/overview', { key: 'overview' }),
   useFetch('/api/monitoring/status', { key: 'status-monitoring' }),
   useFetch('/api/releases/stats', { key: 'cockpit-releases' }),
   useFetch('/api/issues', { key: 'cockpit-issues', query: { overdue: '1', dept: '0', status: 'UNCLOSED' } }),
+  useAsyncData('cockpit-stagnation-entities', fetchAllRedEntities),
 ])
 const sources = [
-  { name: '工单与异常统计', ...overview }, { name: '停滞红线', ...monitoring },
-  { name: '发放统计', ...releases }, { name: '超期异常清单', ...issues },
+  { name: '工单与异常统计', ...overview },
+  { name: '监控汇总', ...monitoring },
+  { name: '停滞红线', ...stagnationEntities },
+  { name: '发放统计', ...releases },
+  { name: '超期异常清单', ...issues },
 ]
 const failures = computed(() => sources.filter((s) => s.error.value))
 const loading = computed(() => sources.some((s) => s.pending.value))
-const metrics = computed(() => cockpitMetrics(overview.error.value ? null : overview.data.value, releases.error.value ? null : releases.data.value, monitoring.error.value ? null : monitoring.data.value))
+const metrics = computed(() => cockpitMetrics(
+  overview.error.value ? null : overview.data.value,
+  releases.error.value ? null : releases.data.value,
+  monitoring.error.value ? null : monitoring.data.value,
+))
 const items = computed(() => mergeCockpitItems({
   redWorkOrders: overview.error.value ? [] : overview.data.value?.redWorkOrders ?? [],
   issues: issues.error.value ? [] : issues.data.value ?? [],
-  stagnation: monitoring.error.value ? [] : monitoring.data.value?.top ?? [],
+  stagnation: stagnationEntities.error.value ? [] : stagnationEntities.data.value ?? [],
 }))
 const stages = computed(() => overview.data.value?.stages ?? [])
 const topStage = computed(() => [...stages.value].sort((a, b) => b.count - a.count)[0])
@@ -26,8 +56,9 @@ const stageRiskLinks: Record<string, string> = {
   outsource: '/risks?tab=alerts&rule=W3', kitting: '/risks?tab=alerts&rule=W8', issue: OVERDUE_ISSUES_LINK,
 }
 const stageBars = computed(() => stages.value.map((s) => ({ key: s.key, label: s.label, value: s.count, to: s.link })))
-const deptBars = computed(() => overview.data.value?.byDept.map((d) => ({ key: d.dept, label: d.dept, value: d.open, text: `${d.open} · 超期 ${d.overdue}` })) ?? [])
-async function refresh() { await Promise.all(sources.map((s) => s.refresh())) }
+async function refresh() {
+  await Promise.all(sources.map((s) => s.refresh()))
+}
 defineExpose({ refresh })
 </script>
 
@@ -44,7 +75,7 @@ defineExpose({ refresh })
       <UiSectionCard title="今天盯什么 · 红色清单" class="cockpit-list" padding="tight">
         <template #title>
           今天盯什么 · 红色清单
-          <UiHelpTip>先红色工单，再超期异常，最后停滞红线；各类内按时长倒序，最多 10 条。工单标题显示总计划预计拖期；下方胶囊取看板业务计数，超过四枚时悬停 +N 查看其余状态，点击进入详情。停滞按 W11 上海自然日计算，包含停工日。</UiHelpTip>
+          <UiHelpTip>一单一行；主问题优先级红色工单 → 超期异常 → 停滞红线；同一工单的其他问题以胶囊列在同行、可点进各自详情；最多 10 单。停滞按 W11 上海自然日计算，包含停工日。</UiHelpTip>
         </template>
         <template #extra>
           <NuxtLink :to="RED_WORK_ORDERS_LINK">全部红色工单</NuxtLink>
@@ -65,9 +96,22 @@ defineExpose({ refresh })
                 </template>
                 <template v-else><UiStatusTag tone="late">{{ item.label }}</UiStatusTag><NuxtLink :to="item.to">{{ item.title }}</NuxtLink></template>
               </template>
-              <template v-if="item.workOrder || item.detail" #desc>
-                <WoStatusCapsules v-if="item.workOrder" :row="item.workOrder" :to="item.to" />
-                <UiStatusTag v-else tone="late">{{ item.detail }}</UiStatusTag>
+              <template v-if="item.workOrder || item.detail || item.also.length" #desc>
+                <div class="cockpit-capsule-row">
+                  <WoStatusCapsules v-if="item.workOrder" :row="item.workOrder" :to="item.to" />
+                  <UiStatusTag v-else-if="item.detail" tone="late">{{ item.detail }}</UiStatusTag>
+                  <span v-if="item.also.length" class="also-capsules">
+                    <NuxtLink
+                      v-for="c in item.also"
+                      :key="c.key"
+                      :to="c.to"
+                      class="also-capsule-link"
+                      :title="c.title + (c.detail ? ' · ' + c.detail : '')"
+                    >
+                      <UiStatusTag tone="late">{{ c.label }} {{ c.duration }}</UiStatusTag>
+                    </NuxtLink>
+                  </span>
+                </div>
               </template>
               <template v-if="!item.workOrder" #meta><WoLink :no="item.workOrderNumber" /> · 责任方：{{ item.responsibility }}</template>
               <template v-if="!item.workOrder" #extra><UiStatusTag tone="late">{{ item.duration }}</UiStatusTag></template>
@@ -85,14 +129,9 @@ defineExpose({ refresh })
         <NuxtLink v-else-if="topStage && topStage.count > 0" :to="stageRiskLinks[topStage.key] ?? '/risks'">{{ topStage.label }} {{ topStage.count }}</NuxtLink>
         <span v-else>暂无卡点</span>
       </p>
-      <div v-if="overview.data.value && !overview.error.value" class="compact-charts">
-        <UiSectionCard title="卡点分布" padding="tight">
-          <div class="ft-well compact-stage"><UiColumnChart :items="stageBars" highlight="late" :height="140" /></div>
-        </UiSectionCard>
-        <UiSectionCard title="按责任部门 · 未关闭异常" padding="tight">
-          <div class="ft-well"><UiBarList :items="deptBars" compact :label-width="96" empty="没有未关闭的异常" /></div>
-        </UiSectionCard>
-      </div>
+      <UiSectionCard v-if="overview.data.value && !overview.error.value" title="卡点分布" padding="tight">
+        <div class="ft-well compact-stage"><UiColumnChart :items="stageBars" highlight="late" :height="140" /></div>
+      </UiSectionCard>
     </div>
   </div>
 </template>
@@ -104,11 +143,15 @@ defineExpose({ refresh })
 .cockpit-list { overflow-wrap: anywhere; }
 .cockpit-list :deep(.ft-li) { padding: 10px 0; }
 .cockpit-list :deep(.extra) { color: var(--ft-late-text); }
+.cockpit-capsule-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.also-capsules { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.also-capsule-link { display: inline-flex; text-decoration: none; }
+.also-capsule-link:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; border-radius: 999px; }
+.also-capsule-link:hover :deep(.ft-status-tag) { opacity: 0.88; }
 .source-error { margin-bottom: 8px; color: var(--ft-late-text); }
 .week-summary { margin: 0 0 12px; color: var(--ft-text-2); }
-.compact-charts { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 16px; }
 .compact-stage { height: 180px; }
-@media (max-width: 991px) { .cockpit-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } .compact-charts { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 991px) { .cockpit-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 575px) {
   .cockpit-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .cockpit-list :deep(.ft-li) { flex-wrap: wrap; }

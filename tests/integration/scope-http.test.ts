@@ -201,6 +201,29 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
   }
   const get = (path: string, s: Record<string, string>) => fetch(`${base}${path}`, { headers: { cookie: cookieHeader(s) } })
 
+  it('项目全景 HTTP 权限跟随看板：未登录 401，项目经理只看自己，领导看全部', async () => {
+    expect((await fetch(`${base}/api/panorama`)).status).toBe(401)
+    for (const user of ['h-pm', 'h-lead', 'h-admin']) {
+      const session = await login(user)
+      const response = await get('/api/panorama', session)
+      expect(response.status).toBe(200)
+      const panorama = await response.json()
+      const board = await (await get('/api/board?closed=1', session)).json()
+      const inProgress = board.rows.filter((r: { status: string }) => r.status === 'IN_PROGRESS')
+      expect(panorama.counts).toEqual({
+        inProgress: inProgress.length,
+        normal: inProgress.filter((r: { color: string }) => r.color === 'GREEN').length,
+        abnormal: inProgress.filter((r: { color: string }) => r.color === 'RED' || r.color === 'YELLOW').length,
+        completed: board.rows.filter((r: { status: string }) => r.status === 'COMPLETED').length,
+        notStarted: board.rows.filter((r: { status: string }) => r.status === 'OPEN').length,
+        unaccepted: null, unacceptedAvailable: false,
+      })
+      const managers = panorama.byManager.map((m: { projectManagerId: string | null }) => m.projectManagerId)
+      if (user === 'h-pm') expect(managers).toEqual(['h-pm'])
+      else expect(managers).toContain('h-pm2')
+    }
+  })
+
   it('状态监控新接口：未登录 401，普通项目经理 403，领导可看全部在制分布并按实体 / 状态下钻', async () => {
     expect((await fetch(`${base}/api/monitoring/status`)).status).toBe(401)
     const pm = await login('h-pm')

@@ -1,7 +1,7 @@
-/** 异常展示投影：名称、W4 判定、权限及详情时间线。 */
+/** 异常展示投影：名称、实时超期判定、权限及详情时间线。 */
 import type { Alert, Issue, Prisma } from '@prisma/client'
 import type { NameMaps } from '../flow/names'
-import { judgeW4 } from '../alerts/rules'
+import { judgeIssueOverdue } from './overdue'
 import { resolveDeptName } from '../auth/departments'
 import { CATEGORY_TEXT, STATUS_TEXT } from './constants'
 import { issuePermissions } from './calculation'
@@ -15,7 +15,7 @@ export function projectIssues(issues: Issue[], { ctx, thresholds, offDays, depts
   return issues.map((i) => {
     const step = i.refType === 'STEP' && i.refId ? stepById.get(i.refId) : undefined
     const part = step?.part ?? (i.refType === 'PART' && i.refId ? partById.get(i.refId) : undefined)
-    const judged = judgeW4({ status: i.status, createdAt: i.createdAt, dueDate: i.dueDate, now, offDays }, thresholds.W4)
+    const judged = judgeIssueOverdue({ status: i.status, createdAt: i.createdAt, dueDate: i.dueDate, now, offDays }, thresholds.W4)
     return {
       id: i.id,
       issueNo: i.issueNo,
@@ -48,7 +48,7 @@ export function projectIssues(issues: Issue[], { ctx, thresholds, offDays, depts
       createdAt: i.createdAt,
       updatedAt: i.updatedAt,
       /** 超期：待受理超阈值、或过要求解决日（待确认、已关闭不算） */
-      overdue: !!judged.level,
+      overdue: judged.overdue,
       overdueDays: judged.overdueDays,
       /** 当前 W4 预警级别（扫描任务写入的） */
       alertLevel: w4.get(i.id) ?? null,
