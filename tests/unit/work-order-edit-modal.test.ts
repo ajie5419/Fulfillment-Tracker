@@ -303,6 +303,7 @@ describe('WorkOrderEditModal 状态分支与结构测试', () => {
     const { state } = await mountScript('app/components/WorkOrderEditModal.vue', { open: true, workOrder: existingWo }, modules)
     cleanups.push(() => {})
 
+    const initialKey = state.idempotencyKey
     state.form.quantity = 9
     fetchApi.mockRejectedValueOnce({
       statusCode: 409,
@@ -318,6 +319,160 @@ describe('WorkOrderEditModal 状态分支与结构测试', () => {
     expect(state.pendingRecovery).toBeNull()
     expect(state.submitError).toBe('工单已被别人修改，请刷新后再改')
     expect(message.error).toHaveBeenCalledWith('工单已被别人修改，请刷新后再改')
+    expect(state.idempotencyKey).not.toBe(initialKey)
+  })
+
+  it('终态失败后再保存使用新键且能成功', async () => {
+    const { state, events } = await mountScript('app/components/WorkOrderEditModal.vue', { open: true, workOrder: null }, modules)
+    cleanups.push(() => {})
+
+    state.form.workOrderNumber = 'WO-ROTATION-TEST'
+    state.form.customerNameId = 'c-1'
+    state.form.quantity = 10
+    state.form.deliveryDate = '2026-12-01'
+
+    const firstKey = state.idempotencyKey
+    expect(firstKey).toBeTruthy()
+
+    // 第一次保存：QMS 连接失败，返回带 HTTP 状态的确定错误（502）
+    fetchApi.mockRejectedValueOnce({
+      statusCode: 502,
+      data: { message: 'QMS 瞬时连接失败' },
+    })
+
+    await state.submit()
+    await flushVue()
+
+    expect(state.submitError).toBe('QMS 瞬时连接失败')
+    expect(message.error).toHaveBeenCalledWith('QMS 瞬时连接失败')
+    expect(events).toHaveLength(0)
+
+    // 终态失败后已轮换新键
+    const secondKey = state.idempotencyKey
+    expect(secondKey).toBeTruthy()
+    expect(secondKey).not.toBe(firstKey)
+
+    // 第二次保存：恢复后成功（200）
+    fetchApi.mockResolvedValueOnce({
+      workOrderNumber: 'WO-ROTATION-TEST',
+      status: 'OPEN',
+      version: 1,
+      updatedAt: new Date().toISOString(),
+    })
+
+    await state.submit()
+    await flushVue()
+
+    // 断言第二次提交携带的 idempotencyKey 与第一次不同且最终成功
+    const saveCalls = fetchApi.mock.calls.filter((call) => call[0] === '/api/work-orders')
+    expect(saveCalls).toHaveLength(2)
+    const [firstCall, secondCall] = saveCalls
+    expect(firstCall?.[1]?.body?.idempotencyKey).toBe(firstKey)
+    expect(secondCall?.[1]?.body?.idempotencyKey).toBe(secondKey)
+    expect(message.success).toHaveBeenCalledWith('工单已建好，已写入 QMS')
+    expect(events).toEqual([['WO-ROTATION-TEST']])
+  })
+
+  it('待恢复重试不换键', async () => {
+    const { state, events } = await mountScript('app/components/WorkOrderEditModal.vue', { open: true, workOrder: null }, modules)
+    cleanups.push(() => {})
+
+    state.form.workOrderNumber = 'WO-RECOVERY-KEY-TEST'
+    state.form.customerNameId = 'c-1'
+    state.form.quantity = 10
+    state.form.deliveryDate = '2026-12-01'
+
+    const initialKey = state.idempotencyKey
+    expect(initialKey).toBeTruthy()
+
+    const recoveryMsg = 'QMS 已保存成功，本地扩展信息待恢复；请勿重复新建，请管理员重试恢复'
+    fetchApi.mockResolvedValueOnce({
+      workOrderNumber: 'WO-RECOVERY-KEY-TEST',
+      status: 'OPEN',
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      recovery: {
+        status: 'PENDING',
+        operationId: 'op-recovery-key-1',
+        message: recoveryMsg,
+      },
+    })
+
+    await state.submit()
+    await flushVue()
+
+    // 202 待恢复后保存键保持不变
+    expect(state.idempotencyKey).toBe(initialKey)
+    expect(state.pendingRecovery).toEqual({
+      operationId: 'op-recovery-key-1',
+      message: recoveryMsg,
+    })
+
+    // 管理员点击重试恢复成功
+    fetchApi.mockResolvedValueOnce({
+      workOrderNumber: 'WO-RECOVERY-KEY-TEST',
+      status: 'OPEN',
+      version: 1,
+      updatedAt: new Date().toISOString(),
+    })
+
+    await state.retryRecovery()
+    await flushVue()
+
+    // 断言重试前后保存键不变（重试走 operationId，不依赖键）
+    expect(state.idempotencyKey).toBe(initialKey)
+    expect(fetchApi).toHaveBeenCalledWith('/api/settings/work-order-saves/op-recovery-key-1/retry', expect.objectContaining({
+      method: 'POST',
+    }))
+    expect(message.success).toHaveBeenCalledWith('工单已建好，已写入 QMS')
+    expect(events).toEqual([['WO-RECOVERY-KEY-TEST']])
+    expect(state.pendingRecovery).toBeNull()
+  })
+
+  it('请求无响应（纯网络错误）保存失败时不换键', async () => {
+    const { state } = await mountScript('app/components/WorkOrderEditModal.vue', { open: true, workOrder: null }, modules)
+    cleanups.push(() => {})
+
+    state.form.workOrderNumber = 'WO-NET-FAIL'
+    state.form.customerNameId = 'c-1'
+    state.form.quantity = 10
+    state.form.deliveryDate = '2026-12-01'
+
+    const initialKey = state.idempotencyKey
+    expect(initialKey).toBeTruthy()
+
+    fetchApi.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+    await state.submit()
+    await flushVue()
+
+    expect(state.submitError).toBe('Failed to fetch')
+    expect(message.error).toHaveBeenCalledWith('Failed to fetch')
+    // 拿不到 HTTP 状态时一律不换键
+    expect(state.idempotencyKey).toBe(initialKey)
+  })
+
+  it('FetchError 的 response.status 挂载状态时识别为确定错误并轮换新键', async () => {
+    const { state } = await mountScript('app/components/WorkOrderEditModal.vue', { open: true, workOrder: null }, modules)
+    cleanups.push(() => {})
+
+    state.form.workOrderNumber = 'WO-RESP-STATUS'
+    state.form.customerNameId = 'c-1'
+    state.form.quantity = 10
+    state.form.deliveryDate = '2026-12-01'
+
+    const initialKey = state.idempotencyKey
+
+    fetchApi.mockRejectedValueOnce({
+      response: { status: 504 },
+      data: { message: '网关超时' },
+    })
+
+    await state.submit()
+    await flushVue()
+
+    expect(state.submitError).toBe('网关超时')
+    expect(state.idempotencyKey).not.toBe(initialKey)
   })
 
   it('管理员重试成功（200）：弹普通成功提示，emit done，清除警告区', async () => {

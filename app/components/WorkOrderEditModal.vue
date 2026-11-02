@@ -18,8 +18,12 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 function extractStatusCode(error: unknown): number | undefined {
   const source = asRecord(error)
   const data = asRecord(source?.data)
-  const status = source?.statusCode ?? source?.status ?? data?.statusCode
-  return typeof status === 'number' ? status : undefined
+  const response = asRecord(source?.response)
+  const candidates = [source?.statusCode, source?.status, response?.status, data?.statusCode]
+  for (const candidate of candidates) {
+    if (typeof candidate === 'number') return candidate
+  }
+  return undefined
 }
 
 function extractOperationId(error: unknown): string | undefined {
@@ -253,6 +257,9 @@ async function submit() {
         message: apiError(e),
       }
     } else {
+      if (status !== undefined) {
+        idempotencyKey.value = crypto.randomUUID()
+      }
       // 不吞错误：弹窗里留一条，同时弹提示
       submitError.value = apiError(e)
       message.error(submitError.value)
