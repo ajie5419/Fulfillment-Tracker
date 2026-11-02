@@ -13,8 +13,9 @@ import { PrismaClient } from '@prisma/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startMockIdentityBridge } from '../../scripts/mock-identity-bridge.mjs'
 import { BUSINESS_DEPT_NAME } from '../../shared/business-depts'
+import { getTestDatabaseUrl } from '../helpers/test-database'
 
-const DB = process.env.TEST_DATABASE_URL
+const DB = getTestDatabaseUrl(process.env.TEST_DATABASE_URL)
 const SERVER_ENTRY = '.output/server/index.mjs'
 
 function freePort(): Promise<number> {

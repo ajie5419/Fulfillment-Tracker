@@ -3,18 +3,19 @@
  * 设置 →"总计划模板"（R14）：节点名称、顺序、责任部门、交期前天数；10-22 加阶段、工期、前置节点（按真实 MS Project 计划，多条线并行）、上级节点（子节点只一层）。项目部负责人、管理员可维护（接口也校验）。
  * 改模板不影响已经生成的总计划（生成时复制）。
  */
+import type { BusinessDeptCode } from '#shared/business-depts'
 import { BUSINESS_DEPT_OPTIONS } from '#shared/business-depts'
 
-interface TplNode { name: string; dept: string; daysBeforeDelivery: number; phase: string | null; durationDays: number | null; preds: number[] | null; parent: number | null }
+interface TplNode { name: string; dept: BusinessDeptCode; daysBeforeDelivery: number; phase: string | null; durationDays: number | null; preds: number[] | null; parent: number | null }
 interface Tpl { id: string; name: string; description: string | null; createdByName: string | null; updatedAt: string; nodes: (TplNode & { seq: number; deptText: string })[] }
 /** 编辑中的行：key 稳定（上下移动、删行时前置关系、上级跟着行走，不按位置错位）；preds、parent 存行 key，NONE = 没有前置 */
-interface EditRow { key: number; name: string; dept: string; daysBeforeDelivery: number; phase: string; durationDays: number | undefined; preds: number[]; parent: number | undefined }
+interface EditRow { key: number; name: string; dept: BusinessDeptCode; daysBeforeDelivery: number; phase: string; durationDays: number | undefined; preds: number[]; parent: number | undefined }
 const NONE = -1
 
 const DEPTS = BUSINESS_DEPT_OPTIONS
 
 const { data, refresh, pending } = await useFetch<Tpl[]>('/api/plan/templates', { default: () => [] })
-const send = $fetch as unknown as (url: string, opts: { method: 'POST' | 'PUT' | 'DELETE'; body?: object }) => Promise<unknown>
+const send = clientRequest
 
 const open = ref(false)
 const saving = ref(false)

@@ -7,7 +7,7 @@ const route = useRoute()
 const router = useRouter()
 const tab = ref<'pending' | 'done'>(route.query.tab === 'done' ? 'done' : 'pending')
 watch(tab, (t) => router.replace({ query: { ...route.query, tab: t } }))
-const { data: rows, pending } = await useFetch('/api/receipts', { query: computed(() => ({ tab: tab.value })), default: () => [] })
+const { data: rows, pending, error, refresh } = await useFetch('/api/receipts', { query: computed(() => ({ tab: tab.value })), default: () => [] })
 </script>
 
 <template>
@@ -18,6 +18,7 @@ const { data: rows, pending } = await useFetch('/api/receipts', { query: compute
       <van-tab title="已处理" name="done" />
     </van-tabs>
     <van-loading v-if="pending" class="m-center" />
+    <van-empty v-else-if="error" image="error" :description="`签收列表加载失败：${apiError(error)}`"><van-button size="small" type="primary" @click="refresh()">重试</van-button></van-empty>
     <van-empty v-else-if="!rows.length" :description="tab === 'pending' ? '没有待签收的发放单' : '还没有处理过的发放单'" image-size="80" />
     <div v-else class="m-list">
       <MCard

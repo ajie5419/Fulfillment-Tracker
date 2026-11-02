@@ -5,6 +5,8 @@
  * 接口也校验权限，这里只是不给没权限的人看
  */
 import dayjs, { type Dayjs } from 'dayjs'
+import type { ClientMethod, ClientBodyArgs } from '../utils/transport'
+import type { BusinessDeptCode } from '#shared/business-depts'
 import type { AlertRuleKey } from '#shared/alert-rules'
 
 const { data: me } = await useMe()
@@ -28,11 +30,11 @@ const syncColumns = [
 const userOptions = computed(() => master.value.users.map((u) => ({ value: u.id, label: `${u.name}（${u.department}）` })))
 
 /** 设置页的写接口都只看成功与否；绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"） */
-const send = $fetch as unknown as (url: string, opts: { method: 'POST' | 'PUT' | 'DELETE'; body?: object }) => Promise<unknown>
 
-async function call(url: string, method: 'POST' | 'PUT' | 'DELETE', body?: object, ok = '已保存') {
+function call<P extends `/api/settings/${string}`, M extends ClientMethod<P> & ('POST' | 'PUT' | 'DELETE')>(url: P, method: M, body: ClientBodyArgs<P, M>[0], ok?: string): Promise<void>
+async function call(url: string, method: 'POST' | 'PUT' | 'DELETE', body?: unknown, ok = '已保存') {
   try {
-    await send(url, { method, body })
+    await sendClientRequest(url, { method, body })
     message.success(ok)
   } catch (e) {
     message.error(apiError(e))
@@ -65,7 +67,7 @@ const RED_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（超�
 const NO_REMIND = (rule: Row['rule']) => rule === 'W2' || rule === 'W4' || rule === 'W8' || rule === 'W11'
 function saveThreshold(r: Row) {
   const remindHours = NO_REMIND(r.rule) || r.remind == null ? null : BY_DAY(r.rule) ? Math.round(r.remind * 24) : r.remind
-  const url = `/api/settings/thresholds/${r.rule}`
+  const url = `/api/settings/thresholds/${r.rule}` as const
   return call(url, 'PUT', { remindHours, yellowDays: r.yellowDays, redDays: r.redDays })
 }
 const thresholdColumns = [
@@ -119,7 +121,7 @@ const isLegacyDept = (d: string | null) => !!d && !!data.value?.legacyDepartment
 const NO_MAPPING = '__NONE__'
 const mappingOptions = computed(() => [{ value: NO_MAPPING, label: '不对应' }, ...(data.value?.businessDepts ?? [])])
 const setMapping = (deptId: string, v: unknown) =>
-  call(`/api/settings/dept-mappings/${encodeURIComponent(deptId)}`, 'PUT', { businessDept: v === NO_MAPPING || !v ? null : v })
+  call(`/api/settings/dept-mappings/${encodeURIComponent(deptId)}`, 'PUT', { businessDept: v === NO_MAPPING || !v ? null : v as BusinessDeptCode })
 const mappingColumns = [
   { title: 'QMS 部门', key: 'name' },
   { title: '上级部门', key: 'parent', width: 180 },

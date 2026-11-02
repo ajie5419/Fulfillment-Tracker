@@ -1,9 +1,9 @@
 import { z } from 'zod'
 import { previewTechBom } from '../../services/bom/excel'
+import { MAX_BOM_BYTES } from '../../../shared/upload-policy'
 
 /** 整个请求体上限：5MB 文件 + 表单开销。超过直接 413，不读进内存 */
-const MAX_FILE_BYTES = 5 * 1024 * 1024
-const MAX_REQUEST_BYTES = MAX_FILE_BYTES + 64 * 1024
+const MAX_REQUEST_BYTES = MAX_BOM_BYTES + 64 * 1024
 /** .xlsx 是 zip：文件头 PK\x03\x04 */
 const isZip = (b: Buffer) => b.length > 4 && b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04
 
@@ -24,7 +24,7 @@ export default defineFlowHandler(async (event) => {
   if (files.length !== 1) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: '请选择一个 Excel 文件' })
   const file = files[0]!
   // Content-Length 只管整个请求；文件本身再查一次
-  if (file.data.length > MAX_FILE_BYTES) throw createError({ statusCode: 413, statusMessage: 'Payload Too Large', message: '文件太大：不能超过 5MB' })
+  if (file.data.length > MAX_BOM_BYTES) throw createError({ statusCode: 413, statusMessage: 'Payload Too Large', message: '文件太大：不能超过 5MB' })
   if (!isZip(file.data)) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: 'BOM 只能是 .xlsx 文件（.xls 请先用 Excel 另存为 .xlsx）' })
   const form: Record<string, string> = {}
   for (const p of parts) if (p.name && p.name !== 'file' && p.filename === undefined) form[p.name] = p.data.toString('utf8')

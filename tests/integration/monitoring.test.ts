@@ -2,8 +2,9 @@
 import { execFileSync } from 'node:child_process'
 import type { PrismaClient } from '@prisma/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { getTestDatabaseUrl } from '../helpers/test-database'
 
-const DB = process.env.TEST_DATABASE_URL
+const DB = getTestDatabaseUrl(process.env.TEST_DATABASE_URL)
 const WO = 'T-MON-ACTIVE'
 const WOS = [WO, 'T-MON-DONE', 'T-MON-CANCELLED', 'T-MON-DELETED', 'T-MON-BOARD', 'T-MON-COUNT', 'T-MON-CAPSULES']
 const now = new Date()

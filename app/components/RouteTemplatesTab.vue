@@ -11,7 +11,7 @@ const { data: master } = await useMaster()
 interface TemplateStep { processId: string; processName: string; mode: StepModeKey; supplierId: string | null; supplierName: string | null; defaultDays: number | null }
 interface TemplateRow { id: string; name: string; description: string | null; createdByName: string | null; updatedAt: string; steps: TemplateStep[] }
 // 绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"）
-const send = $fetch as unknown as (url: string, opts: { method: 'POST' | 'PUT' | 'DELETE'; body?: object }) => Promise<unknown>
+const send = clientRequest
 
 // useFetch 在服务端渲染时会带上登录 Cookie（直接 $fetch 不会）
 const { data: templates, pending, refresh } = await useFetch<TemplateRow[]>('/api/templates', { key: 'route-templates', default: () => [] })
@@ -44,11 +44,12 @@ async function save() {
   const body = {
     name: form.name,
     description: form.description || null,
-    steps: form.steps.map((s) => ({ processId: s.processId, mode: s.mode, supplierId: s.supplierId ?? null, defaultDays: s.defaultDays ?? null })),
+    steps: form.steps.map((s) => ({ processId: s.processId ?? '', mode: s.mode, supplierId: s.supplierId ?? null, defaultDays: s.defaultDays ?? null })),
   }
   saving.value = true
   try {
-    await send(form.id ? `/api/templates/${form.id}` : '/api/templates', { method: form.id ? 'PUT' : 'POST', body })
+    if (form.id) await send(`/api/templates/${form.id}`, { method: 'PUT', body })
+    else await send('/api/templates', { method: 'POST', body })
     message.success('已保存')
     form.open = false
     await refresh()

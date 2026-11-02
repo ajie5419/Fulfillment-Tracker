@@ -114,23 +114,24 @@ export function mergeCockpitItems(input: {
   ]
   const rank = { workOrder: 0, issue: 1, stagnation: 2 }
   const compare = (a: CockpitConcern, b: CockpitConcern) => rank[a.kind] - rank[b.kind] || (b.days ?? -1) - (a.days ?? -1) || a.key.localeCompare(b.key)
-  const groups = new Map<string, CockpitConcern[]>()
+  const groups = new Map<string, [CockpitConcern, ...CockpitConcern[]]>()
   for (const row of rows) {
-    const group = groups.get(row.workOrderNumber) ?? []
-    group.push(row)
-    groups.set(row.workOrderNumber, group)
+    const group = groups.get(row.workOrderNumber)
+    if (group) group.push(row)
+    else groups.set(row.workOrderNumber, [row])
   }
   const items = [...groups.entries()].map(([wo, concerns]): CockpitItem => {
     concerns.sort(compare)
-    const main = concerns[0]!
+    const main = concerns[0]
     const also = concerns.slice(1)
-    const durations = concerns.filter((r) => r.days !== null).map((r) => ({ days: r.days!, duration: r.kind === 'issue' ? `异常最长已超 ${r.days} 天` : r.duration }))
+    const durations = concerns.flatMap((r) => r.days === null ? [] : [{ days: r.days, duration: r.kind === 'issue' ? `异常最长已超 ${r.days} 天` : r.duration }])
     // 工单字段已有完整集合的停滞摘要，即使停滞对象没在调用方 Top 中，也保留其排序权重。
     for (const r of concerns) if (r.workOrder) {
       for (const days of [r.workOrder.stagnationRedDays, r.workOrder.stagnationYellowDays]) {
         if (days != null && days > 0) durations.push({ days, duration: `已停 ${days} 天` })
       }
-      if ((r.workOrder.delayDays ?? 0) > 0) durations.push({ days: r.workOrder.delayDays!, duration: `预计拖期 ${r.workOrder.delayDays} 天` })
+      const delayDays = r.workOrder.delayDays
+      if (delayDays != null && delayDays > 0) durations.push({ days: delayDays, duration: `预计拖期 ${delayDays} 天` })
     }
     durations.sort((a, b) => b.days - a.days || a.duration.localeCompare(b.duration))
     return {

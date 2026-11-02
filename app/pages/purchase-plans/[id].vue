@@ -8,7 +8,7 @@ const { data: plan, error, pending, refresh } = await useFetch(url)
 type Item = NonNullable<typeof plan.value>['items'][number]
 const editable = computed(() => !!plan.value && !!me.value?.can.purchasePlan && purchasePlanEditable(plan.value.status))
 // 动态明细路径的 PATCH / POST 共用表单；显式约束写请求，避免 Nitro 对联合路径进行递归推断。
-const mutate = $fetch as unknown as <T = unknown>(url: string, options: { method: 'POST' | 'PATCH' | 'DELETE'; body?: unknown }) => Promise<T>
+const mutate = clientRequest
 const busy = ref(false)
 const headOpen = ref(false)
 const itemOpen = ref(false)
@@ -32,16 +32,16 @@ function editItem(item?: Item) {
   itemOpen.value = true
 }
 async function saveHead() { await action(async () => { await mutate(url.value, { method: 'PATCH', body: head }); headOpen.value = false }) }
-async function saveItem() { await action(async () => { await mutate(`${url.value}/items${editingId.value ? `/${editingId.value}` : ''}`, { method: editingId.value ? 'PATCH' : 'POST', body: { ...itemForm, needDate: itemForm.needDate ?? null, partId: itemForm.partId ?? null } }); itemOpen.value = false }) }
+async function saveItem() { await action(async () => { const body = { ...itemForm, needDate: itemForm.needDate ?? null, partId: itemForm.partId ?? null }; if (editingId.value) await mutate(`${url.value}/items/${editingId.value}`, { method: 'PATCH', body }); else await mutate(`${url.value}/items`, { method: 'POST', body }); itemOpen.value = false }) }
 async function changeStatus(actionName: 'issue' | 'withdraw') {
   await action(async () => {
-    const r = await mutate<{ notified: number }>(`${url.value}/${actionName}`, { method: 'POST' })
-    message.success(actionName === 'withdraw' ? '已撤回，可继续编辑后再下发；已转入的采购行保留' : r.notified ? `已下发，已通知 ${r.notified} 位采购部负责人` : '已下发，但未设置采购部负责人，请到设置中指定')
+    const r = await mutate(`${url.value}/${actionName}`, { method: 'POST' })
+    message.success(actionName === 'withdraw' ? '已撤回，可继续编辑后再下发；已转入的采购行保留' : ('notified' in r && r.notified) ? `已下发，已通知 ${'notified' in r ? r.notified : 0} 位采购部负责人` : '已下发，但未设置采购部负责人，请到设置中指定')
   })
 }
 async function convert(itemId?: string) {
   await action(async () => {
-    const r = await mutate<{ succeeded: number; failed: number; results: { itemId: string; error?: string }[] }>(`${url.value}/convert`, { method: 'POST', body: itemId ? { itemIds: [itemId] } : {} })
+    const r = await mutate(`${url.value}/convert`, { method: 'POST', body: itemId ? { itemIds: [itemId] } : {} })
     conversionErrors.value = r.results.filter(r => r.error)
     message.info(`成功转入 ${r.succeeded} 项，失败 ${r.failed} 项`)
   })

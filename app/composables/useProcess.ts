@@ -1,3 +1,4 @@
+import { MATERIAL_STATUS_TEXT as SHARED_MATERIAL_STATUS_TEXT, PROCESS_STATUS_TEXT as SHARED_PROCESS_STATUS_TEXT } from '#shared/process'
 /** 工艺模块（料单、工艺状态，10-27）页面共用：文案、状态色、接口调用。与 server/services/process/constants.ts 一致 */
 import type { ProcessKind, ProcessAction } from '#shared/process'
 export type { ProcessKind, ProcessAction } from '#shared/process'
@@ -5,8 +6,8 @@ export type { ProcessKind, ProcessAction } from '#shared/process'
 export type MaterialStatusKey = 'NOT_STARTED' | 'DRAFTING' | 'REVISING' | 'ISSUED'
 export type ProcessStatusKey = 'NONE' | 'DRAFTING' | 'REVISING' | 'ISSUED'
 
-export const MATERIAL_STATUS_TEXT: Record<MaterialStatusKey, string> = { NOT_STARTED: '未开始', DRAFTING: '编制中', REVISING: '修改中', ISSUED: '已下发' }
-export const PROCESS_STATUS_TEXT: Record<ProcessStatusKey, string> = { NONE: '无', DRAFTING: '编制中', REVISING: '修改中', ISSUED: '已下发' }
+export const MATERIAL_STATUS_TEXT: Record<MaterialStatusKey, string> = SHARED_MATERIAL_STATUS_TEXT
+export const PROCESS_STATUS_TEXT: Record<ProcessStatusKey, string> = SHARED_PROCESS_STATUS_TEXT
 
 export const PROCESS_KIND_TEXT: Record<ProcessKind, string> = { MATERIAL: '料单', PROCESS: '工艺' }
 
@@ -68,12 +69,12 @@ export interface ProcessLog {
 
 /** 绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"） */
 export function processAction(id: string, body: { kind: ProcessKind; action: ProcessAction; note?: string | null }) {
-  const send = $fetch as unknown as (u: string, o: { method: string; body: object }) => Promise<{ id: string; status: string; statusText: string }>
+  const send = clientRequest
   return send(`/api/process/${encodeURIComponent(id)}/action`, { method: 'POST', body })
 }
 
 export function fetchProcessLogs(id: string) {
-  const get = $fetch as unknown as (u: string) => Promise<{ id: string; componentName: string; workOrderNumber: string; logs: ProcessLog[] }>
+  const get = clientRequest
   return get(`/api/process/${encodeURIComponent(id)}/logs`)
 }
 

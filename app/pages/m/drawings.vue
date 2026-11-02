@@ -11,7 +11,7 @@ const route = useRoute()
 const router = useRouter()
 const tab = ref<'pending' | 'drawn'>(route.query.tab === 'drawn' ? 'drawn' : 'pending')
 watch(tab, (t) => router.replace({ query: { ...route.query, tab: t } }))
-const { data, pending, refresh } = await useFetch('/api/drawings', {
+const { data, pending, error, refresh } = await useFetch('/api/drawings', {
   query: computed(() => ({ mine: '1', view: tab.value })),
   default: () => ({ rows: [] as DrawingRow[], total: 0, stats: null as DrawingStats | null }),
 })
@@ -19,14 +19,18 @@ const rows = computed(() => (data.value.rows as DrawingRow[]).filter((r) => r.id
 const focusId = computed(() => (typeof route.query.id === 'string' && route.query.id ? route.query.id : ''))
 const focus = ref<DrawingRow | null>(null)
 const focusError = ref('')
+const focusPending = ref(false)
 async function loadFocus() {
   focusError.value = ''
   if (!focusId.value) return void (focus.value = null)
+  focusPending.value = true
   try {
     focus.value = await fetchDrawing(focusId.value)
   } catch (e) {
     focus.value = null
     focusError.value = apiError(e)
+  } finally {
+    focusPending.value = false
   }
 }
 watch(focusId, loadFocus)
@@ -35,7 +39,8 @@ function clearFocus() {
   const { id: _id, ...rest } = route.query
   router.replace({ query: rest })
 }
-const stats = computed(() => data.value.stats as DrawingStats | null)
+const stats = computed(() => pending.value || error.value ? null : data.value.stats as DrawingStats | null)
+const { displayStat } = useRequestState({ pending, error }, () => !rows.value.length)
 
 const busy = ref(false)
 async function markDrawn(r: DrawingRow) {
@@ -61,7 +66,8 @@ async function markDrawn(r: DrawingRow) {
   <div>
     <van-nav-bar title="我的设计任务" left-arrow @click-left="navigateTo('/m')" />
     <template v-if="focusId">
-      <div v-if="focusError" class="m-hint late"><UiStatusIcon kind="alert" :size="14" />提醒里的任务打不开：{{ focusError }}</div>
+      <van-loading v-if="focusPending" class="m-center" />
+      <van-empty v-else-if="focusError" image="error" :description="`提醒里的任务打不开：${focusError}`"><van-button size="small" type="primary" @click="loadFocus()">重试</van-button></van-empty>
       <template v-else-if="focus">
         <div class="m-section">提醒的任务<span class="m-section-extra link" role="button" @click="clearFocus">只看我的</span></div>
         <div class="m-list">
@@ -89,11 +95,12 @@ async function markDrawn(r: DrawingRow) {
       </template>
     </template>
     <van-tabs v-model:active="tab">
-      <van-tab :title="`设计中${stats?.pending ? `（${stats.pending}）` : ''}`" name="pending" />
-      <van-tab :title="`设计完成${stats && stats.drawn + stats.customerPending ? `（${stats.drawn + stats.customerPending}）` : ''}`" name="drawn" />
+      <van-tab :title="`设计中（${displayStat(stats?.pending)}）`" name="pending" />
+      <van-tab :title="`设计完成（${displayStat(stats ? stats.drawn + stats.customerPending : null)}）`" name="drawn" />
     </van-tabs>
     <div v-if="stats?.overdue" class="m-hint late"><UiStatusIcon kind="alert" :size="14" />逾期 {{ stats.overdue }} 项，本周到期 {{ stats.dueThisWeek }} 项</div>
     <van-loading v-if="pending" class="m-center" />
+    <van-empty v-else-if="error" image="error" :description="`设计任务加载失败：${apiError(error)}`"><van-button size="small" type="primary" @click="refresh()">重试</van-button></van-empty>
     <van-empty v-else-if="!rows.length" :description="tab === 'pending' ? '没有设计中的任务' : '没有设计完成待发放 / 待客户确认的任务'" image-size="80" />
     <div v-else class="m-list">
       <MCard v-for="r in rows" :key="r.id" :tone="r.overdue ? 'late' : toneOfVant(DRAWING_STATUS_TYPE[r.status])">

@@ -1,3 +1,4 @@
+import type { ClientBodyArgs, ClientMethod, ClientResponse } from '../utils/transport'
 /** 齐套（R12）页面共用：类型、文案、接口调用。 */
 
 /** 缺件（GET /api/kitting 的 rows[].shortages） */
@@ -92,13 +93,12 @@ export function kitProgressStatus(n: Pick<KitNode, 'incomplete' | 'alertLevel' |
   return 'normal' as const
 }
 
-/** 绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"） */
-export function kittingSend<T = { id: string }>(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: object): Promise<T> {
-  const send = $fetch as unknown as (u: string, o: { method: string; body?: object }) => Promise<T>
-  return send(url, { method, body })
+/** 端点契约来自原有 schema 与响应，调用者不能指定返回类型。 */
+export function kittingSend<P extends `/api/kitting${string}`, M extends ClientMethod<P> & ('POST' | 'PATCH' | 'DELETE')>(url: P, method: M, ...args: ClientBodyArgs<P, M>): Promise<ClientResponse<P, M>>
+export function kittingSend(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown) {
+  return sendClientRequest(url, { method, body })
 }
 
 export function fetchKitNode(id: string) {
-  const get = $fetch as unknown as (u: string) => Promise<KitNode>
-  return get(`/api/kitting/${encodeURIComponent(id)}`)
+  return clientRequest(`/api/kitting/${encodeURIComponent(id)}`)
 }

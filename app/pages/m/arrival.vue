@@ -29,7 +29,7 @@ watch(id, load)
 
 const today = dayAfter(0)
 const confirming = ref(false)
-const form = reactive({ arrivedDate: today, delayReason: '' as string, delayNote: '' })
+const form = reactive({ arrivedDate: today, delayReason: '' as PurchaseRow['delayReason'] | '', delayNote: '' })
 const late = computed(() => {
   const l = line.value
   if (!l) return false
@@ -52,7 +52,7 @@ async function confirm() {
   }
   busy.value = true
   try {
-    const r = await purchaseSend<{ readySent: boolean }>(`/api/purchases/${l.id}/arrive`, 'POST', {
+    const r = await purchaseSend(`/api/purchases/${l.id}/arrive`, 'POST', {
       arrivedDate: form.arrivedDate,
       delayReason: late.value ? form.delayReason || null : undefined,
       delayNote: late.value && form.delayReason ? form.delayNote.trim() || null : undefined,

@@ -28,3 +28,6 @@ export default defineFlowHandler(async (event, user) => {
     actorOf(event, user),
   )
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestQuery = z.input<typeof query>

@@ -1,3 +1,4 @@
+import { ALERT_LEVEL_TEXT as SHARED_ALERT_LEVEL_TEXT } from '#shared/alert-rules'
 import type { WorkBucket } from '#shared/workbench'
 import { RULE_TEXT as SHARED_RULE_TEXT, type AlertRuleKey } from '#shared/alert-rules'
 
@@ -27,8 +28,7 @@ export interface ReminderItem {
   bucket?: WorkBucket
 }
 
-export const LEVEL_TEXT = { RED: '红色', YELLOW: '黄色', REMIND: '提醒' } as const
-export const LEVEL_COLOR = { RED: 'red', YELLOW: 'orange', REMIND: 'blue' } as const
+export const LEVEL_TEXT = SHARED_ALERT_LEVEL_TEXT
 export const LEVEL_ORDER: AlertLevelKey[] = ['RED', 'YELLOW', 'REMIND']
 /** 预警规则名称（唯一来源 shared/alert-rules.ts） */
 export const RULE_TEXT = SHARED_RULE_TEXT

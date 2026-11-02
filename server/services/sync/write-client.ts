@@ -24,7 +24,7 @@ export const QMS_UNAVAILABLE_TEXT = 'QMS 暂时连不上，请稍后再试'
 
 export class QmsUnavailable extends FlowHttpError {
   constructor(readonly detail: string) {
-    super(QMS_UNAVAILABLE_TEXT, 503)
+    super(QMS_UNAVAILABLE_TEXT, 503, 'INTERNAL')
     this.name = 'QmsUnavailable'
   }
 }
@@ -34,7 +34,7 @@ export class QmsRejected extends FlowHttpError {
     message: string,
     statusCode: number,
     /** QMS 的错误码，如 WORK_ORDER_EXISTS、OPTIMISTIC_LOCK_CONFLICT；没有为 null */
-    readonly code: string | null,
+    override readonly code: string | null,
   ) {
     super(message, statusCode)
     this.name = 'QmsRejected'

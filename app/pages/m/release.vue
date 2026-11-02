@@ -23,10 +23,10 @@ onMounted(load)
 watch(id, load)
 
 const busy = ref(false)
-async function act(url: string, body: object, ok: string) {
+async function act(request: () => Promise<unknown>, ok: string) {
   busy.value = true
   try {
-    await releasePost(url, body)
+    await request()
     showSuccessToast(ok)
     await load()
     await refreshNuxtData(['todos', 'reminders'])
@@ -47,7 +47,8 @@ async function sign() {
   } catch {
     return
   }
-  await act(`/api/receipts/${d.myReceipt.id}/sign`, {}, '已签收')
+  const receiptId = d.myReceipt.id
+  await act(() => releasePost(`/api/receipts/${receiptId}/sign`, {}), '已签收')
 }
 
 const rejecting = ref(false)
@@ -59,7 +60,8 @@ async function reject() {
     showToast('请填写拒收原因')
     return
   }
-  if (await act(`/api/receipts/${d.myReceipt.id}/reject`, { reason: reason.value.trim() }, '已拒收')) {
+  const receiptId = d.myReceipt.id
+  if (await act(() => releasePost(`/api/receipts/${receiptId}/reject`, { reason: reason.value.trim() }), '已拒收')) {
     rejecting.value = false
     reason.value = ''
   }
@@ -70,7 +72,7 @@ const note = ref('')
 async function confirmChange() {
   const d = detail.value
   if (!d) return
-  if (await act(`/api/releases/${d.id}/confirm-change`, { note: note.value.trim() || null }, '已确认变更影响')) {
+  if (await act(() => releasePost(`/api/releases/${d.id}/confirm-change`, { note: note.value.trim() || null }), '已确认变更影响')) {
     confirming.value = false
     note.value = ''
   }

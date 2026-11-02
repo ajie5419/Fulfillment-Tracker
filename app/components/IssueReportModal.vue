@@ -104,7 +104,7 @@ async function submit() {
   submitting.value = true
   try {
     const photoIds = await uploadPhotos(files)
-    const send = $fetch as unknown as (url: string, opts: { method: 'POST'; body: object }) => Promise<{ id: string; issueNo: string }>
+    const send = clientRequest
     const r = await send('/api/issues', { method: 'POST', body: { ...body, photoIds } })
     message.success(`已上报 ${r.issueNo}`)
     emit('done', r)

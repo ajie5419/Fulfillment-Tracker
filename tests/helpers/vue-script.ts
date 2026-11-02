@@ -1,3 +1,4 @@
+import { clientRequest, sendClientRequest } from '../../app/utils/transport'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
@@ -39,7 +40,7 @@ export async function mountScript(file: string, initialProps: Record<string, unk
   const script = compileScript(descriptor, { id: file })
   const code = ts.transpileModule(script.content, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const mod = { exports: {} as { default?: Vue.ComponentOptions } }
-  new Function('require', 'module', 'exports', code)((id: string) => modules[id] ?? require(id), mod, mod.exports)
+  new Function('require', 'module', 'exports', 'clientRequest', 'sendClientRequest', code)((id: string) => modules[id] ?? require(id), mod, mod.exports, clientRequest, sendClientRequest)
   const component = mod.exports.default!
   const setup = component.setup!
   let state: Record<string, any>

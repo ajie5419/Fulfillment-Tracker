@@ -41,7 +41,7 @@ const requestFetch = useRequestFetch()
 const selected = ref<string | null>((route.query.id as string) || null)
 const { data: detail, pending: detailPending, error: detailError, refresh: refreshDetail } = await useAsyncData<Detail | null>(
   computed(() => `m-issue-detail:${selected.value ?? 'closed'}`),
-  () => (selected.value ? (requestFetch as unknown as (u: string) => Promise<Detail>)(`/api/issues/${encodeURIComponent(selected.value)}`) : Promise.resolve(null)),
+  () => (selected.value ? clientRequest(`/api/issues/${encodeURIComponent(selected.value)}`, undefined, requestFetch) : Promise.resolve(null)),
   { default: () => null },
 )
 watch([tab, selected], ([t, id]) => {

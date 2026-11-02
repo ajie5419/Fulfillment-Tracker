@@ -2,7 +2,8 @@
  * 工件和工序链的增删改。工件挂在工单（qms_work_order.workOrderNumber）下，工序链按 seq 排序。
  * 规则只有两条：已有流转记录的步骤不能删除、不能调顺序；步骤负责人默认是创建人。
  */
-import type { PrereqState } from './readiness'
+import type { PartDetail } from '../../../shared/flow-view'
+export type { PartDetail } from '../../../shared/flow-view'
 import type { Prisma, StepMode } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { openIssuesOfSteps } from '../issues/issues'
@@ -68,9 +69,8 @@ export async function listParts(workOrderNumber: string) {
 
 /** 单个工件（工件抽屉）：同 listParts 的一行；不存在时报错 */
 /** 工件抽屉用的单个工件（接口 GET /api/parts/:id 再带上开工前提） */
-export type PartDetail = Awaited<ReturnType<typeof getPart>> & { prereq: PrereqState }
 
-export async function getPart(partId: string) {
+export async function getPart(partId: string): Promise<Omit<PartDetail, 'prereq'>> {
   const [part] = await loadParts({ id: partId })
   if (!part) throw new FlowError('工件不存在或已删除')
   return part

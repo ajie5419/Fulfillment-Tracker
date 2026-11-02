@@ -3,8 +3,9 @@ import { execFileSync } from 'node:child_process'
 import type { PrismaClient } from '@prisma/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { cockpitMetrics, mergeCockpitItems } from '../../shared/board-cockpit'
+import { getTestDatabaseUrl } from '../helpers/test-database'
 
-const DB = process.env.TEST_DATABASE_URL
+const DB = getTestDatabaseUrl(process.env.TEST_DATABASE_URL)
 const now = new Date('2040-05-15T04:00:00Z')
 const day = (value: string) => new Date(`${value}T00:00:00Z`)
 const fixtures = [

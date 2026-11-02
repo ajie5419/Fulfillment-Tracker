@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ClientOptions } from '../utils/transport'
 /**
  * 新建 / 编辑关键物料采购行（R10）：工单、工件（可空）、物料名称、规格、数量、单位、供应商（选 QMS 供应商或手填）、
  * 需求日、承诺到货日、所属总计划节点（R14，工单总计划已发布时必选）、采购负责人（不选 = 采购部负责人）、备注；编辑时还能填延误原因、取消 / 重新启用、改到货日。
@@ -121,7 +122,7 @@ async function submit() {
   if (!form.quantity || form.quantity <= 0) return message.warning('数量要大于 0')
   if (!form.needDate) return message.warning('请选择需求日')
   const supplier = matchedSupplier.value
-  const body: Record<string, unknown> = {
+  const body: Omit<ClientOptions<'/api/purchases', 'POST'>['body'], 'workOrderNumber'> & NonNullable<ClientOptions<`/api/purchases/${string}`, 'PATCH'>['body']> = {
     partId: form.partId ?? null,
     materialName: form.materialName.trim(),
     spec: form.spec.trim() || null,
@@ -146,13 +147,13 @@ async function submit() {
       Object.assign(body, { delayReason: form.delayReason ?? null, delayNote: form.delayNote.trim() || null })
       if (line.status !== 'ARRIVED') body.status = form.cancelled ? 'CANCELLED' : 'OPEN'
       else if (form.arrivedDate) body.arrivedDate = form.arrivedDate
-      const r = await purchaseSend<{ planWarning?: string | null }>(`/api/purchases/${line.id}`, 'PATCH', body)
+      const r = await purchaseSend(`/api/purchases/${line.id}`, 'PATCH', body)
       if (version !== formVersion) return
       message.success('已保存')
       if (r?.planWarning) message.warning(r.planWarning)
       emit('done', line.id)
     } else {
-      const r = await purchaseSend<{ id: string; planWarning?: string | null }>('/api/purchases', 'POST', { ...body, workOrderNumber: form.workOrderNumber, arrivedDate: form.arrivedDate ?? null })
+      const r = await purchaseSend('/api/purchases', 'POST', { ...body, workOrderNumber: form.workOrderNumber, arrivedDate: form.arrivedDate ?? null })
       if (version !== formVersion) return
       message.success('已登记')
       if (r.planWarning) message.warning(r.planWarning)

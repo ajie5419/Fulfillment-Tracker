@@ -23,10 +23,9 @@ interface BomRow {
   processes: BomProcess[]
 }
 interface Preview { items: BomRow[]; hasTechBom: boolean; missingInQms: { name: string; drawingNo: string | null }[] }
-interface ImportResult { created: number; linked: number; steps: number; skipped: number; missing: number; warnings: string[] }
 // 绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"）
-const get = useRequestFetch() as unknown as (url: string, opts: { query: object }) => Promise<Preview>
-const post = $fetch as unknown as (url: string, opts: { method: 'POST'; body: object }) => Promise<ImportResult>
+const requestFetch = useRequestFetch()
+const post = clientRequest
 
 const rows = ref<BomRow[]>([])
 const missingInQms = ref<Preview['missingInQms']>([])
@@ -43,7 +42,7 @@ async function load() {
   missingInQms.value = []
   selected.value = []
   try {
-    const p = await get('/api/bom/preview', { query: { workOrderNumber: props.workOrderNumber } })
+    const p = await clientRequest('/api/bom/preview', { query: { workOrderNumber: props.workOrderNumber ?? '' } }, requestFetch)
     rows.value = p.items
     missingInQms.value = p.missingInQms
     // 默认勾上所有还没导入的
@@ -66,9 +65,11 @@ const rowSelection = computed(() => ({
 
 async function submit() {
   if (!selected.value.length) return message.warning('请勾选要导入的零件')
+  const workOrderNumber = props.workOrderNumber
+  if (!workOrderNumber) return
   saving.value = true
   try {
-    const r = await post('/api/bom/import', { method: 'POST', body: { workOrderNumber: props.workOrderNumber, bomIds: selected.value } })
+    const r = await post('/api/bom/import', { method: 'POST', body: { workOrderNumber, bomIds: selected.value } })
     const parts = [r.linked ? `新建 ${r.created} 个、按图号关联 ${r.linked} 个工件，建 ${r.steps} 道工序` : `已导入 ${r.created} 个工件、${r.steps} 道工序`]
     if (r.skipped) parts.push(`${r.skipped} 个之前已导入，跳过`)
     if (r.missing) parts.push(`${r.missing} 个在 QMS 里已经没有了`)

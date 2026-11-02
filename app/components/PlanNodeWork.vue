@@ -14,8 +14,8 @@ import type { CanCreate, PlanNodeRow, PlanTask } from '#shared/plan-view'
 const props = withDefaults(defineProps<{ node: PlanNodeRow; wo: string; canCreate: CanCreate; viewOnly?: boolean }>(), { viewOnly: false })
 const emit = defineEmits<{ changed: [] }>()
 
-const get = $fetch as unknown as <T>(url: string, opts?: { query?: object }) => Promise<T>
-const send = $fetch as unknown as <T = unknown>(url: string, opts: { method: 'POST' | 'PATCH' | 'DELETE'; body?: object }) => Promise<T>
+const get = clientRequest
+const send = clientRequest
 
 async function act<T>(fn: () => Promise<T>, ok?: string | ((r: T) => string)) {
   try {
@@ -78,7 +78,7 @@ async function saveTask() {
   const body = { name: taskForm.name, ownerId: taskForm.ownerId, planDate: taskForm.planDate.format('YYYY-MM-DD'), note: taskForm.note || null }
   const t = taskEditing.value
   const ok = await act(
-    () => (t ? send<{ planWarning: string | null }>(`/api/plan/tasks/${t.id}`, { method: 'PATCH', body }) : send<{ planWarning: string | null }>(`/api/plan/nodes/${props.node.id}/tasks`, { method: 'POST', body })),
+    () => (t ? send(`/api/plan/tasks/${t.id}`, { method: 'PATCH', body }) : send(`/api/plan/nodes/${props.node.id}/tasks`, { method: 'POST', body })),
     t ? '已保存' : '已新增，责任人会收到待办',
   )
   if (ok?.planWarning) message.warning(ok.planWarning)
@@ -123,7 +123,7 @@ async function openSteps() {
   stepsOpen.value = true
   stepsLoading.value = true
   try {
-    stepList.value = await get<StepOpt[]>(`/api/plan/nodes/${props.node.id}/steps`)
+    stepList.value = await get(`/api/plan/nodes/${props.node.id}/steps`)
     stepPicked.value = stepList.value.filter((x) => x.planNodeId === props.node.id).map((x) => x.id)
   } catch (e) {
     message.error(apiError(e))
@@ -134,7 +134,7 @@ async function openSteps() {
 const stepNew = computed(() => stepPicked.value.filter((id) => stepList.value.find((x) => x.id === id)?.planNodeId !== props.node.id))
 async function saveSteps() {
   if (!stepNew.value.length) return message.warning('请勾选要挂到这个节点的工序')
-  const ok = await act(() => send<{ linked: number }>(`/api/plan/nodes/${props.node.id}/steps`, { method: 'POST', body: { stepIds: stepNew.value } }), (r) => `已关联 ${r.linked} 道工序`)
+  const ok = await act(() => send(`/api/plan/nodes/${props.node.id}/steps`, { method: 'POST', body: { stepIds: stepNew.value } }), (r) => `已关联 ${r.linked} 道工序`)
   if (ok) stepsOpen.value = false
 }
 const stepColumns = [

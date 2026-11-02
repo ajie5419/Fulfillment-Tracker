@@ -1,3 +1,4 @@
+import type { PlanListStatus } from '../../../shared/plan'
 /**
  * 项目计划列表（zhao 10-22：总计划从工单详情里拿出来，单独成"项目计划"菜单页）。
  *   每个在做的工单一行：计划状态（未编制 / 草稿 / 已发布）、节点完成数、待确认 / 未分解 / 源头延误节点数、预计交期与拖期；
@@ -12,7 +13,7 @@ import { ACTIVE_WO_WHERE } from '../workorder/active'
 import { isClosedWorkOrder } from '../../../shared/status'
 import { loadPlans } from './plan'
 
-export type PlanListStatus = 'NONE' | 'DRAFT' | 'PUBLISHED'
+export type { PlanListStatus } from '../../../shared/plan'
 
 export async function listPlans(visibleWorkOrders: string[] | undefined, ctx: RoleContext, now = new Date(), opts: { withClosed?: boolean } = {}) {
   const workOrders = await prisma.qmsWorkOrder.findMany({

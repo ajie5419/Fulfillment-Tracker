@@ -7,6 +7,8 @@
  */
 import type { NotifyRoleKind } from '@prisma/client'
 import { BUSINESS_DEPT_NAME, type BusinessDept } from './departments'
+import { isProjectManagerOf, isObjectOwner, leadsTeam as leadsTeamIds } from '../../../shared/permissions'
+export { leaderTeamOfStep } from '../../../shared/permissions'
 
 export interface RoleContext {
   userId: string
@@ -35,13 +37,10 @@ export function isLeaderLike(ctx: RoleContext): boolean {
   return ctx.isAdmin || has(ctx, 'LEADER') || has(ctx, 'PROJECT_DEPT_HEAD')
 }
 
-const isPM = (ctx: RoleContext, wo: string | null | undefined) => !!wo && ctx.pmOf.has(wo)
+const isPM = (ctx: RoleContext, wo: string | null | undefined) => isProjectManagerOf(ctx.pmOf, wo)
 
 /** 是这个班组的班组长 */
-export const leadsTeam = (ctx: Pick<RoleContext, 'leadOf'>, teamId: string | null | undefined) => !!teamId && !!ctx.leadOf?.includes(teamId)
-
-/** 班组长能登记的工序：自制、派到本班组的（厂内外协的 supplierId 也可能是班组，但那是外协单位，不算） */
-export const leaderTeamOfStep = (s: { mode: string; supplierId: string | null }) => (s.mode === 'SELF' ? s.supplierId : null)
+export const leadsTeam = (ctx: Pick<RoleContext, 'leadOf'>, teamId: string | null | undefined) => leadsTeamIds(ctx.leadOf, teamId)
 
 // ───────────── 操作（第三节 ★ 行）─────────────
 
@@ -141,7 +140,7 @@ export function canOperate(ctx: RoleContext, op: Operation, target: OperationTar
     case 'route':
       return inDept(ctx, 'PRODUCTION') || inDept(ctx, 'PROCESS') || outsource || pm
     case 'stepAction':
-      return inDept(ctx, 'PRODUCTION') || outsource || (!!target.ownerId && target.ownerId === ctx.userId) || leadsTeam(ctx, target.teamId)
+      return inDept(ctx, 'PRODUCTION') || outsource || isObjectOwner(ctx.userId, target.ownerId) || leadsTeam(ctx, target.teamId)
     case 'plan':
       return pm || inDept(ctx, 'PROJECT') || has(ctx, 'PROJECT_DEPT_HEAD')
     case 'planTemplate':

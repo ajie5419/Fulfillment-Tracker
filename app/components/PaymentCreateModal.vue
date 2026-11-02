@@ -1,7 +1,6 @@
 <script setup lang="ts">
 const requestFetch = useRequestFetch()
 import { MAX_PAYMENT_LINES } from '#shared/purchases'
-import type { PageResult } from '#shared/pagination'
 /**
  * 新建付款申请（R10）：关联同一工单的采购行、金额、申请日、是否卡交期、说明。不审批，财务标记已付 / 暂缓。
  * 从采购到货页勾选几行进来时预先选好；从付款申请页进来时先选工单再选采购行。
@@ -23,6 +22,11 @@ const saving = ref(false)
 const search = ref('')
 const picked = ref(new Map<string, PurchaseOption>())
 const choices = usePagedList<PurchaseOption>('/api/purchases/options', {
+  read: (_url, options) => {
+    const workOrderNumber = options.query.workOrderNumber
+    if (typeof workOrderNumber !== 'string') throw new Error('请选择工单')
+    return clientRequest('/api/purchases/options', { ...options, query: { ...options.query, workOrderNumber } }, requestFetch)
+  },
   key: 'payment-material-options', mode: 'append', pageSize: ref(20),
   enabled: computed(() => props.open && !!form.workOrderNumber),
   query: computed(() => ({ workOrderNumber: form.workOrderNumber, q: search.value.trim() || undefined })),
@@ -34,8 +38,7 @@ let opening = 0
  * the work-order scope, and discard results from a closed or replaced dialog. */
 async function hydrate(ids: string[], wo: string, version: number) {
   try {
-    const read = requestFetch as unknown as (url: string, opts: { query: object }) => Promise<PageResult<PurchaseOption>>
-    const result = await read('/api/purchases/options', { query: { workOrderNumber: wo, ids, pageSize: MAX_PAYMENT_LINES } })
+    const result = await clientRequest('/api/purchases/options', { query: { workOrderNumber: wo, ids, pageSize: MAX_PAYMENT_LINES } }, requestFetch)
     if (version !== opening || !props.open || wo !== form.workOrderNumber) return
     picked.value = new Map([...picked.value.values(), ...result.rows]
       .filter((row) => form.purchaseLineIds.includes(row.id)).map((row) => [row.id, row]))

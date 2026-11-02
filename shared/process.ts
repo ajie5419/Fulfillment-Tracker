@@ -6,3 +6,9 @@ export function processReleaseBlockReason(kind: ProcessKind, action: ProcessActi
   if (released || (action !== 'start' && action !== 'issue')) return null
   return `图纸未发放，不能${action === 'start' ? '开始编制' : '下发'}${kind === 'MATERIAL' ? '料单' : '工艺'}`
 }
+
+/** 料单状态。 */
+export const MATERIAL_STATUS_TEXT = { NOT_STARTED: '未开始', DRAFTING: '编制中', REVISING: '修改中', ISSUED: '已下发' } as const
+
+/** 工艺状态。 */
+export const PROCESS_STATUS_TEXT = { NONE: '无', DRAFTING: '编制中', REVISING: '修改中', ISSUED: '已下发' } as const

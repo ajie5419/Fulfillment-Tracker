@@ -42,7 +42,7 @@ const requestFetch = useRequestFetch()
 const idRef = computed(() => props.id)
 const { data: detail, pending, error: detailError, refresh } = await useAsyncData<Detail | null>(
   computed(() => `issue-detail:${idRef.value ?? 'closed'}`),
-  () => (idRef.value ? (requestFetch as unknown as (u: string) => Promise<Detail>)(`/api/issues/${encodeURIComponent(idRef.value)}`) : Promise.resolve(null)),
+  () => (idRef.value ? clientRequest(`/api/issues/${encodeURIComponent(idRef.value)}`, undefined, requestFetch) : Promise.resolve(null)),
   { default: () => null },
 )
 
@@ -79,7 +79,7 @@ async function submit() {
   const d = detail.value
   if (!d) return
   if (NOTE_REQUIRED.includes(form.action) && !form.note.trim()) return message.warning(form.action === 'resolve' ? '请填写处理结果' : '请填写说明')
-  const body: Record<string, unknown> = { note: form.note.trim() || undefined }
+  const body: import('../../server/api/issues/[id]/accept.post').RequestBody = { note: form.note.trim() || undefined }
   if (withAssign.value) {
     // 只提交改了的字段
     if ((form.responsibleDeptId ?? null) !== d.responsibleDeptId) body.responsibleDeptId = form.responsibleDeptId ?? null

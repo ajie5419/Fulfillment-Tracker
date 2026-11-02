@@ -47,7 +47,7 @@ async function fail() {
   if (!verdict.id) return message.warning('请选择报检')
   busy.value = true
   try {
-    const send = $fetch as unknown as (u: string, o: { method: 'POST'; body: object }) => Promise<{ nonconforming: { created: { issueNo: string }[] } }>
+    const send = clientRequest
     const r = await send(`/api/dev/inspections/${encodeURIComponent(verdict.id)}/verdict`, { method: 'POST', body: { unqualifiedQuantity: verdict.unqualifiedQuantity } })
     const nos = r.nonconforming.created.map((c) => c.issueNo)
     lastResult.value = nos.length ? `已判不合格，生成异常 ${nos.join('、')}（步骤置为"有异常"）` : '已判不合格；该报检还没关联到步骤（先在"待确认匹配"里关联），或异常已经生成过'
@@ -72,7 +72,7 @@ const SYNC_STATUS_TEXT = { ok: '成功', partial: '未追平', failed: '失败',
 async function syncNow() {
   busy.value = true
   try {
-    const r = await ($fetch as unknown as (u: string, o: { method: 'POST' }) => Promise<SyncJob>)('/api/dev/sync', { method: 'POST' })
+    const r = await clientRequest('/api/dev/sync', { method: 'POST' })
     if (r.skipped === 'not-configured') lastResult.value = '未配置 QMS 同步（NUXT_QMS_SYNC_ENABLED=0，或 QMS 地址、客户端凭据为空）'
     else if (r.skipped === 'running') lastResult.value = '另一轮同步正在进行，本次跳过'
     else {
@@ -96,7 +96,7 @@ async function syncNow() {
 async function digest() {
   busy.value = true
   try {
-    const r = await ($fetch as unknown as (u: string, o: { method: 'POST' }) => Promise<{ day: string; recipients: number; created: number }>)('/api/dev/digest', { method: 'POST' })
+    const r = await clientRequest('/api/dev/digest', { method: 'POST' })
     lastResult.value = `今日汇总（${r.day}）：收件人 ${r.recipients} 人，新生成 ${r.created} 条（同人同日只一条）`
     message.success(lastResult.value)
     await refreshNuxtData('reminders')
@@ -149,7 +149,7 @@ async function submitIncoming() {
   if (!l) return
   busy.value = true
   try {
-    const send = $fetch as unknown as (u: string, o: { method: 'POST'; body: object }) => Promise<{ incoming: { result: string } | null }>
+    const send = clientRequest
     const r = await send('/api/dev/inspections', {
       method: 'POST',
       body: { workOrderNumber: l.workOrderNumber, partName: incomingName.value || l.materialName, supplierId: l.supplierId, quantity: Math.max(1, Math.round(l.quantity ?? 1)), category: 'INCOMING' },

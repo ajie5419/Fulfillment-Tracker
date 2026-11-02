@@ -1,9 +1,11 @@
+import type { ClientBodyArgs, ClientMethod, ClientResponse } from '../utils/transport'
+import { PURCHASE_STATUS_TEXT as SHARED_PURCHASE_STATUS_TEXT, DELAY_REASON_TEXT as SHARED_DELAY_REASON_TEXT, PAYMENT_STATUS_TEXT as SHARED_PAYMENT_STATUS_TEXT } from '#shared/purchases'
 /** 关键物料与付款（R10）页面共用：文案、颜色、接口调用。 */
 
-export const PURCHASE_STATUS_TEXT = { OPEN: '未到货', ARRIVED: '已到货', CANCELLED: '已取消' } as const
-export const DELAY_REASON_TEXT = { PAYMENT: '付款', SUPPLIER: '供应商', DEMAND_CHANGE: '我方需求变化', OTHER: '其他' } as const
+export const PURCHASE_STATUS_TEXT = SHARED_PURCHASE_STATUS_TEXT
+export const DELAY_REASON_TEXT = SHARED_DELAY_REASON_TEXT
 export const DELAY_REASON_OPTIONS = Object.entries(DELAY_REASON_TEXT).map(([value, label]) => ({ value, label }))
-export const PAYMENT_STATUS_TEXT = { PENDING: '待付', PAID: '已付', ON_HOLD: '暂缓' } as const
+export const PAYMENT_STATUS_TEXT = SHARED_PAYMENT_STATUS_TEXT
 export const PAYMENT_STATUS_COLOR = { PENDING: 'orange', PAID: 'green', ON_HOLD: 'default' } as const
 /** 列表进度文字（服务端 lineProgress）的颜色 */
 export const PURCHASE_PROGRESS_COLOR: Record<string, string> = {
@@ -37,7 +39,7 @@ export interface PurchaseRow {
   partName: string | null
   materialName: string
   spec: string | null
-  quantity: number
+  quantity: number | null
   unit: string | null
   supplierId: string | null
   supplierName: string | null
@@ -98,15 +100,14 @@ export interface PurchaseStats {
   delay: { late: number; payment: number; management: number; byReason: Record<DelayReasonKey, number>; unfilled: number }
 }
 
-/** 绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"） */
-export function purchaseSend<T = unknown>(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: object): Promise<T> {
-  const send = $fetch as unknown as (u: string, o: { method: string; body?: object }) => Promise<T>
-  return send(url, { method, body })
+/** 端点契约来自原有 schema 与响应，调用者不能指定返回类型。 */
+export function purchaseSend<P extends `/api/purchases${string}` | `/api/payments${string}`, M extends ClientMethod<P> & ('POST' | 'PATCH' | 'DELETE')>(url: P, method: M, ...args: ClientBodyArgs<P, M>): Promise<ClientResponse<P, M>>
+export function purchaseSend(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown) {
+  return sendClientRequest(url, { method, body })
 }
 
 export function fetchPurchase(id: string) {
-  const get = $fetch as unknown as (u: string) => Promise<PurchaseRow>
-  return get(`/api/purchases/${encodeURIComponent(id)}`)
+  return clientRequest(`/api/purchases/${encodeURIComponent(id)}`)
 }
 
 /** 金额：千分位，两位小数 */

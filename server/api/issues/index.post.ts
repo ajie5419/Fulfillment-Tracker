@@ -23,3 +23,6 @@ export default defineFlowHandler(async (event, user) => {
   const issue = await createIssue(input, user.qmsUserId)
   return { id: issue.id, issueNo: issue.issueNo }
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestBody = z.input<typeof body>

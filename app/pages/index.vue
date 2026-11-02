@@ -1,190 +1,32 @@
 <script setup lang="ts">
+import { ALERT_LEVEL_TEXT as LEVEL_LABEL } from '#shared/alert-rules'
+
 /**
  * 工作台（前端改版第二轮）：顶部统计卡（我的待办 / 已过期 / 今天到期 / 未读提醒，点了按它筛选，?f= 便于分享），
  * 下面待办和提醒合成一条卡片流，按"已过期 / 今天 / 本周 / 以后 / 未定截止日"分组（只按真实截止日，由服务端按工厂时区算好，见 shared/workbench.ts）。
  * 原有操作全部保留：待办的登记发出 / 开工 / 签收 / 确认变更影响 / 去确认 / 转交，提醒的点开（标已读并跳转）、标已读、全部已读，
  * 每日汇总和同步故障置顶。
  */
-import type { PartDetail } from '~~/server/services/flow/steps'
-import { WORK_BUCKET_TEXT, factoryTimeText, groupByBucket, type WorkBucket } from '#shared/workbench'
+import { WORK_BUCKET_TEXT, factoryTimeText } from '#shared/workbench'
+import { WORKBENCH_FILTER_TEXT as FILTER_TEXT, todoLink, toneIcon, type Card } from '../composables/useWorkbenchFeed'
 
 const route = useRoute()
 const { data, pending, error: remindersError } = await useReminders()
 
-/** 点一条：标记已读，跳到关联对象 */
-async function openReminder(item: ReminderItem) {
-  await readReminder(item)
-  if (item.link) await navigateTo(item.link)
-}
-/** 置顶的同步失败提醒：标为已读后去设置页看同步状态 */
-async function openPinned(p: PinnedItem) {
-  await readDigest(p)
-  await navigateTo(p.link)
-}
-const digestOpen = ref(false)
-async function openDigest() {
-  digestOpen.value = !digestOpen.value
-  if (data.value?.digest) await readDigest(data.value.digest)
-}
-async function readAll() {
-  try {
-    await readAllReminders()
-  } catch (e) {
-    message.error(apiError(e))
-  }
-}
+const { openReminder, openPinned, digestOpen, openDigest, readAll } = useWorkbenchReminderActions(() => data.value?.digest)
 
 const { data: todos, pending: todosPending, error: todosError, refresh: refreshTodos } = await useTodos()
 const { data: master } = await useMaster()
 const { data: me } = await useMe()
-type Todo = (typeof todos.value)[number]
-
-const sending = ref<{ id: string; supplierId: string | null; title: string } | null>(null)
-function openSend(t: Todo) {
-  if (t.step) sending.value = { id: t.step.id, supplierId: t.step.supplierId, title: `${t.step.partName} · ${t.step.processName}` }
-}
-
-function start(t: Todo) {
-  if (!t.step) return
-  Modal.confirm({
-    title: `确认开工：${t.step.partName} · ${t.step.processName}？`,
-    okText: '开工',
-    async onOk() {
-      try {
-        await $fetch(`/api/steps/${t.step!.id}/start`, { method: 'POST', body: { source: 'PC' } })
-        message.success('已开工')
-        await afterTodo()
-      } catch (e) {
-        message.error(apiError(e))
-      }
-    },
-  })
-}
-
-/** 直接完工（活已经干完才想起登记，生产管理重设计第一批）：同一个完工弹窗，可部分完工、报废 */
-const finishing = ref<{ id: string; title: string; quantity: number; doneQty: number } | null>(null)
-async function finish(t: Todo) {
-  if (!t.step) return
-  try {
-    const p = await $fetch<PartDetail>(`/api/parts/${t.step.partId}`)
-    const s = p.steps.find((x) => x.id === t.step!.id)
-    finishing.value = { id: t.step.id, title: `${t.step.partName} · ${t.step.processName}`, quantity: p.quantity, doneQty: s?.returnedQty ?? 0 }
-  } catch (e) {
-    message.error(apiError(e))
-  }
-}
-
-/** 完成部门任务（部门计划二次分解）：完成日记今天，关掉待办 */
-function finishPlanTask(t: Todo) {
-  const task = t.planTask
-  if (!task) return
-  Modal.confirm({
-    title: `完成"${task.name}"？`,
-    content: `总计划节点"${task.nodeName}"下的任务，完成日记为今天。`,
-    onOk: async () => {
-      try {
-        await $fetch(`/api/plan/tasks/${task.id}/complete`, { method: 'POST', body: {} })
-        message.success('已完成')
-        await afterTodo()
-      } catch (e) {
-        message.error(apiError(e))
-      }
-    },
-  })
-}
 
 /** 待办处理后：待办、提醒（处理后预警可能消除）和菜单角标一起刷新 */
 async function afterTodo() {
   await Promise.all([refreshTodos(), refreshReminders()])
 }
+const { sending, openSend, start, finishing, finish, finishPlanTask, releaseId, transferring, transferTo, transfer } = useWorkbenchTodoActions({ afterTodo })
 
-/** 发放签收、确认变更影响：打开发放单详情抽屉处理 */
-const releaseId = ref<string | null>(null)
+const { allCards, active, counts, statDenom, cards, groups, filterTo } = useWorkbenchFeed({ todos, reminders: data })
 
-const transferring = ref<Todo | null>(null)
-const transferTo = ref<string | undefined>()
-async function transfer() {
-  if (!transferring.value || !transferTo.value) return message.warning('请选择转交对象')
-  try {
-    await $fetch(`/api/todos/${transferring.value.id}/transfer`, { method: 'POST', body: { toUserId: transferTo.value } })
-    message.success('已转交')
-    transferring.value = null
-    transferTo.value = undefined
-    await afterTodo()
-  } catch (e) {
-    message.error(apiError(e))
-  }
-}
-
-// ───── 卡片流（分组见 shared/workbench.ts workBucket：只按真实截止日，没有的归"未定截止日"） ─────
-type Tone = 'late' | 'risk' | 'normal'
-interface Card {
-  key: string
-  kind: 'todo' | 'reminder'
-  bucket: WorkBucket
-  tone: Tone
-  title: string
-  wo: string | null
-  dueDay: string | null
-  createdAt: string
-  unread: boolean
-  todo?: Todo
-  reminder?: ReminderItem
-}
-const TONE_RANK: Record<Tone, number> = { late: 0, risk: 1, normal: 2 }
-
-const allCards = computed<Card[]>(() => {
-  const list: Card[] = []
-  for (const t of todos.value) {
-    const bucket = (t.bucket ?? 'NO_DUE') as WorkBucket
-    list.push({
-      key: `t:${t.id}`,
-      kind: 'todo',
-      bucket,
-      tone: bucket === 'OVERDUE' ? 'late' : 'normal',
-      title: t.title,
-      wo: t.workOrderNumber ?? null,
-      dueDay: t.dueDay ?? null,
-      createdAt: String(t.createdAt),
-      unread: false,
-      todo: t,
-    })
-  }
-  for (const r of data.value?.items ?? []) {
-    list.push({
-      key: `r:${r.id}`,
-      kind: 'reminder',
-      bucket: r.bucket ?? 'NO_DUE',
-      tone: r.cleared ? 'normal' : r.level === 'RED' ? 'late' : r.level === 'YELLOW' ? 'risk' : 'normal',
-      title: r.title,
-      wo: r.workOrderNumber ?? null,
-      dueDay: r.dueDay ?? null,
-      createdAt: r.createdAt,
-      unread: !r.readAt,
-      reminder: r,
-    })
-  }
-  // 组内：红 → 黄 → 普通；同色未读在前，再按截止日从近到远（没有截止日的在后），待办在提醒前
-  return list.sort(
-    (a, b) =>
-      TONE_RANK[a.tone] - TONE_RANK[b.tone] ||
-      Number(b.unread) - Number(a.unread) ||
-      (a.dueDay ?? '9999').localeCompare(b.dueDay ?? '9999') ||
-      (a.kind === b.kind ? 0 : a.kind === 'todo' ? -1 : 1),
-  )
-})
-
-const FILTERS = ['todo', 'overdue', 'today', 'unread'] as const
-type Filter = (typeof FILTERS)[number]
-const active = computed<Filter | null>(() => (FILTERS as readonly string[]).includes(route.query.f as string) ? (route.query.f as Filter) : null)
-const FILTER_TEXT: Record<Filter, string> = { todo: '我的待办', overdue: '已过期', today: '今天到期', unread: '未读提醒' }
-const counts = computed(() => ({
-  todo: todos.value.length,
-  overdue: allCards.value.filter((c) => c.bucket === 'OVERDUE').length,
-  today: allCards.value.filter((c) => c.bucket === 'TODAY').length,
-  unread: data.value?.unread ?? 0,
-}))
-const statDenom = computed(() => Math.max(1, allCards.value.length))
 const heroTitle = computed(() => (me.value?.name ? `${me.value.name}，今日工作概览` : '今日工作概览'))
 const loadError = computed(() => Boolean(remindersError.value || todosError.value))
 async function retryLoad() {
@@ -201,32 +43,7 @@ const heroSummary = computed(() => {
   if (c.unread > 0) parts.push(`未读提醒 ${c.unread} 条`)
   return parts.length ? `当前${parts.join('，')}。` : '当前所有待办均已清零，暂无未读预警提醒。'
 })
-const cards = computed(() => {
-  const f = active.value
-  if (!f) return allCards.value
-  if (f === 'todo') return allCards.value.filter((c) => c.kind === 'todo')
-  if (f === 'overdue') return allCards.value.filter((c) => c.bucket === 'OVERDUE')
-  if (f === 'today') return allCards.value.filter((c) => c.bucket === 'TODAY')
-  return allCards.value.filter((c) => c.unread)
-})
-const groups = computed(() => groupByBucket(cards.value))
-/** 点统计卡：套用筛选；再点同一张取消 */
-const filterTo = (f: Filter) => ({ query: { ...route.query, f: active.value === f ? undefined : f } })
 
-const LEVEL_LABEL: Record<AlertLevelKey, string> = { RED: '红色', YELLOW: '黄色', REMIND: '提醒' }
-const toneIcon = (t: Tone) => (t === 'late' ? 'alert' : t === 'risk' ? 'warn' : 'dot')
-/** 待办的"查看"跳转：工序 → 工件抽屉（工序编排页）；发放 → 发放单；总计划 → 工单详情的总计划页签 */
-function todoLink(t: Todo): string | null {
-  if (t.link) return t.link
-  if (t.plan) return t.plan.link
-  if (t.planTask) return t.planTask.link
-  if (t.release) return `/releases?id=${encodeURIComponent(t.release.id)}`
-  // 工序 / 工件待办：打开工件抽屉（生产管理重设计第一批）
-  const partId = t.step?.partId ?? (t.refType === 'part' ? t.refId : null)
-  if (t.workOrderNumber && partId) return `/parts?wo=${encodeURIComponent(t.workOrderNumber)}&part=${encodeURIComponent(partId)}`
-  if (t.workOrderNumber) return `/parts?wo=${encodeURIComponent(t.workOrderNumber)}`
-  return null
-}
 function onCardClick(c: Card) {
   if (c.reminder) openReminder(c.reminder)
 }

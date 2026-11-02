@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { MONITORING_ENTITY_TEXT, MONITORING_LEVEL_TEXT, MONITORING_TONE } from '#shared/monitoring'
 import { factoryDateTimeText } from '#shared/workbench'
-import type { MonitoredEntity } from '~~/server/services/monitoring/status'
+import type { MonitoredEntity } from '#shared/monitoring'
 
 type Row = Omit<MonitoredEntity, 'since'> & { since: string | Date }
 defineProps<{ rows: Row[] }>()

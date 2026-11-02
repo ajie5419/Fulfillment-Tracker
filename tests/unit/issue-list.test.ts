@@ -2,7 +2,7 @@ import type { Issue, NotifyRole, Prisma } from '@prisma/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const db = vi.hoisted(() => ({
-  issue: { findMany: vi.fn() },
+  issue: { findMany: vi.fn(), findUnique: vi.fn() },
   notifyRole: { findMany: vi.fn() },
   workOrderExt: { findMany: vi.fn() },
   qmsDepartment: { findMany: vi.fn() },
@@ -15,10 +15,15 @@ vi.mock('../../server/utils/prisma', () => ({ prisma: db }))
 vi.mock('../../server/services/flow/flow', () => ({ lockStep: vi.fn(), restoreBlockedStep: vi.fn() }))
 vi.mock('../../server/services/flow/names', () => ({ loadNames: async () => ({ user: new Map(), process: new Map(), supplier: new Map() }) }))
 
-import { listIssues } from '../../server/services/issues/issues'
+import { getIssue, listIssues } from '../../server/services/issues/issues'
 
 const now = new Date('2026-10-28T04:00:00Z')
 const actor = { userId: 'viewer', isAdmin: false }
+
+it('缺失异常携带 NOT_FOUND，供统一 API 映射为 404', async () => {
+  db.issue.findUnique.mockResolvedValueOnce(null)
+  await expect(getIssue('missing', actor)).rejects.toMatchObject({ message: '异常不存在', code: 'NOT_FOUND' })
+})
 let stored: Issue[]
 let roles: NotifyRole[]
 let managers: Record<string, string>

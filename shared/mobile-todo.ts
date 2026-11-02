@@ -5,20 +5,8 @@
 
 import { workBucket } from './workbench'
 
-export const FACTORY_TZ = 'Asia/Shanghai'
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
-const DAY_MS = 86_400_000
-
-/** 工厂时区的日期 'YYYY-MM-DD'；已是 'YYYY-MM-DD' 的原样返回 */
-export function factoryDay(v: string | Date, tz = FACTORY_TZ): string {
-  if (typeof v === 'string' && DAY_RE.test(v)) return v
-  return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(v))
-}
-
-/** 'YYYY-MM-DD' 往后 n 天（按日历日算，与时区无关） */
-export function addDays(day: string, n: number): string {
-  return new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10)
-}
+import { factoryDay } from './dates'
+export { FACTORY_TZ, factoryDay, addDays } from './dates'
 
 /** 本周最后一天（周日）；周一为一周第一天。与电脑端工作台共用一份实现（功能重复梳理第三批） */
 export { weekEndDay } from './workbench'

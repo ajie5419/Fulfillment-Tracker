@@ -8,7 +8,7 @@ set -euo pipefail
 TAG="${1:?用法: $0 <tag>，例如 fulfillment-v0.1.0}"
 APP_DIR="${APP_DIR:-/opt/fulfillment}"
 IMAGE=fulfillment-tracker
-HEALTH_URL="http://127.0.0.1:3100/api/health"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3100/api/health}"
 
 log() { printf '[deploy] %s\n' "$*"; }
 fail() { printf '[deploy] 失败: %s\n' "$*" >&2; exit 1; }

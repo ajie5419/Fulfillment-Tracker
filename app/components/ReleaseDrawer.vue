@@ -4,7 +4,7 @@ const props = defineProps<{ id: string | null }>()
 const emit = defineEmits<{ close: []; changed: [] }>()
 
 // 限定读取签名，避免 Nitro 全站路由类型递归展开。
-const requestFetch = useRequestFetch() as unknown as (url: string) => Promise<ReleaseDetail>
+const requestFetch = useRequestFetch()
 const detail = ref<ReleaseDetail | null>(null)
 const loading = ref(false)
 const loadError = ref('')
@@ -47,11 +47,11 @@ onBeforeUnmount(() => {
   loadSeq++
 })
 
-async function act(url: string, body: object, ok: string, version = contextVersion) {
+async function act(request: () => Promise<unknown>, ok: string, version = contextVersion) {
   if (version !== contextVersion || !detail.value || detail.value.id !== props.id || loading.value || busy.value) return false
   busy.value = true
   try {
-    await releasePost(url, body)
+    await request()
     if (version !== contextVersion) return false
     message.success(ok)
     await load()
@@ -68,14 +68,19 @@ async function act(url: string, body: object, ok: string, version = contextVersi
   }
 }
 
-const sign = () => detail.value?.permissions.sign && detail.value.myReceipt && act(`/api/receipts/${detail.value.myReceipt.id}/sign`, {}, '已签收')
+const sign = () => {
+  const d = detail.value
+  const receipt = d?.myReceipt
+  return d?.permissions.sign && receipt && act(() => releasePost(`/api/receipts/${receipt.id}/sign`, {}), '已签收')
+}
 
 async function reject() {
   const version = contextVersion
   const d = detail.value
   if (!d?.permissions.sign || !d.myReceipt) return
   if (!reason.value.trim()) return message.warning('请填写拒收原因')
-  const saved = await act(`/api/receipts/${d.myReceipt.id}/reject`, { reason: reason.value.trim() }, '已拒收，已通知发放人')
+  const receiptId = d.myReceipt.id
+  const saved = await act(() => releasePost(`/api/receipts/${receiptId}/reject`, { reason: reason.value.trim() }), '已拒收，已通知发放人')
   if (saved && version === contextVersion) {
     rejecting.value = false
     reason.value = ''
@@ -86,7 +91,7 @@ async function confirmChange() {
   const version = contextVersion
   const d = detail.value
   if (!d?.permissions.confirmChange) return
-  const saved = await act(`/api/releases/${d.id}/confirm-change`, { note: note.value.trim() || null }, '已确认变更影响，"等变更"已解除')
+  const saved = await act(() => releasePost(`/api/releases/${d.id}/confirm-change`, { note: note.value.trim() || null }), '已确认变更影响，"等变更"已解除')
   if (saved && version === contextVersion) {
     confirming.value = false
     note.value = ''
@@ -103,7 +108,7 @@ function voidIt() {
     okText: '作废',
     okType: 'danger',
     // A confirmation opened for another drawer session must never submit later.
-    onOk: () => act(`/api/releases/${d.id}/void`, {}, '已作废', version),
+    onOk: () => act(() => releasePost(`/api/releases/${d.id}/void`, {}), '已作废', version),
   })
 }
 

@@ -10,8 +10,8 @@ import { factoryDateTimeText, groupByWorkOrder, groupProgress } from '#shared/wo
 
 const route = useRoute()
 const router = useRouter()
-const { data: workOrders } = await useWorkOrders()
-const { data: me } = await useMe()
+const { data: workOrders, pending: ordersPending, error: ordersError, refresh: refreshOrders } = await useWorkOrders()
+const { data: me, error: meError, refresh: refreshMe } = await useMe()
 
 const filter = reactive({
   workOrderNumber: (route.query.wo as string) || undefined,
@@ -19,14 +19,16 @@ const filter = reactive({
   progress: (route.query.progress as string) || undefined,
   mine: (route.query.mine as string) || '',
 })
-const { data: rows, pending, refresh: refreshRows } = await useFetch('/api/releases', {
+const { data: rows, pending, error, refresh: refreshRows } = await useFetch('/api/releases', {
   query: computed(() => ({ ...filter, mine: filter.mine || undefined })),
   default: () => [],
 })
-const { data: stats, refresh: refreshStats } = await useFetch('/api/releases/stats', {
+const { data: stats, pending: statsPending, error: statsError, refresh: refreshStats } = await useFetch('/api/releases/stats', {
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber, type: filter.type, mine: filter.mine || undefined })),
   default: () => null,
 })
+const { state } = useRequestState({ pending, error }, () => !rows.value.length)
+const { displayStat } = useRequestState({ pending: statsPending, error: statsError }, () => !stats.value)
 async function refresh() {
   await Promise.all([refreshRows(), refreshStats()])
 }
@@ -91,17 +93,22 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
   <div>
   <div class="ft-page">
   <div class="ft-stats">
-    <UiStatCard label="发放单" :value="stats ? stats.all : '—'" unit="张" tone="primary" accent icon="dot" clickable :active="!filter.progress" sub="当前工单 / 类型 / 范围下全部" @click="filter.progress = undefined" />
-    <UiStatCard label="有人未签收" :value="stats ? stats.pending : '—'" unit="张" tone="risk" accent icon="warn" clickable :active="filter.progress === 'PENDING'" sub="超时没签收按 W5 预警" @click="applyProgress('PENDING')" />
-    <UiStatCard label="有拒收" :value="stats ? stats.rejected : '—'" unit="张" tone="late" accent icon="alert" clickable :active="filter.progress === 'REJECTED'" sub="接收人拒收，需发放人处理" @click="applyProgress('REJECTED')" />
-    <UiStatCard label="待我签收" :value="stats ? stats.minePending : '—'" unit="张" tone="upstream" accent icon="warn" clickable :active="filter.progress === 'MINE_PENDING'" sub="发给我、我还没签收的" @click="applyProgress('MINE_PENDING')" />
+    <UiStatCard label="发放单" :value="displayStat(stats?.all)" unit="张" tone="primary" accent icon="dot" clickable :active="!filter.progress" sub="当前工单 / 类型 / 范围下全部" @click="filter.progress = undefined" />
+    <UiStatCard label="有人未签收" :value="displayStat(stats?.pending)" unit="张" tone="risk" accent icon="warn" clickable :active="filter.progress === 'PENDING'" sub="超时没签收按 W5 预警" @click="applyProgress('PENDING')" />
+    <UiStatCard label="有拒收" :value="displayStat(stats?.rejected)" unit="张" tone="late" accent icon="alert" clickable :active="filter.progress === 'REJECTED'" sub="接收人拒收，需发放人处理" @click="applyProgress('REJECTED')" />
+    <UiStatCard label="待我签收" :value="displayStat(stats?.minePending)" unit="张" tone="upstream" accent icon="warn" clickable :active="filter.progress === 'MINE_PENDING'" sub="发给我、我还没签收的" @click="applyProgress('MINE_PENDING')" />
   </div>
+  <a-spin v-if="statsPending" />
+  <a-alert v-else-if="statsError" type="error" message="发放统计加载失败" :description="apiError(statsError)"><template #action><a-button @click="refreshStats()">重试</a-button></template></a-alert>
+  <a-alert v-if="ordersError" type="error" message="工单选项加载失败" :description="apiError(ordersError)"><template #action><a-button @click="refreshOrders()">重试</a-button></template></a-alert>
+  <a-alert v-if="meError" type="error" message="用户权限加载失败" :description="apiError(meError)"><template #action><a-button @click="refreshMe()">重试</a-button></template></a-alert>
   <a-card>
     <div class="ft-toolbar">
       <a-segmented v-model:value="filter.mine" :options="[{ value: '', label: '全部' }, { value: 'received', label: '发给我的' }, { value: 'issued', label: '我发出的' }]" />
       <div class="ft-toolbar-right">
         <a-select
           v-model:value="filter.workOrderNumber"
+          :loading="ordersPending" :disabled="!!ordersError"
           allow-clear
           show-search
           placeholder="全部工单"
@@ -115,7 +122,10 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
         <a-button v-if="canDo(me, 'release')" type="primary" class="ft-btn-ink" @click="creating = true">新建发放</a-button>
       </div>
     </div>
-    <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty :description="filter.progress ? '没有符合条件的发放单' : '还没有发放单'" /></a-spin>
+    <a-spin v-if="state === 'loading'" />
+    <a-result v-else-if="state === 'error'" status="error" title="发放单加载失败" :sub-title="apiError(error)"><template #extra><a-button @click="refreshRows()">重试</a-button></template></a-result>
+    <a-empty v-else-if="state === 'empty'" :description="filter.progress ? '没有符合条件的发放单' : '还没有发放单'" />
+    <template v-else>
     <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
     <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" v-bind="signedOf(t)" label="已全部签收" :count="t.rows.length" unit="张" />
     <a-table
@@ -153,6 +163,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
       </template>
     </a-table>
     </div>
+    </template>
   </a-card>
   </div>
 

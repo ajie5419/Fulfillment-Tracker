@@ -1,0 +1,1612 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`issues service 搬移前特征 > accept 状态、日志、预警与工序恢复的固定副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "issue.findUnique",
+      {
+        "where": {
+          "id": "issue",
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "where": {
+          "userId": "owner",
+        },
+      },
+    ],
+    [
+      "workOrderExt.findMany",
+      {
+        "select": {
+          "projectManagerId": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "qmsDepartment.findMany",
+      {
+        "select": {
+          "id": true,
+          "isDeleted": true,
+          "name": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "dept",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "issue.updateMany",
+      {
+        "data": {
+          "dueDate": 2026-11-04T00:00:00.000Z,
+          "responsibleUserId": "owner",
+          "status": "ACCEPTED",
+        },
+        "where": {
+          "id": "issue",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "issueLog.create",
+      {
+        "data": {
+          "actorId": "owner",
+          "fromStatus": "OPEN",
+          "issueId": "issue",
+          "note": "受理；要求解决日 2026-11-04（默认受理后 3 天）；已受理",
+          "toStatus": "ACCEPTED",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W4:issue:issue",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W4:issue:issue",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "ok": true,
+  },
+}
+`;
+
+exports[`issues service 搬移前特征 > close 状态、日志、预警与工序恢复的固定副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "issue.findUnique",
+      {
+        "select": {
+          "refId": true,
+          "refType": true,
+        },
+        "where": {
+          "id": "issue",
+        },
+      },
+    ],
+    [
+      "transaction.begin",
+    ],
+    [
+      "lockStep",
+      "step",
+    ],
+    [
+      "issue.findUnique",
+      {
+        "where": {
+          "id": "issue",
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "where": {
+          "userId": "owner",
+        },
+      },
+    ],
+    [
+      "workOrderExt.findMany",
+      {
+        "select": {
+          "projectManagerId": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "issue.updateMany",
+      {
+        "data": {
+          "status": "CLOSED",
+        },
+        "where": {
+          "id": "issue",
+          "status": "RESOLVED",
+        },
+      },
+    ],
+    [
+      "issueLog.create",
+      {
+        "data": {
+          "actorId": "owner",
+          "fromStatus": "RESOLVED",
+          "issueId": "issue",
+          "note": "确认关闭；确认",
+          "toStatus": "CLOSED",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W4:issue:issue",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W4:issue:issue",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "issue.count",
+      {
+        "where": {
+          "id": {
+            "not": "issue",
+          },
+          "refId": "step",
+          "refType": "STEP",
+          "status": {
+            "not": "CLOSED",
+          },
+        },
+      },
+    ],
+    [
+      "restoreBlockedStep",
+      "step",
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "ok": true,
+    "stepRestored": "step",
+  },
+}
+`;
+
+exports[`issues service 搬移前特征 > departments 查询与完整投影 1`] = `
+{
+  "calls": [
+    [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "department": true,
+        },
+        "where": {
+          "role": "DEPT_HEAD",
+          "userId": "owner",
+        },
+      },
+    ],
+    [
+      "qmsUser.findUnique",
+      {
+        "select": {
+          "departmentId": true,
+        },
+        "where": {
+          "id": "owner",
+        },
+      },
+    ],
+  ],
+  "result": [
+    "dept",
+  ],
+}
+`;
+
+exports[`issues service 搬移前特征 > detail 查询与完整投影 1`] = `
+{
+  "calls": [
+    [
+      "issue.findUnique",
+      {
+        "include": {
+          "logs": {
+            "orderBy": {
+              "createdAt": "asc",
+            },
+          },
+        },
+        "where": {
+          "id": "issue",
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "where": {
+          "userId": "owner",
+        },
+      },
+    ],
+    [
+      "workOrderExt.findMany",
+      {
+        "select": {
+          "projectManagerId": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "threshold.findMany",
+      {
+        "where": {
+          "rule": {
+            "in": [
+              "W1",
+              "W2",
+              "W3",
+              "W4",
+              "W5",
+              "W6",
+              "W7",
+              "W8",
+              "W9",
+              "W10",
+              "W11",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "offDay.findMany",
+    ],
+    [
+      "qmsDepartment.findMany",
+      {
+        "select": {
+          "id": true,
+          "name": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "dept",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "include": {
+          "part": {
+            "select": {
+              "id": true,
+              "name": true,
+            },
+          },
+        },
+        "where": {
+          "id": {
+            "in": [
+              "step",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "alert.findMany",
+      {
+        "select": {
+          "level": true,
+          "refId": true,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W4:issue:issue",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "alert.findUnique",
+      {
+        "select": {
+          "level": true,
+          "rule": true,
+        },
+        "where": {
+          "id": "alert",
+        },
+      },
+    ],
+  ],
+  "result": {
+    "alertLevel": "RED",
+    "can": {
+      "accept": true,
+      "close": false,
+      "note": true,
+      "reassign": true,
+      "reject": false,
+      "resolve": false,
+    },
+    "category": "OUTSOURCE_QUALITY",
+    "categoryText": "外协-质量",
+    "createdAt": 2026-10-20T00:00:00.000Z,
+    "deptGroup": "技术部",
+    "description": "说明",
+    "dueDate": null,
+    "fromAlert": {
+      "level": "RED",
+      "rule": "W3",
+    },
+    "id": "issue",
+    "issueNo": "YC-261101-001",
+    "logs": [
+      {
+        "actorId": null,
+        "actorName": "系统",
+        "createdAt": 2026-11-01T04:00:00.000Z,
+        "fromStatus": null,
+        "id": "log",
+        "note": "生成",
+        "toStatus": "OPEN",
+      },
+    ],
+    "overdue": true,
+    "overdueDays": 0,
+    "partId": "part",
+    "photoCount": 1,
+    "photos": [
+      {
+        "id": "photo",
+        "url": "/api/files/photo",
+      },
+    ],
+    "refId": "step",
+    "refText": "工件 · 车削",
+    "refType": "STEP",
+    "reporterId": "owner",
+    "reporterName": "负责人",
+    "responsibleDeptId": "dept",
+    "responsibleDeptName": "技术部",
+    "responsibleSupplierId": "supplier",
+    "responsibleSupplierName": "供应商",
+    "responsibleUserId": "owner",
+    "responsibleUserName": "负责人",
+    "source": "ALERT",
+    "status": "OPEN",
+    "statusText": "待受理",
+    "stepId": "step",
+    "stepStatus": "BLOCKED",
+    "title": "标题",
+    "updatedAt": 2026-11-01T04:00:00.000Z,
+    "workOrderNumber": "WO",
+  },
+}
+`;
+
+exports[`issues service 搬移前特征 > list 查询与完整投影 1`] = `
+{
+  "calls": [
+    [
+      "issue.findMany",
+      {
+        "orderBy": [
+          {
+            "createdAt": "desc",
+          },
+          {
+            "id": "desc",
+          },
+        ],
+        "take": 500,
+        "where": {
+          "status": {
+            "in": [
+              "OPEN",
+              "ACCEPTED",
+              "RESOLVED",
+            ],
+          },
+          "workOrderNumber": {
+            "in": [
+              "WO",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "where": {
+          "userId": "owner",
+        },
+      },
+    ],
+    [
+      "workOrderExt.findMany",
+      {
+        "select": {
+          "projectManagerId": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "threshold.findMany",
+      {
+        "where": {
+          "rule": {
+            "in": [
+              "W1",
+              "W2",
+              "W3",
+              "W4",
+              "W5",
+              "W6",
+              "W7",
+              "W8",
+              "W9",
+              "W10",
+              "W11",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "offDay.findMany",
+    ],
+    [
+      "qmsDepartment.findMany",
+      {
+        "select": {
+          "id": true,
+          "name": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "dept",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "include": {
+          "part": {
+            "select": {
+              "id": true,
+              "name": true,
+            },
+          },
+        },
+        "where": {
+          "id": {
+            "in": [
+              "step",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "alert.findMany",
+      {
+        "select": {
+          "level": true,
+          "refId": true,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W4:issue:issue",
+            ],
+          },
+        },
+      },
+    ],
+  ],
+  "result": [
+    {
+      "alertLevel": "RED",
+      "can": {
+        "accept": true,
+        "close": false,
+        "note": true,
+        "reassign": true,
+        "reject": false,
+        "resolve": false,
+      },
+      "category": "OUTSOURCE_QUALITY",
+      "categoryText": "外协-质量",
+      "createdAt": 2026-10-20T00:00:00.000Z,
+      "deptGroup": "技术部",
+      "description": "说明",
+      "dueDate": null,
+      "id": "issue",
+      "issueNo": "YC-261101-001",
+      "overdue": true,
+      "overdueDays": 0,
+      "partId": "part",
+      "photoCount": 1,
+      "refId": "step",
+      "refText": "工件 · 车削",
+      "refType": "STEP",
+      "reporterId": "owner",
+      "reporterName": "负责人",
+      "responsibleDeptId": "dept",
+      "responsibleDeptName": "技术部",
+      "responsibleSupplierId": "supplier",
+      "responsibleSupplierName": "供应商",
+      "responsibleUserId": "owner",
+      "responsibleUserName": "负责人",
+      "source": "ALERT",
+      "status": "OPEN",
+      "statusText": "待受理",
+      "stepId": "step",
+      "stepStatus": "BLOCKED",
+      "title": "标题",
+      "updatedAt": 2026-11-01T04:00:00.000Z,
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`issues service 搬移前特征 > note 状态、日志、预警与工序恢复的固定副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "issue.findUnique",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "id": "issue",
+        },
+      },
+    ],
+    [
+      "issueLog.create",
+      {
+        "data": {
+          "actorId": "owner",
+          "issueId": "issue",
+          "note": "备注",
+        },
+      },
+    ],
+  ],
+  "result": {
+    "ok": true,
+  },
+}
+`;
+
+exports[`issues service 搬移前特征 > open-steps 查询与完整投影 1`] = `
+{
+  "calls": [
+    [
+      "issue.findMany",
+      {
+        "orderBy": {
+          "createdAt": "asc",
+        },
+        "select": {
+          "id": true,
+          "issueNo": true,
+          "refId": true,
+        },
+        "where": {
+          "refId": {
+            "in": [
+              "step",
+            ],
+          },
+          "refType": "STEP",
+          "status": {
+            "not": "CLOSED",
+          },
+        },
+      },
+    ],
+  ],
+  "result": Map {
+    "step" => [
+      {
+        "id": "issue",
+        "issueNo": "YC-261101-001",
+      },
+    ],
+  },
+}
+`;
+
+exports[`issues service 搬移前特征 > options 查询与完整投影 1`] = `
+{
+  "calls": [
+    [
+      "qmsDepartment.findMany",
+      {
+        "orderBy": {
+          "name": "asc",
+        },
+        "select": {
+          "id": true,
+          "name": true,
+        },
+        "where": {
+          "isDeleted": false,
+        },
+      },
+    ],
+  ],
+  "result": {
+    "categories": [
+      {
+        "deptName": "技术部",
+        "label": "设计",
+        "supplier": false,
+        "value": "DESIGN",
+      },
+      {
+        "deptName": "技术部",
+        "label": "变更",
+        "supplier": false,
+        "value": "CHANGE",
+      },
+      {
+        "deptName": "财务部",
+        "label": "物料-付款原因",
+        "supplier": false,
+        "value": "MATERIAL_PAYMENT",
+      },
+      {
+        "deptName": "采购部",
+        "label": "物料-管理原因",
+        "supplier": false,
+        "value": "MATERIAL_MGMT",
+      },
+      {
+        "deptName": "生产部",
+        "label": "外协-进度",
+        "supplier": true,
+        "value": "OUTSOURCE_SCHEDULE",
+      },
+      {
+        "deptName": "质量部",
+        "label": "外协-质量",
+        "supplier": true,
+        "value": "OUTSOURCE_QUALITY",
+      },
+      {
+        "deptName": "生产部",
+        "label": "车间",
+        "supplier": false,
+        "value": "WORKSHOP",
+      },
+      {
+        "deptName": "项目部",
+        "label": "客户",
+        "supplier": false,
+        "value": "CUSTOMER",
+      },
+      {
+        "deptName": "项目部",
+        "label": "其他",
+        "supplier": false,
+        "value": "OTHER",
+      },
+    ],
+    "departments": [
+      {
+        "id": "dept",
+        "isDeleted": false,
+        "name": "技术部",
+      },
+      {
+        "id": "new-dept",
+        "isDeleted": false,
+        "name": "生产部",
+      },
+    ],
+  },
+}
+`;
+
+exports[`issues service 搬移前特征 > reassign 状态、日志、预警与工序恢复的固定副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "issue.findUnique",
+      {
+        "where": {
+          "id": "issue",
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "where": {
+          "userId": "owner",
+        },
+      },
+    ],
+    [
+      "workOrderExt.findMany",
+      {
+        "select": {
+          "projectManagerId": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "qmsDepartment.findMany",
+      {
+        "select": {
+          "id": true,
+          "isDeleted": true,
+          "name": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "dept",
+              "new-dept",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "qmsUser.findFirst",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "id": "new-owner",
+          "isDeleted": false,
+        },
+      },
+    ],
+    [
+      "issue.updateMany",
+      {
+        "data": {
+          "dueDate": 2026-11-04T00:00:00.000Z,
+          "responsibleDeptId": "new-dept",
+          "responsibleSupplierId": null,
+          "responsibleUserId": "new-owner",
+          "status": "OPEN",
+        },
+        "where": {
+          "id": "issue",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "issueLog.create",
+      {
+        "data": {
+          "actorId": "owner",
+          "fromStatus": null,
+          "issueId": "issue",
+          "note": "改派：责任部门 技术部 → 生产部，责任人 负责人 → new-owner，外协单位 供应商 → 无，要求解决日 无 → 2026-11-04；说明",
+          "toStatus": null,
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W4:issue:issue",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W4:issue:issue",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "ok": true,
+  },
+}
+`;
+
+exports[`issues service 搬移前特征 > reject 状态、日志、预警与工序恢复的固定副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "issue.findUnique",
+      {
+        "where": {
+          "id": "issue",
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "where": {
+          "userId": "owner",
+        },
+      },
+    ],
+    [
+      "workOrderExt.findMany",
+      {
+        "select": {
+          "projectManagerId": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "issue.updateMany",
+      {
+        "data": {
+          "status": "ACCEPTED",
+        },
+        "where": {
+          "id": "issue",
+          "status": "RESOLVED",
+        },
+      },
+    ],
+    [
+      "issueLog.create",
+      {
+        "data": {
+          "actorId": "owner",
+          "fromStatus": "RESOLVED",
+          "issueId": "issue",
+          "note": "退回：未解决",
+          "toStatus": "ACCEPTED",
+        },
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "ok": true,
+  },
+}
+`;
+
+exports[`issues service 搬移前特征 > resolve 状态、日志、预警与工序恢复的固定副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "issue.findUnique",
+      {
+        "where": {
+          "id": "issue",
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "where": {
+          "userId": "owner",
+        },
+      },
+    ],
+    [
+      "workOrderExt.findMany",
+      {
+        "select": {
+          "projectManagerId": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "issue.updateMany",
+      {
+        "data": {
+          "status": "RESOLVED",
+        },
+        "where": {
+          "id": "issue",
+          "status": "ACCEPTED",
+        },
+      },
+    ],
+    [
+      "issueLog.create",
+      {
+        "data": {
+          "actorId": "owner",
+          "fromStatus": "ACCEPTED",
+          "issueId": "issue",
+          "note": "处理结果：已解决",
+          "toStatus": "RESOLVED",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W4:issue:issue",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W4:issue:issue",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "ok": true,
+  },
+}
+`;
+
+exports[`issues service 搬移前特征 > 乐观并发失败后不写日志、不消除预警、不恢复 QMS 关联工序 1`] = `
+[
+  [
+    "issue.findUnique",
+    {
+      "select": {
+        "refId": true,
+        "refType": true,
+      },
+      "where": {
+        "id": "issue",
+      },
+    },
+  ],
+  [
+    "transaction.begin",
+  ],
+  [
+    "lockStep",
+    "step",
+  ],
+  [
+    "issue.findUnique",
+    {
+      "where": {
+        "id": "issue",
+      },
+    },
+  ],
+  [
+    "notifyRole.findMany",
+    {
+      "where": {
+        "userId": "owner",
+      },
+    },
+  ],
+  [
+    "workOrderExt.findMany",
+    {
+      "select": {
+        "projectManagerId": true,
+        "workOrderNumber": true,
+      },
+      "where": {
+        "workOrderNumber": {
+          "in": [
+            "WO",
+          ],
+        },
+      },
+    },
+  ],
+  [
+    "issue.updateMany",
+    {
+      "data": {
+        "status": "CLOSED",
+      },
+      "where": {
+        "id": "issue",
+        "status": "RESOLVED",
+      },
+    },
+  ],
+  [
+    "transaction.rollback",
+  ],
+]
+`;
+
+exports[`issues service 搬移前特征 > 图片绑定数量不足，回滚且不写上报日志 1`] = `
+[
+  [
+    "transaction.begin",
+  ],
+  [
+    "qmsWorkOrder.findFirst",
+    {
+      "select": {
+        "workOrderNumber": true,
+      },
+      "where": {
+        "isDeleted": false,
+        "workOrderNumber": "WO",
+      },
+    },
+  ],
+  [
+    "notifyRole.findFirst",
+    {
+      "orderBy": {
+        "id": "asc",
+      },
+      "select": {
+        "userId": true,
+      },
+      "where": {
+        "department": "项目部",
+        "role": "DEPT_HEAD",
+      },
+    },
+  ],
+  [
+    "issue.findFirst",
+    {
+      "orderBy": {
+        "issueNo": "desc",
+      },
+      "select": {
+        "issueNo": true,
+      },
+      "where": {
+        "issueNo": {
+          "startsWith": "YC-261101-",
+        },
+      },
+    },
+  ],
+  [
+    "issue.create",
+    {
+      "data": {
+        "category": "OTHER",
+        "description": "说明",
+        "dueDate": null,
+        "issueNo": "YC-261101-010",
+        "photos": [
+          "photo",
+        ],
+        "refId": null,
+        "refType": null,
+        "reporterId": "owner",
+        "responsibleDeptId": "dept",
+        "responsibleSupplierId": null,
+        "responsibleUserId": "owner",
+        "source": "MANUAL",
+        "title": null,
+        "workOrderNumber": "WO",
+      },
+    },
+  ],
+  [
+    "uploadFile.updateMany",
+    {
+      "data": {
+        "issueId": "issue",
+      },
+      "where": {
+        "id": {
+          "in": [
+            "photo",
+          ],
+        },
+        "issueId": null,
+        "mime": {
+          "startsWith": "image/",
+        },
+        "releaseId": null,
+        "uploaderId": "owner",
+      },
+    },
+  ],
+  [
+    "transaction.rollback",
+  ],
+]
+`;
+
+exports[`issues service 搬移前特征 > 手工上报：工单、工件、供应商、默认责任、编号、图片绑定、日志依次执行 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "qmsWorkOrder.findFirst",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "isDeleted": false,
+          "workOrderNumber": "WO",
+        },
+      },
+    ],
+    [
+      "part.findUnique",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "id": "part",
+        },
+      },
+    ],
+    [
+      "qmsSupplier.findFirst",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "id": "supplier",
+          "isDeleted": false,
+        },
+      },
+    ],
+    [
+      "notifyRole.findFirst",
+      {
+        "orderBy": {
+          "id": "asc",
+        },
+        "select": {
+          "userId": true,
+        },
+        "where": {
+          "department": "质量部",
+          "role": "DEPT_HEAD",
+        },
+      },
+    ],
+    [
+      "issue.findFirst",
+      {
+        "orderBy": {
+          "issueNo": "desc",
+        },
+        "select": {
+          "issueNo": true,
+        },
+        "where": {
+          "issueNo": {
+            "startsWith": "YC-261101-",
+          },
+        },
+      },
+    ],
+    [
+      "issue.create",
+      {
+        "data": {
+          "category": "OUTSOURCE_QUALITY",
+          "description": "说明",
+          "dueDate": null,
+          "issueNo": "YC-261101-010",
+          "photos": [
+            "photo",
+          ],
+          "refId": "part",
+          "refType": "PART",
+          "reporterId": "owner",
+          "responsibleDeptId": "dept",
+          "responsibleSupplierId": "supplier",
+          "responsibleUserId": "owner",
+          "source": "MANUAL",
+          "title": "标题",
+          "workOrderNumber": "WO",
+        },
+      },
+    ],
+    [
+      "uploadFile.updateMany",
+      {
+        "data": {
+          "issueId": "issue",
+        },
+        "where": {
+          "id": {
+            "in": [
+              "photo",
+            ],
+          },
+          "issueId": null,
+          "mime": {
+            "startsWith": "image/",
+          },
+          "releaseId": null,
+          "uploaderId": "owner",
+        },
+      },
+    ],
+    [
+      "issueLog.create",
+      {
+        "data": {
+          "actorId": "owner",
+          "issueId": "issue",
+          "note": "上报",
+          "toStatus": "OPEN",
+        },
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "category": "OUTSOURCE_QUALITY",
+    "createdAt": 2026-10-20T00:00:00.000Z,
+    "description": "说明",
+    "dueDate": null,
+    "id": "issue",
+    "issueNo": "YC-261101-001",
+    "logs": [
+      {
+        "actorId": null,
+        "createdAt": 2026-11-01T04:00:00.000Z,
+        "fromStatus": null,
+        "id": "log",
+        "note": "生成",
+        "toStatus": "OPEN",
+      },
+    ],
+    "photos": [
+      "photo",
+    ],
+    "refId": "step",
+    "refType": "STEP",
+    "reporterId": "owner",
+    "responsibleDeptId": "dept",
+    "responsibleSupplierId": "supplier",
+    "responsibleUserId": "owner",
+    "source": "ALERT",
+    "sourceKey": "ALERT:alert",
+    "status": "OPEN",
+    "title": "标题",
+    "updatedAt": 2026-11-01T04:00:00.000Z,
+    "workOrderNumber": "WO",
+  },
+}
+`;
+
+exports[`issues service 搬移前特征 > 状态校验先于权限查询，空处理结果先于事务 1`] = `
+[
+  [
+    "transaction.begin",
+  ],
+  [
+    "issue.findUnique",
+    {
+      "where": {
+        "id": "issue",
+      },
+    },
+  ],
+  [
+    "transaction.rollback",
+  ],
+]
+`;
+
+exports[`issues service 搬移前特征 > 系统异常沿用调用方事务：默认责任、编号、写入、日志，不另开事务 1`] = `
+{
+  "calls": [
+    [
+      "notifyRole.findFirst",
+      {
+        "orderBy": {
+          "id": "asc",
+        },
+        "select": {
+          "userId": true,
+        },
+        "where": {
+          "department": "质量部",
+          "role": "DEPT_HEAD",
+        },
+      },
+    ],
+    [
+      "issue.findFirst",
+      {
+        "orderBy": {
+          "issueNo": "desc",
+        },
+        "select": {
+          "issueNo": true,
+        },
+        "where": {
+          "issueNo": {
+            "startsWith": "YC-261101-",
+          },
+        },
+      },
+    ],
+    [
+      "issue.create",
+      {
+        "data": {
+          "category": "OUTSOURCE_QUALITY",
+          "description": "说明",
+          "issueNo": "YC-261101-010",
+          "photos": [],
+          "refId": "step",
+          "refType": "STEP",
+          "reporterId": null,
+          "responsibleDeptId": "dept",
+          "responsibleSupplierId": "supplier",
+          "responsibleUserId": "owner",
+          "source": "QMS_NONCONFORMING",
+          "sourceKey": "QMS:inspection",
+          "workOrderNumber": "WO",
+        },
+      },
+    ],
+    [
+      "issueLog.create",
+      {
+        "data": {
+          "actorId": null,
+          "issueId": "issue",
+          "note": "QMS 不合格",
+          "toStatus": "OPEN",
+        },
+      },
+    ],
+  ],
+  "result": {
+    "category": "OUTSOURCE_QUALITY",
+    "createdAt": 2026-10-20T00:00:00.000Z,
+    "description": "说明",
+    "dueDate": null,
+    "id": "issue",
+    "issueNo": "YC-261101-001",
+    "logs": [
+      {
+        "actorId": null,
+        "createdAt": 2026-11-01T04:00:00.000Z,
+        "fromStatus": null,
+        "id": "log",
+        "note": "生成",
+        "toStatus": "OPEN",
+      },
+    ],
+    "photos": [
+      "photo",
+    ],
+    "refId": "step",
+    "refType": "STEP",
+    "reporterId": "owner",
+    "responsibleDeptId": "dept",
+    "responsibleSupplierId": "supplier",
+    "responsibleUserId": "owner",
+    "source": "ALERT",
+    "sourceKey": "ALERT:alert",
+    "status": "OPEN",
+    "title": "标题",
+    "updatedAt": 2026-11-01T04:00:00.000Z,
+    "workOrderNumber": "WO",
+  },
+}
+`;

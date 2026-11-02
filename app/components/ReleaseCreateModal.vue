@@ -5,6 +5,7 @@
  * prefill（R11 设计任务一键发放）：预填类型、工单、关联工件、说明，并记下 drawingTaskId；打开时装入的工单不清掉预填的工件。
  * 图纸发放单可附 BOM 表（ReleaseBomField）：发放时按图号建工件、关联到发放单（从设计任务发放时也挂到该任务）。
  */
+import type { ClientOptions } from '../utils/transport'
 import type { UploadFile } from 'ant-design-vue'
 
 const props = defineProps<{ open: boolean; workOrderNumber?: string; prefill?: ReleasePrefill | null }>()
@@ -24,7 +25,7 @@ const form = reactive({
   version: '',
   description: '',
   userIds: [] as string[],
-  groups: [] as { department?: string; role: string }[],
+  groups: [] as { department?: string; role: NonNullable<NonNullable<ClientOptions<'/api/releases', 'POST'>['body']['groups']>[number]['role']> | '' }[],
 })
 const files = ref<UploadFile[]>([])
 const bomAttached = ref(false)
@@ -108,16 +109,7 @@ async function submit() {
   try {
     const attachmentIds = await uploadAttachments(files.value.map((f) => f.originFileObj as File).filter(Boolean))
     const bomFileId = withBom ? ((await bomField.value?.prepare()) ?? null) : null
-    const r = await releasePost<{
-      id: string
-      releaseNo: string
-      recipients: number
-      impact: { started: number; held: number; confirmers: string[] }
-      drawing: { status: string; readySent: number } | null
-      bom: { created: number; matched: number; revisionFilled: number; skipped: number; unrouted: number; unroutedNotified: boolean; purchasePlanItems?: number; purchasePlanId?: string } | null
-      /** 工艺模块：设计变更涉及已下发的料单，改成了"修改中" */
-      material: { revising: number; notified: boolean }
-    }>('/api/releases', {
+    const r = await releasePost('/api/releases', {
       type: form.type,
       workOrderNumber: form.workOrderNumber,
       partIds: form.partIds,

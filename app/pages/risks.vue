@@ -105,7 +105,7 @@ function convert(row: { id: string; subject: string }) {
     async onOk() {
       converting.value = row.id
       try {
-        const r = await ($fetch as unknown as (u: string, o: { method: 'POST' }) => Promise<{ issueId: string; issueNo: string }>)(`/api/alerts/${row.id}/convert`, { method: 'POST' })
+        const r = await clientRequest(`/api/alerts/${row.id}/convert`, { method: 'POST' })
         message.success(`已转为异常 ${r.issueNo}`)
         await refresh()
       } catch (e) {

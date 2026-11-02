@@ -1,8 +1,13 @@
-/** 业务规则不允许的操作。接口层统一转成 400，message 直接给用户看，所以写中文。 */
+import type { BusinessErrorCode } from '../../../shared/errors'
+
+/** 业务规则不允许的操作。可选 code 控制 HTTP 映射；无 code 时保留原来的 400。 */
 export class FlowError extends Error {
-  constructor(message: string) {
+  // QmsRejected 子类保留 QMS 原始 code 供服务层判断，接口边界再做业务码适配。
+  readonly code: string | null | undefined
+  constructor(message: string, code?: BusinessErrorCode) {
     super(message)
     this.name = 'FlowError'
+    this.code = code
   }
 }
 
@@ -19,8 +24,9 @@ export class FlowHttpError extends FlowError {
   constructor(
     message: string,
     readonly statusCode: number,
+    code?: BusinessErrorCode,
   ) {
-    super(message)
+    super(message, code)
     this.name = 'FlowHttpError'
   }
 }

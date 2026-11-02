@@ -1,22 +1,15 @@
+import type { ClientBodyArgs, ClientResponse } from '../utils/transport'
+import { ISSUE_STATUS_TEXT as SHARED_ISSUE_STATUS_TEXT, ISSUE_SOURCE_TEXT as SHARED_ISSUE_SOURCE_TEXT, ISSUE_CATEGORY_TEXT as SHARED_ISSUE_CATEGORY_TEXT } from '#shared/issues'
 /** 异常页面共用：文案、颜色、操作按钮、上传照片。 */
 import { BOARD_COLOR as SHARED_BOARD_COLOR, BOARD_TEXT as SHARED_BOARD_TEXT } from '#shared/status'
+import { MAX_PHOTO_BYTES as SHARED_MAX_PHOTO_BYTES, MAX_ISSUE_PHOTOS } from '#shared/upload-policy'
 
-export const ISSUE_STATUS_TEXT = { OPEN: '待受理', ACCEPTED: '处理中', RESOLVED: '待确认', CLOSED: '已关闭' } as const
+export const ISSUE_STATUS_TEXT = SHARED_ISSUE_STATUS_TEXT
 export const ISSUE_STATUS_COLOR = { OPEN: 'orange', ACCEPTED: 'blue', RESOLVED: 'purple', CLOSED: 'default' } as const
 /** Vant 标签类型 */
 export const ISSUE_STATUS_TYPE = { OPEN: 'warning', ACCEPTED: 'primary', RESOLVED: 'success', CLOSED: 'default' } as const
-export const ISSUE_SOURCE_TEXT = { MANUAL: '手工上报', ALERT: '预警转入', QMS_NONCONFORMING: 'QMS 不合格', SCRAP: '完工报废' } as const
-export const ISSUE_CATEGORY_TEXT = {
-  DESIGN: '设计',
-  CHANGE: '变更',
-  MATERIAL_PAYMENT: '物料-付款原因',
-  MATERIAL_MGMT: '物料-管理原因',
-  OUTSOURCE_SCHEDULE: '外协-进度',
-  OUTSOURCE_QUALITY: '外协-质量',
-  WORKSHOP: '车间',
-  CUSTOMER: '客户',
-  OTHER: '其他',
-} as const
+export const ISSUE_SOURCE_TEXT = SHARED_ISSUE_SOURCE_TEXT
+export const ISSUE_CATEGORY_TEXT = SHARED_ISSUE_CATEGORY_TEXT
 
 export type IssueStatusKey = keyof typeof ISSUE_STATUS_TEXT
 export type IssueCategoryKey = keyof typeof ISSUE_CATEGORY_TEXT
@@ -43,9 +36,9 @@ export function useIssueOptions() {
 }
 
 /** 提交异常操作；body 里 undefined 的字段不改 */
-export function issueAction(id: string, action: IssueAction, body: Record<string, unknown>) {
-  const send = $fetch as unknown as (url: string, opts: { method: 'POST'; body: object }) => Promise<unknown>
-  return send(`/api/issues/${encodeURIComponent(id)}/${action}`, { method: 'POST', body })
+export function issueAction<A extends IssueAction>(id: string, action: A, body: ClientBodyArgs<`/api/issues/${string}/${A}`, 'POST'>[0]): Promise<ClientResponse<`/api/issues/${string}/${A}`, 'POST'>>
+export function issueAction(id: string, action: IssueAction, body: unknown) {
+  return sendClientRequest(`/api/issues/${encodeURIComponent(id)}/${action}`, { method: 'POST', body })
 }
 
 /** 上传照片（multipart，字段 file），返回 upload_file id */
@@ -53,11 +46,11 @@ export async function uploadPhotos(files: File[]): Promise<string[]> {
   if (!files.length) return []
   const form = new FormData()
   for (const f of files) form.append('file', f, f.name || 'photo')
-  const send = $fetch as unknown as (url: string, opts: { method: 'POST'; body: FormData }) => Promise<{ id: string }[]>
+  const send = clientRequest
   const saved = await send('/api/uploads', { method: 'POST', body: form })
   return saved.map((s) => s.id)
 }
 
 /** 照片大小上限（与服务端一致），选择时先拦一道 */
-export const MAX_PHOTO_BYTES = 8 * 1024 * 1024
-export const MAX_PHOTOS = 3
+export const MAX_PHOTO_BYTES = SHARED_MAX_PHOTO_BYTES
+export const MAX_PHOTOS = MAX_ISSUE_PHOTOS

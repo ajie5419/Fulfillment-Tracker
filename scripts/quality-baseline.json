@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "lineLimit": 800,
+  "counts": {
+    "explicitAny": 0,
+    "doubleAssertions": 6,
+    "nonNullAssertions": 249,
+    "duplicateStatusDictionaryGroups": 0,
+    "runtimeCycleGroups": 0,
+    "oversizedFiles": 0
+  },
+  "runtimeCycles": [],
+  "oversizedFiles": []
+}

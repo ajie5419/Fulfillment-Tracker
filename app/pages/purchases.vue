@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const requestFetch = useRequestFetch()
 /**
  * 采购到货（R10）：关键物料采购行列表、登记 / 编辑、Excel 导入、确认到货、申请付款。
  * 顶部统计：未到货、缺料、无承诺日、卡付款；延误按原因分"付款原因"和"管理原因"。
@@ -53,6 +54,7 @@ const pageSize = computed({
   set: (value: number) => { void changeQuery({ pageSize: String(value) }) },
 })
 const list = usePagedList<PurchaseRow, PurchasePage>('/api/purchases', {
+  read: (_url, options) => clientRequest('/api/purchases', options, requestFetch),
   key: 'purchase-desktop', page, pageSize,
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber, view: filter.view, q: filter.q || undefined })),
 })
@@ -132,7 +134,7 @@ const importing = ref(false)
 
 // ───── 确认到货 ─────
 const arriving = ref<PurchaseRow | null>(null)
-const arrival = reactive({ arrivedDate: dayAfter(0), delayReason: undefined as string | undefined, delayNote: '' })
+const arrival = reactive({ arrivedDate: dayAfter(0), delayReason: undefined as PurchaseRow['delayReason'] | undefined, delayNote: '' })
 const arrivalLate = computed(() => {
   const r = arriving.value
   if (!r) return false
@@ -151,7 +153,7 @@ async function confirmArrive() {
   if (!r) return
   busy.value = true
   try {
-    const res = await purchaseSend<{ late: boolean; readySent: boolean }>(`/api/purchases/${r.id}/arrive`, 'POST', {
+    const res = await purchaseSend(`/api/purchases/${r.id}/arrive`, 'POST', {
       arrivedDate: arrival.arrivedDate,
       delayReason: arrivalLate.value ? (arrival.delayReason ?? null) : undefined,
       delayNote: arrivalLate.value ? arrival.delayNote.trim() || null : undefined,

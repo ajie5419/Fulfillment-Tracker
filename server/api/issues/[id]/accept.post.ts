@@ -10,3 +10,6 @@ export default defineFlowHandler(async (event, user) => {
   await assertCanSeeIssue(event, id)
   return acceptIssue(id, actorOf(event, user), definedOnly(await parseBody(event, body)))
 })
+
+/** 客户端请求契约（仅类型导出）。 */
+export type RequestBody = z.input<typeof body>

@@ -1,0 +1,2521 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`releases service 搬移前特征 > CHANGE 新建的锁、编号、数量校验、待办与跨领域调用顺序 1`] = `
+{
+  "calls": [
+    [
+      "qmsUser.findMany",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "owner",
+            ],
+          },
+          "isDeleted": false,
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "transaction.begin",
+      {
+        "isolationLevel": "ReadCommitted",
+      },
+    ],
+    [
+      "lockMaterialChangeParts",
+      [
+        "part",
+      ],
+      "task",
+    ],
+    [
+      "lockTask",
+      "task",
+    ],
+    [
+      "qmsWorkOrder.findFirst",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "isDeleted": false,
+          "workOrderNumber": "WO",
+        },
+      },
+    ],
+    [
+      "assertReleasable",
+      {
+        "id": "task",
+        "parts": [
+          {
+            "partId": "part",
+          },
+        ],
+        "status": "DRAWN",
+      },
+      "WO",
+      "CHANGE",
+    ],
+    [
+      "part.findMany",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "part",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "release.findFirst",
+      {
+        "orderBy": {
+          "releaseNo": "desc",
+        },
+        "select": {
+          "releaseNo": true,
+        },
+        "where": {
+          "releaseNo": {
+            "startsWith": "FF-261101-",
+          },
+        },
+      },
+    ],
+    [
+      "release.create",
+      {
+        "data": {
+          "bomFileId": null,
+          "description": "说明",
+          "drawingTaskId": "task",
+          "issuerId": "owner",
+          "partIds": [
+            "part",
+          ],
+          "releaseNo": "FF-261101-010",
+          "type": "CHANGE",
+          "version": null,
+          "workOrderNumber": "WO",
+        },
+      },
+    ],
+    [
+      "releaseReceipt.createMany",
+      {
+        "data": [
+          {
+            "releaseId": "release",
+            "userId": "owner",
+          },
+        ],
+      },
+    ],
+    [
+      "releaseReceipt.findMany",
+      {
+        "select": {
+          "id": true,
+          "userId": true,
+        },
+        "where": {
+          "releaseId": "release",
+        },
+      },
+    ],
+    [
+      "todo.createMany",
+      {
+        "data": [
+          {
+            "action": "SIGN_RELEASE",
+            "ownerId": "owner",
+            "refId": "receipt",
+            "refType": "receipt",
+          },
+        ],
+      },
+    ],
+    [
+      "uploadFile.updateMany",
+      {
+        "data": {
+          "releaseId": "release",
+        },
+        "where": {
+          "id": {
+            "in": [
+              "attachment",
+            ],
+          },
+          "issueId": null,
+          "mime": {
+            "not": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          },
+          "releaseId": null,
+          "uploaderId": "owner",
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "select": {
+          "id": true,
+          "status": true,
+        },
+        "where": {
+          "partId": {
+            "in": [
+              "part",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "userId": true,
+        },
+        "where": {
+          "OR": [
+            {
+              "role": "OUTSOURCE_COORDINATOR",
+            },
+            {
+              "department": "生产部",
+              "role": "DEPT_HEAD",
+            },
+          ],
+        },
+      },
+    ],
+    [
+      "todo.createMany",
+      {
+        "data": [
+          {
+            "action": "CONFIRM_CHANGE",
+            "ownerId": "owner",
+            "refId": "release",
+            "refType": "release",
+          },
+        ],
+      },
+    ],
+    [
+      "lockParts",
+      [
+        "part",
+      ],
+    ],
+    [
+      "routeStep.updateMany",
+      {
+        "data": {
+          "holdReleaseId": "release",
+        },
+        "where": {
+          "id": {
+            "in": [
+              "step",
+            ],
+          },
+          "status": "PENDING",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W2:step:step",
+              "W3:step:step",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W2:step:step",
+              "W3:step:step",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "select": {
+          "partId": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "step",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.findFirst",
+      {
+        "orderBy": {
+          "seq": "asc",
+        },
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "partId": "part",
+        },
+      },
+    ],
+    [
+      "refreshPartReady",
+      "part",
+      false,
+    ],
+    [
+      "markRevisingByChange",
+      {
+        "bomFileId": "bom",
+        "changeConfirmNote": null,
+        "changeConfirmedAt": null,
+        "changeConfirmedBy": null,
+        "createdAt": 2026-11-01T04:00:00.000Z,
+        "description": "说明",
+        "drawingTaskId": "task",
+        "id": "release",
+        "issuerId": "owner",
+        "partIds": [
+          "part",
+          "missing",
+        ],
+        "releaseNo": "FF-261101-001",
+        "status": "ACTIVE",
+        "type": "CHANGE",
+        "version": "A",
+        "workOrderNumber": "WO",
+      },
+      [
+        "part",
+      ],
+      "task",
+    ],
+    [
+      "settleTask",
+      {
+        "partIds": [
+          "part",
+        ],
+        "status": "DRAWN",
+      },
+      "task",
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "bom": null,
+    "drawing": {
+      "status": "RELEASED",
+    },
+    "id": "release",
+    "impact": {
+      "confirmers": [
+        "owner",
+      ],
+      "held": 1,
+      "started": 1,
+    },
+    "material": {
+      "notified": true,
+      "revising": 1,
+    },
+    "recipients": 1,
+    "releaseNo": "FF-261101-001",
+  },
+}
+`;
+
+exports[`releases service 搬移前特征 > DRAWING 新建的锁、编号、数量校验、待办与跨领域调用顺序 1`] = `
+{
+  "calls": [
+    [
+      "qmsUser.findMany",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "owner",
+            ],
+          },
+          "isDeleted": false,
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "transaction.begin",
+      {
+        "isolationLevel": "ReadCommitted",
+      },
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT workOrderNumber FROM qms_work_order WHERE workOrderNumber = ",
+        " FOR UPDATE",
+      ],
+      "WO",
+    ],
+    [
+      "qmsWorkOrder.count",
+      {
+        "where": {
+          "isDeleted": false,
+          "workOrderNumber": "WO",
+        },
+      },
+    ],
+    [
+      "applyTechBom",
+      "WO",
+      [],
+      {
+        "createdBy": "owner",
+      },
+    ],
+    [
+      "lockTask",
+      "task",
+    ],
+    [
+      "qmsWorkOrder.findFirst",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "isDeleted": false,
+          "workOrderNumber": "WO",
+        },
+      },
+    ],
+    [
+      "assertReleasable",
+      {
+        "id": "task",
+        "parts": [
+          {
+            "partId": "part",
+          },
+        ],
+        "status": "DRAWN",
+      },
+      "WO",
+      "DRAWING",
+    ],
+    [
+      "part.findMany",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "part",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "release.findFirst",
+      {
+        "orderBy": {
+          "releaseNo": "desc",
+        },
+        "select": {
+          "releaseNo": true,
+        },
+        "where": {
+          "releaseNo": {
+            "startsWith": "FF-261101-",
+          },
+        },
+      },
+    ],
+    [
+      "release.create",
+      {
+        "data": {
+          "bomFileId": "bom",
+          "description": "说明",
+          "drawingTaskId": "task",
+          "issuerId": "owner",
+          "partIds": [
+            "part",
+            "matched",
+          ],
+          "releaseNo": "FF-261101-010",
+          "type": "DRAWING",
+          "version": null,
+          "workOrderNumber": "WO",
+        },
+      },
+    ],
+    [
+      "releaseReceipt.createMany",
+      {
+        "data": [
+          {
+            "releaseId": "release",
+            "userId": "owner",
+          },
+        ],
+      },
+    ],
+    [
+      "releaseReceipt.findMany",
+      {
+        "select": {
+          "id": true,
+          "userId": true,
+        },
+        "where": {
+          "releaseId": "release",
+        },
+      },
+    ],
+    [
+      "todo.createMany",
+      {
+        "data": [
+          {
+            "action": "SIGN_RELEASE",
+            "ownerId": "owner",
+            "refId": "receipt",
+            "refType": "receipt",
+          },
+        ],
+      },
+    ],
+    [
+      "uploadFile.updateMany",
+      {
+        "data": {
+          "releaseId": "release",
+        },
+        "where": {
+          "id": {
+            "in": [
+              "attachment",
+            ],
+          },
+          "issueId": null,
+          "mime": {
+            "not": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          },
+          "releaseId": null,
+          "uploaderId": "owner",
+        },
+      },
+    ],
+    [
+      "uploadFile.updateMany",
+      {
+        "data": {
+          "releaseId": "release",
+        },
+        "where": {
+          "id": "bom",
+          "issueId": null,
+          "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "releaseId": null,
+          "uploaderId": "owner",
+        },
+      },
+    ],
+    [
+      "purchasePlan.update",
+      {
+        "data": {
+          "title": "BOM 外购件 FF-261101-001",
+        },
+        "where": {
+          "id": "purchase-plan",
+        },
+      },
+    ],
+    [
+      "drawingTaskPart.createMany",
+      {
+        "data": [
+          {
+            "partId": "part",
+            "taskId": "task",
+          },
+          {
+            "partId": "matched",
+            "taskId": "task",
+          },
+        ],
+        "skipDuplicates": true,
+      },
+    ],
+    [
+      "settleTask",
+      {
+        "partIds": [
+          "part",
+        ],
+        "status": "DRAWN",
+      },
+      "task",
+    ],
+    [
+      "part.count",
+      {
+        "where": {
+          "id": {
+            "in": [
+              "part",
+              "matched",
+            ],
+          },
+          "steps": {
+            "none": {},
+          },
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "userId": true,
+        },
+        "where": {
+          "department": "生产部",
+          "role": "DEPT_HEAD",
+        },
+      },
+    ],
+    [
+      "qmsUser.findMany",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "owner",
+            ],
+          },
+          "isDeleted": false,
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "reminder.createMany",
+      {
+        "data": [
+          {
+            "dedupeKey": "RELEASE_ROUTE:release:owner",
+            "kind": "RELEASE",
+            "level": "REMIND",
+            "link": "/parts?wo=WO&noRoute=1",
+            "title": "【待排工序】图纸发放 FF-261101-001 有 1 个工件还没有工序链，请排工序（WO）",
+            "userId": "owner",
+          },
+        ],
+        "skipDuplicates": true,
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "bom": {
+      "created": 1,
+      "matched": 1,
+      "purchasePlanId": "purchase-plan",
+      "purchasePlanItems": 1,
+      "revisionFilled": 1,
+      "skipped": 0,
+      "unrouted": 1,
+      "unroutedNotified": true,
+    },
+    "drawing": {
+      "status": "RELEASED",
+    },
+    "id": "release",
+    "impact": {
+      "confirmers": [],
+      "held": 0,
+      "started": 0,
+    },
+    "material": {
+      "notified": false,
+      "revising": 0,
+    },
+    "recipients": 1,
+    "releaseNo": "FF-261101-001",
+  },
+}
+`;
+
+exports[`releases service 搬移前特征 > confirm 状态流转及副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT id FROM doc_release WHERE id = ",
+        " FOR UPDATE",
+      ],
+      "release",
+    ],
+    [
+      "release.findUniqueOrThrow",
+      {
+        "where": {
+          "id": "release",
+        },
+      },
+    ],
+    [
+      "todo.findFirst",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "action": "CONFIRM_CHANGE",
+          "ownerId": "owner",
+          "refId": "release",
+          "refType": "release",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "todo.updateMany",
+      {
+        "data": {
+          "doneAt": 2026-11-01T04:00:00.000Z,
+          "status": "DONE",
+        },
+        "where": {
+          "action": "CONFIRM_CHANGE",
+          "refId": "release",
+          "refType": "release",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "release.update",
+      {
+        "data": {
+          "changeConfirmNote": "已通知",
+          "changeConfirmedAt": 2026-11-01T04:00:00.000Z,
+          "changeConfirmedBy": "owner",
+        },
+        "where": {
+          "id": "release",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W5:release:release",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W5:release:release",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "select": {
+          "partId": true,
+        },
+        "where": {
+          "holdReleaseId": "release",
+        },
+      },
+    ],
+    [
+      "lockParts",
+      [
+        "part",
+        "part",
+      ],
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "holdReleaseId": "release",
+        },
+      },
+    ],
+    [
+      "routeStep.updateMany",
+      {
+        "data": {
+          "holdClearedAt": 2026-11-01T04:00:00.000Z,
+          "holdReleaseId": null,
+        },
+        "where": {
+          "holdReleaseId": "release",
+          "id": {
+            "in": [
+              "step",
+              "started",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "select": {
+          "partId": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "step",
+              "started",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.findFirst",
+      {
+        "orderBy": {
+          "seq": "asc",
+        },
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "partId": "part",
+        },
+      },
+    ],
+    [
+      "refreshPartReady",
+      "part",
+      true,
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "holdsCleared": 1,
+  },
+}
+`;
+
+exports[`releases service 搬移前特征 > detail 固定查询与完整 DTO 1`] = `
+{
+  "calls": [
+    [
+      "release.findUnique",
+      {
+        "include": {
+          "receipts": {
+            "orderBy": {
+              "createdAt": "asc",
+            },
+          },
+        },
+        "where": {
+          "id": "release",
+        },
+      },
+    ],
+    [
+      "part.findMany",
+      {
+        "include": {
+          "steps": {
+            "orderBy": {
+              "seq": "asc",
+            },
+          },
+        },
+        "where": {
+          "id": {
+            "in": [
+              "part",
+              "missing",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "uploadFile.findMany",
+      {
+        "orderBy": {
+          "createdAt": "asc",
+        },
+        "select": {
+          "id": true,
+          "mime": true,
+          "size": true,
+        },
+        "where": {
+          "releaseId": "release",
+        },
+      },
+    ],
+    [
+      "todo.findMany",
+      {
+        "orderBy": {
+          "createdAt": "asc",
+        },
+        "where": {
+          "action": "CONFIRM_CHANGE",
+          "refId": "release",
+          "refType": "release",
+        },
+      },
+    ],
+    [
+      "qmsWorkOrder.findUnique",
+      {
+        "select": {
+          "customerName": true,
+          "projectName": true,
+        },
+        "where": {
+          "workOrderNumber": "WO",
+        },
+      },
+    ],
+  ],
+  "result": {
+    "attachments": [
+      {
+        "id": "attachment",
+        "mime": "pdf",
+        "size": 10,
+        "url": "/api/files/attachment",
+      },
+    ],
+    "bomFile": {
+      "id": "bom",
+      "mime": "xlsx",
+      "size": 20,
+      "url": "/api/files/bom",
+    },
+    "change": {
+      "confirmNote": null,
+      "confirmedAt": null,
+      "confirmedByName": null,
+      "confirmers": [
+        {
+          "status": "OPEN",
+          "userId": "owner",
+          "userName": "负责人",
+        },
+      ],
+      "heldSteps": 1,
+      "needsConfirm": true,
+    },
+    "counts": {
+      "CANCELLED": 0,
+      "PENDING": 1,
+      "REJECTED": 0,
+      "SIGNED": 0,
+    },
+    "createdAt": 2026-11-01T04:00:00.000Z,
+    "customerName": "客户",
+    "description": "说明",
+    "drawingTaskId": "task",
+    "id": "release",
+    "issuerId": "owner",
+    "issuerName": "负责人",
+    "missingParts": 1,
+    "myReceipt": {
+      "actedAt": null,
+      "id": "receipt",
+      "reason": null,
+      "status": "PENDING",
+    },
+    "parts": [
+      {
+        "drawingNo": "D1",
+        "id": "part",
+        "name": "工件",
+        "quantity": 2,
+        "revision": "A",
+        "steps": [
+          {
+            "held": true,
+            "heldByOther": false,
+            "id": "step",
+            "mode": "SELF",
+            "processName": "车削",
+            "seq": 1,
+            "status": "PENDING",
+            "statusText": "待开工",
+            "supplierName": null,
+          },
+        ],
+      },
+    ],
+    "permissions": {
+      "confirmChange": true,
+      "sign": true,
+      "void": true,
+    },
+    "progressText": "签收中",
+    "projectName": "项目",
+    "receipts": [
+      {
+        "actedAt": null,
+        "department": "技术部",
+        "id": "receipt",
+        "reason": null,
+        "status": "PENDING",
+        "statusText": "待签收",
+        "userId": "owner",
+        "userName": "负责人",
+      },
+    ],
+    "releaseNo": "FF-261101-001",
+    "status": "ACTIVE",
+    "type": "CHANGE",
+    "typeText": "设计变更",
+    "version": "A",
+    "workOrderNumber": "WO",
+  },
+}
+`;
+
+exports[`releases service 搬移前特征 > list 固定查询与完整 DTO 1`] = `
+{
+  "calls": [
+    [
+      "release.findMany",
+      {
+        "include": {
+          "receipts": {
+            "select": {
+              "status": true,
+              "userId": true,
+            },
+          },
+        },
+        "orderBy": {
+          "createdAt": "desc",
+        },
+        "take": 200,
+        "where": {
+          "AND": [
+            {
+              "workOrderNumber": "WO",
+            },
+            {
+              "type": "CHANGE",
+            },
+            {
+              "receipts": {
+                "some": {
+                  "userId": "owner",
+                },
+              },
+            },
+            {
+              "OR": [
+                {
+                  "workOrderNumber": {
+                    "in": [
+                      "WO",
+                    ],
+                  },
+                },
+                {
+                  "issuerId": "owner",
+                },
+                {
+                  "receipts": {
+                    "some": {
+                      "userId": "owner",
+                    },
+                  },
+                },
+              ],
+            },
+            {
+              "receipts": {
+                "some": {
+                  "status": "PENDING",
+                  "userId": "owner",
+                },
+              },
+              "status": "ACTIVE",
+            },
+          ],
+        },
+      },
+    ],
+    [
+      "part.findMany",
+      {
+        "select": {
+          "drawingNo": true,
+          "id": true,
+          "name": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "part",
+              "missing",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.groupBy",
+      {
+        "_count": {
+          "_all": true,
+        },
+        "by": [
+          "holdReleaseId",
+        ],
+        "where": {
+          "holdReleaseId": {
+            "in": [
+              "release",
+            ],
+          },
+        },
+      },
+    ],
+  ],
+  "result": [
+    {
+      "bomFileId": "bom",
+      "changeConfirmNote": null,
+      "changeConfirmedAt": null,
+      "changeConfirmedBy": null,
+      "counts": {
+        "CANCELLED": 0,
+        "PENDING": 1,
+        "REJECTED": 0,
+        "SIGNED": 0,
+      },
+      "createdAt": 2026-11-01T04:00:00.000Z,
+      "description": "说明",
+      "drawingTaskId": "task",
+      "heldSteps": 1,
+      "id": "release",
+      "issuerId": "owner",
+      "issuerName": "负责人",
+      "myStatus": "PENDING",
+      "partIds": [
+        "part",
+        "missing",
+      ],
+      "parts": [
+        "工件",
+        "（已删除的工件）",
+      ],
+      "progressText": "签收中",
+      "releaseNo": "FF-261101-001",
+      "status": "ACTIVE",
+      "total": 1,
+      "type": "CHANGE",
+      "typeText": "设计变更",
+      "version": "A",
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`releases service 搬移前特征 > receipts-done 固定查询与完整 DTO 1`] = `
+{
+  "calls": [
+    [
+      "releaseReceipt.findMany",
+      {
+        "include": {
+          "release": true,
+        },
+        "orderBy": {
+          "actedAt": "desc",
+        },
+        "take": 50,
+        "where": {
+          "status": {
+            "not": "PENDING",
+          },
+          "userId": "owner",
+        },
+      },
+    ],
+    [
+      "part.findMany",
+      {
+        "select": {
+          "drawingNo": true,
+          "id": true,
+          "name": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "part",
+              "missing",
+            ],
+          },
+        },
+      },
+    ],
+  ],
+  "result": [
+    {
+      "actedAt": null,
+      "createdAt": undefined,
+      "description": "说明",
+      "issuerName": "负责人",
+      "parts": [
+        "工件",
+        "（已删除的工件）",
+      ],
+      "reason": null,
+      "receiptId": "receipt",
+      "releaseId": "release",
+      "releaseNo": "FF-261101-001",
+      "status": "PENDING",
+      "statusText": "待签收",
+      "type": "CHANGE",
+      "typeText": "设计变更",
+      "version": "A",
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`releases service 搬移前特征 > receipts-pending 固定查询与完整 DTO 1`] = `
+{
+  "calls": [
+    [
+      "releaseReceipt.findMany",
+      {
+        "include": {
+          "release": true,
+        },
+        "orderBy": {
+          "createdAt": "asc",
+        },
+        "take": 200,
+        "where": {
+          "release": {
+            "status": "ACTIVE",
+          },
+          "status": "PENDING",
+          "userId": "owner",
+        },
+      },
+    ],
+    [
+      "part.findMany",
+      {
+        "select": {
+          "drawingNo": true,
+          "id": true,
+          "name": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "part",
+              "missing",
+            ],
+          },
+        },
+      },
+    ],
+  ],
+  "result": [
+    {
+      "actedAt": null,
+      "createdAt": undefined,
+      "description": "说明",
+      "issuerName": "负责人",
+      "parts": [
+        "工件",
+        "（已删除的工件）",
+      ],
+      "reason": null,
+      "receiptId": "receipt",
+      "releaseId": "release",
+      "releaseNo": "FF-261101-001",
+      "status": "PENDING",
+      "statusText": "待签收",
+      "type": "CHANGE",
+      "typeText": "设计变更",
+      "version": "A",
+      "workOrderNumber": "WO",
+    },
+  ],
+}
+`;
+
+exports[`releases service 搬移前特征 > reject 状态流转及副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "$queryRaw",
+      [
+        "
+    SELECT r.id FROM doc_release r JOIN release_receipt c ON c.releaseId = r.id WHERE c.id = ",
+        " FOR UPDATE",
+      ],
+      "receipt",
+    ],
+    [
+      "releaseReceipt.findUniqueOrThrow",
+      {
+        "include": {
+          "release": true,
+        },
+        "where": {
+          "id": "receipt",
+        },
+      },
+    ],
+    [
+      "releaseReceipt.update",
+      {
+        "data": {
+          "actedAt": 2026-11-01T04:00:00.000Z,
+          "reason": "原因",
+          "status": "REJECTED",
+        },
+        "where": {
+          "id": "receipt",
+        },
+      },
+    ],
+    [
+      "todo.updateMany",
+      {
+        "data": {
+          "doneAt": 2026-11-01T04:00:00.000Z,
+          "status": "DONE",
+        },
+        "where": {
+          "action": "SIGN_RELEASE",
+          "refId": "receipt",
+          "refType": "receipt",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W5:receipt:receipt",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W5:receipt:receipt",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "reminder.createMany",
+      {
+        "data": [
+          {
+            "dedupeKey": "RELEASE_REJECT:receipt",
+            "kind": "RELEASE",
+            "level": "YELLOW",
+            "link": "/releases?id=release",
+            "title": "【拒收】负责人 拒收了设计变更 FF-261101-001：原因",
+            "userId": "owner",
+          },
+        ],
+        "skipDuplicates": true,
+      },
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "holdsCleared": 0,
+    "status": "REJECTED",
+  },
+}
+`;
+
+exports[`releases service 搬移前特征 > sign 状态流转及副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "transaction.begin",
+    ],
+    [
+      "$queryRaw",
+      [
+        "
+    SELECT r.id FROM doc_release r JOIN release_receipt c ON c.releaseId = r.id WHERE c.id = ",
+        " FOR UPDATE",
+      ],
+      "receipt",
+    ],
+    [
+      "releaseReceipt.findUniqueOrThrow",
+      {
+        "include": {
+          "release": true,
+        },
+        "where": {
+          "id": "receipt",
+        },
+      },
+    ],
+    [
+      "releaseReceipt.update",
+      {
+        "data": {
+          "actedAt": 2026-11-01T04:00:00.000Z,
+          "reason": null,
+          "status": "SIGNED",
+        },
+        "where": {
+          "id": "receipt",
+        },
+      },
+    ],
+    [
+      "todo.updateMany",
+      {
+        "data": {
+          "doneAt": 2026-11-01T04:00:00.000Z,
+          "status": "DONE",
+        },
+        "where": {
+          "action": "SIGN_RELEASE",
+          "refId": "receipt",
+          "refType": "receipt",
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W5:receipt:receipt",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W5:receipt:receipt",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "todo.count",
+      {
+        "where": {
+          "action": "CONFIRM_CHANGE",
+          "refId": "release",
+          "refType": "release",
+        },
+      },
+    ],
+    [
+      "releaseReceipt.count",
+      {
+        "where": {
+          "releaseId": "release",
+          "status": {
+            "not": "SIGNED",
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.count",
+      {
+        "where": {
+          "holdReleaseId": "release",
+        },
+      },
+    ],
+    [
+      "release.update",
+      {
+        "data": {
+          "changeConfirmNote": "接收人全部签收，自动解除等变更",
+          "changeConfirmedAt": 2026-11-01T04:00:00.000Z,
+          "changeConfirmedBy": null,
+        },
+        "where": {
+          "id": "release",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W5:release:release",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W5:release:release",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "select": {
+          "partId": true,
+        },
+        "where": {
+          "holdReleaseId": "release",
+        },
+      },
+    ],
+    [
+      "lockParts",
+      [
+        "part",
+        "part",
+      ],
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "holdReleaseId": "release",
+        },
+      },
+    ],
+    [
+      "routeStep.updateMany",
+      {
+        "data": {
+          "holdClearedAt": 2026-11-01T04:00:00.000Z,
+          "holdReleaseId": null,
+        },
+        "where": {
+          "holdReleaseId": "release",
+          "id": {
+            "in": [
+              "step",
+              "started",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "select": {
+          "partId": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "step",
+              "started",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.findFirst",
+      {
+        "orderBy": {
+          "seq": "asc",
+        },
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "partId": "part",
+        },
+      },
+    ],
+    [
+      "refreshPartReady",
+      "part",
+      true,
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "holdsCleared": 1,
+    "status": "SIGNED",
+  },
+}
+`;
+
+exports[`releases service 搬移前特征 > stats 固定查询与完整 DTO 1`] = `
+{
+  "calls": [
+    [
+      "release.count",
+      {
+        "where": {
+          "AND": [
+            {
+              "issuerId": "owner",
+            },
+            {
+              "OR": [
+                {
+                  "workOrderNumber": {
+                    "in": [],
+                  },
+                },
+                {
+                  "issuerId": "owner",
+                },
+                {
+                  "receipts": {
+                    "some": {
+                      "userId": "owner",
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+    [
+      "release.count",
+      {
+        "where": {
+          "AND": [
+            {
+              "issuerId": "owner",
+            },
+            {
+              "OR": [
+                {
+                  "workOrderNumber": {
+                    "in": [],
+                  },
+                },
+                {
+                  "issuerId": "owner",
+                },
+                {
+                  "receipts": {
+                    "some": {
+                      "userId": "owner",
+                    },
+                  },
+                },
+              ],
+            },
+            {
+              "receipts": {
+                "some": {
+                  "status": "PENDING",
+                },
+              },
+              "status": "ACTIVE",
+            },
+          ],
+        },
+      },
+    ],
+    [
+      "release.count",
+      {
+        "where": {
+          "AND": [
+            {
+              "issuerId": "owner",
+            },
+            {
+              "OR": [
+                {
+                  "workOrderNumber": {
+                    "in": [],
+                  },
+                },
+                {
+                  "issuerId": "owner",
+                },
+                {
+                  "receipts": {
+                    "some": {
+                      "userId": "owner",
+                    },
+                  },
+                },
+              ],
+            },
+            {
+              "receipts": {
+                "some": {
+                  "status": "REJECTED",
+                },
+              },
+              "status": "ACTIVE",
+            },
+          ],
+        },
+      },
+    ],
+    [
+      "release.count",
+      {
+        "where": {
+          "AND": [
+            {
+              "issuerId": "owner",
+            },
+            {
+              "OR": [
+                {
+                  "workOrderNumber": {
+                    "in": [],
+                  },
+                },
+                {
+                  "issuerId": "owner",
+                },
+                {
+                  "receipts": {
+                    "some": {
+                      "userId": "owner",
+                    },
+                  },
+                },
+              ],
+            },
+            {
+              "receipts": {
+                "some": {
+                  "status": "PENDING",
+                  "userId": "owner",
+                },
+              },
+              "status": "ACTIVE",
+            },
+          ],
+        },
+      },
+    ],
+  ],
+  "result": {
+    "all": 2,
+    "minePending": 2,
+    "pending": 2,
+    "rejected": 2,
+  },
+}
+`;
+
+exports[`releases service 搬移前特征 > todos 固定查询与完整 DTO 1`] = `
+{
+  "calls": [
+    [
+      "releaseReceipt.findMany",
+      {
+        "include": {
+          "release": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "receipt",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "release.findMany",
+      {
+        "where": {
+          "id": {
+            "in": [
+              "release",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "part.findMany",
+      {
+        "select": {
+          "drawingNo": true,
+          "id": true,
+          "name": true,
+        },
+        "where": {
+          "id": {
+            "in": [
+              "part",
+              "missing",
+              "part",
+              "missing",
+            ],
+          },
+        },
+      },
+    ],
+  ],
+  "result": {
+    "byReceipt": Map {
+      "receipt" => {
+        "id": "release",
+        "parts": [
+          "工件",
+          "（已删除的工件）",
+        ],
+        "releaseNo": "FF-261101-001",
+        "type": "CHANGE",
+        "typeText": "设计变更",
+        "version": "A",
+        "workOrderNumber": "WO",
+      },
+    },
+    "byRelease": Map {
+      "release" => {
+        "id": "release",
+        "parts": [
+          "工件",
+          "（已删除的工件）",
+        ],
+        "releaseNo": "FF-261101-001",
+        "type": "CHANGE",
+        "typeText": "设计变更",
+        "version": "A",
+        "workOrderNumber": "WO",
+      },
+    },
+  },
+}
+`;
+
+exports[`releases service 搬移前特征 > view 固定查询与完整 DTO 1`] = `
+{
+  "calls": [
+    [
+      "release.findUnique",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "id": "release",
+        },
+      },
+    ],
+    [
+      "release.findUnique",
+      {
+        "select": {
+          "issuerId": true,
+        },
+        "where": {
+          "id": "release",
+        },
+      },
+    ],
+    [
+      "releaseReceipt.findFirst",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "releaseId": "release",
+          "userId": "viewer",
+        },
+      },
+    ],
+    [
+      "todo.findFirst",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "action": "CONFIRM_CHANGE",
+          "ownerId": "viewer",
+          "refId": "release",
+          "refType": "release",
+        },
+      },
+    ],
+  ],
+  "result": undefined,
+}
+`;
+
+exports[`releases service 搬移前特征 > void 状态流转及副作用顺序 1`] = `
+{
+  "calls": [
+    [
+      "release.findUnique",
+      {
+        "select": {
+          "drawingTaskId": true,
+        },
+        "where": {
+          "id": "release",
+        },
+      },
+    ],
+    [
+      "transaction.begin",
+      {
+        "isolationLevel": "ReadCommitted",
+      },
+    ],
+    [
+      "lockTask",
+      "task",
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT id FROM doc_release WHERE id = ",
+        " FOR UPDATE",
+      ],
+      "release",
+    ],
+    [
+      "release.findUniqueOrThrow",
+      {
+        "where": {
+          "id": "release",
+        },
+      },
+    ],
+    [
+      "releaseReceipt.findMany",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "releaseId": "release",
+          "status": "PENDING",
+        },
+      },
+    ],
+    [
+      "releaseReceipt.updateMany",
+      {
+        "data": {
+          "actedAt": 2026-11-01T04:00:00.000Z,
+          "status": "CANCELLED",
+        },
+        "where": {
+          "id": {
+            "in": [
+              "receipt",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "todo.updateMany",
+      {
+        "data": {
+          "doneAt": 2026-11-01T04:00:00.000Z,
+          "status": "CANCELLED",
+        },
+        "where": {
+          "OR": [
+            {
+              "refId": {
+                "in": [
+                  "receipt",
+                ],
+              },
+              "refType": "receipt",
+            },
+            {
+              "refId": "release",
+              "refType": "release",
+            },
+          ],
+          "status": "OPEN",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+          "status": "CLEARED",
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W5:receipt:receipt",
+              "W5:release:release",
+            ],
+          },
+          "status": "ACTIVE",
+        },
+      },
+    ],
+    [
+      "alert.updateMany",
+      {
+        "data": {
+          "activeKey": null,
+        },
+        "where": {
+          "activeKey": {
+            "in": [
+              "W5:receipt:receipt",
+              "W5:release:release",
+            ],
+          },
+          "status": "CONVERTED",
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "select": {
+          "id": true,
+          "partId": true,
+        },
+        "where": {
+          "holdReleaseId": "release",
+          "status": "PENDING",
+        },
+      },
+    ],
+    [
+      "release.findMany",
+      {
+        "orderBy": {
+          "createdAt": "desc",
+        },
+        "select": {
+          "id": true,
+          "partIds": true,
+        },
+        "where": {
+          "changeConfirmedAt": null,
+          "id": {
+            "not": "release",
+          },
+          "status": "ACTIVE",
+          "type": "CHANGE",
+          "workOrderNumber": "WO",
+        },
+      },
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT id FROM doc_release WHERE id IN (",
+        ") AND status = 'ACTIVE' AND changeConfirmedAt IS NULL FOR UPDATE",
+      ],
+      e {
+        "strings": [
+          "",
+          "",
+        ],
+        "values": [
+          "older",
+        ],
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "select": {
+          "partId": true,
+        },
+        "where": {
+          "holdReleaseId": "release",
+        },
+      },
+    ],
+    [
+      "lockParts",
+      [
+        "part",
+        "part",
+      ],
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "select": {
+          "id": true,
+        },
+        "where": {
+          "holdReleaseId": "release",
+        },
+      },
+    ],
+    [
+      "routeStep.updateMany",
+      {
+        "data": {
+          "holdClearedAt": 2026-11-01T04:00:00.000Z,
+          "holdReleaseId": null,
+        },
+        "where": {
+          "holdReleaseId": "release",
+          "id": {
+            "in": [
+              "step",
+              "started",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.updateMany",
+      {
+        "data": {
+          "holdReleaseId": "older",
+        },
+        "where": {
+          "holdReleaseId": null,
+          "id": {
+            "in": [
+              "step",
+              "started",
+            ],
+          },
+          "status": "PENDING",
+        },
+      },
+    ],
+    [
+      "release.update",
+      {
+        "data": {
+          "status": "VOID",
+        },
+        "where": {
+          "id": "release",
+        },
+      },
+    ],
+    [
+      "markRevisingByVoid",
+      {
+        "id": "task",
+        "parts": [
+          {
+            "partId": "part",
+          },
+        ],
+        "status": "DRAWN",
+      },
+      {
+        "bomFileId": "bom",
+        "changeConfirmNote": null,
+        "changeConfirmedAt": null,
+        "changeConfirmedBy": null,
+        "createdAt": 2026-11-01T04:00:00.000Z,
+        "description": "说明",
+        "drawingTaskId": "task",
+        "id": "release",
+        "issuerId": "owner",
+        "partIds": [
+          "part",
+          "missing",
+        ],
+        "releaseNo": "FF-261101-001",
+        "status": "ACTIVE",
+        "type": "CHANGE",
+        "version": "A",
+        "workOrderNumber": "WO",
+      },
+      "owner",
+      2026-11-01T04:00:00.000Z,
+    ],
+    [
+      "settleTask",
+      {
+        "partIds": [
+          "part",
+        ],
+        "status": "DRAWN",
+      },
+      "task",
+    ],
+    [
+      "transaction.commit",
+    ],
+  ],
+  "result": {
+    "cancelled": 1,
+    "holdsCleared": 1,
+  },
+}
+`;
+
+exports[`releases service 搬移前特征 > 校验顺序：空说明、附件上限、接收人、BOM 类型；签收先权限再状态 1`] = `
+[
+  [
+    "transaction.begin",
+  ],
+  [
+    "$queryRaw",
+    [
+      "
+    SELECT r.id FROM doc_release r JOIN release_receipt c ON c.releaseId = r.id WHERE c.id = ",
+      " FOR UPDATE",
+    ],
+    "receipt",
+  ],
+  [
+    "releaseReceipt.findUniqueOrThrow",
+    {
+      "include": {
+        "release": true,
+      },
+      "where": {
+        "id": "receipt",
+      },
+    },
+  ],
+  [
+    "transaction.rollback",
+  ],
+  [
+    "transaction.begin",
+  ],
+  [
+    "$queryRaw",
+    [
+      "
+    SELECT r.id FROM doc_release r JOIN release_receipt c ON c.releaseId = r.id WHERE c.id = ",
+      " FOR UPDATE",
+    ],
+    "receipt",
+  ],
+  [
+    "releaseReceipt.findUniqueOrThrow",
+    {
+      "include": {
+        "release": true,
+      },
+      "where": {
+        "id": "receipt",
+      },
+    },
+  ],
+  [
+    "transaction.rollback",
+  ],
+]
+`;
+
+exports[`releases service 搬移前特征 > 附件绑定数量不足时整事务失败 1`] = `
+[
+  [
+    "qmsUser.findMany",
+    {
+      "select": {
+        "id": true,
+      },
+      "where": {
+        "id": {
+          "in": [
+            "owner",
+          ],
+        },
+        "isDeleted": false,
+        "status": "ACTIVE",
+      },
+    },
+  ],
+  [
+    "transaction.begin",
+  ],
+  [
+    "qmsWorkOrder.findFirst",
+    {
+      "select": {
+        "workOrderNumber": true,
+      },
+      "where": {
+        "isDeleted": false,
+        "workOrderNumber": "WO",
+      },
+    },
+  ],
+  [
+    "release.findFirst",
+    {
+      "orderBy": {
+        "releaseNo": "desc",
+      },
+      "select": {
+        "releaseNo": true,
+      },
+      "where": {
+        "releaseNo": {
+          "startsWith": "FF-261101-",
+        },
+      },
+    },
+  ],
+  [
+    "release.create",
+    {
+      "data": {
+        "bomFileId": null,
+        "description": "说明",
+        "drawingTaskId": null,
+        "issuerId": "owner",
+        "partIds": [],
+        "releaseNo": "FF-261101-010",
+        "type": "DRAWING",
+        "version": null,
+        "workOrderNumber": "WO",
+      },
+    },
+  ],
+  [
+    "releaseReceipt.createMany",
+    {
+      "data": [
+        {
+          "releaseId": "release",
+          "userId": "owner",
+        },
+      ],
+    },
+  ],
+  [
+    "releaseReceipt.findMany",
+    {
+      "select": {
+        "id": true,
+        "userId": true,
+      },
+      "where": {
+        "releaseId": "release",
+      },
+    },
+  ],
+  [
+    "todo.createMany",
+    {
+      "data": [
+        {
+          "action": "SIGN_RELEASE",
+          "ownerId": "owner",
+          "refId": "receipt",
+          "refType": "receipt",
+        },
+      ],
+    },
+  ],
+  [
+    "uploadFile.updateMany",
+    {
+      "data": {
+        "releaseId": "release",
+      },
+      "where": {
+        "id": {
+          "in": [
+            "attachment",
+          ],
+        },
+        "issueId": null,
+        "mime": {
+          "not": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        },
+        "releaseId": null,
+        "uploaderId": "owner",
+      },
+    },
+  ],
+  [
+    "transaction.rollback",
+  ],
+]
+`;

@@ -1,8 +1,11 @@
+import type { ClientBodyArgs, ClientResponse, ClientFetch, ClientPath } from '../utils/transport'
+import { RELEASE_TYPE_TEXT as SHARED_RELEASE_TYPE_TEXT, RECEIPT_STATUS_TEXT as SHARED_RECEIPT_STATUS_TEXT } from '#shared/releases'
 /** 发放签收（R9）页面共用：文案、颜色、提交、上传附件。 */
+import { MAX_ATTACHMENT_BYTES as SHARED_MAX_ATTACHMENT_BYTES, MAX_RELEASE_ATTACHMENTS } from '#shared/upload-policy'
 
-export const RELEASE_TYPE_TEXT = { DRAWING: '图纸', CHANGE: '设计变更', PROCESS: '工艺文件' } as const
+export const RELEASE_TYPE_TEXT = SHARED_RELEASE_TYPE_TEXT
 export const RELEASE_TYPE_COLOR = { DRAWING: 'blue', CHANGE: 'volcano', PROCESS: 'default' } as const
-export const RECEIPT_STATUS_TEXT = { PENDING: '待签收', SIGNED: '已签收', REJECTED: '已拒收', CANCELLED: '已作废' } as const
+export const RECEIPT_STATUS_TEXT = SHARED_RECEIPT_STATUS_TEXT
 export const RECEIPT_STATUS_COLOR = { PENDING: 'orange', SIGNED: 'green', REJECTED: 'red', CANCELLED: 'default' } as const
 /** Vant 标签类型 */
 export const RECEIPT_STATUS_TYPE = { PENDING: 'warning', SIGNED: 'success', REJECTED: 'danger', CANCELLED: 'default' } as const
@@ -33,18 +36,18 @@ export interface ReleasePrefill {
 export type ReceiptStatusKey = keyof typeof RECEIPT_STATUS_TEXT
 
 /** 附件上限（与服务端一致），选择时先拦一道 */
-export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
-export const MAX_ATTACHMENTS = 5
+export const MAX_ATTACHMENT_BYTES = SHARED_MAX_ATTACHMENT_BYTES
+export const MAX_ATTACHMENTS = MAX_RELEASE_ATTACHMENTS
 
-/** POST 发放相关接口；绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"） */
-export function releasePost<T = unknown>(url: string, body: object = {}): Promise<T> {
-  const send = $fetch as unknown as (u: string, o: { method: 'POST'; body: object }) => Promise<T>
-  return send(url, { method: 'POST', body })
+/** 发放写请求只接受既有端点及其输入类型。 */
+export function releasePost<const P extends (`/api/releases${string}` | `/api/receipts${string}`) & ClientPath<'POST'>>(url: P, ...args: ClientBodyArgs<P, 'POST'>): Promise<ClientResponse<P, 'POST'>>
+export function releasePost(url: string, body: unknown = {}) {
+  return sendClientRequest(url, { method: 'POST', body })
 }
 
 /** 上传附件（PDF 或照片，multipart 字段 file），每次最多 3 个，分批传，返回 upload_file id */
 export async function uploadAttachments(files: File[]): Promise<string[]> {
-  const send = $fetch as unknown as (url: string, opts: { method: 'POST'; body: FormData }) => Promise<{ id: string }[]>
+  const send = clientRequest
   const ids: string[] = []
   for (let i = 0; i < files.length; i += 3) {
     const form = new FormData()
@@ -57,7 +60,7 @@ export async function uploadAttachments(files: File[]): Promise<string[]> {
 
 /** 上传图纸发放单要附的 BOM 表（.xlsx），返回 upload_file.id */
 export async function uploadBomFile(file: File): Promise<string> {
-  const send = $fetch as unknown as (url: string, opts: { method: 'POST'; body: FormData }) => Promise<{ id: string }[]>
+  const send = clientRequest
   const form = new FormData()
   form.append('file', file, file.name || 'bom.xlsx')
   const [saved] = await send('/api/uploads?kind=bom', { method: 'POST', body: form })
@@ -112,7 +115,6 @@ export interface ReleaseDetail {
   permissions: { sign: boolean; void: boolean; confirmChange: boolean }
 }
 
-export function fetchRelease(id: string, request?: (url: string) => Promise<unknown>) {
-  const get = (request ?? $fetch) as unknown as (u: string) => Promise<ReleaseDetail>
-  return get(`/api/releases/${encodeURIComponent(id)}`)
+export function fetchRelease(id: string, request?: ClientFetch) {
+  return clientRequest(`/api/releases/${encodeURIComponent(id)}`, undefined, request)
 }
