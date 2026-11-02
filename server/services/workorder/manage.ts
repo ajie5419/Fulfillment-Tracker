@@ -4,7 +4,7 @@
  *   权限（canOperate 'workOrder'：项目部、项目部负责人、管理员）→ 本地能先判断的先判断（工单号不能改、项目经理存在、已取消不能改）
  *   → 调 QMS → QMS 成功后在一个事务里写本地副本 qms_work_order（用 QMS 返回的对象，含 updatedAt、version）和 work_order_ext（项目经理、产品线、是否试点）。
  * 调 QMS 前持久化恢复意图；远端成功但本地失败返回 recovery.PENDING，管理员可幂等重试。
- * QMS 拒绝会终止记录；网络中断保留 PENDING，重试时先核对远端（详见 recovery.ts）。
+ * QMS 失败（含网络中断）保留 FAILED 记录并释放保存槽；仅远端成功的本地失败保留 PENDING（详见 recovery.ts）。
  * 修改、取消带编辑者打开页面时看到的 version（由前端提交，乐观锁；不用保存时本地最新的 version，否则两人先后保存时后一个会悄悄覆盖前一个），
  *   QMS 409 → "工单已被别人修改，请刷新后再改"。只取消，不删除。
  * actorUserId = 当前登录用户的 QMS 用户 ID（两边相同），QMS 审计日志记这个人。
@@ -17,7 +17,7 @@ import { OPERATION_DENIED, type RoleContext, canOperate } from '../auth/permissi
 import { FlowError, FlowForbidden, FlowHttpError } from '../flow/errors'
 import { type QmsWorkOrderRow } from '../sync/resources'
 import { type QmsWorkOrderApi, QmsRejected, type UpdateWorkOrderBody } from '../sync/write-client'
-import { saveWithRecovery, saveWorkOrderLocal as saveLocal, type ExtFields } from './recovery'
+import { pendingWorkOrderConflict, saveWithRecovery, saveWorkOrderLocal as saveLocal, type ExtFields } from './recovery'
 export { CONFLICT_TEXT } from './recovery'
 import { CONFLICT_TEXT } from './recovery'
 import type { CancelWorkOrderInput, CreateWorkOrderInput, UpdateWorkOrderInput } from '../../schemas/work-order'
@@ -114,7 +114,7 @@ export async function updateWorkOrder(ctx: RoleContext, workOrderNumber: string,
       request: { version, actorUserId: ctx.userId, ...fields }, ext: extOf(input) }, qms, db)
   }
   const pending = await db.workOrderLocalSave.findUnique({ where: { pendingWorkOrder: workOrderNumber } })
-  if (pending) throw new FlowHttpError('该工单存在待恢复保存，请管理员先恢复后再修改扩展信息', 409)
+  if (pending) throw pendingWorkOrderConflict(pending.operationId)
   await saveLocal(db, workOrderNumber, null, extOf(input))
   return view(local)
 }

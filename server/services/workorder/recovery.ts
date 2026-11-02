@@ -10,7 +10,7 @@ import { qmsWorkOrderSchema, type QmsWorkOrderRow, writeWorkOrderCopy } from '..
 import { REQUEST_TIMEOUT_MS } from '../sync/client'
 import { QmsRejected, type CreateWorkOrderBody, type UpdateWorkOrderBody, type QmsWorkOrderApi } from '../sync/write-client'
 
-const [PENDING, DONE] = WORK_ORDER_SAVE_STATES
+const [PENDING, DONE, FAILED] = WORK_ORDER_SAVE_STATES
 const RECOVERY_TRANSACTION_TIMEOUT_MS = REQUEST_TIMEOUT_MS * 4
 const PENDING_MESSAGE = 'QMS 已保存成功，本地扩展信息待恢复；请勿重复新建，请管理员重试恢复'
 export const CONFLICT_TEXT = '工单已被别人修改，请刷新后再改'
@@ -27,6 +27,10 @@ const rowJson = (row: QmsWorkOrderRow) => json({ ...row, deliveryDate: row.deliv
 const view = (row: QmsWorkOrderRow): WorkOrderSaveResult => ({ workOrderNumber: row.workOrderNumber, status: row.status, version: row.version ?? null, updatedAt: row.updatedAt })
 const pending = (row: QmsWorkOrderRow, operationId: string): WorkOrderSaveResult => ({ ...view(row), recovery: { status: PENDING, operationId, message: PENDING_MESSAGE } })
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
+
+export function pendingWorkOrderConflict(operationId: string) {
+  return new FlowHttpError('该工单存在待恢复保存，请管理员先恢复后再提交新操作', 409, 'CONFLICT', { operationId })
+}
 
 /** 只提交本地副本和扩展字段；失败整体回滚。恢复状态由外层持久化，不能随这个事务回滚。 */
 export async function saveWorkOrderLocal(db: RecoveryDb, workOrderNumber: string, row: QmsWorkOrderRow | null, ext: ExtFields) {
@@ -53,10 +57,16 @@ export async function saveWithRecovery(intent: SaveIntent, qms: QmsWorkOrderApi,
   const created = await db.workOrderLocalSave.createMany({ data: [{ operationId, workOrderNumber: intent.workOrderNumber, operation: intent.operation,
     actorId: intent.actorId, requestPayload, extPayload, status: PENDING, pendingWorkOrder: intent.workOrderNumber }], skipDuplicates: true })
   const record = await db.workOrderLocalSave.findUnique({ where: { operationId } })
-  if (!record) throw new FlowHttpError('该工单存在待恢复保存，请管理员先恢复后再提交新操作', 409)
+  if (!record) {
+    const existing = await db.workOrderLocalSave.findUnique({ where: { pendingWorkOrder: intent.workOrderNumber } })
+    if (existing) throw pendingWorkOrderConflict(existing.operationId)
+    // 唯一槽在插入冲突后已被另一请求释放，重新争取槽位。
+    return saveWithRecovery(intent, qms, db)
+  }
   if (record.workOrderNumber !== intent.workOrderNumber || record.operation !== intent.operation || record.actorId !== intent.actorId
     || canonical(flatJson.parse(record.requestPayload)) !== canonical(requestPayload) || canonical(flatJson.parse(record.extPayload)) !== canonical(extPayload)) {
-    throw new FlowHttpError('幂等标识已用于不同的工单、用户或输入，请为新操作使用新的标识', 409)
+    throw new FlowHttpError('幂等标识已用于不同的工单、用户或输入，请为新操作使用新的标识', 409, 'CONFLICT',
+      record.status === PENDING && record.workOrderNumber === intent.workOrderNumber ? { operationId } : undefined)
   }
   return executeSave(operationId, qms, db, created.count > 0)
 }
@@ -96,28 +106,32 @@ async function performRemote(record: WorkOrderLocalSave, qms: QmsWorkOrderApi, r
   }
 }
 
-/** 管理员重试入口；已完成幂等返回，未完成先核对 QMS，成功补完本地后标 DONE。 */
+/** 管理员重试入口；只接受 PENDING，先核对 QMS，成功补完本地后标 DONE。 */
 export async function retryWorkOrderSave(operationId: string, qms: QmsWorkOrderApi, db: RecoveryDb = prisma): Promise<WorkOrderSaveResult> {
-  return executeSave(operationId, qms, db, false)
+  return executeSave(operationId, qms, db, false, true)
 }
 
-async function executeSave(operationId: string, qms: QmsWorkOrderApi, db: RecoveryDb, fresh: boolean): Promise<WorkOrderSaveResult> {
+async function executeSave(operationId: string, qms: QmsWorkOrderApi, db: RecoveryDb, fresh: boolean, retryOnly = false): Promise<WorkOrderSaveResult> {
   // 独立提交尝试标记：QMS 成功后外层事务回滚 / 进程崩溃也不能重新冒充首次调用。
   // 条件更新还会等待同记录的处理锁，DONE 的重放不增加次数。
-  await db.workOrderLocalSave.updateMany({ where: { operationId, status: PENDING }, data: { attempts: { increment: 1 } } })
+  if (fresh || retryOnly) await db.workOrderLocalSave.updateMany({ where: { operationId, status: PENDING }, data: { attempts: { increment: 1 } } })
   let confirmed: QmsWorkOrderRow | null = null
   try {
     const outcome = await db.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT operationId FROM work_order_local_save WHERE operationId = ${operationId} FOR UPDATE`
       const record = await tx.workOrderLocalSave.findUnique({ where: { operationId } })
       if (!record) throw new FlowHttpError('待恢复保存不存在', 404)
-      if (record.status === DONE) {
+      if (retryOnly && record.status !== PENDING) {
+        throw new FlowHttpError(record.status === FAILED || record.remoteError ? '该保存已失败，不能重试恢复，请重新保存工单' : '该保存已完成，不能重试恢复', 409, 'CONFLICT')
+      }
+      if (record.status === DONE || record.status === FAILED) {
         if (record.remoteError) {
           const error = remoteErrorSchema.parse(record.remoteError)
           return { error: new QmsRejected(error.message, error.statusCode, error.code) }
         }
         return { result: view(qmsWorkOrderSchema.parse(record.remoteResult)) }
       }
+      if (!fresh && !retryOnly) throw pendingWorkOrderConflict(operationId)
       const retry = !fresh || record.attempts > 1
       if (record.remoteResult) confirmed = qmsWorkOrderSchema.parse(record.remoteResult)
       try {
@@ -128,10 +142,10 @@ async function executeSave(operationId: string, qms: QmsWorkOrderApi, db: Recove
         await tx.workOrderLocalSave.update({ where: { operationId }, data: { status: DONE, pendingWorkOrder: null, lastError: null, completedAt: new Date() } })
         return { result: view(confirmed) }
       } catch (error) {
-        // 远端明确拒绝是终止，释放工单的新意图；网络错误 / 结果不确定仍保留 PENDING。
-        const rejected = !confirmed && error instanceof QmsRejected ? error : null
-        await tx.workOrderLocalSave.update({ where: { operationId }, data: { lastError: errorText(error), ...(rejected ? {
-          status: DONE, pendingWorkOrder: null, completedAt: new Date(), remoteError: json({ message: rejected.message, statusCode: rejected.statusCode, code: rejected.code }),
+        // 只有已确认远端成功才保留 PENDING；远端失败（含网络错误）保留 FAILED 审计行并释放唯一槽。
+        await tx.workOrderLocalSave.update({ where: { operationId }, data: { lastError: errorText(error), ...(!confirmed ? {
+          status: FAILED, pendingWorkOrder: null, completedAt: new Date(), remoteError: json({ message: errorText(error),
+            statusCode: error instanceof FlowHttpError ? error.statusCode : 500, code: error instanceof FlowError ? error.code ?? null : null }),
         } : {}) } })
         if (confirmed) return { result: pending(confirmed, operationId) }
         return { error }

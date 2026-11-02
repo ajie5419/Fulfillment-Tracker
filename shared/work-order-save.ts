@@ -12,5 +12,5 @@ export interface WorkOrderSaveResult {
 }
 
 export const WORK_ORDER_SAVE_OPERATIONS = ['create', 'update'] as const
-export const WORK_ORDER_SAVE_STATES = ['PENDING', 'DONE'] as const
+export const WORK_ORDER_SAVE_STATES = ['PENDING', 'DONE', 'FAILED'] as const
 export const MAX_IDEMPOTENCY_KEY_LENGTH = 128

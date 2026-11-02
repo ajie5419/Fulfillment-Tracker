@@ -23,7 +23,7 @@ model WorkOrderLocalSave {
   requestPayload   Json
   remoteResult     Json?
   remoteError      Json?
-  /// PENDING / DONE；DONE 且 remoteError 非空表示远端明确拒绝，已终止。
+  /// PENDING / DONE / FAILED（shared/work-order-save.ts）；FAILED 保留远端错误供查询。
   status           String    @default("PENDING") @db.VarChar(20)
   /// PENDING 时为工单号，终止时置空：同工单最多一条待恢复记录，防止后来的输入覆盖旧输入。
   pendingWorkOrder String?   @unique @db.VarChar(64)
