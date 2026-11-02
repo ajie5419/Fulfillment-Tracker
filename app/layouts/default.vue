@@ -25,6 +25,7 @@ const groups = computed(() => {
     // 功能重复梳理第一批：领导总览并入项目总览（有权限的人在项目总览汇总下方多看到一块），
     // "工单详情"入口页去掉（项目总览顶部搜工单、卡片点进详情）；旧地址 /overview、/wo 跳项目总览；/templates 不在菜单里但保留（非管理员只读查看）
     { title: '项目', items: show([
+      { key: '/panorama', label: '项目全景' },
       { key: '/board', label: '项目总览' },
       // 项目计划（zhao 10-22 测试后定）：总计划从工单详情里拿出来单独成页，所有人可见（编辑按权限）
       { key: '/plan', label: '项目计划' },
@@ -78,6 +79,7 @@ const selected = computed(() => {
 // 标题取决于路由本身，不能因用户没有对应菜单权限而回落到工作台。
 const ROUTE_TITLES: Record<string, string> = {
   '/': '工作台', '/calendar': '项目日历', '/risks': '预警与异常处理',
+  '/panorama': '项目全景',
   '/board': '项目总览', '/plan': '项目计划', '/dept-plan': '部门计划',
   '/drawings': '设计任务', '/process': '工艺', '/releases': '发放签收',
   '/purchase-plans': '采购计划下发', '/purchases': '采购到货', '/payments': '付款申请', '/kitting': '齐套',
@@ -208,7 +210,13 @@ onBeforeUnmount(() => {
           <div v-for="g in groups" :key="g.title" class="group">
             <div class="group-title">{{ g.title }}</div>
             <NuxtLink v-for="m in g.items" :key="m.key" :to="m.key" class="item" :class="{ active: selected[0] === m.key }" :aria-current="selected[0] === m.key ? 'page' : undefined">
-              <span class="item-ico"><UiNavIcon :name="m.key" /></span>
+              <span class="item-ico">
+                <svg v-if="m.key === '/panorama'" class="ft-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
+                  <path d="M22 12A10 10 0 0 0 12 2v10z" />
+                </svg>
+                <UiNavIcon v-else :name="m.key" />
+              </span>
               <span class="item-label">{{ m.label }}</span>
               <span v-if="m.key === '/' && unreadText" class="badge" :aria-label="`未读提醒 ${unreadText} 条`">{{ unreadText }}</span>
               <span v-if="m.key === '/dept-plan' && planPendingText" class="badge" :aria-label="`待接收计划节点 ${planPendingText} 个`">{{ planPendingText }}</span>
@@ -248,7 +256,13 @@ onBeforeUnmount(() => {
             </svg>
           </button>
           <span v-if="current" class="page-name">
-            <span class="page-ico"><UiNavIcon :name="current.key" /></span>
+            <span class="page-ico">
+              <svg v-if="current.key === '/panorama'" class="ft-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
+                <path d="M22 12A10 10 0 0 0 12 2v10z" />
+              </svg>
+              <UiNavIcon v-else :name="current.key" />
+            </span>
             <span>{{ current.label }}</span>
           </span>
         </span>
