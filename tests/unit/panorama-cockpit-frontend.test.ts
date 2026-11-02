@@ -347,6 +347,8 @@ describe('驾驶舱红色清单 BoardCockpit.vue 呈现与 also 胶囊', () => {
       return { data, pending: Vue.ref(false), error: Vue.ref(null), refresh: vi.fn() }
     })
 
+    vi.stubGlobal('useRequestHeaders', () => ({}))
+
     const component = loadComponent('app/components/BoardCockpit.vue', {
       '#shared/board-cockpit': boardCockpitShared,
       '#shared/monitoring': monitoringShared,

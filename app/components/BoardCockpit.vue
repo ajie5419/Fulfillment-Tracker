@@ -3,13 +3,15 @@ import { cockpitMetrics, mergeCockpitItems, OVERDUE_ISSUES_LINK, RED_WORK_ORDERS
 import type { MonitoredEntity } from '#shared/monitoring'
 
 async function fetchAllRedEntities(): Promise<MonitoredEntity[]> {
+  // SSR 时 $fetch 不会自动带上浏览器的会话 cookie，必须显式透传，否则接口会判未登录
+  const headers = useRequestHeaders(['cookie'])
   const all: MonitoredEntity[] = []
   let page = 1
   const pageSize = 100
   while (true) {
     const res = await $fetch<{ asOf: string; threshold: unknown; total: number; rows: MonitoredEntity[] }>(
       '/api/monitoring/entities',
-      { query: { level: 'RED', page, pageSize } },
+      { query: { level: 'RED', page, pageSize }, headers },
     )
     const rows = res?.rows ?? []
     all.push(...rows)
