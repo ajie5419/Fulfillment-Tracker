@@ -1228,21 +1228,6 @@ exports[`issues service 搬移前特征 > 乐观并发失败后不写日志、�
 exports[`issues service 搬移前特征 > 图片绑定数量不足，回滚且不写上报日志 1`] = `
 [
   [
-    "transaction.begin",
-  ],
-  [
-    "qmsWorkOrder.findFirst",
-    {
-      "select": {
-        "workOrderNumber": true,
-      },
-      "where": {
-        "isDeleted": false,
-        "workOrderNumber": "WO",
-      },
-    },
-  ],
-  [
     "notifyRole.findFirst",
     {
       "orderBy": {
@@ -1254,6 +1239,21 @@ exports[`issues service 搬移前特征 > 图片绑定数量不足，回滚且�
       "where": {
         "department": "项目部",
         "role": "DEPT_HEAD",
+      },
+    },
+  ],
+  [
+    "transaction.begin",
+  ],
+  [
+    "qmsWorkOrder.findFirst",
+    {
+      "select": {
+        "workOrderNumber": true,
+      },
+      "where": {
+        "isDeleted": false,
+        "workOrderNumber": "WO",
       },
     },
   ],
@@ -1323,9 +1323,24 @@ exports[`issues service 搬移前特征 > 图片绑定数量不足，回滚且�
 ]
 `;
 
-exports[`issues service 搬移前特征 > 手工上报：工单、工件、供应商、默认责任、编号、图片绑定、日志依次执行 1`] = `
+exports[`issues service 搬移前特征 > 手工上报：先读默认责任，事务内工单、工件、供应商、编号、图片绑定、日志依次执行 1`] = `
 {
   "calls": [
+    [
+      "notifyRole.findFirst",
+      {
+        "orderBy": {
+          "id": "asc",
+        },
+        "select": {
+          "userId": true,
+        },
+        "where": {
+          "department": "质量部",
+          "role": "DEPT_HEAD",
+        },
+      },
+    ],
     [
       "transaction.begin",
     ],
@@ -1361,21 +1376,6 @@ exports[`issues service 搬移前特征 > 手工上报：工单、工件、供�
         "where": {
           "id": "supplier",
           "isDeleted": false,
-        },
-      },
-    ],
-    [
-      "notifyRole.findFirst",
-      {
-        "orderBy": {
-          "id": "asc",
-        },
-        "select": {
-          "userId": true,
-        },
-        "where": {
-          "department": "质量部",
-          "role": "DEPT_HEAD",
         },
       },
     ],

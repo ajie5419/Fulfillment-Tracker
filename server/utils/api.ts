@@ -27,7 +27,8 @@ async function runFlow<T>(event: H3Event, user: AuthUser, handler: (event: H3Eve
   } catch (err) {
     if (!(err instanceof FlowError)) throw err
     const code = isBusinessErrorCode(err.code) ? err.code : err.code && err instanceof FlowHttpError ? businessCodeForStatus(err.statusCode) : undefined
-    const extra = code ? { data: { code } } : {}
+    const data = err instanceof FlowHttpError ? err.data : undefined
+    const extra = code || data ? { data: { ...data, ...(code ? { code } : {}) } } : {}
     const mapped = code ? BUSINESS_ERROR_HTTP[code] : undefined
     if (err instanceof FlowForbidden) throw createError({ statusCode: 403, statusMessage: 'Forbidden', message: err.message, ...extra })
     if (err instanceof FlowHttpError) {

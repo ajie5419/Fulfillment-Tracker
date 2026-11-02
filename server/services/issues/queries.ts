@@ -1,8 +1,10 @@
-import type { Issue, IssueCategory, Prisma } from '@prisma/client'
+import type { Issue, IssueCategory } from '@prisma/client'
+import { paginationSchema, type PageInput, type PageResult } from '../../../shared/pagination'
+import { issueWhere, issuePageBuckets } from './paging'
 import { prisma } from '../../utils/prisma'
 import { FlowError } from '../flow/errors'
 import { loadNames } from '../flow/names'
-import { CATEGORY_TEXT, DEFAULT_DEPT_NAME, OPEN_STATUSES, SUPPLIER_CATEGORIES } from './constants'
+import { CATEGORY_TEXT, DEFAULT_DEPT_NAME, SUPPLIER_CATEGORIES } from './constants'
 import type { Actor, IssueFilter } from './types'
 import { decorate } from './loaders'
 import { projectIssueDetail } from './projection'
@@ -12,21 +14,10 @@ const READ_BATCH_SIZE = 500
 export type IssueRow = Awaited<ReturnType<typeof decorate>>[number]
 
 export async function listIssues(filter: IssueFilter, actor: Actor, now = new Date()): Promise<IssueRow[]> {
-  const where: Prisma.IssueWhereInput = {}
-  if (filter.status === 'UNCLOSED') where.status = { in: OPEN_STATUSES }
-  else if (filter.status) where.status = filter.status
-  if (filter.category) where.category = filter.category
-  const wo: Prisma.StringFilter = {}
-  if (filter.visibleWorkOrders) wo.in = filter.visibleWorkOrders
-  if (filter.workOrderNumber) wo.equals = filter.workOrderNumber
-  if (Object.keys(wo).length) where.workOrderNumber = wo
-  if (filter.deptIds) where.responsibleDeptId = { in: filter.deptIds }
-  if (filter.mine === 'responsible') where.responsibleUserId = actor.userId
-  if (filter.mine === 'reported') where.reporterId = actor.userId
-  if (filter.mine === 'todo' && !where.status) where.status = { in: OPEN_STATUSES }
+  const where = issueWhere(filter, actor)
   const rows: IssueRow[] = []
   let after: Pick<Issue, 'createdAt' | 'id'> | undefined
-  // Consumers use the complete array for totals and local paging. A read batch is not a result limit:
+  // 内部工单详情和兼容旧风险页 / 驾驶舱需要全量；明细分页另走 listIssuesPage。
   // even an empty filtered batch may have actionable/overdue records behind it. ID breaks timestamp ties.
   for (;;) {
     const issues = await prisma.issue.findMany({
@@ -48,7 +39,27 @@ export async function listIssues(filter: IssueFilter, actor: Actor, now = new Da
   }
   // 未关闭在前，其中超期在前
   const rank = (r: IssueRow) => (r.status === 'CLOSED' ? 2 : r.overdue ? 0 : 1)
-  return rows.sort((a, b) => rank(a) - rank(b) || +b.createdAt - +a.createdAt)
+  return rows.sort((a, b) => rank(a) - rank(b) || +b.createdAt - +a.createdAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
+}
+
+/** 规范分页入口：完整计算仅用于内部统计和旧客户端兼容的 listIssues。 */
+export async function listIssuesPage(filter: IssueFilter, actor: Actor, now = new Date(), input: PageInput = {}): Promise<PageResult<IssueRow>> {
+  const { page, pageSize } = paginationSchema.parse(input)
+  const buckets = await issuePageBuckets(filter, actor, now)
+  const counts = await Promise.all(buckets.map((where) => prisma.issue.count({ where })))
+  let skip = (page - 1) * pageSize
+  let remaining = pageSize
+  const rows: Issue[] = []
+  for (const [i, where] of buckets.entries()) {
+    const count = counts[i] ?? 0
+    if (skip >= count) { skip -= count; continue }
+    const batch = await prisma.issue.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip, take: remaining })
+    rows.push(...batch)
+    remaining -= batch.length
+    skip = 0
+    if (!remaining) break
+  }
+  return { rows: await decorate(rows, actor, now), total: counts.reduce((a, b) => a + b, 0), page, pageSize }
 }
 
 /** 详情：附处理日志（时间线）、照片地址 */

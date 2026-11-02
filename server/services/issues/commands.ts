@@ -61,6 +61,7 @@ export async function createIssue(input: NewIssueInput, reporterId: string) {
   if (!description) throw new FlowError('请填写一句话描述', 'VALIDATION')
   const photoIds = [...new Set(input.photoIds ?? [])]
   if (photoIds.length > MAX_PHOTOS) throw new FlowError(`照片最多 ${MAX_PHOTOS} 张`, 'VALIDATION')
+  const def = await defaultResponsible(prisma, input.category)
   return issueTransaction(async (tx) => {
     const wo = await tx.qmsWorkOrder.findFirst({ where: { workOrderNumber: input.workOrderNumber, isDeleted: false }, select: { workOrderNumber: true } })
     if (!wo) throw new FlowError('工单不存在或已删除')
@@ -69,7 +70,6 @@ export async function createIssue(input: NewIssueInput, reporterId: string) {
       if (!part || part.workOrderNumber !== input.workOrderNumber) throw new FlowError('工件不存在或不属于该工单')
     }
     const supplierId = await assertSupplier(tx, input.category, input.responsibleSupplierId)
-    const def = await defaultResponsible(tx, input.category)
     const issue = await tx.issue.create({
       data: {
         issueNo: await nextIssueNo(tx, new Date()),

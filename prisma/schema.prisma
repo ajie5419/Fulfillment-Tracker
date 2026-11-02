@@ -12,6 +12,32 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// QMS 写入前持久化；远端已成功而本地失败时保留扩展输入，供管理员幂等恢复。
+model WorkOrderLocalSave {
+  operationId      String    @id @db.VarChar(128)
+  workOrderNumber  String    @db.VarChar(64)
+  /// create / update（shared/work-order-save.ts）
+  operation        String    @db.VarChar(20)
+  actorId          String    @db.VarChar(64)
+  extPayload       Json
+  requestPayload   Json
+  remoteResult     Json?
+  remoteError      Json?
+  /// PENDING / DONE / FAILED（shared/work-order-save.ts）；FAILED 保留远端错误供查询。
+  status           String    @default("PENDING") @db.VarChar(20)
+  /// PENDING 时为工单号，终止时置空：同工单最多一条待恢复记录，防止后来的输入覆盖旧输入。
+  pendingWorkOrder String?   @unique @db.VarChar(64)
+  attempts         Int       @default(0)
+  lastError        String?   @db.Text
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  completedAt      DateTime?
+
+  @@index([workOrderNumber, createdAt])
+  @@index([status, createdAt])
+  @@map("work_order_local_save")
+}
+
 // ───────────── QMS 只读副本 ─────────────
 
 model QmsWorkOrder {

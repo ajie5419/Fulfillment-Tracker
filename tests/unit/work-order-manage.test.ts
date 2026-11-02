@@ -39,11 +39,36 @@ function fakeDb(seed: { wos?: Row[]; users?: string[] } = {}) {
   const wos = new Map<string, Row>((seed.wos ?? []).map((w) => [w.workOrderNumber as string, w]))
   const exts = new Map<string, Row>()
   const users = new Set(seed.users ?? ['u-pm'])
-  const tables = (w: Map<string, Row>, e: Map<string, Row>) => ({
+  const saves = new Map<string, Row>()
+  const workOrderLocalSave = {
+    createMany: async ({ data }: { data: Row[] }) => {
+      const row = data[0]!
+      if (saves.has(String(row.operationId)) || [...saves.values()].some((r) => r.pendingWorkOrder === row.workOrderNumber)) return { count: 0 }
+      saves.set(String(row.operationId), { ...row, attempts: 0, remoteResult: null, remoteError: null })
+      return { count: 1 }
+    },
+    findUnique: async ({ where }: { where: Row }) => where.operationId ? saves.get(String(where.operationId)) ?? null : [...saves.values()].find((r) => r.pendingWorkOrder === where.pendingWorkOrder) ?? null,
+    updateMany: async ({ where }: { where: Row }) => {
+      const row = saves.get(String(where.operationId))
+      if (!row || row.status !== 'PENDING') return { count: 0 }
+      saves.set(String(where.operationId), { ...row, attempts: Number(row.attempts) + 1 })
+      return { count: 1 }
+    },
+    update: async ({ where, data }: { where: Row; data: Row }) => {
+      const old = saves.get(String(where.operationId))!
+      const row = { ...old, ...data, ...(data.attempts ? { attempts: Number(old.attempts) + 1 } : {}) }
+      saves.set(String(where.operationId), row)
+      return row
+    },
+  }
+  const tables = (w: Map<string, Row>, e: Map<string, Row>, dirty = () => {}) => ({
+    workOrderLocalSave,
+    $queryRaw: async () => [],
     qmsWorkOrder: {
       findUnique: async ({ where }: { where: { workOrderNumber: string } }) => w.get(where.workOrderNumber) ?? null,
       // 与 MySQL 语义一致：createMany skipDuplicates 主键已有就跳过；updateMany 只改满足条件的行
       createMany: async ({ data, skipDuplicates }: { data: Row[]; skipDuplicates?: boolean }) => {
+        dirty()
         let count = 0
         for (const d of data) {
           const k = d.workOrderNumber as string
@@ -57,6 +82,7 @@ function fakeDb(seed: { wos?: Row[]; users?: string[] } = {}) {
         return { count }
       },
       updateMany: async ({ where, data }: { where: { workOrderNumber: string; updatedAt: { lte: Date } }; data: Row }) => {
+        dirty()
         const cur = w.get(where.workOrderNumber)
         if (!cur || (cur.updatedAt as Date) > where.updatedAt.lte) return { count: 0 }
         w.set(where.workOrderNumber, { ...cur, ...defined(data) })
@@ -65,6 +91,7 @@ function fakeDb(seed: { wos?: Row[]; users?: string[] } = {}) {
     },
     workOrderExt: {
       upsert: async ({ where, create, update }: { where: { workOrderNumber: string }; create: Row; update: Row }) => {
+        dirty()
         const cur = e.get(where.workOrderNumber)
         e.set(where.workOrderNumber, cur ? { ...cur, ...defined(update) } : defined(create))
       },
@@ -76,7 +103,9 @@ function fakeDb(seed: { wos?: Row[]; users?: string[] } = {}) {
     $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
       const w2 = new Map(wos)
       const e2 = new Map(exts)
-      const r = await fn(tables(w2, e2))
+      let changed = false
+      const r = await fn(tables(w2, e2, () => { changed = true }))
+      if (!changed) return r
       wos.clear()
       w2.forEach((v, k) => wos.set(k, v))
       exts.clear()
@@ -97,6 +126,7 @@ function fakeQms(impl: Partial<QmsWorkOrderApi> = {}) {
       return ((impl[op] ?? fallback) as (...a: unknown[]) => unknown)(...args)
     }
   const api = {
+    findWorkOrder: rec('findWorkOrder', async () => qmsRow()),
     createWorkOrder: rec('createWorkOrder', async (b) => qmsRow({ workOrderNumber: b.workOrderNumber, quantity: b.quantity, version: 0 })),
     updateWorkOrder: rec('updateWorkOrder', async (no, b) => qmsRow({ workOrderNumber: no, version: b.version + 1, ...(b.quantity ? { quantity: b.quantity } : {}) })),
     cancelWorkOrder: rec('cancelWorkOrder', async (no, b) => qmsRow({ workOrderNumber: no, status: 'CANCELLED', version: b.version + 1 })),

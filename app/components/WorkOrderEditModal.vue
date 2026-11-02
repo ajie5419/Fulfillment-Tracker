@@ -9,6 +9,32 @@ const requestFetch = useRequestFetch()
  */
 import { WO_STATUS_TEXT } from '#shared/status'
 import { defaultProjectManager, losesSightAfterCreate } from '#shared/work-order-form'
+import type { WorkOrderSaveResult } from '#shared/work-order-save'
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : undefined
+}
+
+function extractStatusCode(error: unknown): number | undefined {
+  const source = asRecord(error)
+  const data = asRecord(source?.data)
+  const response = asRecord(source?.response)
+  const candidates = [source?.statusCode, source?.status, response?.status, data?.statusCode]
+  for (const candidate of candidates) {
+    if (typeof candidate === 'number') return candidate
+  }
+  return undefined
+}
+
+function extractOperationId(error: unknown): string | undefined {
+  const source = asRecord(error)
+  const data = asRecord(source?.data)
+  const nestedData = asRecord(data?.data)
+  const candidate = nestedData?.operationId ?? data?.operationId ?? source?.operationId
+  if (typeof candidate === 'string' && candidate) return candidate
+  if (source?.cause) return extractOperationId(source.cause)
+  return undefined
+}
 
 export interface WorkOrderEditing {
   workOrderNumber: string
@@ -50,6 +76,13 @@ const empty = () => ({
 const form = reactive(empty())
 const saving = ref(false)
 const submitError = ref<string | null>(null)
+interface PendingRecovery {
+  operationId: string
+  message: string
+}
+const pendingRecovery = ref<PendingRecovery | null>(null)
+const retrying = ref(false)
+const idempotencyKey = ref('')
 
 // 下拉：客户现取 QMS（打开弹窗时取），事业部取本地部门表，项目经理取 QMS 用户副本
 const customers = ref<{ id: string; name: string }[]>([])
@@ -79,6 +112,8 @@ watch(
   (open) => {
     if (!open) return
     submitError.value = null
+    pendingRecovery.value = null
+    idempotencyKey.value = crypto.randomUUID()
     const w = props.workOrder
     Object.assign(
       form,
@@ -173,14 +208,24 @@ async function submit() {
         // 乐观锁：带打开弹窗时看到的版本号，别人在这期间改过 QMS 返回 409
         body.version = w.edit.version
       }
-      await $fetch(`/api/work-orders/${encodeURIComponent(w.workOrderNumber)}`, { method: 'PUT', body })
+      body.idempotencyKey = idempotencyKey.value
+      const r = await $fetch<WorkOrderSaveResult>(`/api/work-orders/${encodeURIComponent(w.workOrderNumber)}`, { method: 'PUT', body })
+      if (r.recovery?.status === 'PENDING') {
+        pendingRecovery.value = {
+          operationId: r.recovery.operationId,
+          message: r.recovery.message,
+        }
+        return
+      }
+      pendingRecovery.value = null
       message.success('已保存，QMS 工单已同步修改')
       emit('done', w.workOrderNumber)
     } else {
       if (losesSightAfterCreate(me.value, form.projectManagerId) && !(await confirmLoseSight())) return
-      const r = await $fetch<{ workOrderNumber: string }>('/api/work-orders', {
+      const r = await $fetch<WorkOrderSaveResult>('/api/work-orders', {
         method: 'POST',
         body: {
+          idempotencyKey: idempotencyKey.value,
           workOrderNumber: form.workOrderNumber.trim(),
           customerNameId: form.customerNameId,
           projectName: form.projectName.trim() || null,
@@ -192,15 +237,67 @@ async function submit() {
           isPilot: form.isPilot,
         },
       })
+      if (r.recovery?.status === 'PENDING') {
+        pendingRecovery.value = {
+          operationId: r.recovery.operationId,
+          message: r.recovery.message,
+        }
+        return
+      }
+      pendingRecovery.value = null
       message.success('工单已建好，已写入 QMS')
       emit('done', r.workOrderNumber)
     }
   } catch (e) {
-    // 不吞错误：弹窗里留一条，同时弹提示
+    const status = extractStatusCode(e)
+    const opId = extractOperationId(e)
+    if (status === 409 && opId) {
+      pendingRecovery.value = {
+        operationId: opId,
+        message: apiError(e),
+      }
+    } else {
+      if (status !== undefined) {
+        idempotencyKey.value = crypto.randomUUID()
+      }
+      // 不吞错误：弹窗里留一条，同时弹提示
+      submitError.value = apiError(e)
+      message.error(submitError.value)
+    }
+  } finally {
+    saving.value = false
+  }
+}
+
+async function retryRecovery() {
+  if (!pendingRecovery.value) return
+  retrying.value = true
+  submitError.value = null
+  try {
+    const opId = pendingRecovery.value.operationId
+    const res = await $fetch<WorkOrderSaveResult>(`/api/settings/work-order-saves/${encodeURIComponent(opId)}/retry`, {
+      method: 'POST',
+    })
+    if (res.recovery?.status === 'PENDING') {
+      pendingRecovery.value = {
+        operationId: res.recovery.operationId,
+        message: res.recovery.message,
+      }
+      return
+    }
+    pendingRecovery.value = null
+    const no = res.workOrderNumber || props.workOrder?.workOrderNumber || form.workOrderNumber.trim()
+    if (editing.value) {
+      message.success('已保存，QMS 工单已同步修改')
+    } else {
+      message.success('工单已建好，已写入 QMS')
+    }
+    emit('done', no)
+  } catch (e) {
     submitError.value = apiError(e)
     message.error(submitError.value)
   } finally {
-    saving.value = false
+    retrying.value = false
   }
 }
 </script>
@@ -211,12 +308,40 @@ async function submit() {
     :title="editing ? `编辑工单 ${workOrder?.workOrderNumber}` : '新建工单'"
     ok-text="保存"
     :confirm-loading="saving"
+    :ok-button-props="{ disabled: retrying }"
     width="640px"
     @ok="submit"
     @cancel="emit('close')"
   >
     <p class="hint">保存后直接写入 QMS 工单库，QMS 里看到的就是这里填的。</p>
     <a-alert v-if="noVersion" type="warning" show-icon class="alert" message="本地还没有同步到这个工单的版本号，暂时只能改项目经理、产品线、是否试点" description="新版 QMS 上线后下一轮同步（约 5 分钟）会补上版本号，到时刷新页面就能改其他字段。" />
+    <a-alert
+      v-if="pendingRecovery"
+      type="warning"
+      show-icon
+      class="alert"
+      :message="pendingRecovery.message"
+    >
+      <template #description>
+        <div class="recovery-desc">
+          <div>本地待恢复的扩展信息：项目经理、产品线、是否试点三项。</div>
+          <div class="recovery-op">操作编号：<span class="op-id">{{ pendingRecovery.operationId }}</span></div>
+          <div class="recovery-action">
+            <a-button
+              v-if="me?.isAdmin"
+              size="small"
+              type="primary"
+              :loading="retrying"
+              :disabled="saving"
+              @click="retryRecovery"
+            >
+              重试恢复
+            </a-button>
+            <span v-else class="recovery-admin-tip">请管理员重试恢复</span>
+          </div>
+        </div>
+      </template>
+    </a-alert>
     <a-alert v-if="submitError" type="error" show-icon class="alert" :message="submitError" />
     <a-form layout="horizontal" :label-col="{ span: 5 }" :wrapper-col="{ span: 18 }">
       <a-form-item label="工单号" :required="!editing">
@@ -263,4 +388,9 @@ async function submit() {
 .alert { margin-bottom: 12px; }
 .muted { font-size: 12px; color: var(--ft-text-2); margin-top: 4px; }
 .field-error { font-size: 12px; color: var(--ft-late-text); margin-top: 4px; }
+.recovery-desc { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; font-size: 13px; }
+.recovery-op { font-size: 12px; color: var(--ft-text-2); }
+.op-id { user-select: all; font-family: monospace; }
+.recovery-action { margin-top: 2px; }
+.recovery-admin-tip { font-size: 12px; color: var(--ft-text-2); }
 </style>

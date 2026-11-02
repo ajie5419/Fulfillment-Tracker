@@ -6,6 +6,31 @@ import { prisma } from '../../utils/prisma'
  * 每个请求只算一次（缓存在 event.context.scope），单对象检查和列表过滤都用它。
  */
 export type Scope = { all: true } | { all: false; workOrders: Set<string> }
+type ScopeDb = Pick<Prisma.TransactionClient, 'notifyRole' | 'workOrderExt'>
+
+function scopeOf(privileged: boolean, managed: string[]): Scope {
+  return privileged || !managed.length ? { all: true } : { all: false, workOrders: new Set(managed) }
+}
+
+/** 两次批量查询，规则与 resolveScope 相同；事务调用方传同一客户端。 */
+export async function resolveScopes(userIds: readonly string[], adminIds: readonly string[] = [], db: ScopeDb = prisma): Promise<Map<string, Scope>> {
+  const ids = [...new Set(userIds)]
+  const admins = new Set(adminIds)
+  const ordinary = ids.filter((id) => !admins.has(id))
+  const [roles, managed] = ordinary.length ? await Promise.all([
+    db.notifyRole.findMany({ where: { userId: { in: ordinary } }, select: { userId: true } }),
+    db.workOrderExt.findMany({ where: { projectManagerId: { in: ordinary } }, select: { projectManagerId: true, workOrderNumber: true } }),
+  ]) : [[], []]
+  const privileged = new Set([...adminIds, ...roles.map((r) => r.userId)])
+  const byManager = new Map<string, string[]>()
+  for (const row of managed) {
+    if (!row.projectManagerId) continue
+    const wos = byManager.get(row.projectManagerId) ?? []
+    wos.push(row.workOrderNumber)
+    byManager.set(row.projectManagerId, wos)
+  }
+  return new Map(ids.map((id) => [id, scopeOf(privileged.has(id), byManager.get(id) ?? [])]))
+}
 
 // ───────────── 数据可见性（技术选型 6.4 节 canSee(user, workOrder)，方案 7.3）─────────────
 //
@@ -17,14 +42,13 @@ export type Scope = { all: true } | { all: false; workOrders: Set<string> }
 
 /** 按用户算可见范围（不依赖请求，后台任务如每日汇总也用它） */
 /** db：在事务里调用时传事务客户端（同一连接、看得到本事务未提交的写入） */
-export async function resolveScope(userId: string, admin: boolean, db: Pick<Prisma.TransactionClient, 'notifyRole' | 'workOrderExt'> = prisma): Promise<Scope> {
+export async function resolveScope(userId: string, admin: boolean, db: ScopeDb = prisma): Promise<Scope> {
   if (admin) return { all: true }
   const [role, managed] = await Promise.all([
     db.notifyRole.findFirst({ where: { userId }, select: { id: true } }),
     db.workOrderExt.findMany({ where: { projectManagerId: userId }, select: { workOrderNumber: true } }),
   ])
-  if (role || !managed.length) return { all: true }
-  return { all: false, workOrders: new Set(managed.map((m) => m.workOrderNumber)) }
+  return scopeOf(!!role, managed.map((m) => m.workOrderNumber))
 }
 
 /** 单个工单是否可见。workOrderNumber 为 null 表示"不针对具体工单"（只要求登录） */
