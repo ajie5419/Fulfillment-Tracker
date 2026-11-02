@@ -17,7 +17,7 @@
  */
 import { z } from 'zod'
 import { FlowHttpError } from '../flow/errors'
-import { REQUEST_TIMEOUT_MS, type QmsSyncConfig, formatIssues } from './client'
+import { REQUEST_TIMEOUT_MS, fetchSyncPage, type QmsSyncConfig, type SyncCursorValue, formatIssues } from './client'
 import { type QmsWorkOrderRow, qmsWorkOrderSchema } from './resources'
 
 export const QMS_UNAVAILABLE_TEXT = 'QMS 暂时连不上，请稍后再试'
@@ -70,6 +70,8 @@ export interface QmsCustomer {
 
 /** 服务层只依赖这个接口，单测里换成假的 */
 export interface QmsWorkOrderApi {
+  /** 恢复前核对远端现状；沿已有只读分页同步契约查找，不能用本地副本代替。 */
+  findWorkOrder(workOrderNumber: string): Promise<QmsWorkOrderRow | null>
   createWorkOrder(body: CreateWorkOrderBody): Promise<QmsWorkOrderRow>
   updateWorkOrder(workOrderNumber: string, body: UpdateWorkOrderBody): Promise<QmsWorkOrderRow>
   cancelWorkOrder(workOrderNumber: string, body: { version: number; actorUserId: string }): Promise<QmsWorkOrderRow>
@@ -145,6 +147,23 @@ export function qmsWorkOrderClient(cfg: Pick<QmsSyncConfig, 'apiBase' | 'clientI
   const enc = encodeURIComponent
 
   return {
+    async findWorkOrder(no) {
+      if (!writeConfigured(cfg)) throw new QmsUnavailable('QMS 地址或客户端凭据未配置')
+      let cursor: SyncCursorValue = { since: null, afterId: null }
+      for (;;) {
+        const page = await fetchSyncPage({ ...cfg, enabled: true }, 'work-orders', cursor, undefined, fetchImpl).catch((error: unknown) => {
+          throw new QmsUnavailable(`恢复核对：${error instanceof Error ? error.message : String(error)}`)
+        })
+        for (const item of page.items) {
+          const row = qmsWorkOrderSchema.safeParse(item)
+          if (!row.success) throw new QmsUnavailable(`恢复核对：QMS 返回的工单格式不符：${formatIssues(row.error)}`)
+          if (row.data.workOrderNumber === no) return row.data
+        }
+        if (!page.nextCursor) return null
+        if (cursor.since && (+page.nextCursor.since < +cursor.since || (+page.nextCursor.since === +cursor.since && page.nextCursor.afterId <= (cursor.afterId ?? '')))) throw new QmsUnavailable('恢复核对：QMS 分页游标没有前进')
+        cursor = page.nextCursor
+      }
+    },
     async createWorkOrder(body) {
       return workOrder(await call('POST', `${BASE}/work-orders`, body), '新建工单')
     },

@@ -3,31 +3,29 @@
  * 接口约定见 sync/write-client.ts。流程统一是：
  *   权限（canOperate 'workOrder'：项目部、项目部负责人、管理员）→ 本地能先判断的先判断（工单号不能改、项目经理存在、已取消不能改）
  *   → 调 QMS → QMS 成功后在一个事务里写本地副本 qms_work_order（用 QMS 返回的对象，含 updatedAt、version）和 work_order_ext（项目经理、产品线、是否试点）。
- * QMS 没配置 / 连不上 / 拒绝时直接报错，本地什么都不写（不在本地先存、事后补发）。
+ * 调 QMS 前持久化恢复意图；远端成功但本地失败返回 recovery.PENDING，管理员可幂等重试。
+ * QMS 拒绝会终止记录；网络中断保留 PENDING，重试时先核对远端（详见 recovery.ts）。
  * 修改、取消带编辑者打开页面时看到的 version（由前端提交，乐观锁；不用保存时本地最新的 version，否则两人先后保存时后一个会悄悄覆盖前一个），
  *   QMS 409 → "工单已被别人修改，请刷新后再改"。只取消，不删除。
  * actorUserId = 当前登录用户的 QMS 用户 ID（两边相同），QMS 审计日志记这个人。
  * 只改履约这边的扩展信息（项目经理、产品线、是否试点）时不调 QMS。
  */
 import type { PrismaClient } from '@prisma/client'
+import type { WorkOrderSaveResult } from '../../../shared/work-order-save'
 import { prisma } from '../../utils/prisma'
 import { OPERATION_DENIED, type RoleContext, canOperate } from '../auth/permissions'
 import { FlowError, FlowForbidden, FlowHttpError } from '../flow/errors'
-import { type QmsWorkOrderRow, writeWorkOrderCopy } from '../sync/resources'
+import { type QmsWorkOrderRow } from '../sync/resources'
 import { type QmsWorkOrderApi, QmsRejected, type UpdateWorkOrderBody } from '../sync/write-client'
+import { saveWithRecovery, saveWorkOrderLocal as saveLocal, type ExtFields } from './recovery'
+export { CONFLICT_TEXT } from './recovery'
+import { CONFLICT_TEXT } from './recovery'
 import type { CancelWorkOrderInput, CreateWorkOrderInput, UpdateWorkOrderInput } from '../../schemas/work-order'
 
-export const CONFLICT_TEXT = '工单已被别人修改，请刷新后再改'
 export const NO_VERSION_TEXT = '本地还没有同步到这个工单的版本号，请等下一轮 QMS 同步（约 5 分钟）后再改'
 
 /** 用到的表（单测里换成假的） */
-export type ManageDb = Pick<PrismaClient, 'qmsWorkOrder' | 'workOrderExt' | 'qmsUser' | '$transaction'>
-
-interface ExtFields {
-  projectManagerId?: string | null
-  productLine?: string | null
-  isPilot?: boolean
-}
+export type ManageDb = Pick<PrismaClient, 'qmsWorkOrder' | 'workOrderExt' | 'workOrderLocalSave' | 'qmsUser' | '$transaction'>
 
 function assertCan(ctx: RoleContext) {
   if (!canOperate(ctx, 'workOrder')) throw new FlowForbidden(OPERATION_DENIED.workOrder)
@@ -45,15 +43,6 @@ const extOf = (x: ExtFields): ExtFields => {
   if (x.productLine !== undefined) out.productLine = x.productLine
   if (x.isPilot !== undefined) out.isPilot = x.isPilot
   return out
-}
-
-/** QMS 成功后：一个事务里写本地副本 + 扩展信息 */
-async function saveLocal(db: ManageDb, workOrderNumber: string, row: QmsWorkOrderRow | null, ext: ExtFields) {
-  const hasExt = Object.keys(ext).length > 0
-  await db.$transaction(async (tx) => {
-    if (row) await writeWorkOrderCopy(tx, row)
-    if (hasExt) await tx.workOrderExt.upsert({ where: { workOrderNumber }, create: { workOrderNumber, ...ext }, update: ext })
-  })
 }
 
 const view = (r: Pick<QmsWorkOrderRow, 'workOrderNumber' | 'status' | 'updatedAt'> & { version?: number | null }) => ({
@@ -86,10 +75,10 @@ function requireVersion(v: number | null | undefined): number {
   return v
 }
 
-export async function createWorkOrder(ctx: RoleContext, input: CreateWorkOrderInput, qms: QmsWorkOrderApi, db: ManageDb = prisma) {
+export async function createWorkOrder(ctx: RoleContext, input: CreateWorkOrderInput, qms: QmsWorkOrderApi, db: ManageDb = prisma): Promise<WorkOrderSaveResult> {
   assertCan(ctx)
   await assertManager(db, input.projectManagerId)
-  const row = await qms.createWorkOrder({
+  return saveWithRecovery({ idempotencyKey: input.idempotencyKey, workOrderNumber: input.workOrderNumber, actorId: ctx.userId, operation: 'create', request: {
     workOrderNumber: input.workOrderNumber,
     customerNameId: input.customerNameId,
     projectName: input.projectName ?? null,
@@ -97,17 +86,14 @@ export async function createWorkOrder(ctx: RoleContext, input: CreateWorkOrderIn
     quantity: input.quantity,
     deliveryDate: input.deliveryDate,
     actorUserId: ctx.userId,
-  })
-  // 新建时扩展信息整行写（没填的也落一行，是否试点默认否）
-  await saveLocal(db, row.workOrderNumber, row, {
+  }, ext: {
     projectManagerId: input.projectManagerId ?? null,
     productLine: input.productLine ?? null,
     isPilot: input.isPilot ?? false,
-  })
-  return view(row)
+  } }, qms, db)
 }
 
-export async function updateWorkOrder(ctx: RoleContext, workOrderNumber: string, input: UpdateWorkOrderInput, qms: QmsWorkOrderApi, db: ManageDb = prisma) {
+export async function updateWorkOrder(ctx: RoleContext, workOrderNumber: string, input: UpdateWorkOrderInput, qms: QmsWorkOrderApi, db: ManageDb = prisma): Promise<WorkOrderSaveResult> {
   assertCan(ctx)
   if (input.workOrderNumber !== undefined && input.workOrderNumber !== workOrderNumber) throw new FlowError('工单号不能修改')
   const local = await loadLocal(db, workOrderNumber)
@@ -122,13 +108,15 @@ export async function updateWorkOrder(ctx: RoleContext, workOrderNumber: string,
   if (input.deliveryDate !== undefined) fields.deliveryDate = input.deliveryDate
   if (input.status !== undefined) fields.status = input.status
 
-  let row: QmsWorkOrderRow | null = null
   if (Object.keys(fields).length) {
     const version = requireVersion(input.version)
-    row = await withConflictText(qms.updateWorkOrder(workOrderNumber, { version, actorUserId: ctx.userId, ...fields }))
+    return saveWithRecovery({ idempotencyKey: input.idempotencyKey, workOrderNumber, actorId: ctx.userId, operation: 'update',
+      request: { version, actorUserId: ctx.userId, ...fields }, ext: extOf(input) }, qms, db)
   }
-  await saveLocal(db, workOrderNumber, row, extOf(input))
-  return view(row ?? local)
+  const pending = await db.workOrderLocalSave.findUnique({ where: { pendingWorkOrder: workOrderNumber } })
+  if (pending) throw new FlowHttpError('该工单存在待恢复保存，请管理员先恢复后再修改扩展信息', 409)
+  await saveLocal(db, workOrderNumber, null, extOf(input))
+  return view(local)
 }
 
 export async function cancelWorkOrder(ctx: RoleContext, workOrderNumber: string, input: CancelWorkOrderInput, qms: QmsWorkOrderApi, db: ManageDb = prisma) {
