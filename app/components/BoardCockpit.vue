@@ -32,6 +32,7 @@ const [overview, monitoring, releases, issues, stagnationEntities] = await Promi
 ])
 const sources = [
   { name: '工单与异常统计', ...overview },
+  { name: '监控汇总', ...monitoring },
   { name: '停滞红线', ...stagnationEntities },
   { name: '发放统计', ...releases },
   { name: '超期异常清单', ...issues },
@@ -56,7 +57,7 @@ const stageRiskLinks: Record<string, string> = {
 }
 const stageBars = computed(() => stages.value.map((s) => ({ key: s.key, label: s.label, value: s.count, to: s.link })))
 async function refresh() {
-  await Promise.all([...sources.map((s) => s.refresh()), monitoring.refresh()])
+  await Promise.all(sources.map((s) => s.refresh()))
 }
 defineExpose({ refresh })
 </script>
