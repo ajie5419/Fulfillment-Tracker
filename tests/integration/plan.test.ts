@@ -7,8 +7,8 @@
  * 运行：TEST_DATABASE_URL=mysql://…/fulfillment_test pnpm test:integration
  */
 import { execFileSync } from 'node:child_process'
-import type { PrismaClient } from '@prisma/client'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { PrismaClient } from '@prisma/client'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { getTestDatabaseUrl } from '../helpers/test-database'
 
 const DB = getTestDatabaseUrl(process.env.TEST_DATABASE_URL)
@@ -641,6 +641,46 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     await s.plan.undoCompleteNode(a!.id)
     view = await s.plan.getPlan(W9WO, await ctxOf('u-pm'))
     expect(view.nodes[0]).toMatchObject({ doneBy: 'AUTO' })
+  })
+
+  it('完成等待计划锁时新增子节点：锁后重判，不能用锁前的无子节点结论', async () => {
+    const wo = 'T-WO-R14-COMPLETE-RACE'
+    await db.qmsWorkOrder.create({ data: { workOrderNumber: wo, customerName: '并发测试', status: 'IN_PROGRESS', quantity: 1, deliveryDate: dayOff(10), updatedAt: new Date() } })
+    const parent = await s.plan.createNode(wo, { name: '父节点', dept: 'TECH', planDate: dayOff(0) }, 'u-pm')
+    let reached!: () => void
+    let resume!: () => void
+    const atRead = new Promise<void>((resolve) => { reached = resolve })
+    const continueRead = new Promise<void>((resolve) => { resume = resolve })
+    let paused = false
+    const hookedClient = db.$extends({ query: { planNode: { async findUnique({ args, query }) {
+      const row = await query(args)
+      if (args.where.id === parent.id && !paused) {
+        paused = true
+        reached()
+        await continueRead
+      }
+      return row
+    } } } })
+    const transaction = hookedClient.$transaction.bind(hookedClient) as typeof db.$transaction
+    // Prisma 代理对继承方法报告的自有 descriptor.value 为 undefined，直接 spy db 会错误恢复该值。
+    const hook = vi.spyOn(PrismaClient.prototype, '$transaction').mockImplementationOnce((
+      (run: (tx: import('@prisma/client').Prisma.TransactionClient) => Promise<unknown>, options?: Parameters<typeof transaction>[1]) =>
+        // 模拟 MySQL 默认 RR，避免全局 RC 配置掩盖本事务漏传隔离级别；调用方的选项必须优先。
+        transaction(run, { isolationLevel: 'RepeatableRead', ...options })
+    ) as typeof db.$transaction)
+    const outcome = s.plan.completeNode(parent.id, null, 'u-techhead').then(() => null, (error: unknown) => error)
+    try {
+      await Promise.race([atRead, outcome.then((error) => { throw error ?? new Error('完成事务未到达定位读暂停点') })])
+      await s.plan.createNode(wo, { name: '竞争插入的子节点', dept: 'TECH', parentId: parent.id, planDate: dayOff(0) }, 'u-pm')
+      resume()
+      expect(await outcome).toMatchObject({ message: expect.stringContaining('竞争插入的子节点') })
+      expect(hook).toHaveBeenNthCalledWith(1, expect.any(Function), { isolationLevel: 'ReadCommitted' })
+      expect((await db.planNode.findUniqueOrThrow({ where: { id: parent.id } })).manualDoneAt).toBeNull()
+    } finally {
+      resume()
+      await outcome
+      vi.restoreAllMocks()
+    }
   })
 
   it('超时未确认：按 W5 阈值（4 小时提醒、1 天黄、2 天红），确认后消除；不计入 W5', async () => {
