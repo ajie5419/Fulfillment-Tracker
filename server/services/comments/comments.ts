@@ -3,10 +3,11 @@
  * 只新增，不改不删（和流转记录一样留痕）。谁能看到这个工单，谁就能看和写留言（接口层按工单可见范围拦）。
  */
 import type { Prisma } from '@prisma/client'
+import { paginationSchema, type PageInput, type PageResult } from '../../../shared/pagination'
 import { prisma } from '../../utils/prisma'
 import { FlowError } from '../flow/errors'
 import { loadNames } from '../flow/names'
-import { canSee, resolveScope } from '../../utils/auth'
+import { canSee, resolveScopes } from '../auth/scope'
 
 type Tx = Prisma.TransactionClient
 
@@ -40,7 +41,21 @@ export async function deleteCommentsOf(tx: Tx, refType: CommentRef, refId: strin
 const ids = (v: Prisma.JsonValue | null): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
 
 export async function listComments(refType: CommentRef, refId: string) {
-  const rows = await prisma.comment.findMany({ where: { refType, refId }, orderBy: { createdAt: 'asc' } })
+  // 兼容旧 CommentPanel；分页入口 listCommentsPage 不读取对象的全部留言。
+  return commentRows(refType, refId)
+}
+
+export async function listCommentsPage(refType: CommentRef, refId: string, input: PageInput = {}): Promise<PageResult<Awaited<ReturnType<typeof commentRows>>[number]>> {
+  const { page, pageSize } = paginationSchema.parse(input)
+  const [rows, total] = await Promise.all([
+    commentRows(refType, refId, { skip: (page - 1) * pageSize, take: pageSize }),
+    prisma.comment.count({ where: { refType, refId } }),
+  ])
+  return { rows, total, page, pageSize }
+}
+
+async function commentRows(refType: CommentRef, refId: string, paging: { skip: number; take: number } | undefined = undefined) {
+  const rows = await prisma.comment.findMany({ where: { refType, refId }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], ...paging })
   const names = await loadNames({ user: rows.flatMap((r) => [r.authorId, ...ids(r.mentionIds)]) })
   return rows.map((r) => ({
     id: r.id,
@@ -67,10 +82,12 @@ export interface CommentInput {
 }
 
 /** 被 @ 的人里看不到这个工单的（只看本人工单的项目经理）：提醒里有工单号和留言摘要，不能发给他们 */
-async function cannotSee(userIds: string[], workOrderNumber: string, admins: string[]) {
-  const out: string[] = []
-  for (const id of userIds) if (!canSee(await resolveScope(id, admins.includes(id)), workOrderNumber)) out.push(id)
-  return out
+async function cannotSee(db: Tx, userIds: string[], workOrderNumber: string, admins: string[]) {
+  const scopes = await resolveScopes(userIds, admins, db)
+  return userIds.filter((id) => {
+    const scope = scopes.get(id)
+    return !scope || !canSee(scope, workOrderNumber)
+  })
 }
 
 export async function addComment(input: CommentInput, authorId: string, admins: string[] = []) {
@@ -88,7 +105,7 @@ export async function addComment(input: CommentInput, authorId: string, admins: 
     if (mentionIds.length) {
       const found = await tx.qmsUser.count({ where: { id: { in: mentionIds }, isDeleted: false, status: 'ACTIVE' } })
       if (found !== mentionIds.length) throw new FlowError('@ 的人不存在或已停用')
-      const blocked = await cannotSee(mentionIds, ref.workOrderNumber, admins)
+      const blocked = await cannotSee(tx, mentionIds, ref.workOrderNumber, admins)
       if (blocked.length) {
         const names = (await loadNames({ user: blocked })).user
         throw new FlowError(`${blocked.map((id) => names.get(id) ?? id).join('、')} 看不到工单 ${ref.workOrderNumber}，不能 @`)

@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client'
+import { paginationSchema, type PageInput, type PageResult } from '../../../shared/pagination'
 import { prisma } from '../../utils/prisma'
 import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadNames } from '../flow/names'
@@ -10,7 +11,7 @@ import { projectRelease, projectReleaseRows, projectMyReceipts, projectReleaseTo
 
 /**
  * 发放签收页顶部统计卡（前端改版第二轮）：按工单、类型、我发出的 / 发给我的、可见范围（与列表同一范围，不受签收进度筛选影响），
- * 用 count，不受列表 200 条截断影响。每个数字与列表"签收进度"筛选同一口径。
+ * 用 count，与明细分页独立。每个数字与列表"签收进度"筛选同一口径。
  */
 export async function releaseStats(filter: Omit<ReleaseFilter, 'progress'>, viewerId: string) {
   const scope = releaseScope(filter, viewerId)
@@ -24,13 +25,29 @@ export async function releaseStats(filter: Omit<ReleaseFilter, 'progress'>, view
   return { all, pending, rejected, minePending }
 }
 
+/** 兼容旧客户端的全量入口；页面迁移到 /api/releases/page 后可移除。 */
 export async function listReleases(filter: ReleaseFilter, viewerId: string) {
+  return releaseRows(filter, viewerId)
+}
+
+export async function listReleasesPage(filter: ReleaseFilter, viewerId: string, input: PageInput = {}): Promise<PageResult<Awaited<ReturnType<typeof releaseRows>>[number]>> {
+  const { page, pageSize } = paginationSchema.parse(input)
+  const and = releaseScope(filter, viewerId)
+  if (filter.progress) and.push(progressWhere(filter.progress, viewerId))
+  const [rows, total] = await Promise.all([
+    releaseRows(filter, viewerId, { skip: (page - 1) * pageSize, take: pageSize }),
+    prisma.release.count({ where: { AND: and } }),
+  ])
+  return { rows, total, page, pageSize }
+}
+
+async function releaseRows(filter: ReleaseFilter, viewerId: string, paging: { skip: number; take: number } | undefined = undefined) {
   const and = releaseScope(filter, viewerId)
   if (filter.progress) and.push(progressWhere(filter.progress, viewerId))
   const rows = await prisma.release.findMany({
     where: { AND: and },
-    orderBy: { createdAt: 'desc' },
-    take: 200,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    ...paging,
     include: { receipts: { select: { status: true, userId: true } } },
   })
   const parts = await partNames(rows.flatMap((r) => partIdsOf(r.partIds)))

@@ -1,3 +1,5 @@
+import { paginationSchema, type PageInput, type PageResult } from '../../../shared/pagination'
+import type { Prisma } from '@prisma/client'
 import type { PlanListStatus } from '../../../shared/plan'
 /**
  * 项目计划列表（zhao 10-22：总计划从工单详情里拿出来，单独成"项目计划"菜单页）。
@@ -15,10 +17,12 @@ import { loadPlans } from './plan'
 
 export type { PlanListStatus } from '../../../shared/plan'
 
-export async function listPlans(visibleWorkOrders: string[] | undefined, ctx: RoleContext, now = new Date(), opts: { withClosed?: boolean } = {}) {
+async function planRows(visibleWorkOrders: string[] | undefined, ctx: RoleContext, now = new Date(), opts: { withClosed?: boolean; paging?: { skip: number; take: number } } = {}) {
   const workOrders = await prisma.qmsWorkOrder.findMany({
     where: { ...(opts.withClosed ? { isDeleted: false } : ACTIVE_WO_WHERE), ...(visibleWorkOrders ? { workOrderNumber: { in: visibleWorkOrders } } : {}) },
     orderBy: [{ deliveryDate: 'asc' }, { workOrderNumber: 'asc' }],
+    ...opts.paging,
+    select: { workOrderNumber: true, projectName: true, customerName: true, deliveryDate: true, status: true },
   })
   const wos = workOrders.map((w) => w.workOrderNumber)
   const [plans, exts, meta] = await Promise.all([
@@ -77,4 +81,20 @@ export async function listPlans(visibleWorkOrders: string[] | undefined, ctx: Ro
       unsplit: active.filter((r) => r.unsplit > 0).length,
     },
   }
+}
+
+/** 旧页面兼容及全范围汇总入口。loadPlans 的全图预测不可截断节点/挂靠任务。 */
+export async function listPlans(visibleWorkOrders: string[] | undefined, ctx: RoleContext, now = new Date(), opts: { withClosed?: boolean } = {}) {
+  return planRows(visibleWorkOrders, ctx, now, opts)
+}
+
+/** 明细数据库分页；全范围汇总继续由独立的 /api/plan/summary 提供。 */
+export async function listPlansPage(visibleWorkOrders: string[] | undefined, ctx: RoleContext, now = new Date(), opts: PageInput & { withClosed?: boolean } = {}): Promise<PageResult<Awaited<ReturnType<typeof planRows>>['rows'][number]>> {
+  const { page, pageSize } = paginationSchema.parse(opts)
+  const where: Prisma.QmsWorkOrderWhereInput = { ...(opts.withClosed ? { isDeleted: false } : ACTIVE_WO_WHERE), ...(visibleWorkOrders ? { workOrderNumber: { in: visibleWorkOrders } } : {}) }
+  const [current, total] = await Promise.all([
+    planRows(visibleWorkOrders, ctx, now, { ...opts, paging: { skip: (page - 1) * pageSize, take: pageSize } }),
+    prisma.qmsWorkOrder.count({ where }),
+  ])
+  return { rows: current.rows, total, page, pageSize }
 }
