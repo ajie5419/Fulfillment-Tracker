@@ -1,23 +1,50 @@
 <script setup lang="ts">
 import { cockpitMetrics, mergeCockpitItems, OVERDUE_ISSUES_LINK, RED_WORK_ORDERS_LINK } from '#shared/board-cockpit'
+import type { MonitoredEntity } from '#shared/monitoring'
 
-const [overview, monitoring, releases, issues] = await Promise.all([
+async function fetchAllRedEntities(): Promise<MonitoredEntity[]> {
+  const all: MonitoredEntity[] = []
+  let page = 1
+  const pageSize = 100
+  while (true) {
+    const res = await $fetch<{ asOf: string; threshold: unknown; total: number; rows: MonitoredEntity[] }>(
+      '/api/monitoring/entities',
+      { query: { level: 'RED', page, pageSize } },
+    )
+    const rows = res?.rows ?? []
+    all.push(...rows)
+    if (!rows.length || all.length >= (res?.total ?? 0) || rows.length < pageSize) {
+      break
+    }
+    page++
+  }
+  return all
+}
+
+const [overview, monitoring, releases, issues, stagnationEntities] = await Promise.all([
   useFetch('/api/overview', { key: 'overview' }),
   useFetch('/api/monitoring/status', { key: 'status-monitoring' }),
   useFetch('/api/releases/stats', { key: 'cockpit-releases' }),
   useFetch('/api/issues', { key: 'cockpit-issues', query: { overdue: '1', dept: '0', status: 'UNCLOSED' } }),
+  useAsyncData('cockpit-stagnation-entities', fetchAllRedEntities),
 ])
 const sources = [
-  { name: '工单与异常统计', ...overview }, { name: '停滞红线', ...monitoring },
-  { name: '发放统计', ...releases }, { name: '超期异常清单', ...issues },
+  { name: '工单与异常统计', ...overview },
+  { name: '停滞红线', ...stagnationEntities },
+  { name: '发放统计', ...releases },
+  { name: '超期异常清单', ...issues },
 ]
 const failures = computed(() => sources.filter((s) => s.error.value))
 const loading = computed(() => sources.some((s) => s.pending.value))
-const metrics = computed(() => cockpitMetrics(overview.error.value ? null : overview.data.value, releases.error.value ? null : releases.data.value, monitoring.error.value ? null : monitoring.data.value))
+const metrics = computed(() => cockpitMetrics(
+  overview.error.value ? null : overview.data.value,
+  releases.error.value ? null : releases.data.value,
+  monitoring.error.value ? null : monitoring.data.value,
+))
 const items = computed(() => mergeCockpitItems({
   redWorkOrders: overview.error.value ? [] : overview.data.value?.redWorkOrders ?? [],
   issues: issues.error.value ? [] : issues.data.value ?? [],
-  stagnation: monitoring.error.value ? [] : monitoring.data.value?.top ?? [],
+  stagnation: stagnationEntities.error.value ? [] : stagnationEntities.data.value ?? [],
 }))
 const stages = computed(() => overview.data.value?.stages ?? [])
 const topStage = computed(() => [...stages.value].sort((a, b) => b.count - a.count)[0])
@@ -26,7 +53,9 @@ const stageRiskLinks: Record<string, string> = {
   outsource: '/risks?tab=alerts&rule=W3', kitting: '/risks?tab=alerts&rule=W8', issue: OVERDUE_ISSUES_LINK,
 }
 const stageBars = computed(() => stages.value.map((s) => ({ key: s.key, label: s.label, value: s.count, to: s.link })))
-async function refresh() { await Promise.all(sources.map((s) => s.refresh())) }
+async function refresh() {
+  await Promise.all([...sources.map((s) => s.refresh()), monitoring.refresh()])
+}
 defineExpose({ refresh })
 </script>
 
@@ -43,7 +72,7 @@ defineExpose({ refresh })
       <UiSectionCard title="今天盯什么 · 红色清单" class="cockpit-list" padding="tight">
         <template #title>
           今天盯什么 · 红色清单
-          <UiHelpTip>先红色工单，再超期异常，最后停滞红线；各类内按时长倒序，最多 10 条。工单标题显示总计划预计拖期；下方胶囊取看板业务计数，超过四枚时悬停 +N 查看其余状态，点击进入详情。停滞按 W11 上海自然日计算，包含停工日。</UiHelpTip>
+          <UiHelpTip>一单一行；主问题优先级红色工单 → 超期异常 → 停滞红线；同一工单的其他问题以胶囊列在同行、可点进各自详情；最多 10 单。停滞按 W11 上海自然日计算，包含停工日。</UiHelpTip>
         </template>
         <template #extra>
           <NuxtLink :to="RED_WORK_ORDERS_LINK">全部红色工单</NuxtLink>
@@ -64,9 +93,22 @@ defineExpose({ refresh })
                 </template>
                 <template v-else><UiStatusTag tone="late">{{ item.label }}</UiStatusTag><NuxtLink :to="item.to">{{ item.title }}</NuxtLink></template>
               </template>
-              <template v-if="item.workOrder || item.detail" #desc>
-                <WoStatusCapsules v-if="item.workOrder" :row="item.workOrder" :to="item.to" />
-                <UiStatusTag v-else tone="late">{{ item.detail }}</UiStatusTag>
+              <template v-if="item.workOrder || item.detail || item.also.length" #desc>
+                <div class="cockpit-capsule-row">
+                  <WoStatusCapsules v-if="item.workOrder" :row="item.workOrder" :to="item.to" />
+                  <UiStatusTag v-else-if="item.detail" tone="late">{{ item.detail }}</UiStatusTag>
+                  <span v-if="item.also.length" class="also-capsules">
+                    <NuxtLink
+                      v-for="c in item.also"
+                      :key="c.key"
+                      :to="c.to"
+                      class="also-capsule-link"
+                      :title="c.title + (c.detail ? ' · ' + c.detail : '')"
+                    >
+                      <UiStatusTag tone="late">{{ c.label }} {{ c.duration }}</UiStatusTag>
+                    </NuxtLink>
+                  </span>
+                </div>
               </template>
               <template v-if="!item.workOrder" #meta><WoLink :no="item.workOrderNumber" /> · 责任方：{{ item.responsibility }}</template>
               <template v-if="!item.workOrder" #extra><UiStatusTag tone="late">{{ item.duration }}</UiStatusTag></template>
@@ -98,6 +140,11 @@ defineExpose({ refresh })
 .cockpit-list { overflow-wrap: anywhere; }
 .cockpit-list :deep(.ft-li) { padding: 10px 0; }
 .cockpit-list :deep(.extra) { color: var(--ft-late-text); }
+.cockpit-capsule-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.also-capsules { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.also-capsule-link { display: inline-flex; text-decoration: none; }
+.also-capsule-link:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; border-radius: 999px; }
+.also-capsule-link:hover :deep(.ft-status-tag) { opacity: 0.88; }
 .source-error { margin-bottom: 8px; color: var(--ft-late-text); }
 .week-summary { margin: 0 0 12px; color: var(--ft-text-2); }
 .compact-stage { height: 180px; }
