@@ -4,7 +4,7 @@ import { DUE_GROUP_TEXT, DUE_GROUP_TONE, dueStats, factoryDay, groupByDue, todoD
 definePageMeta({ layout: 'mobile' })
 const { data: me } = await useMe()
 const { data, pending } = await useReminders()
-const { data: todos, pending: todosPending, refresh: refreshTodos } = await useTodos()
+const { data: todos, pending: todosPending, error: todosError, refresh: refreshTodos } = await useTodos()
 const { data: master } = await useMaster()
 const levelType = { RED: 'danger', YELLOW: 'warning', REMIND: 'primary' } as const
 const groups = computed(() => groupReminders(data.value?.items ?? []))
@@ -151,15 +151,15 @@ function scrollToReminders() {
     </div>
     <div class="stats">
       <div class="stat">
-        <div class="stat-num">{{ todoStats.total }}</div>
+        <div class="stat-num">{{ todosPending || todosError ? '—' : todoStats.total }}</div>
         <div class="stat-label"><UiStatusIcon kind="dot" tone="primary" :size="12" />我的待办</div>
       </div>
       <div class="stat" :class="{ hot: todoStats.overdue }">
-        <div class="stat-num" :class="{ 'm-text-late': todoStats.overdue }">{{ todoStats.overdue }}</div>
+        <div class="stat-num" :class="{ 'm-text-late': todoStats.overdue }">{{ todosPending || todosError ? '—' : todoStats.overdue }}</div>
         <div class="stat-label"><UiStatusIcon kind="alert" tone="late" :size="12" />已过期</div>
       </div>
       <div class="stat" :class="{ warm: todoStats.dueToday }">
-        <div class="stat-num" :class="{ 'm-text-risk': todoStats.dueToday }">{{ todoStats.dueToday }}</div>
+        <div class="stat-num" :class="{ 'm-text-risk': todoStats.dueToday }">{{ todosPending || todosError ? '—' : todoStats.dueToday }}</div>
         <div class="stat-label"><UiStatusIcon kind="warn" tone="risk" :size="12" />今天到期</div>
       </div>
     </div>
@@ -201,8 +201,11 @@ function scrollToReminders() {
     </div>
 
     <!-- 我的待办：已过期 / 今天 / 本周 / 以后（/ 未定截止日） -->
-    <div class="m-section">我的待办<span v-if="todos.length" class="m-count">{{ todos.length }}</span></div>
+    <div class="m-section">我的待办<span v-if="!todosPending && !todosError && todos.length" class="m-count">{{ todos.length }}</span></div>
     <van-loading v-if="todosPending" class="m-center" />
+    <van-empty v-else-if="todosError" image="error" description="待办加载失败，请重试" image-size="80">
+      <van-button size="small" type="primary" @click="refreshTodos()">重试</van-button>
+    </van-empty>
     <van-empty v-else-if="!todos.length" description="暂时没有待办" image-size="80" />
     <template v-else>
       <template v-for="g in todoGroups" :key="g.group">

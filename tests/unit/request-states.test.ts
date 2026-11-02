@@ -57,6 +57,33 @@ async function page(file: string) {
   return wrapper
 }
 
+it('手机工作台：待办失败不冒充空列表，可原地重试，加载时隐藏统计，成功空列表保留 0', async () => {
+  const todos = request([], true)
+  vi.stubGlobal('useTodos', async () => todos)
+  vi.stubGlobal('useReminders', async () => request({ items: [], unread: 0, pinned: [] }))
+  vi.stubGlobal('groupReminders', () => [])
+  vi.stubGlobal('logout', vi.fn())
+  const wrapper = await page('app/pages/m/index.vue')
+  const numbers = () => wrapper.findAll('.stat-num').map(node => node.text())
+  expect(wrapper.text()).toContain('待办加载失败，请重试')
+  expect(wrapper.text()).not.toContain('暂时没有待办')
+  expect(numbers()).toEqual(['—', '—', '—'])
+  todos.refresh.mockImplementation(async () => {
+    todos.pending.value = true
+    await Vue.nextTick()
+  })
+  await wrapper.findAll('button').find(b => b.text() === '重试')!.trigger('click')
+  expect(todos.refresh).toHaveBeenCalledTimes(1)
+  expect(wrapper.text()).not.toContain('待办加载失败，请重试')
+  expect(wrapper.text()).not.toContain('暂时没有待办')
+  expect(numbers()).toEqual(['—', '—', '—'])
+  todos.error.value = null
+  todos.pending.value = false
+  await flushPromises()
+  expect(wrapper.text()).toContain('暂时没有待办')
+  expect(numbers()).toEqual(['0', '0', '0'])
+})
+
 const cases = [
   ['releases.vue', '/api/releases', [], '还没有发放单'],
   ['kitting.vue', '/api/kitting', { rows: [], total: 0, stats: null }, '还没有装配节点'],
