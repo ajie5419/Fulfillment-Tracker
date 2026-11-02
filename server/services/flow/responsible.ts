@@ -12,7 +12,7 @@
  */
 import { Prisma, type StepMode } from '@prisma/client'
 // 后台负责人解析只需要工单可见范围，不依赖请求鉴权与角色加载（auth 会反过来加载班组长）。
-import { canSee, resolveScope } from '../auth/scope'
+import { canSee, resolveScopes } from '../auth/scope'
 import { leaderTeamOfStep } from '../../../shared/permissions'
 import { prisma } from '../../utils/prisma'
 
@@ -67,8 +67,7 @@ export async function resolveStepResponsibles(db: Db, steps: ResponsibleStep[], 
   if (opts.lock && teams.length) await db.$queryRaw`SELECT id FROM qms_supplier WHERE id IN (${Prisma.join(teams)}) ORDER BY id FOR SHARE`
   const leaders = await leadersOf(db, teams)
   // 班组长的可见范围（每人只算一次）。后台流程没有请求上下文，不按管理员放宽：班组长同时是"只看本人工单的项目经理"时按项目经理算
-  const scopes = new Map<string, Awaited<ReturnType<typeof resolveScope>>>()
-  for (const id of new Set(leaders.values())) scopes.set(id, await resolveScope(id, false, db))
+  const scopes = await resolveScopes([...leaders.values()], [], db)
   return steps.map((s) => pickResponsible(s, leaders, (uid, wo) => canSee(scopes.get(uid)!, wo)))
 }
 
