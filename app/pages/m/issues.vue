@@ -9,9 +9,14 @@ definePageMeta({ layout: 'mobile' })
 const route = useRoute()
 const router = useRouter()
 
-const tab = ref<string>((route.query.tab as string) || 'todo')
+const tab = computed({
+  get: () => ['all', 'todo', 'responsible', 'reported'].includes(String(route.query.tab)) ? String(route.query.tab) : 'todo',
+  set: value => { void router.replace({ query: { ...route.query, tab: value } }) },
+})
+const workOrderNumber = computed(() => typeof route.query.workOrderNumber === 'string' ? route.query.workOrderNumber : undefined)
+const returnTo = computed(() => typeof route.query.returnTo === 'string' && (route.query.returnTo === '/m/board' || route.query.returnTo.startsWith('/m/board?')) ? route.query.returnTo : undefined)
 const { data: rows, pending, error, refresh } = await useFetch('/api/issues', {
-  query: computed(() => ({ mine: tab.value, status: tab.value === 'todo' ? 'UNCLOSED' : undefined, dept: '0' })),
+  query: computed(() => ({ mine: tab.value === 'all' ? undefined : tab.value as 'todo' | 'responsible' | 'reported', status: tab.value === 'todo' || tab.value === 'all' ? 'UNCLOSED' : undefined, dept: '0', workOrderNumber: workOrderNumber.value })),
   default: () => [],
 })
 
@@ -45,7 +50,7 @@ const { data: detail, pending: detailPending, error: detailError, refresh: refre
   { default: () => null },
 )
 watch([tab, selected], ([t, id]) => {
-  if (import.meta.client) router.replace({ query: { tab: t, id: id || undefined } })
+  if (import.meta.client) router.replace({ query: { ...route.query, tab: t, id: id || undefined } })
 })
 
 // ───── 操作 ─────
@@ -87,7 +92,9 @@ const logText = (l: Detail['logs'][number]) =>
         <van-button size="small" type="danger" round icon="plus" @click="navigateTo('/m/issue-new')">上报</van-button>
       </template>
     </van-nav-bar>
+    <van-cell v-if="workOrderNumber" :title="`工单：${workOrderNumber}`" :to="returnTo" :is-link="!!returnTo" value="返回统计" />
     <van-tabs v-model:active="tab">
+      <van-tab title="未关闭异常" name="all" />
       <van-tab title="等我处理" name="todo" />
       <van-tab title="我负责" name="responsible" />
       <van-tab title="我上报" name="reported" />

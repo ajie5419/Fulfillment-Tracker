@@ -12,6 +12,7 @@ import { NO_DEPT, RISK_SEVERITIES, RISK_SEVERITY_TEXT, factoryTimeText, riskTall
 
 const route = useRoute()
 const router = useRouter()
+const returnTo = computed(() => typeof route.query.returnTo === 'string' && route.query.returnTo.startsWith('/board?') ? route.query.returnTo : undefined)
 const { data: me } = await useMe()
 const { data: workOrders } = await useWorkOrders()
 
@@ -71,6 +72,7 @@ watch(
     if (!import.meta.client) return
     router.replace({
       query: {
+        returnTo: returnTo.value,
         tab: tab.value,
         wo: filter.workOrderNumber,
         rule: filter.rule,
@@ -231,6 +233,7 @@ function clearFilters() {
 <template>
   <div>
   <div class="risks">
+    <NuxtLink v-if="returnTo" :to="returnTo">返回全盘统计（保留条件）</NuxtLink>
     <UiPageHero title="风险与异常监控" :summary="heroSummary">
       <template #titleAfter>
         <UiHelpTip label="风险页说明">预警由扫描任务每 15 分钟更新，对象状态变化后自动消除；红色预警（W1–W3）会自动转成异常。电脑上点右上角"上报异常"；手机上打开手机端"异常"→"上报异常"。系统会把 QMS 检验不合格和红色预警自动转成异常。</UiHelpTip>
