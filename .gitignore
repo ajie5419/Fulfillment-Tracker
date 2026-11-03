@@ -12,3 +12,13 @@ certs/
 *.pem
 *.log
 .DS_Store
+
+# Local agent tools and worktrees
+/.alma/
+/.alma-snapshots
+/.playwright-cli/
+/.worktrees/
+
+# Local runtime artifacts and alternate lockfile
+/logs/
+/bun.lock
