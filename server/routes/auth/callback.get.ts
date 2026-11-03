@@ -14,7 +14,6 @@ function sameString(a: string, b: string) {
 export default defineEventHandler(async (event) => {
   const { code, state, error } = getQuery(event)
   const cookieState = getCookie(event, LOGIN_STATE_COOKIE)
-  deleteCookie(event, LOGIN_STATE_COOKIE, { path: '/auth/' })
 
   if (error) throw createError({ statusCode: 400, statusMessage: 'QMS 拒绝了登录授权' })
   if (typeof code !== 'string' || typeof state !== 'string' || !code || !state) {
@@ -23,6 +22,7 @@ export default defineEventHandler(async (event) => {
   if (!cookieState || !sameString(state, cookieState)) {
     throw createError({ statusCode: 400, statusMessage: '登录来源不符，请重新登录' })
   }
+  deleteCookie(event, LOGIN_STATE_COOKIE, { path: '/auth/' })
   const pending = await consumeLogin(prisma, state)
   if (!pending) throw createError({ statusCode: 400, statusMessage: '登录已过期或已使用，请重新登录' })
 
