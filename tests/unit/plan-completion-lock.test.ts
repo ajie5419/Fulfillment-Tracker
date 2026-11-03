@@ -8,6 +8,7 @@ const now = new Date('2026-11-02T04:00:00Z')
 const node = { id: 'parent', workOrderNumber: 'WO', manualDoneAt: null }
 beforeEach(() => {
   resetServiceDb()
+  returns('offDay.findMany', [])
   returns('planNode.findUnique', node)
   returns('planNode.findUniqueOrThrow', node)
   returns('workOrderPlan.upsert', {})

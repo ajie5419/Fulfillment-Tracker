@@ -24,6 +24,9 @@ export interface PlanTask {
   canDone: boolean
 }
 export interface PlanNodeRow {
+  dateConflict?: boolean
+  dateConflicts: import('./plan-schedule').PlanDateConflict[]
+  expectedStartDate: string | null
   id: string
   seq: number
   /** 大纲编号：阶段.节点.子节点（没用阶段时 节点.子节点） */
@@ -82,6 +85,7 @@ export interface PlanNodeRow {
   canComplete: boolean
 }
 export interface PlanView {
+  dateConflicts: import('./plan-schedule').PlanDateConflict[]
   workOrder: { workOrderNumber: string; projectName: string | null; customerName: string | null; deliveryDate: string | null; projectManagerName: string | null }
   plan: { status: 'DRAFT' | 'PUBLISHED'; templateName: string | null; publishedAt: string | null; publishedByName: string | null } | null
   expectedDelivery: string | null
@@ -112,6 +116,7 @@ export interface DeptPlanNode extends PlanNodeRow {
   tab: 'pending' | 'returned' | 'active' | 'done'
 }
 export interface DeptPlanGroup {
+  dateConflicts: import('./plan-schedule').PlanDateConflict[]
   workOrder: PlanView['workOrder']
   expectedDelivery: string | null
   deliveryDelayDays: number | null

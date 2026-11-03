@@ -75,6 +75,7 @@ export async function deptPlan(ctx: RoleContext, visible: string[] | undefined, 
         }))
       return {
         workOrder: p.workOrder,
+        dateConflicts: p.dateConflicts,
         expectedDelivery: p.expectedDelivery,
         deliveryDelayDays: p.deliveryDelayDays,
         publishedDay: p.plan?.publishedAt ? shanghaiDay(p.plan.publishedAt) : null,

@@ -31,17 +31,19 @@ export const BOARD_TEXT: Readonly<Record<BoardColorKey, string>> = { RED: '红',
  * 节点状态（总计划时间线、项目总览的节点圆点共用）：
  *   DONE 已完成；SOURCE 源头延误（自身就晚了）；UPSTREAM 受上游影响（只因前面节点顺延而晚）；ON_TRACK 按计划（还没完成、不晚）。
  */
-export type NodeState = 'DONE' | 'SOURCE' | 'UPSTREAM' | 'ON_TRACK'
-export const NODE_STATE_TEXT: Readonly<Record<NodeState, string>> = { DONE: '已完成', SOURCE: '源头延误', UPSTREAM: '受上游影响', ON_TRACK: '按计划' }
+export type NodeState = 'DONE' | 'SOURCE' | 'UPSTREAM' | 'ON_TRACK' | 'REVIEW'
+export const NODE_STATE_TEXT: Readonly<Record<NodeState, string>> = { DONE: '已完成', SOURCE: '源头延误', UPSTREAM: '受上游影响', ON_TRACK: '按计划', REVIEW: '日期待核实' }
 export const NODE_STATE_COLOR: Readonly<Record<NodeState, string>> = {
   DONE: STATUS_COLOR.done,
   SOURCE: STATUS_COLOR.late,
   UPSTREAM: STATUS_COLOR.upstream,
   ON_TRACK: STATUS_COLOR.onTrack,
+  REVIEW: STATUS_COLOR.risk,
 }
 
 /** 由总计划预计结果（server/services/plan/constants.ts 的 NodeEstimate）归类；源头优先于受上游影响 */
-export function nodeState(n: { done: boolean; source: boolean; upstream: boolean }): NodeState {
+export function nodeState(n: { done: boolean; source: boolean; upstream: boolean; dateConflict?: boolean }): NodeState {
+  if (n.dateConflict) return 'REVIEW'
   if (n.done) return 'DONE'
   if (n.source) return 'SOURCE'
   if (n.upstream) return 'UPSTREAM'
@@ -127,7 +129,8 @@ export const BOARD_GROUP_TEXT: Readonly<Record<BoardGroup, string>> = { LATE: '�
  *   有源头延误节点，或看板红 / 黄 → RISK；
  *   否则 OK。
  */
-export function boardGroup(r: { hasPlan: boolean; delayDays: number | null; delayedPlanNodes: number; color: BoardColorKey }): BoardGroup {
+export function boardGroup(r: { hasPlan: boolean; delayDays: number | null; delayedPlanNodes: number; color: BoardColorKey; dateConflicts?: readonly unknown[] }): BoardGroup {
+  if (r.dateConflicts?.length) return 'RISK'
   if (!r.hasPlan) return 'NO_PLAN'
   if ((r.delayDays ?? 0) > 0) return 'LATE'
   if (r.delayedPlanNodes > 0 || r.color !== 'GREEN') return 'RISK'
@@ -152,8 +155,8 @@ export function sortActions<T extends ActionItem>(items: T[]): T[] {
 }
 
 /** Distinct work orders with a warning, issue, shortage or schedule risk. */
-export function hasWorkOrderRisk(r: { redAlerts: number; yellowAlerts: number; openIssues: number; shortage: number; incompleteNodes: number; delayedPlanNodes: number; delayDays: number | null }): boolean {
-  return r.redAlerts > 0 || r.yellowAlerts > 0 || r.openIssues > 0 || r.shortage > 0 || r.incompleteNodes > 0 || r.delayedPlanNodes > 0 || (r.delayDays ?? 0) > 0
+export function hasWorkOrderRisk(r: { redAlerts: number; yellowAlerts: number; openIssues: number; shortage: number; incompleteNodes: number; delayedPlanNodes: number; delayDays: number | null; dateConflicts?: readonly unknown[] }): boolean {
+  return !!r.dateConflicts?.length || r.redAlerts > 0 || r.yellowAlerts > 0 || r.openIssues > 0 || r.shortage > 0 || r.incompleteNodes > 0 || r.delayedPlanNodes > 0 || (r.delayDays ?? 0) > 0
 }
 
 /** 总览关注分区允许重叠：风险卡片就是两区并集（按工单去重）。 */

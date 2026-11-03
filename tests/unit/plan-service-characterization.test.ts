@@ -23,6 +23,7 @@ const n = node()
 
 beforeEach(() => {
   resetServiceDb()
+  returns('offDay.findMany', [])
   vi.useFakeTimers(); vi.setSystemTime(now)
   returns('alert.updateMany', { count: 1 })
   returns('todo.updateMany', { count: 1 })
@@ -79,6 +80,17 @@ describe('plan service 搬移前特征', () => {
     returns('workOrderPlan.findUniqueOrThrow', { status: 'DRAFT' })
     returns('planNode.findMany', [n, node('n2', { parentId: 'n1' })])
     expect({ result: await plan.publishPlan('WO 1', 'actor'), calls: serviceCalls }).toMatchSnapshot()
+  })
+
+  it('日期冲突在发布事务内拦截，未写基线或发送确认且回滚', async () => {
+    returns('workOrderPlan.findUniqueOrThrow', { status: 'DRAFT' })
+    returns('planNode.findMany', [node('n1', { startDate: d('2026-11-03'), planDate: d('2026-12-24') }), node('n2', { seq: 2, startDate: d('2026-11-04'), planDate: d('2026-11-29') })])
+    await expect(plan.publishPlan('WO 1', 'actor')).rejects.toMatchObject({ statusCode: 409 })
+    expect(method('planNode.update')).not.toHaveBeenCalled()
+    expect(method('todo.createMany')).not.toHaveBeenCalled()
+    expect(method('workOrderPlan.update')).not.toHaveBeenCalled()
+    expect(serviceCalls.at(-1)).toEqual(['transaction.rollback'])
+    expect(serviceCalls.findIndex(([kind]) => kind === '$queryRaw')).toBeLessThan(serviceCalls.findIndex(([kind]) => kind === 'offDay.findMany'))
   })
 
   it('已发布节点改日期：锁、校验、写日志、重新确认、汇总、清除延误预警', async () => {

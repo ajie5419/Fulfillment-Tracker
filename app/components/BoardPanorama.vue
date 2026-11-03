@@ -81,7 +81,9 @@ defineExpose({ refresh })
             <MCard v-if="mobile" :tone="row.color === 'GREEN' ? 'done' : row.color === 'RED' ? 'late' : 'risk'">
               <div class="m-title">{{ row.workOrderNumber }} {{ row.projectName }}</div>
               <div class="m-meta">{{ woStatusText(row.status) }} · {{ row.projectManagerName || '未指定项目经理' }}</div>
+              <PlanDateConflicts :conflicts="row.dateConflicts" />
               <div class="order-actions">
+                <NuxtLink :to="`/m/plan?wo=${encodeURIComponent(row.workOrderNumber)}`">计划日期核查</NuxtLink>
                 <NuxtLink :to="`/wo/${encodeURIComponent(row.workOrderNumber)}`">工单详情</NuxtLink>
                 <NuxtLink :to="processing(row.workOrderNumber)">处理异常事项（{{ row.openIssues }}）</NuxtLink>
               </div>

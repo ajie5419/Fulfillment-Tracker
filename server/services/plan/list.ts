@@ -59,6 +59,7 @@ async function planRows(visibleWorkOrders: string[] | undefined, ctx: RoleContex
       unsplit: published ? est.filter((e) => !e.done && e.taskCount === 0).length : 0,
       /** 已发布：源头延误节点（自身就已延误） */
       sourceNodes: published ? (plan?.forecast.sourceNodes ?? 0) : 0,
+      dateConflicts: plan?.forecast.dateConflicts ?? [],
       expectedDelivery: published ? (plan?.forecast.expectedDelivery ?? null) : null,
       delayDays: published ? (plan?.forecast.deliveryDelayDays ?? null) : null,
       publishedDay: published && plan?.publishedAt ? dateFieldDay(plan.publishedAt) : null,

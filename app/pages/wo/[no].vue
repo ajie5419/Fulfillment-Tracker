@@ -98,8 +98,9 @@ const STATE_DEPT_TEXT: Record<NodeState, (n: { selfDelayDays: number; delayDays:
   SOURCE: (n) => `源头延误 ${n.selfDelayDays} 天`,
   UPSTREAM: (n) => `受上游影响 ${n.delayDays} 天`,
   ON_TRACK: () => '按计划',
+  REVIEW: () => '日期待核实',
 }
-const STATE_CLASS: Record<NodeState, string> = { DONE: 'ft-text-done', SOURCE: 'ft-text-late', UPSTREAM: 'ft-text-upstream', ON_TRACK: 'ft-muted' }
+const STATE_CLASS: Record<NodeState, string> = { DONE: 'ft-text-done', SOURCE: 'ft-text-late', UPSTREAM: 'ft-text-upstream', ON_TRACK: 'ft-muted', REVIEW: 'ft-text-risk' }
 
 // 展开的节点（#node-<id> 定位）
 const expanded = ref(new Set<string>())

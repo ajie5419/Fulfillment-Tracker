@@ -1,8 +1,8 @@
 /** 节点自动完成、前置顺延与余量；纯函数，不访问数据库。 */
-import { addDays, dayDiff } from '../../../shared/dates'
+import { addDays, dayDiff, nextFactoryWorkDay } from '../../../shared/dates'
 import type { TaskFacts, NodeFacts, NodeEstimate } from './estimate-types'
 import { estimateTask } from './task-estimates'
-import { treeOrder, resolvePreds, childrenOf, topoOrder, waitsOn, pushersOf, linkFloat, lastTopNode } from './graph'
+import { treeOrder, resolvePreds, childrenOf, topoOrder, waitsOn, pushersOf, lastTopNode } from './graph'
 
 const maxDay = (a: string, b: string) => (a >= b ? a : b)
 
@@ -22,7 +22,7 @@ export function autoDone(tasks: TaskFacts[], today: string): { done: boolean; da
  * 挂靠任务和子节点都完成才自动完成。
  * deliveryDay 给了时再从最后一个一级节点往前算余量（slackDays）。
  */
-export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: string): NodeEstimate[] {
+export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: string, offDays: ReadonlySet<string> = new Set()): NodeEstimate[] {
   const nodes = treeOrder(input)
   const ids = nodes.map((n) => n.id)
   let preds = resolvePreds(nodes)
@@ -40,8 +40,9 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
   /** 前置 p 把 n 推到哪天（扣掉连接余量；可能早于 n 的计划日 = 不推）；p 是 n 的子节点时就是 p 的预计日 */
   const pushOf = (p: NodeEstimate, n: NodeFacts) => {
     if (parentOf.get(p.id) === n.id) return p.expectedDay
-    const pPlan = byId.get(p.id)!.planDay
-    return addDays(n.planDay, dayDiff(pPlan, p.expectedDay) - linkFloat(pPlan, n.startDay))
+    const earliest = nextFactoryWorkDay(p.expectedDay, offDays)
+    if (!n.startDay) return maxDay(addDays(n.planDay, dayDiff(byId.get(p.id)!.planDay, p.expectedDay)), earliest)
+    return addDays(earliest, Math.max(0, dayDiff(n.startDay, n.planDay)))
   }
   /** 能推后节点的：有子任务的父任务是汇总行，只看子任务（自己的前置只当子任务的默认前置，不直接推它）；其余看前置 */
   const pushers = (id: string) => pushersOf({ children: kids.get(id)!, preds: preds.get(id)! })
@@ -99,6 +100,7 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
       doneBy,
       actualDay,
       expectedDay,
+      expectedStartDay: actualDay || !n.startDay || myKids.length ? null : myPreds.reduce((start, pred) => maxDay(start, nextFactoryWorkDay(est.get(pred)?.expectedDay ?? n.planDay, offDays)), n.startDay),
       delayDays: dayDiff(n.planDay, expectedDay),
       driver,
       selfExpectedDay,

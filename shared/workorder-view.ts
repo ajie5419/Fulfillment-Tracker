@@ -7,6 +7,7 @@ export type TaskState = 'DONE' | 'OVERDUE' | 'LATE' | 'EXCLUDED' | 'NORMAL'
 
 /** 工单详情 DTO；字段及可空性对应原 getWorkOrderDetail 推导结果。 */
 export interface WorkOrderDetail {
+  dateConflicts: import('./plan-schedule').PlanDateConflict[]
   today: string
   workOrder: {
     workOrderNumber: string
