@@ -260,12 +260,12 @@ export interface NodeKit extends KitCount {
 }
 
 /** 只要状态（扫描、计数用）：两次查询 */
-export async function loadKitCounts(nodes: NodeWithLinks[]): Promise<Map<string, KitCount>> {
+export async function loadKitCounts(nodes: NodeWithLinks[], db: Tx = prisma): Promise<Map<string, KitCount>> {
   const partIds = uniq(nodes.flatMap((n) => n.parts.map((p) => p.partId)))
   const lineIds = uniq(nodes.flatMap((n) => n.purchases.map((p) => p.purchaseLineId)))
   const [parts, lines] = await Promise.all([
-    partIds.length ? prisma.part.findMany({ where: { id: { in: partIds } }, select: { id: true, status: true, statusSince: true, steps: { select: { status: true } } } }) : [],
-    lineIds.length ? prisma.purchaseLine.findMany({ where: { id: { in: lineIds } }, select: { id: true, status: true, arrivedDate: true } }) : [],
+    partIds.length ? db.part.findMany({ where: { id: { in: partIds } }, select: { id: true, status: true, statusSince: true, steps: { select: { status: true } } } }) : [],
+    lineIds.length ? db.purchaseLine.findMany({ where: { id: { in: lineIds } }, select: { id: true, status: true, arrivedDate: true } }) : [],
   ])
   const partOf = new Map(parts.map((p) => [p.id, p]))
   const lineOf = new Map(lines.map((l) => [l.id, l]))

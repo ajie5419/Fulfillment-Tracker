@@ -1,5 +1,6 @@
 /** 总计划读服务：保留原查询、预测与投影调用时机。 */
 import { prisma } from '../../utils/prisma'
+import type { Prisma } from '@prisma/client'
 import { dateFieldDay } from '../alerts/rules'
 import { BUSINESS_DEPT_NAME } from '../auth/departments'
 import type { RoleContext } from '../auth/permissions'
@@ -17,8 +18,8 @@ const day = (d: Date) => dateFieldDay(d)
  * 读一批工单的总计划并算预计（总计划页、看板、领导总览、每日汇总、W9 扫描共用，口径一致）。
  * publishedOnly：只要已发布的（预警、统计只看已发布的）。每类挂靠记录一次查询，不随节点数增加查询次数。
  */
-export async function loadPlans(filter: { workOrderNumbers?: string[]; publishedOnly?: boolean }, now = new Date()): Promise<Map<string, PlanData>> {
-  const sources = await loadPlanSources(filter, now)
+export async function loadPlans(filter: { workOrderNumbers?: string[]; publishedOnly?: boolean }, now = new Date(), db: Prisma.TransactionClient = prisma): Promise<Map<string, PlanData>> {
+  const sources = await loadPlanSources(filter, now, db)
   if (!sources) return new Map()
   return calculatePlans(sources)
 }

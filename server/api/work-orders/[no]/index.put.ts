@@ -9,5 +9,7 @@ export default defineFlowHandler(async (event) => {
   const no = routeId(event, 'no')
   await assertCanSee(event, no)
   const input = await parseBody(event, updateWorkOrderBody)
-  return updateWorkOrder(await getRoleContext(event), no, input, qmsWorkOrderApi(event))
+  const result = await updateWorkOrder(await getRoleContext(event), no, input, qmsWorkOrderApi(event))
+  if (result.recovery) setResponseStatus(event, 202)
+  return result
 })
