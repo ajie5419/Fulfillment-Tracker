@@ -8,9 +8,11 @@ import { planDateConflicts } from './date-conflicts'
 export function forecastPlan(nodes: NodeFacts[], deliveryDay: string, today: string, offDays: ReadonlySet<string> = new Set()): PlanForecast {
   const est = estimateNodes(nodes, today, deliveryDay, offDays)
   const dateConflicts = planDateConflicts(nodes, offDays, est)
+  const conflictNodeIds = new Set(dateConflicts.map((conflict) => conflict.nodeId))
   if (dateConflicts.length) for (const node of est) {
     node.slackDays = null
-    node.dateConflict = true
+    // 计划级风险由 dateConflicts 承载；节点分类只标本节点的日期问题。
+    if (conflictNodeIds.has(node.id)) node.dateConflict = true
   }
   const lastId = lastTopNode(nodes)?.id ?? null
   const last = est.find((e) => e.id === lastId)

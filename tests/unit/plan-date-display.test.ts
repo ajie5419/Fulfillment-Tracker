@@ -50,5 +50,6 @@ describe('日期冲突双端展示与权限契约', () => {
     expect(boardGroup(row)).toBe('RISK')
     expect(boardRiskSections([row]).RISK).toEqual([row])
     expect(nodeState({ done: false, source: false, upstream: false, dateConflict: true })).toBe('REVIEW')
+    expect(nodeState({ done: true, source: false, upstream: false, dateConflict: true })).toBe('DONE')
   })
 })

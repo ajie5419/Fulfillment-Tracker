@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { forecastPlan } from '../../server/services/plan/forecast'
 import type { NodeFacts } from '../../server/services/plan/estimate-types'
+import { nodeState } from '../../shared/status'
 
 const node = (id: string, startDay: string | null, planDay: string, preds: string[] = []): NodeFacts => ({ id, name: id, startDay, planDay, preds, manualDoneDay: null, tasks: [] })
 const today = '2026-11-01'
@@ -44,6 +45,19 @@ describe('FS 日期冲突及真实计算输出', () => {
     expect(result.dateConflicts.map((conflict) => conflict.code)).toEqual(['MISSING_START'])
     expect(result.expectedDelivery).toBeNull()
     expect(result.nodes[1]?.slackDays).toBeNull()
+  })
+
+  it('后续缺开始日不覆盖已完成节点，也不把计划级冲突复制给正常节点', () => {
+    const result = forecastPlan([
+      { ...node('已完成', null, '2026-11-01'), manualDoneDay: '2026-10-31' },
+      node('缺开始日', null, '2026-11-06', ['已完成']),
+      node('正常并行', null, '2026-11-08'),
+    ], '2026-11-20', today)
+    expect(result.dateConflicts).toEqual([expect.objectContaining({ code: 'MISSING_START', nodeId: '缺开始日' })])
+    expect(result.nodes.map(nodeState)).toEqual(['DONE', 'REVIEW', 'ON_TRACK'])
+    expect(result.nodes.filter((entry) => entry.dateConflict).map((entry) => entry.id)).toEqual(['缺开始日'])
+    expect(result.expectedDelivery).toBeNull()
+    expect(result.nodes.every((entry) => entry.slackDays === null)).toBe(true)
   })
 
   it('无依赖并行不误报，交付仍取末一级而不是最晚节点', () => {

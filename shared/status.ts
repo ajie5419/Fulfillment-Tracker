@@ -43,8 +43,8 @@ export const NODE_STATE_COLOR: Readonly<Record<NodeState, string>> = {
 
 /** 由总计划预计结果（server/services/plan/constants.ts 的 NodeEstimate）归类；源头优先于受上游影响 */
 export function nodeState(n: { done: boolean; source: boolean; upstream: boolean; dateConflict?: boolean }): NodeState {
-  if (n.dateConflict) return 'REVIEW'
   if (n.done) return 'DONE'
+  if (n.dateConflict) return 'REVIEW'
   if (n.source) return 'SOURCE'
   if (n.upstream) return 'UPSTREAM'
   return 'ON_TRACK'

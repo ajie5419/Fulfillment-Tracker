@@ -119,9 +119,21 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
       tasks,
     })
   }
-  // 余量：最后一个一级节点 = 交期 - 预计日；往前每个节点取各后续节点（含上级）"连接上还能晚的天数 + 后续节点的余量"里最小的
+  // 余量：从交期反推各节点最晚完成日，再与当前预计日比较；多个后续取最紧约束。
   const last = order ? lastTopNode(nodes) : nodes.at(-1)
   if (deliveryDay && last) {
+    /** pushOf 的逆约束：汇总边同日；FS 边保留自然日工期，并反查最晚可开工的工厂工作日。 */
+    const latestPusherDay = (p: NodeFacts, n: NodeFacts, latestFinish: string) => {
+      if (parentOf.get(p.id) === n.id) return latestFinish
+      const duration = n.startDay ? Math.max(0, dayDiff(n.startDay, n.planDay)) : 0
+      let latestStart = addDays(latestFinish, -duration)
+      while (offDays.has(latestStart)) latestStart = addDays(latestStart, -1)
+      const latestPred = addDays(latestStart, -1)
+      if (n.startDay) return latestPred
+      // 旧数据的 pushOf 是 max(原计划间隔顺延, 次一工作日)，两条约束都必须满足。
+      const intervalLimit = addDays(p.planDay, dayDiff(n.planDay, latestFinish))
+      return latestPred < intervalLimit ? latestPred : intervalLimit
+    }
     const slack = new Map<string, number>()
     if (!est.get(last.id)!.done) slack.set(last.id, dayDiff(est.get(last.id)!.expectedDay, deliveryDay))
     const succ = new Map<string, string[]>(ids.map((id) => [id, []]))
@@ -132,8 +144,10 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
       let best: number | null = null
       for (const s of succ.get(id)!) {
         const ss = slack.get(s)
-        if (ss == null || est.get(s)!.done) continue
-        const v = dayDiff(pushOf(me, byId.get(s)!), est.get(s)!.expectedDay) + ss
+        const successor = est.get(s)!
+        if (ss == null || successor.done) continue
+        const latestFinish = addDays(successor.expectedDay, ss)
+        const v = dayDiff(me.expectedDay, latestPusherDay(byId.get(id)!, byId.get(s)!, latestFinish))
         if (best == null || v < best) best = v
       }
       if (best != null) slack.set(id, best)

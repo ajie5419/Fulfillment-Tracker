@@ -111,9 +111,9 @@ describe.skipIf(!DB)('部门计划二次分解', () => {
     await db.workOrderExt.createMany({ data: [WO, OTHER_WO].map((w) => ({ workOrderNumber: w, projectManagerId: 'u-pm' })) })
     // 草稿时建好总计划和工序（工序先不挂）
     await s.plan.createNode(WO, { name: '合同评审', dept: 'PROJECT', planDate: dayOff(10) }, 'u-pm')
-    await s.plan.createNode(WO, { name: '设计出图', dept: 'TECH', planDate: dayOff(20) }, 'u-pm')
-    await s.plan.createNode(WO, { name: '组焊', dept: 'PRODUCTION', planDate: dayOff(40) }, 'u-pm')
-    await s.plan.createNode(WO, { name: '发运', dept: 'PROJECT', planDate: dayOff(60) }, 'u-pm')
+    await s.plan.createNode(WO, { name: '设计出图', dept: 'TECH', startDate: dayOff(11), planDate: dayOff(20) }, 'u-pm')
+    await s.plan.createNode(WO, { name: '组焊', dept: 'PRODUCTION', startDate: dayOff(21), planDate: dayOff(40) }, 'u-pm')
+    await s.plan.createNode(WO, { name: '发运', dept: 'PROJECT', startDate: dayOff(41), planDate: dayOff(60) }, 'u-pm')
     const part = await s.steps.createPart(WO, { name: '主梁', quantity: 1 })
     const a = await s.steps.addStep(part.id, { processId: 'P-CUT', mode: 'SELF', ownerId: 'u-prodhead', dueDate: dayOff(30) }, 'u-prodhead')
     const b = await s.steps.addStep(part.id, { processId: 'P-WELD', mode: 'SELF', ownerId: 'u-prodhead', dueDate: dayOff(38) }, 'u-prodhead')

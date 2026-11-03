@@ -158,7 +158,6 @@ exports[`plan/constants 搬移前固定输入 / 固定输出 > 源头延误、�
     {
       "actualDay": null,
       "children": [],
-      "dateConflict": true,
       "delayDays": 3,
       "done": false,
       "doneBy": null,
