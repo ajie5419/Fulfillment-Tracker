@@ -8,7 +8,7 @@ import type { PlanListStatus } from '../../../shared/plan'
  * 只列在做的工单（已完工 / 已取消默认隐藏，withClosed 另列出），范围按当前用户可见工单。
  */
 import { prisma } from '../../utils/prisma'
-import { dateFieldDay } from '../alerts/rules'
+import { dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { canOperate, type RoleContext } from '../auth/permissions'
 import { loadNames } from '../flow/names'
 import { ACTIVE_WO_WHERE } from '../workorder/active'
@@ -62,7 +62,7 @@ async function planRows(visibleWorkOrders: string[] | undefined, ctx: RoleContex
       dateConflicts: plan?.forecast.dateConflicts ?? [],
       expectedDelivery: published ? (plan?.forecast.expectedDelivery ?? null) : null,
       delayDays: published ? (plan?.forecast.deliveryDelayDays ?? null) : null,
-      publishedDay: published && plan?.publishedAt ? dateFieldDay(plan.publishedAt) : null,
+      publishedDay: published && plan?.publishedAt ? shanghaiDay(plan.publishedAt) : null,
       publishedByName: published ? user(m?.publishedBy) : null,
       /** 能编制 / 发布 / 调整（该工单项目经理、项目部、管理员） */
       canEdit: canOperate(ctx, 'plan', { workOrderNumber: wo }),
