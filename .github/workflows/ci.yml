@@ -1,7 +1,6 @@
 name: CI
 
-# 合并前必须全绿。只跑单元测试：tests/integration 需要真实 MySQL 且开头清表，
-# 不能放在共享 runner 上（见 docs/代码质量审查.md E03）。
+# 合并前必须全绿。集成测试只连接独立 job 的临时 MySQL 测试库。
 on:
   pull_request:
   push:
@@ -46,3 +45,47 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  integration:
+    name: MySQL integration tests
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: integration_root
+          MYSQL_DATABASE: fulfillment_test
+          MYSQL_USER: fulfillment
+          MYSQL_PASSWORD: integration_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=127.0.0.1 --password=integration_root"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      TEST_DATABASE_URL: mysql://fulfillment:integration_test@127.0.0.1:3306/fulfillment_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        run: pnpm build
+      - name: Deploy test schema
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        run: pnpm exec prisma migrate deploy
+      - name: Integration tests
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        run: pnpm test:integration

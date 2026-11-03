@@ -440,20 +440,25 @@ export async function rejectNode(id: string, reason: string, actorId: string) {
 export async function completeNode(id: string, date: Date | null | undefined, actorId: string, now = new Date()) {
   const d = date ?? todayDate(now)
   if (day(d) > shanghaiDay(now)) throw new FlowError('完成日期不能晚于今天')
-  // 有子节点的：子节点都完成才能完成（子节点都完成时会自动完成）
-  const kids = await prisma.planNode.findMany({ where: { parentId: id }, select: { id: true, name: true, workOrderNumber: true } })
-  if (kids.length) {
-    const est = (await loadPlans({ workOrderNumbers: [kids[0]!.workOrderNumber] }, now)).get(kids[0]!.workOrderNumber)?.forecast.nodes ?? []
-    const undone = kids.filter((k) => !est.find((e) => e.id === k.id)?.done)
-    if (undone.length) throw new FlowError(`还有子节点没完成：${undone.map((k) => k.name).join('、')}（子节点都完成后会自动完成）`)
-  }
   return prisma.$transaction(async (tx) => {
+    // 和创建 / 调整节点一致：计划行 → 节点行。定位读只取工单号，不能用它判断完成条件。
+    const target = await tx.planNode.findUnique({ where: { id }, select: { workOrderNumber: true } })
+    if (!target) throw new FlowError('总计划节点不存在')
+    await lockPlan(tx, target.workOrderNumber, actorId)
     const { node } = await lockNode(tx, id)
     if (node.manualDoneAt) throw new FlowError('这个节点已经标记完成了，请刷新')
+    // 本事务显式使用 READ COMMITTED：锁后重读子节点和预测来源，不能沿用定位读的 RR 快照。
+    const kids = await tx.planNode.findMany({ where: { parentId: id }, select: { id: true, name: true } })
+    if (kids.length) {
+      const est = (await loadPlans({ workOrderNumbers: [node.workOrderNumber] }, now, tx)).get(node.workOrderNumber)?.forecast.nodes ?? []
+      const done = new Set(est.filter((e) => e.done).map((e) => e.id))
+      const undone = kids.filter((k) => !done.has(k.id))
+      if (undone.length) throw new FlowError(`还有子节点没完成：${undone.map((k) => k.name).join('、')}（子节点都完成后会自动完成）`)
+    }
     await tx.planNode.update({ where: { id }, data: { actualDate: d, manualDoneBy: actorId, manualDoneAt: now } })
     await clearAlertKeys(tx, [w9Key(id), w9SplitKey(id)])
     return { id, actualDate: day(d) }
-  })
+  }, { isolationLevel: 'ReadCommitted' })
 }
 
 /** 撤销手动完成（自动完成的不能撤销：挂靠任务还都是完成状态） */

@@ -47,7 +47,7 @@ describe('issues service 搬移前特征', () => {
     expect({ result: await operations[action](), calls: serviceCalls }).toMatchSnapshot()
   })
 
-  it('手工上报：工单、工件、供应商、默认责任、编号、图片绑定、日志依次执行', async () => {
+  it('手工上报：先读默认责任，事务内工单、工件、供应商、编号、图片绑定、日志依次执行', async () => {
     expect({ result: await issues.createIssue({ workOrderNumber: 'WO', partId: 'part', category: 'OUTSOURCE_QUALITY', description: '  说明  ', title: ' 标题 ', photoIds: ['photo', 'photo'], responsibleSupplierId: 'supplier' }, 'owner'), calls: serviceCalls }).toMatchSnapshot()
   })
 

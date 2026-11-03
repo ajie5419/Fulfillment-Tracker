@@ -1,6 +1,9 @@
 /** 履约新建 / 修改 / 取消工单（写入 QMS 工单库）接口的 zod 片段。交期用 dayString（'YYYY-MM-DD' 原样发给 QMS） */
 import { z } from 'zod'
 import { dayString } from './flow'
+import { MAX_IDEMPOTENCY_KEY_LENGTH } from '../../shared/work-order-save'
+
+const idempotencyKey = z.string().trim().min(1).max(MAX_IDEMPOTENCY_KEY_LENGTH).optional()
 
 const optText = (max: number, label: string) =>
   z
@@ -29,6 +32,7 @@ export const cancelWorkOrderBody = z.object({ version: version.nullable() }).str
 
 export const createWorkOrderBody = z
   .object({
+    idempotencyKey,
     workOrderNumber: z.string().trim().min(1, '请填写工单号').max(64, '工单号最多 64 个字符'),
     customerNameId: z.string().min(1, '请选择客户').max(64),
     projectName: optText(191, '项目名称'),
@@ -41,6 +45,7 @@ export const createWorkOrderBody = z
 
 export const updateWorkOrderBody = z
   .object({
+    idempotencyKey,
     /** 不允许改：带了且和地址里的不同 → 400（服务层判断） */
     workOrderNumber: z.string().trim().optional(),
     customerNameId: z.string().min(1, '请选择客户').max(64).optional(),

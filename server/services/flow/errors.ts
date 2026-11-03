@@ -25,6 +25,7 @@ export class FlowHttpError extends FlowError {
     message: string,
     readonly statusCode: number,
     code?: BusinessErrorCode,
+    readonly data?: Record<string, unknown>,
   ) {
     super(message, code)
     this.name = 'FlowHttpError'
