@@ -21,4 +21,5 @@ certs/
 
 # Local runtime artifacts and alternate lockfile
 /logs/
+/output/
 /bun.lock
