@@ -44,30 +44,6 @@ const statusTag = Vue.defineComponent({
   setup: (props, { slots }) => () => Vue.h('span', { class: `ft-status-tag tone-${props.tone}` }, slots.default?.()),
 })
 
-const table = Vue.defineComponent({
-  props: ['columns', 'dataSource'],
-  setup: (props, { slots }) => () =>
-    Vue.h('table', { class: 'stub-table' }, [
-      Vue.h('thead', Vue.h('tr', (props.columns ?? []).map((col: any) => Vue.h('th', col.title)))),
-      Vue.h(
-        'tbody',
-        (props.dataSource ?? []).map((record: any) =>
-          Vue.h(
-            'tr',
-            (props.columns ?? []).map((col: any) => {
-              const rendered = slots.bodyCell ? slots.bodyCell({ column: col, record }) : null
-              const hasVisibleContent =
-                rendered &&
-                (!Array.isArray(rendered) ||
-                  rendered.some((v: any) => v && (typeof v.type !== 'symbol' || v.type.description !== 'v-cmt')))
-              return Vue.h('td', hasVisibleContent ? rendered : String(record[col.dataIndex] ?? ''))
-            }),
-          ),
-        ),
-      ),
-    ]),
-})
-
 beforeEach(() => {
   for (const name of ['ref', 'computed', 'reactive', 'watch', 'onMounted', 'onBeforeUnmount', 'nextTick'] as const) {
     vi.stubGlobal(name, Vue[name])
@@ -80,156 +56,70 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('项目全景页 panorama.vue 结构与数据映射', () => {
-  const mockPanoramaData: panoramaShared.PanoramaData = {
-    counts: {
-      inProgress: 18,
-      normal: 12,
-      abnormal: 6,
-      completed: 45,
-      notStarted: 5,
-      unaccepted: null,
-      unacceptedAvailable: false,
-    },
-    byManager: [
-      { projectManagerId: 'pm1', projectManagerName: '张经理', inProgress: 10, abnormal: 4 },
-      { projectManagerId: 'pm2', projectManagerName: '李经理', inProgress: 8, abnormal: 2 },
-      { projectManagerId: null, projectManagerName: '未指定项目经理', inProgress: 0, abnormal: 0 },
-    ],
-    byProductLine: [
-      { productLine: '自动化线', inProgress: 12, abnormal: 5 },
-      { productLine: null, inProgress: 6, abnormal: 1 },
-    ],
+describe('全盘统计双端组件', () => {
+  async function render(mobile = false, opts: { error?: boolean; pending?: boolean; empty?: boolean } = {}) {
+    const route = Vue.reactive({ query: {} as Record<string, unknown>, fullPath: mobile ? '/m/board?view=orders&manager=pm' : '/board?view=panorama&manager=pm' })
+    const replace = vi.fn(async (location: any) => { route.query = location.query })
+    const refresh = vi.fn()
+    const row = { workOrderNumber: 'WO-01', projectName: '项目', projectManagerId: 'pm', projectManagerName: '张经理', productLine: null, status: 'IN_PROGRESS', color: 'RED', openIssues: 2 }
+    vi.stubGlobal('useRoute', () => route)
+    vi.stubGlobal('useRouter', () => ({ replace }))
+    vi.stubGlobal('useFetch', async (url: string, options: any) => {
+      expect(url).toBe('/api/board')
+      expect(options.query).toEqual({ closed: '1' })
+      return { data: Vue.ref(opts.empty ? { rows: [] } : { rows: [row] }), pending: Vue.ref(!!opts.pending), error: Vue.ref(opts.error ? new Error('网络超时') : null), refresh }
+    })
+    const component = loadComponent('app/components/BoardPanorama.vue', {
+      '#shared/panorama': panoramaShared,
+      '#shared/status': await import('../../shared/status'),
+    })
+    const link = Vue.defineComponent({ props: ['to'], setup: (props, { slots }) => () => Vue.h('a', { href: typeof props.to === 'string' ? props.to : props.to.path + '?' + new URLSearchParams(props.to.query).toString() }, slots.default?.()) })
+    const wrapper = mount(Vue.defineComponent({ setup: () => () => Vue.h(Vue.Suspense, null, { default: () => Vue.h(component, { mobile }) }) }), {
+      global: {
+        plugins: [(app: Vue.App) => { Object.assign(app.config.globalProperties, { apiError: (error: Error) => error.message }) }],
+        stubs: { UiPageHero: container, UiStatCard: container, UiSectionCard: container, UiListItem: container, UiRefreshButton: button, AResult: container, AButton: button, VanButton: button, VanCell: container, VanEmpty: container, MCard: container, NuxtLink: link },
+      },
+    })
+    cleanups.push(() => wrapper.unmount())
+    await flushPromises()
+    return { wrapper, route, replace, refresh }
   }
 
-  it('正常加载时渲染 6 张数字卡片与两组分布，未验收显示「待接入」、未开工带小字', async () => {
-    vi.stubGlobal('useFetch', async () => ({
-      data: Vue.ref(mockPanoramaData),
-      pending: Vue.ref(false),
-      error: Vue.ref(null),
-      refresh: vi.fn(),
-    }))
-
-    const component = loadComponent('app/pages/panorama.vue', {
-      '#shared/panorama': panoramaShared,
-    })
-
-    const wrapper = mount(
-      Vue.defineComponent({
-        setup: () => () => Vue.h(Vue.Suspense, null, { default: () => Vue.h(component) }),
-      }),
-      {
-        global: {
-          plugins: [
-            (app: Vue.App) => {
-              Object.assign(app.config.globalProperties, {
-                apiError: (e: any) => (e instanceof Error ? e.message : String(e ?? 'error')),
-              })
-            },
-          ],
-          stubs: {
-            UiPageHero: container,
-            UiHelpTip: container,
-            UiRefreshButton: button,
-            UiStatCard: container,
-            UiSectionCard: container,
-            UiStatusTag: statusTag,
-            ATable: table,
-            AResult: container,
-            AButton: button,
-            ASpin: container,
-          },
-        },
-      },
-    )
-    cleanups.push(() => wrapper.unmount())
+  it.each([false, true])('统计、分组及清单双端一致且保留工单处理上下文 mobile=%s', async mobile => {
+    const { wrapper, replace } = await render(mobile)
+    expect(wrapper.text()).toContain('有风险在制工单')
+    expect(wrapper.text()).toContain('待接入')
+    expect(wrapper.text()).toContain('张经理')
+    expect(wrapper.text()).toContain('未指定产品线')
+    expect(wrapper.text()).toContain('WO-01')
+    const riskGroup = wrapper.findAll('button').find(item => item.text() === '有风险 1')
+    expect(riskGroup).toBeDefined()
+    await riskGroup!.trigger('click')
     await flushPromises()
-
-    const text = wrapper.text()
-    expect(text).toContain('项目全景')
-    expect(text).toContain('在制')
-    expect(text).toContain('18')
-    expect(text).toContain('正常')
-    expect(text).toContain('12')
-    expect(text).toContain('异常')
-    expect(text).toContain('6')
-    expect(text).toContain('完成')
-    expect(text).toContain('45')
-    expect(text).toContain('未开工')
-    expect(text).toContain('5')
-    expect(text).toContain('未开工（状态 OPEN）')
-    expect(text).toContain('未验收')
-    expect(text).toContain('待接入')
-    expect(text).toContain('现场验收数据接入后显示')
-    // 绝不把未验收显示成 0
-    expect(text).not.toContain('未验收 0')
-
-    // 检查分布区映射：null 产品线映射为「未指定产品线」
-    expect(text).toContain('自动化线')
-    expect(text).toContain('未指定产品线')
-    expect(text).toContain('张经理')
-    expect(text).toContain('李经理')
-
-    // 异常 > 0 时有异常状态胶囊
-    const tags = wrapper.findAll('.ft-status-tag')
-    expect(tags.some((t) => t.text().includes('异常 4'))).toBe(true)
-    expect(tags.some((t) => t.text().includes('异常 2'))).toBe(true)
-    expect(tags.some((t) => t.text().includes('异常 5'))).toBe(true)
+    expect(replace).toHaveBeenCalledWith(expect.objectContaining({ query: expect.objectContaining({ metric: 'abnormal', manager: 'pm', view: mobile ? 'orders' : 'panorama' }) }))
+    const processing = wrapper.findAll('a').find(item => item.attributes('href')?.startsWith(mobile ? '/m/issues?' : '/risks?'))!
+    const destination = new URL(processing.attributes('href') ?? '', 'https://example.test')
+    expect(destination.pathname).toBe(mobile ? '/m/issues' : '/risks')
+    expect(destination.searchParams.get(mobile ? 'workOrderNumber' : 'wo')).toBe('WO-01')
+    expect(destination.searchParams.get('returnTo')).toContain(mobile ? '/m/board?' : '/board?')
   })
 
-  it('接口加载失败时呈现错误态与重试，不显示成一排 0', async () => {
-    const refreshMock = vi.fn()
-    vi.stubGlobal('useFetch', async () => ({
-      data: Vue.ref(null),
-      pending: Vue.ref(false),
-      error: Vue.ref(new Error('网络超时')),
-      refresh: refreshMock,
-    }))
+  it.each([false, true])('失败可重试且不误显空数据 mobile=%s', async mobile => {
+    const { wrapper, refresh } = await render(mobile, { error: true })
+    if (!mobile) expect(wrapper.text()).toContain('全盘统计加载失败')
+    expect(wrapper.text()).not.toContain('此条件下没有可见工单')
+    expect(wrapper.text()).not.toContain('WO-01')
+    await wrapper.findAll('button').find(item => item.text() === '重试')!.trigger('click')
+    expect(refresh).toHaveBeenCalledOnce()
+  })
 
-    const component = loadComponent('app/pages/panorama.vue', {
-      '#shared/panorama': panoramaShared,
-    })
-
-    const wrapper = mount(
-      Vue.defineComponent({
-        setup: () => () => Vue.h(Vue.Suspense, null, { default: () => Vue.h(component) }),
-      }),
-      {
-        global: {
-          plugins: [
-            (app: Vue.App) => {
-              Object.assign(app.config.globalProperties, {
-                apiError: (e: any) => (e instanceof Error ? e.message : String(e ?? 'error')),
-              })
-            },
-          ],
-          stubs: {
-            UiPageHero: container,
-            UiHelpTip: container,
-            UiRefreshButton: button,
-            UiStatCard: container,
-            UiSectionCard: container,
-            UiStatusTag: statusTag,
-            ATable: table,
-            AResult: container,
-            AButton: button,
-            ASpin: container,
-          },
-        },
-      },
-    )
-    cleanups.push(() => wrapper.unmount())
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('项目全景加载失败')
-    expect(wrapper.text()).toContain('网络超时')
-    expect(wrapper.find('table').exists()).toBe(false)
-
-    // 点击重试
-    const retryBtn = wrapper.findAll('button').find((b) => b.text() === '重试')
-    expect(retryBtn).toBeDefined()
-    await retryBtn!.trigger('click')
-    expect(refreshMock).toHaveBeenCalledTimes(1)
+  it.each([false, true])('空数据与加载中分别呈现 mobile=%s', async mobile => {
+    const empty = await render(mobile, { empty: true })
+    expect(empty.wrapper.text()).toContain('此条件下没有可见工单')
+    const loading = await render(mobile, { pending: true })
+    expect(loading.wrapper.text()).toContain('正在加载可见工单')
+    expect(loading.wrapper.text()).not.toContain('此条件下没有可见工单')
+    expect(loading.wrapper.text()).toContain('—')
   })
 })
 

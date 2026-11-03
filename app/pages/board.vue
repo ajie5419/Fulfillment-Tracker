@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 项目总览双视图：can.overview 默认看驾驶舱，其余角色只看工单看板。
+ * 项目总览：can.overview 默认看驾驶舱，其余默认看工单看板；全盘统计沿用可见工单范围。
  * 看板默认保留预计拖期 / 有风险两栏（允许重叠）、源头延误与已关闭工单；可切表格 / 项目经理。
  * 所有视图与筛选直接读 URL，提醒深链、前进 / 后退不依赖页面重建。
  */
@@ -19,6 +19,8 @@ watch(() => route.query.view, (value) => {
   if (!me.value?.can.overview && value === 'cockpit') void router.replace({ query: { ...route.query, view: 'board' }, hash: route.hash })
 })
 function changeView(value: BoardView) { void router.replace({ query: { ...route.query, view: resolveBoardView(!!me.value?.can.overview, value) }, hash: route.hash }) }
+const panorama = ref<{ refresh: () => Promise<void> } | null>(null)
+const viewOptions = computed(() => BOARD_VIEWS.filter(item => item.value !== 'cockpit' || me.value?.can.overview))
 const cockpit = ref<{ refresh: () => Promise<void> } | null>(null)
 const layout = computed(() => route.query.layout === 'table' ? 'table' : route.query.layout === 'manager' ? 'manager' : 'status')
 const boardLayouts = [{ value: 'status', label: '按状态' }, { value: 'manager', label: '按项目经理' }, { value: 'table', label: '表格视图' }]
@@ -50,7 +52,7 @@ const { data, pending, error, refresh } = await useFetch('/api/board', {
 })
 /** 驾驶舱只在有权限且被挂载时请求，普通角色不触发管理接口。 */
 async function refreshAll() {
-  await Promise.all([refresh(), cockpit.value?.refresh()])
+  await Promise.all([refresh(), cockpit.value?.refresh(), panorama.value?.refresh()])
 }
 type Row = (typeof data.value.rows)[number]
 
@@ -124,7 +126,7 @@ async function onCreated(no: string) {
   <div class="page">
     <div class="page-head">
       <div class="head-left">
-        <a-segmented v-if="me?.can.overview" :value="view" :options="BOARD_VIEWS" aria-label="项目总览视图" @change="changeView($event as BoardView)" />
+        <a-segmented :value="view" :options="viewOptions" aria-label="项目总览视图" @change="changeView($event as BoardView)" />
         <span v-if="view === 'board'" class="ft-muted sync-time" :title="data.syncOldest ? `最旧的是：${data.syncOldest}` : undefined">QMS 最后同步：{{ syncText }}</span>
       </div>
       <div class="tools">
@@ -148,6 +150,7 @@ async function onCreated(no: string) {
     <a-alert v-if="data.syncErrors.length" type="error" show-icon class="sync-error" message="QMS 同步出错，数据可能不是最新" :description="syncErrorText" />
 
     <BoardCockpit v-if="view === 'cockpit' && me?.can.overview" ref="cockpit" />
+    <BoardPanorama v-else-if="view === 'panorama'" ref="panorama" />
     <template v-else>
     <a-result v-if="error" status="error" title="看板加载失败" :sub-title="apiError(error)"><template #extra><a-button @click="refresh()">重试</a-button></template></a-result>
     <template v-else>

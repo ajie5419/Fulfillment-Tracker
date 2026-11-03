@@ -140,6 +140,7 @@ function scrollToReminders() {
 <template>
   <div>
     <van-nav-bar title="工作台" right-text="切换账号" @click-right="logout" />
+    <van-cell title="项目总览" label="全盘统计与可见工单" icon="bar-chart-o" is-link to="/m/board" />
 
     <!-- 我是谁 + 顶部统计 -->
     <div class="hello">

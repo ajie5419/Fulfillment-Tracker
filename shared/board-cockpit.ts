@@ -2,12 +2,13 @@ import { stuckNode, type NodeState } from './status'
 import type { WoStatusFields } from './wo-status-capsules'
 
 /** /board 的视图只由权限和 URL 决定，同页提醒、前进 / 后退也遵循这一落点。 */
-export type BoardView = 'cockpit' | 'board'
+export type BoardView = 'cockpit' | 'board' | 'panorama'
 export function resolveBoardView(canOverview: boolean, queryView: unknown): BoardView {
+  if (queryView === 'panorama') return 'panorama'
   return canOverview && queryView !== 'board' ? 'cockpit' : 'board'
 }
 
-export const BOARD_VIEWS = [{ value: 'cockpit', label: '今天盯什么' }, { value: 'board', label: '工单看板' }]
+export const BOARD_VIEWS = [{ value: 'cockpit', label: '今天盯什么' }, { value: 'board', label: '工单看板' }, { value: 'panorama', label: '全盘统计' }]
 export const OVERDUE_ISSUES_LINK = '/risks?tab=issues&overdue=1&dept=0'
 export const RED_WORK_ORDERS_LINK = '/board?view=board&color=RED'
 export const STAGNATION_RED_LINK = '/monitoring?level=RED'
