@@ -1091,10 +1091,14 @@ exports[`releases service 搬移前特征 > list 固定查询与完整 DTO 1`] =
             },
           },
         },
-        "orderBy": {
-          "createdAt": "desc",
-        },
-        "take": 200,
+        "orderBy": [
+          {
+            "createdAt": "desc",
+          },
+          {
+            "id": "desc",
+          },
+        ],
         "where": {
           "AND": [
             {

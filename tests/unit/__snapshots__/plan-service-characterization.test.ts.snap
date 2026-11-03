@@ -4,20 +4,50 @@ exports[`plan service 搬移前特征 > complete 命令的完整副作用顺序 
 {
   "calls": [
     [
-      "planNode.findMany",
+      "transaction.begin",
+      {
+        "isolationLevel": "ReadCommitted",
+      },
+    ],
+    [
+      "planNode.findUnique",
       {
         "select": {
-          "id": true,
-          "name": true,
           "workOrderNumber": true,
         },
         "where": {
-          "parentId": "n1",
+          "id": "n1",
         },
       },
     ],
     [
-      "transaction.begin",
+      "workOrderPlan.upsert",
+      {
+        "create": {
+          "createdBy": "actor",
+          "workOrderNumber": "WO 1",
+        },
+        "update": {},
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT workOrderNumber FROM work_order_plan WHERE workOrderNumber = ",
+        " FOR UPDATE",
+      ],
+      "WO 1",
+    ],
+    [
+      "workOrderPlan.findUniqueOrThrow",
+      {
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
     ],
     [
       "$queryRaw",
@@ -43,6 +73,18 @@ exports[`plan service 搬移前特征 > complete 命令的完整副作用顺序 
         },
         "where": {
           "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "select": {
+          "id": true,
+          "name": true,
+        },
+        "where": {
+          "parentId": "n1",
         },
       },
     ],
@@ -925,6 +967,19 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
         "orderBy": {
           "planDate": "asc",
         },
+        "select": {
+          "componentName": true,
+          "customerConfirmedDate": true,
+          "customerPlanDate": true,
+          "drawnDate": true,
+          "id": true,
+          "materialStatus": true,
+          "needsCustomerConfirm": true,
+          "planDate": true,
+          "planNodeId": true,
+          "processStatus": true,
+          "status": true,
+        },
         "where": {
           "planNodeId": {
             "in": [
@@ -940,6 +995,16 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
       {
         "orderBy": {
           "needDate": "asc",
+        },
+        "select": {
+          "arrivedDate": true,
+          "id": true,
+          "materialName": true,
+          "needDate": true,
+          "planNodeId": true,
+          "promisedDate": true,
+          "spec": true,
+          "status": true,
         },
         "where": {
           "planNodeId": {
@@ -1178,6 +1243,19 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
         "orderBy": {
           "planDate": "asc",
         },
+        "select": {
+          "componentName": true,
+          "customerConfirmedDate": true,
+          "customerPlanDate": true,
+          "drawnDate": true,
+          "id": true,
+          "materialStatus": true,
+          "needsCustomerConfirm": true,
+          "planDate": true,
+          "planNodeId": true,
+          "processStatus": true,
+          "status": true,
+        },
         "where": {
           "planNodeId": {
             "in": [
@@ -1193,6 +1271,16 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
       {
         "orderBy": {
           "needDate": "asc",
+        },
+        "select": {
+          "arrivedDate": true,
+          "id": true,
+          "materialName": true,
+          "needDate": true,
+          "planNodeId": true,
+          "promisedDate": true,
+          "spec": true,
+          "status": true,
         },
         "where": {
           "planNodeId": {
