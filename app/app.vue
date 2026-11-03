@@ -7,6 +7,7 @@ import { THEME_COLOR } from '#shared/theme'
 
 // Nuxt Suspense resolves async page setup before replacing the previous page.
 // Hide that previous content as soon as navigation starts.
+const sandbox = useAppConfig().sandbox
 const changingPage = useState('page-changing', () => false)
 const nuxtApp = useNuxtApp()
 const router = useRouter()
@@ -40,6 +41,7 @@ const theme = {
   <!-- AExtractStyle：服务端渲染时把 Ant Design Vue 的样式内联到首屏 HTML -->
   <AExtractStyle>
     <AConfigProvider :locale="zhCN" :theme="theme">
+      <aside v-if="sandbox" role="note" class="ft-sandbox-notice">独立单工单测试 · 仅合成数据 · QMS 写回及自动任务已禁用</aside>
       <NuxtLayout>
         <div v-if="changingPage" role="status" class="ft-page">正在加载…</div>
         <div v-show="!changingPage"><NuxtPage :page-key="route => route.path" /></div>
@@ -49,6 +51,18 @@ const theme = {
 </template>
 
 <style>
+.ft-sandbox-notice {
+  position: sticky;
+  top: 0;
+  z-index: 2000;
+  padding: 8px 12px;
+  background: var(--ft-risk-bg);
+  color: var(--ft-risk-text);
+  border-bottom: 1px solid var(--ft-risk);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
