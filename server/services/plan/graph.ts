@@ -95,10 +95,10 @@ export function topoOrder(ids: string[], preds: Map<string, string[]>): string[]
 
 /**
  * 前置节点 p 到节点 n 的"连接余量"：n 有计划开始日时，p 按计划完成到 n 开始前一天之间空出来的天数（p 晚这么多天以内不影响 n）；
- * 没有开始日时为 0（p 晚几天 n 就跟着晚几天，和原来的"保持间隔顺延"一样）。
+ * 没有开始日时未知（null）；倒挂的 0 不代表依赖合法，发布与预测必须同时使用日期冲突校验。
  */
-export function linkFloat(predPlanDay: string, startDay: string | null | undefined): number {
-  if (!startDay) return 0
+export function linkFloat(predPlanDay: string, startDay: string | null | undefined): number | null {
+  if (!startDay) return null
   return Math.max(0, dayDiff(predPlanDay, addDays(startDay, -1)))
 }
 

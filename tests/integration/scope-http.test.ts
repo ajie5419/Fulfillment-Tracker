@@ -13,6 +13,7 @@ import { PrismaClient } from '@prisma/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startMockIdentityBridge } from '../../scripts/mock-identity-bridge.mjs'
 import { BUSINESS_DEPT_NAME } from '../../shared/business-depts'
+import { addDays } from '../../shared/dates'
 import { getTestDatabaseUrl } from '../helpers/test-database'
 
 const DB = getTestDatabaseUrl(process.env.TEST_DATABASE_URL)
@@ -903,6 +904,18 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await get(`/api/plan?workOrderNumber=${MINE}`, buyer)).status).toBe(200)
     expect((await get(`/api/plan?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
     expect((await send(tech, 'POST', '/api/plan/publish', { workOrderNumber: MINE })).status).toBe(403)
+    // 通用模板未提供开始日：草稿可存，严格发布必须先 409，且不能留下基线或确认待办。
+    expect((await send(pm, 'POST', '/api/plan/publish', { workOrderNumber: MINE })).status).toBe(409)
+    const draft = await db.planNode.findMany({ where: { workOrderNumber: MINE }, orderBy: { seq: 'asc' } })
+    expect(draft.every((n) => n.baselineDate === null && n.confirmStatus === null)).toBe(true)
+    expect((await db.workOrderPlan.findUniqueOrThrow({ where: { workOrderNumber: MINE } })).status).toBe('DRAFT')
+    expect(await db.todo.count({ where: { action: 'CONFIRM_PLAN_NODE', refId: { in: draft.map((n) => n.id) } } })).toBe(0)
+    for (const [index, n] of draft.entries()) {
+      if (index > 0) {
+        const startDate = addDays(draft[index - 1]!.planDate.toISOString().slice(0, 10), 1)
+        expect((await send(pm, 'PATCH', `/api/plan/nodes/${n.id}`, { startDate })).status).toBe(200)
+      }
+    }
     expect((await send(pm, 'POST', '/api/plan/publish', { workOrderNumber: MINE })).status).toBe(200)
     const view = (await (await get(`/api/plan?workOrderNumber=${MINE}`, pm)).json()) as { canEdit: boolean; nodes: { id: string; name: string; dept: string }[] }
     expect(view.canEdit).toBe(true)
@@ -991,6 +1004,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       issues: { open: number }
       actions: unknown[]
       expectedDelivery: string | null
+      dateConflicts: { code: string; nodeId: string }[]
     }
     expect(d.published).toBe(true)
     expect(d.today).toMatch(/^\d{4}-\d{2}-\d{2}$/)
@@ -998,8 +1012,10 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(d.workOrder.projectManagerName).toBeTruthy()
     expect(d.nodes).toHaveLength(11)
     expect(d.progress.total).toBe(11)
-    expect(d.expectedDelivery).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    for (const n of d.nodes) expect(['DONE', 'SOURCE', 'UPSTREAM', 'ON_TRACK']).toContain(n.state)
+    // 上例只改了设计完成日，未重排后续开始日；此时按新语义应提示冲突、交期待核实。
+    expect(d.dateConflicts).toContainEqual(expect.objectContaining({ code: 'FS_ORDER' }))
+    expect(d.expectedDelivery).toBeNull()
+    for (const n of d.nodes) expect(['DONE', 'SOURCE', 'UPSTREAM', 'ON_TRACK', 'REVIEW']).toContain(n.state)
     const design = d.nodes.find((n) => n.name === '设计出图')!
     expect(design.tasks).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'drawing', name: 'R14 图', link: `/drawings?wo=${MINE}&view=all` })]))
     // 未挂节点数与库里一致（已取消的不算）

@@ -24,6 +24,7 @@ export function calculatePlans(sources: PlanSources): Map<string, PlanData> {
     const myTasks = tasks.filter((t) => woOfNode.get(t.nodeId) === wo)
     const facts: NodeFacts[] = mine.map((n) => ({
       id: n.id,
+      name: n.name,
       planDay: day(n.planDate),
       startDay: n.startDate ? day(n.startDate) : null,
       preds: n.customDeps ? (predsOf.get(n.id) ?? []) : null,
@@ -41,7 +42,7 @@ export function calculatePlans(sources: PlanSources): Map<string, PlanData> {
       deliveryDay,
       nodes: mine,
       tasks: myTasks,
-      forecast: forecastPlan(facts, deliveryDay ?? lastPlanDay ?? today, today),
+      forecast: forecastPlan(facts, deliveryDay ?? lastPlanDay ?? today, today, sources.offDays),
     })
   }
   return out

@@ -32,6 +32,7 @@ export interface TaskEstimate {
 
 export interface NodeFacts {
   id: string
+  name?: string
   planDay: string
   /** 计划开始日（可选）：有开始日时，前置节点晚到"开始日前一天"之前不推后（中间的空档是余量） */
   startDay?: string | null
@@ -45,12 +46,14 @@ export interface NodeFacts {
 }
 
 export interface NodeEstimate {
+  dateConflict?: boolean
   id: string
   done: boolean
   /** 怎么完成的：MANUAL 手动标记，AUTO 挂靠任务（和子节点）全部完成 */
   doneBy: 'MANUAL' | 'AUTO' | null
   actualDay: string | null
   expectedDay: string
+  expectedStartDay: string | null
   /** 预计日 - 计划日（天，正数 = 晚；完成的节点是 实际 - 计划） */
   delayDays: number
   /** 预计日由什么决定：self 自身计划日 / task 挂靠任务 / prev 前置节点顺延 / today 计划日已过 / actual 已完成 */
@@ -85,6 +88,7 @@ export interface NodeEstimate {
 }
 
 export interface PlanForecast {
+  dateConflicts: import('../../../shared/plan-schedule').PlanDateConflict[]
   nodes: NodeEstimate[]
   /** 对应交期的节点 = 最后一个一级节点 */
   lastNodeId: string | null

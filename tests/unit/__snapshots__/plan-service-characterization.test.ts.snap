@@ -480,10 +480,70 @@ exports[`plan service 搬移前特征 > create 命令的完整副作用顺序 1`
       },
     ],
     [
+      "workOrderPlan.findMany",
+      {
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "orderBy": [
+          {
+            "seq": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+          {
+            "id": "asc",
+          },
+        ],
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "qmsWorkOrder.findMany",
+      {
+        "select": {
+          "deliveryDate": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "offDay.findMany",
+      {
+        "select": {
+          "date": true,
+        },
+      },
+    ],
+    [
       "transaction.commit",
     ],
   ],
   "result": {
+    "dateConflicts": [],
     "id": "n1",
   },
 }
@@ -1107,6 +1167,14 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
       },
     ],
     [
+      "offDay.findMany",
+      {
+        "select": {
+          "date": true,
+        },
+      },
+    ],
+    [
       "qmsWorkOrder.findUnique",
       {
         "where": {
@@ -1383,6 +1451,14 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
       },
     ],
     [
+      "offDay.findMany",
+      {
+        "select": {
+          "date": true,
+        },
+      },
+    ],
+    [
       "todo.findMany",
       {
         "select": {
@@ -1429,6 +1505,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
     "WO 1" => {
       "deliveryDay": "2026-11-03",
       "forecast": {
+        "dateConflicts": [],
         "delayedNodes": 2,
         "deliveryDelayDays": 2,
         "expectedDelivery": "2026-11-05",
@@ -1445,6 +1522,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
             "doneCount": 1,
             "driver": "prev",
             "expectedDay": "2026-11-05",
+            "expectedStartDay": null,
             "id": "n1",
             "lateCount": 1,
             "overdueCount": 0,
@@ -1480,6 +1558,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
             "doneCount": 0,
             "driver": "task",
             "expectedDay": "2026-11-05",
+            "expectedStartDay": null,
             "id": "n2",
             "lateCount": 2,
             "overdueCount": 0,
@@ -1707,6 +1786,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
       },
     ],
     "dangling": [],
+    "dateConflicts": [],
     "delayedNodes": 2,
     "deliveryDelayDays": 2,
     "expectedDelivery": "2026-11-05",
@@ -1730,6 +1810,8 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
         "confirmedByName": null,
         "critical": true,
         "customDeps": false,
+        "dateConflict": undefined,
+        "dateConflicts": [],
         "delayDays": 3,
         "dept": "TECH",
         "deptText": "技术部",
@@ -1738,6 +1820,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
         "doneCount": 1,
         "driver": "prev",
         "expectedDate": "2026-11-05",
+        "expectedStartDate": null,
         "id": "n1",
         "lateCount": 1,
         "manualDoneByName": null,
@@ -1812,6 +1895,8 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
         "confirmedByName": null,
         "critical": true,
         "customDeps": true,
+        "dateConflict": undefined,
+        "dateConflicts": [],
         "delayDays": 2,
         "dept": "PRODUCTION",
         "deptText": "生产部",
@@ -1820,6 +1905,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
         "doneCount": 0,
         "driver": "task",
         "expectedDate": "2026-11-05",
+        "expectedStartDate": null,
         "id": "n2",
         "lateCount": 2,
         "manualDoneByName": null,
@@ -2021,6 +2107,210 @@ exports[`plan service 搬移前特征 > 发布：先锁计划、逐节点锁基�
         ],
         "where": {
           "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "workOrderPlan.findMany",
+      {
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "orderBy": [
+          {
+            "seq": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+          {
+            "id": "asc",
+          },
+        ],
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "qmsWorkOrder.findMany",
+      {
+        "select": {
+          "deliveryDate": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "drawingTask.findMany",
+      {
+        "orderBy": {
+          "planDate": "asc",
+        },
+        "select": {
+          "componentName": true,
+          "customerConfirmedDate": true,
+          "customerPlanDate": true,
+          "drawnDate": true,
+          "id": true,
+          "materialStatus": true,
+          "needsCustomerConfirm": true,
+          "planDate": true,
+          "planNodeId": true,
+          "processStatus": true,
+          "status": true,
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+              "n2",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "purchaseLine.findMany",
+      {
+        "orderBy": {
+          "needDate": "asc",
+        },
+        "select": {
+          "arrivedDate": true,
+          "id": true,
+          "materialName": true,
+          "needDate": true,
+          "planNodeId": true,
+          "promisedDate": true,
+          "spec": true,
+          "status": true,
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+              "n2",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "include": {
+          "part": {
+            "select": {
+              "name": true,
+            },
+          },
+        },
+        "orderBy": [
+          {
+            "partId": "asc",
+          },
+          {
+            "seq": "asc",
+          },
+        ],
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+              "n2",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "assemblyNode.findMany",
+      {
+        "include": {
+          "parts": {
+            "select": {
+              "partId": true,
+            },
+          },
+          "purchases": {
+            "select": {
+              "purchaseLineId": true,
+            },
+          },
+        },
+        "orderBy": {
+          "needDate": "asc",
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+              "n2",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planTask.findMany",
+      {
+        "orderBy": [
+          {
+            "planDate": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+        ],
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+              "n2",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planNodeDep.findMany",
+      {
+        "where": {
+          "nodeId": {
+            "in": [
+              "n1",
+              "n2",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "offDay.findMany",
+      {
+        "select": {
+          "date": true,
         },
       },
     ],
@@ -2402,10 +2692,209 @@ exports[`plan service 搬移前特征 > 已发布节点改日期：锁、校验�
       },
     ],
     [
+      "workOrderPlan.findMany",
+      {
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "orderBy": [
+          {
+            "seq": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+          {
+            "id": "asc",
+          },
+        ],
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "qmsWorkOrder.findMany",
+      {
+        "select": {
+          "deliveryDate": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "drawingTask.findMany",
+      {
+        "orderBy": {
+          "planDate": "asc",
+        },
+        "select": {
+          "componentName": true,
+          "customerConfirmedDate": true,
+          "customerPlanDate": true,
+          "drawnDate": true,
+          "id": true,
+          "materialStatus": true,
+          "needsCustomerConfirm": true,
+          "planDate": true,
+          "planNodeId": true,
+          "processStatus": true,
+          "status": true,
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "purchaseLine.findMany",
+      {
+        "orderBy": {
+          "needDate": "asc",
+        },
+        "select": {
+          "arrivedDate": true,
+          "id": true,
+          "materialName": true,
+          "needDate": true,
+          "planNodeId": true,
+          "promisedDate": true,
+          "spec": true,
+          "status": true,
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "include": {
+          "part": {
+            "select": {
+              "name": true,
+            },
+          },
+        },
+        "orderBy": [
+          {
+            "partId": "asc",
+          },
+          {
+            "seq": "asc",
+          },
+        ],
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "assemblyNode.findMany",
+      {
+        "include": {
+          "parts": {
+            "select": {
+              "partId": true,
+            },
+          },
+          "purchases": {
+            "select": {
+              "purchaseLineId": true,
+            },
+          },
+        },
+        "orderBy": {
+          "needDate": "asc",
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planTask.findMany",
+      {
+        "orderBy": [
+          {
+            "planDate": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+        ],
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planNodeDep.findMany",
+      {
+        "where": {
+          "nodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "offDay.findMany",
+      {
+        "select": {
+          "date": true,
+        },
+      },
+    ],
+    [
       "transaction.commit",
     ],
   ],
   "result": {
+    "dateConflicts": [],
     "id": "n1",
     "reconfirm": true,
   },
@@ -2613,11 +3102,210 @@ exports[`plan service 搬移前特征 > 模板生成：取消旧任务、逐节�
       },
     ],
     [
+      "workOrderPlan.findMany",
+      {
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "orderBy": [
+          {
+            "seq": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+          {
+            "id": "asc",
+          },
+        ],
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "qmsWorkOrder.findMany",
+      {
+        "select": {
+          "deliveryDate": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "drawingTask.findMany",
+      {
+        "orderBy": {
+          "planDate": "asc",
+        },
+        "select": {
+          "componentName": true,
+          "customerConfirmedDate": true,
+          "customerPlanDate": true,
+          "drawnDate": true,
+          "id": true,
+          "materialStatus": true,
+          "needsCustomerConfirm": true,
+          "planDate": true,
+          "planNodeId": true,
+          "processStatus": true,
+          "status": true,
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "purchaseLine.findMany",
+      {
+        "orderBy": {
+          "needDate": "asc",
+        },
+        "select": {
+          "arrivedDate": true,
+          "id": true,
+          "materialName": true,
+          "needDate": true,
+          "planNodeId": true,
+          "promisedDate": true,
+          "spec": true,
+          "status": true,
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "routeStep.findMany",
+      {
+        "include": {
+          "part": {
+            "select": {
+              "name": true,
+            },
+          },
+        },
+        "orderBy": [
+          {
+            "partId": "asc",
+          },
+          {
+            "seq": "asc",
+          },
+        ],
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "assemblyNode.findMany",
+      {
+        "include": {
+          "parts": {
+            "select": {
+              "partId": true,
+            },
+          },
+          "purchases": {
+            "select": {
+              "purchaseLineId": true,
+            },
+          },
+        },
+        "orderBy": {
+          "needDate": "asc",
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planTask.findMany",
+      {
+        "orderBy": [
+          {
+            "planDate": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+        ],
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planNodeDep.findMany",
+      {
+        "where": {
+          "nodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "offDay.findMany",
+      {
+        "select": {
+          "date": true,
+        },
+      },
+    ],
+    [
       "transaction.commit",
     ],
   ],
   "result": {
     "created": 2,
+    "dateConflicts": [],
     "replaced": 2,
   },
 }

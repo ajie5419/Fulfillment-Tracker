@@ -123,7 +123,7 @@ async function saveTask() {
 const doneTask = (t: PlanTask) => run(() => send(`/api/plan/tasks/${t.id}/complete`, { method: 'POST', body: {} }), '已完成')
 
 const CONFIRM_TYPE = { PENDING: 'warning', CONFIRMED: 'success', REJECTED: 'danger' } as const
-const toneOf = (n: DeptPlanNode) => (n.done ? 'done' : !n.done && n.delayDays > 0 ? 'late' : n.confirmStatus ? CONFIRM_TONE[n.confirmStatus] : 'none')
+const toneOf = (n: DeptPlanNode) => (n.dateConflict ? 'risk' : n.done ? 'done' : !n.done && n.delayDays > 0 ? 'late' : n.confirmStatus ? CONFIRM_TONE[n.confirmStatus] : 'none')
 const md = (d: string | null) => (d ? d.slice(5) : '')
 </script>
 
@@ -154,6 +154,7 @@ const md = (d: string | null) => (d ? d.slice(5) : '')
           <van-tag v-else-if="c.node.confirmStatus" :type="CONFIRM_TYPE[c.node.confirmStatus]">{{ c.node.confirmText }}</van-tag>
           <span class="wo">{{ c.wo }} {{ c.project ?? '' }}</span>
         </div>
+        <PlanDateConflicts :conflicts="c.node.dateConflicts" />
         <div class="m-title name">{{ c.node.code }} {{ c.node.name }}</div>
         <div v-if="c.node.parentName" class="m-desc">{{ c.node.parentName }} 下</div>
         <div class="m-meta">

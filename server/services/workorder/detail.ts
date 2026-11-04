@@ -153,6 +153,7 @@ export async function getWorkOrderDetail(workOrderNumber: string, ctx: RoleConte
     published,
     canEditPlan: plan.canEdit,
     /** 预计交期、拖期天数：只按已发布的总计划算（与看板一致）；草稿时为 null */
+    dateConflicts: plan.dateConflicts,
     expectedDelivery: published ? plan.expectedDelivery : null,
     delayDays: published ? plan.deliveryDelayDays : null,
     progress: {

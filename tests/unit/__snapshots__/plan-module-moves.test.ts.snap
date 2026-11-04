@@ -140,9 +140,19 @@ exports[`plan/constants 搬移前固定输入 / 固定输出 > 各任务事实�
 
 exports[`plan/constants 搬移前固定输入 / 固定输出 > 源头延误、顺延、余量与交期预测 1`] = `
 {
+  "dateConflicts": [
+    {
+      "blocksPublish": true,
+      "code": "MISSING_START",
+      "message": "“B”计划完成 2026-12-31，缺少开始日期，无法核实前置完成→开始及工期",
+      "nodeId": "B",
+      "nodeName": "B",
+      "startDay": undefined,
+    },
+  ],
   "delayedNodes": 2,
-  "deliveryDelayDays": 3,
-  "expectedDelivery": "2027-01-03",
+  "deliveryDelayDays": null,
+  "expectedDelivery": null,
   "lastNodeId": "B",
   "nodes": [
     {
@@ -154,6 +164,7 @@ exports[`plan/constants 搬移前固定输入 / 固定输出 > 源头延误、�
       "doneCount": 0,
       "driver": "task",
       "expectedDay": "2027-01-02",
+      "expectedStartDay": null,
       "id": "A",
       "lateCount": 1,
       "overdueCount": 0,
@@ -162,7 +173,7 @@ exports[`plan/constants 搬移前固定输入 / 固定输出 > 源头延误、�
       "selfDelayDays": 3,
       "selfDriver": "task",
       "selfExpectedDay": "2027-01-02",
-      "slackDays": -3,
+      "slackDays": null,
       "source": true,
       "taskCount": 1,
       "tasks": [
@@ -183,12 +194,14 @@ exports[`plan/constants 搬移前固定输入 / 固定输出 > 源头延误、�
     {
       "actualDay": null,
       "children": [],
+      "dateConflict": true,
       "delayDays": 3,
       "done": false,
       "doneBy": null,
       "doneCount": 0,
       "driver": "prev",
       "expectedDay": "2027-01-03",
+      "expectedStartDay": null,
       "id": "B",
       "lateCount": 0,
       "overdueCount": 0,
@@ -199,7 +212,7 @@ exports[`plan/constants 搬移前固定输入 / 固定输出 > 源头延误、�
       "selfDelayDays": 0,
       "selfDriver": "self",
       "selfExpectedDay": "2026-12-31",
-      "slackDays": -3,
+      "slackDays": null,
       "source": false,
       "taskCount": 0,
       "tasks": [],
@@ -221,6 +234,7 @@ exports[`plan/constants 搬移前固定输入 / 固定输出 > 环兜底仍按�
     "doneCount": 0,
     "driver": "task",
     "expectedDay": "2027-01-02",
+    "expectedStartDay": null,
     "id": "A",
     "lateCount": 1,
     "overdueCount": 0,
@@ -256,6 +270,7 @@ exports[`plan/constants 搬移前固定输入 / 固定输出 > 环兜底仍按�
     "doneCount": 0,
     "driver": "prev",
     "expectedDay": "2027-01-03",
+    "expectedStartDay": null,
     "id": "B",
     "lateCount": 0,
     "overdueCount": 0,
@@ -278,15 +293,15 @@ exports[`plan/constants 搬移前固定输入 / 固定输出 > 环兜底仍按�
 exports[`plan/constants 搬移前固定输入 / 固定输出 > 预警级别与文案 1`] = `
 {
   "critical": [
-    true,
-    true,
+    false,
+    false,
   ],
   "delayed": [
     true,
     true,
   ],
-  "delivery": "合同交期 2026-12-31，按总计划预计 2027-01-03 交付，拖期 3 天；源头延误节点：采购",
-  "plan": "RED",
+  "delivery": "合同交期 2026-12-31，按总计划预计 null 交付，拖期 null 天；源头延误节点：采购",
+  "plan": null,
   "split": "REMIND",
   "summary": "计划 2026-12-30，预计 2027-01-02 完成，晚 3 天（部门任务延误）",
   "w9": "RED",

@@ -17,6 +17,12 @@ export function addDays(day: string, n: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10)
 }
 
+export function nextFactoryWorkDay(day: string, offDays: ReadonlySet<string> = new Set()): string {
+  let next = addDays(day, 1)
+  while (offDays.has(next)) next = addDays(next, 1)
+  return next
+}
+
 /** 'YYYY-MM-DD' → 该日 UTC 零点 */
 export function parseDay(day: string): Date {
   return new Date(`${day}T00:00:00.000Z`)
