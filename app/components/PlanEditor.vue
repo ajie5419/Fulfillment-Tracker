@@ -55,7 +55,7 @@ const { reasonOpen, reasonText, reasonFor, askDelete, submitReason } = usePlanNo
             <a-button @click="generate">按模板生成</a-button>
           </template>
           <a-button @click="openEdit(null)">新增节点</a-button>
-          <a-button v-if="!published" type="primary" :disabled="!data.nodes.length" @click="publish">发布</a-button>
+          <a-button v-if="!published" type="primary" :disabled="!data.nodes.length || data.dateConflicts.some((conflict) => conflict.blocksPublish)" @click="publish">发布</a-button>
         </template>
       </a-space>
     </template>

@@ -43,15 +43,22 @@ const group = computed(() => {
   const x = d.value
   if (!x) return 'NO_PLAN' as const
   const color = x.alerts.red ? 'RED' : x.alerts.yellow || x.issues.overdue ? 'YELLOW' : 'GREEN'
-  return boardGroup({ hasPlan: x.published, delayDays: x.delayDays, delayedPlanNodes: x.progress.source, color })
+  return boardGroup({ hasPlan: x.published, delayDays: x.delayDays, delayedPlanNodes: x.progress.source, color, dateConflicts: x.dateConflicts })
 })
 const pill = computed(() => {
   const x = d.value!
   switch (group.value) {
     case 'LATE':
       return { tone: 'late', icon: 'alert' as const, text: `交期风险 · 预计拖期 ${x.delayDays} 天` }
-    case 'RISK':
-      return { tone: 'risk', icon: 'warn' as const, text: x.progress.source ? `有风险 · 源头延误节点 ${x.progress.source} 个` : '有风险 · 有活动预警或超期异常' }
+    case 'RISK': {
+      const conflicts = x.dateConflicts?.length ?? 0
+      const text = conflicts
+        ? `有风险 · 日期冲突待核实 ${conflicts} 项`
+        : x.progress.source
+          ? `有风险 · 源头延误节点 ${x.progress.source} 个`
+          : '有风险 · 有活动预警或超期异常'
+      return { tone: 'risk', icon: 'warn' as const, text }
+    }
     case 'OK':
       return { tone: 'done', icon: 'check' as const, text: '按计划' }
     default:
@@ -98,8 +105,9 @@ const STATE_DEPT_TEXT: Record<NodeState, (n: { selfDelayDays: number; delayDays:
   SOURCE: (n) => `源头延误 ${n.selfDelayDays} 天`,
   UPSTREAM: (n) => `受上游影响 ${n.delayDays} 天`,
   ON_TRACK: () => '按计划',
+  REVIEW: () => '日期待核实',
 }
-const STATE_CLASS: Record<NodeState, string> = { DONE: 'ft-text-done', SOURCE: 'ft-text-late', UPSTREAM: 'ft-text-upstream', ON_TRACK: 'ft-muted' }
+const STATE_CLASS: Record<NodeState, string> = { DONE: 'ft-text-done', SOURCE: 'ft-text-late', UPSTREAM: 'ft-text-upstream', ON_TRACK: 'ft-muted', REVIEW: 'ft-text-risk' }
 
 // 展开的节点（#node-<id> 定位）
 const expanded = ref(new Set<string>())
@@ -235,6 +243,13 @@ function confirmCancel() {
                 <span>预计交期 <b :class="{ 'ft-text-late': (d.delayDays ?? 0) > 0 }">{{ d.expectedDelivery ?? '—' }}</b></span>
                 <span v-if="d.delayDays != null">拖期 <b :class="(d.delayDays ?? 0) > 0 ? 'ft-text-late' : 'ft-text-done'">{{ d.delayDays > 0 ? `${d.delayDays} 天` : d.delayDays < 0 ? `提前 ${-d.delayDays} 天` : '0 天' }}</b></span>
                 <span v-if="d.stuck">卡在 <b class="ft-text-late">{{ d.stuck.name }}（{{ d.stuck.deptText }}）</b></span>
+              </div>
+              <div v-if="d.dateConflicts?.length" class="conflicts">
+                <span class="conflict-label">复核原因：</span>
+                <span v-for="(c, idx) in d.dateConflicts" :key="`${c.nodeId}:${c.code}:${idx}`" class="conflict-item">
+                  <NuxtLink :to="planLink(c.nodeId)" class="conflict-node">{{ c.nodeName }}</NuxtLink>
+                  <span class="conflict-msg">{{ c.message }}</span>
+                </span>
               </div>
             </div>
             <div v-if="bar" class="dbar">
@@ -421,6 +436,11 @@ function confirmCancel() {
 .dates b { color: var(--ft-text); font-weight: 600; }
 .dates b.ft-text-late { color: var(--ft-late); }
 .dates b.ft-text-done { color: var(--ft-done); }
+.conflicts { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; align-items: baseline; }
+.conflict-label { color: var(--ft-risk-text); font-weight: 600; flex: none; }
+.conflict-item { display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.conflict-node { font-weight: 500; }
+.conflict-msg { color: var(--ft-text-2); }
 .dbar { flex: 1 1 420px; max-width: 600px; min-width: 0; }
 .dbar-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--ft-text-2); gap: 8px; }
 .dbar-track { position: relative; height: 14px; margin: 8px 0; border-radius: 7px; background: var(--ft-fill); }

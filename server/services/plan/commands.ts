@@ -6,7 +6,7 @@ import { prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { BUSINESS_DEPT_NAME } from '../auth/departments'
-import { FlowError } from '../flow/errors'
+import { FlowError, FlowHttpError } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { todayDate } from '../purchases/constants'
 import { cancelTaskTodos } from './tasks'
@@ -202,7 +202,7 @@ export async function generateFromTemplate(workOrderNumber: string, templateId: 
     await rollupParents(tx, workOrderNumber, false)
     await assertNoCycle(tx, workOrderNumber)
     await tx.workOrderPlan.update({ where: { workOrderNumber }, data: { templateName: tpl.name } })
-    return { created: tpl.nodes.length, replaced: replaced.count }
+    return { created: tpl.nodes.length, replaced: replaced.count, dateConflicts: (await loadPlans({ workOrderNumbers: [workOrderNumber] }, new Date(), tx)).get(workOrderNumber)?.forecast.dateConflicts ?? [] }
   })
 }
 
@@ -257,7 +257,7 @@ export async function createNode(workOrderNumber: string, input: NodeInput, acto
       await clearDelayAlerts(tx, workOrderNumber)
     }
     if (parent) await rollupParents(tx, workOrderNumber, published)
-    return { id: node.id }
+    return { id: node.id, dateConflicts: (await loadPlans({ workOrderNumbers: [workOrderNumber] }, new Date(), tx)).get(workOrderNumber)?.forecast.dateConflicts ?? [] }
   })
 }
 
@@ -320,7 +320,7 @@ export async function updateNode(id: string, input: Partial<NodeInput>, actorId:
     // 子节点的日期、上级变了：重算汇总行（原上级、新上级）
     if (dateChanged || startChanged || parentChanged) await rollupParents(tx, node.workOrderNumber, published)
     if (dateChanged || seqChanged || depsChanged || startChanged || parentChanged) await clearDelayAlerts(tx, node.workOrderNumber)
-    return { id, reconfirm }
+    return { id, reconfirm, dateConflicts: (await loadPlans({ workOrderNumbers: [node.workOrderNumber] }, new Date(), tx)).get(node.workOrderNumber)?.forecast.dateConflicts ?? [] }
   })
 }
 
@@ -363,6 +363,10 @@ export async function publishPlan(workOrderNumber: string, actorId: string) {
     if (plan.status === 'PUBLISHED') throw new FlowError('总计划已经发布过了')
     const nodes = await tx.planNode.findMany({ where: { workOrderNumber }, orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }] })
     if (!nodes.length) throw new FlowError('总计划还没有节点，请先按模板生成或添加节点')
+    const current = (await loadPlans({ workOrderNumbers: [workOrderNumber] }, new Date(), tx)).get(workOrderNumber)
+    if (!current) throw new FlowError('总计划读取失败，不能发布')
+    const dateConflicts = current.forecast.dateConflicts.filter((conflict) => conflict.blocksPublish)
+    if (dateConflicts.length) throw new FlowHttpError(`总计划日期校验未通过：${dateConflicts.map((conflict) => conflict.message).join('；')}`, 409, undefined, { dateConflicts })
     const now = new Date()
     let todos = 0
     const noHead = new Set<string>()

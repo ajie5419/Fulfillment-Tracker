@@ -133,7 +133,7 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
     _count: { _all: true },
   })
   const [plans, assemblies, monitored] = await Promise.all([
-    loadPlans({ workOrderNumbers: workOrders.map((w) => w.workOrderNumber), publishedOnly: true }, now),
+    loadPlans({ workOrderNumbers: workOrders.map((w) => w.workOrderNumber) }, now),
     prisma.assemblyNode.findMany({ where: { workOrderNumber: { in: workOrders.map((w) => w.workOrderNumber) } }, include: NODE_LINKS }),
     loadMonitoredEntities(now, thresholds.W11, workOrders.map((w) => w.workOrderNumber)),
   ])
@@ -173,10 +173,11 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
     const mine = alerts.filter((a) => alertWo.get(a.id) === wo)
     const red = mine.filter((a) => a.level === 'RED').length
     const yellow = mine.length - red
-    const color: BoardColor = red || issueRed ? 'RED' : yellow || issueYellow ? 'YELLOW' : 'GREEN'
+    const color: BoardColor = red || issueRed ? 'RED' : yellow || issueYellow || plans.get(wo)?.forecast.dateConflicts.length ? 'YELLOW' : 'GREEN'
     const ext = extOf.get(wo)
     const pm = ext?.projectManagerId ?? null
-    const plan = plans.get(wo)
+    const candidate = plans.get(wo)
+    const plan = candidate?.status === 'PUBLISHED' ? candidate : undefined
     const est = new Map((plan?.forecast.nodes ?? []).map((e) => [e.id, e]))
     const planNodes = (plan?.nodes ?? []).map((n) => {
       const e = est.get(n.id)!
@@ -214,6 +215,7 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
       drawingOverdue: drawingOverdueOf.get(wo) ?? 0,
       incompleteNodes: incompleteNodesOf.get(wo) ?? 0,
       /** 已发布总计划的预计交期（'YYYY-MM-DD'）、拖期天数（正数 = 晚于 QMS 交期）、源头延误节点数（不含只因上游顺延的）；没有已发布总计划为 null / 0 */
+      dateConflicts: candidate?.forecast.dateConflicts ?? [],
       expectedDelivery: plan?.forecast.expectedDelivery ?? null,
       delayDays: plan?.forecast.deliveryDelayDays ?? null,
       delayedPlanNodes: plan?.forecast.sourceNodes ?? 0,

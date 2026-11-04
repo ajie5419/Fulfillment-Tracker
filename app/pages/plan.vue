@@ -158,7 +158,8 @@ const enc = encodeURIComponent
               <span v-else class="ft-muted">0</span>
             </template>
             <template v-else-if="column.key === 'expected'">
-              <template v-if="record.expectedDelivery">
+              <span v-if="record.dateConflicts.length" class="late">日期冲突 / 待核实</span>
+              <template v-else-if="record.expectedDelivery">
                 <span :class="{ late: (record.delayDays ?? 0) > 0 }">{{ record.expectedDelivery }}</span>
                 <div v-if="(record.delayDays ?? 0) > 0" class="late small">拖期 {{ record.delayDays }} 天</div>
               </template>

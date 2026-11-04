@@ -6,6 +6,7 @@ defineProps<{ data: PlanData; published: boolean }>()
 </script>
 
 <template>
+  <PlanDateConflicts :conflicts="data.dateConflicts" />
   <a-descriptions :column="{ xs: 1, sm: 2, lg: 4 }" size="small" bordered class="summary">
     <a-descriptions-item label="项目">{{ data.workOrder.projectName ?? '—' }}<span class="muted">　{{ data.workOrder.customerName }}</span></a-descriptions-item>
     <a-descriptions-item label="项目经理">{{ data.workOrder.projectManagerName ?? '未设置' }}</a-descriptions-item>
