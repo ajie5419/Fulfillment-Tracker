@@ -112,6 +112,19 @@ async function typeDate(input: HTMLInputElement, text: string) {
   await flushVue()
 }
 
+it('renders task-first fields and warns about early customer confirmation without a cancellation checkbox', async () => {
+  const { state } = await actualModal(targets[4])
+  Object.assign(state.form, { planDate: '2026-11-12', customerPlanDate: '2026-11-11', needsCustomerConfirm: true })
+  await flushVue()
+  const modal = document.querySelector('.ant-modal')!
+  expect(modal.textContent).toContain('任务名称')
+  expect(modal.textContent).toContain('关联信息')
+  expect(modal.textContent).toContain('请核对是否为提前方案确认')
+  expect(modal.textContent).not.toContain('不再跟踪')
+  expect(modal.querySelectorAll('.ant-checkbox-wrapper')).toHaveLength(1)
+  expect(modal.querySelectorAll('.form-grid .ant-picker')).toHaveLength(2)
+})
+
 async function clickSave() {
   const button = document.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!
   button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))

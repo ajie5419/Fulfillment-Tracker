@@ -25,6 +25,7 @@ describe.skipIf(!DB)('design task split and assignment', () => {
     const wo = 'DEMO-SPLIT-TEST'
     await db.qmsWorkOrder.create({ data: { workOrderNumber: wo, customerName: 'Test', quantity: 1, status: 'OPEN', deliveryDate: parseDay('2026-12-31'), updatedAt: new Date() } })
     const n = await plan.createNode(wo, { name: '结构图纸', dept: 'TECH', planDate: parseDay('2026-12-01') }, 'u-005')
+    expect((await plan.planOptions(wo)).nodes.find((row) => row.id === n.id)).toMatchObject({ code: '1' })
     await plan.publishPlan(wo, 'u-005')
     await plan.confirmNode(n.id, 'u-011')
     const input = { workOrderNumber: wo, planNodeId: n.id, componentName: '车架', ownerId: 'u-008', startDate: parseDay('2026-11-01'), planDate: parseDay('2026-12-01') }

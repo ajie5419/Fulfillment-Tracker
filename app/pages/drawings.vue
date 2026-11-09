@@ -199,6 +199,28 @@ function undo(row: DrawingRow, kind: 'drawn' | 'confirm') {
   })
 }
 
+function changeCancellation(row: DrawingRow) {
+  const cancelled = row.status !== 'CANCELLED'
+  Modal.confirm({
+    title: `${cancelled ? '取消任务' : '恢复任务'}：${row.componentName}？`,
+    content: cancelled
+      ? '取消后不再预警、不计入节点完成统计，也不再阻挡关联工件的开工条件；已有发放记录保留。可通过“已取消”列表恢复。'
+      : '恢复后重新计入节点完成统计，并按当前设计、发放和客户确认情况恢复状态及预警跟踪。',
+    okText: cancelled ? '确认取消任务' : '恢复任务',
+    okButtonProps: { danger: cancelled },
+    async onOk() {
+      try {
+        const result = await drawingSend(`/api/drawings/${row.id}`, 'PATCH', { cancelled })
+        message.success(drawingResultText(result, cancelled ? '已取消任务' : '已恢复任务'))
+        await reload()
+      } catch (error) {
+        message.error(apiError(error))
+        throw error
+      }
+    },
+  })
+}
+
 // ───── 一键发放 ─────
 const prefill = ref<ReleasePrefill | null>(null)
 const releaseOpen = ref(false)
@@ -359,7 +381,8 @@ const loadColumns = [
                   <a-button size="small">更多</a-button>
                   <template #overlay>
                     <a-menu>
-                      <a-menu-item v-if="canEditTask" key="edit" @click="openEdit(record as DrawingRow)">编辑 / 取消</a-menu-item>
+                      <a-menu-item v-if="canEditTask" key="edit" @click="openEdit(record as DrawingRow)">编辑任务</a-menu-item>
+                      <a-menu-item v-if="canEditTask" key="cancel" :danger="record.status !== 'CANCELLED'" @click="changeCancellation(record as DrawingRow)">{{ record.status === 'CANCELLED' ? '恢复任务' : '取消任务' }}</a-menu-item>
                       <a-menu-item v-if="record.permissions.release && record.status !== 'DRAWN' && canRelease" key="rel" @click="openRelease(record as DrawingRow)">再发一版</a-menu-item>
                       <a-menu-item v-if="record.permissions.undoDrawn" key="undo" @click="undo(record as DrawingRow, 'drawn')">撤销设计完成</a-menu-item>
                       <a-menu-item v-if="record.customerConfirmedDate && canEditTask" key="undoc" @click="undo(record as DrawingRow, 'confirm')">撤销客户确认</a-menu-item>

@@ -73,6 +73,7 @@ describe.each([
     else expect(state.form.partId).toBe('part-B')
     await state.submit()
     expect(send).toHaveBeenCalledWith(`/api/${endpoint}/B`, 'PATCH', expect.objectContaining({ [field]: expect.stringContaining('B') }))
+    if (prop === 'task') expect(send.mock.calls[0]?.[2]).not.toHaveProperty('cancelled')
     expect(events).toEqual([['B']])
   })
 
@@ -190,6 +191,23 @@ describe('payment material hydration', () => {
     expect(state.form.purchaseLineIds).toEqual([])
     expect(state.picked.size).toBe(0)
   })
+})
+
+it('cancels or restores a design task only after confirmation, without changing ordinary fields', async () => {
+  const confirm = vi.fn()
+  vi.stubGlobal('Modal', { confirm })
+  vi.stubGlobal('useRouter', () => ({ replace: vi.fn() }))
+  vi.stubGlobal('useMe', async () => ({ data: Vue.ref({}) }))
+  vi.stubGlobal('canDo', () => true)
+  vi.stubGlobal('useListLayout', () => Vue.ref('group'))
+  const { state } = await mount('app/pages/drawings.vue')
+  state.changeCancellation({ ...record('A'), status: 'PENDING' })
+  expect(send).not.toHaveBeenCalled()
+  await confirm.mock.calls[0]![0].onOk()
+  expect(send).toHaveBeenLastCalledWith('/api/drawings/A', 'PATCH', { cancelled: true })
+  state.changeCancellation({ ...record('A'), status: 'CANCELLED' })
+  await confirm.mock.calls[1]![0].onOk()
+  expect(send).toHaveBeenLastCalledWith('/api/drawings/A', 'PATCH', { cancelled: false })
 })
 
 describe.each(['purchases', 'drawings'])('%s reminder navigation', (page) => {

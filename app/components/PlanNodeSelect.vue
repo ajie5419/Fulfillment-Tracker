@@ -4,7 +4,7 @@
  * 工单的总计划已发布时必选（后端校验，这里只提示）；记录日期晚于节点计划日时提示（照样能保存，总计划里标红）。
  * 选中节点时抛出 pick(planDate)，父组件可以拿来给空着的日期字段填默认值。
  */
-interface Opt { id: string; seq: number; name: string; deptText: string; planDate: string }
+interface Opt { id: string; seq: number; code?: string; name: string; deptText: string; planDate: string }
 
 const props = withDefaults(
   defineProps<{
@@ -22,24 +22,30 @@ const emit = defineEmits<{ pick: [planDate: string] }>()
 
 const requestFetch = useRequestFetch()
 const opts = ref<{ published: boolean; nodes: Opt[] }>({ published: false, nodes: [] })
+const loadError = ref(false)
+const loading = ref(false)
 async function load() {
   const wo = props.workOrderNumber
+  loadError.value = false
   if (!wo) {
+    loading.value = false
     opts.value = { published: false, nodes: [] }
     return
   }
+  loading.value = true
   let next: { published: boolean; nodes: Opt[] }
   try {
     next = await clientRequest('/api/plan/options', { query: { workOrderNumber: wo } }, requestFetch)
   } catch {
-    next = { published: false, nodes: [] }
+    if (wo === props.workOrderNumber) { loadError.value = true; loading.value = false }
+    return
   }
   // 连续切换工单时，只采用当前工单的结果，避免先发后到的旧响应覆盖
-  if (wo === props.workOrderNumber) opts.value = next
+  if (wo === props.workOrderNumber) { opts.value = next; loading.value = false }
 }
 watch(() => props.workOrderNumber, load, { immediate: true })
 
-const options = computed(() => opts.value.nodes.map((n) => ({ value: n.id, label: `${n.seq}. ${n.name}（${n.deptText}，${n.planDate}）` })))
+const options = computed(() => opts.value.nodes.map((n) => ({ value: n.id, label: `${n.code ?? n.seq} ${n.name}（${n.deptText}，${n.planDate}）` })))
 const selected = computed(() => opts.value.nodes.find((n) => n.id === value.value) ?? null)
 const recordDay = computed(() => {
   const d = props.recordDate
@@ -63,15 +69,17 @@ defineExpose({ published: computed(() => opts.value.published) })
       :value="value ?? undefined"
       :options="options"
       :size="size"
+      :loading="loading"
       allow-clear
       show-search
       option-filter-prop="label"
-      :placeholder="!workOrderNumber ? '先选工单' : !opts.nodes.length ? '该工单还没有总计划' : opts.published ? '请选择（已发布，必选）' : '可不选'"
-      :disabled="!workOrderNumber || (!opts.nodes.length && !value)"
+      :placeholder="!workOrderNumber ? '先选工单' : loadError ? '节点加载失败' : loading ? '加载节点中' : !opts.nodes.length ? '该工单还没有总计划' : opts.published ? '请选择（已发布，必选）' : '可不选'"
+      :disabled="loading || loadError || !workOrderNumber || (!opts.nodes.length && !value)"
       :status="late ? 'warning' : undefined"
       style="width: 100%"
       @change="onChange"
     />
+    <div v-if="loadError" class="warn">节点加载失败，<a-button type="link" size="small" @click="load">重试</a-button></div>
     <template v-if="!bare">
       <div v-if="late" class="warn">晚于节点计划日 {{ selected?.planDate }}，可以保存，总计划里会标红</div>
       <div v-else-if="opts.published && !value" class="warn">该工单总计划已发布，新建记录必须选所属节点</div>

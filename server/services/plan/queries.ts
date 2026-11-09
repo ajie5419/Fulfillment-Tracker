@@ -6,7 +6,7 @@ import { BUSINESS_DEPT_NAME } from '../auth/departments'
 import type { RoleContext } from '../auth/permissions'
 import { FlowError } from '../flow/errors'
 import { loadNames } from '../flow/names'
-import { treeOrder, w9PlanKey, w9Key, w9ConfirmKey, w9SplitKey, deptPlanLink, deptPlanMobileLink } from './constants'
+import { treeOrder, outlineCodes, w9PlanKey, w9Key, w9ConfirmKey, w9SplitKey, deptPlanLink, deptPlanMobileLink } from './constants'
 import { loadPlanSources, myConfirmTodos, unlinkedCounts } from './loaders'
 import { calculatePlans } from './calculation'
 import { projectPlan } from './projection'
@@ -51,11 +51,13 @@ export async function getPlan(workOrderNumber: string, ctx: RoleContext, now = n
 export async function planOptions(workOrderNumber: string) {
   const [plan, nodes] = await Promise.all([
     prisma.workOrderPlan.findUnique({ where: { workOrderNumber }, select: { status: true } }),
-    prisma.planNode.findMany({ where: { workOrderNumber }, orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }], select: { id: true, seq: true, name: true, dept: true, planDate: true, parentId: true } }),
+    prisma.planNode.findMany({ where: { workOrderNumber }, orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }], select: { id: true, seq: true, name: true, dept: true, planDate: true, parentId: true, phase: true } }),
   ])
+  const ordered = treeOrder(nodes.map((n) => ({ ...n, parent: n.parentId })))
+  const codes = outlineCodes(ordered)
   return {
     published: plan?.status === 'PUBLISHED',
-    nodes: treeOrder(nodes.map((n) => ({ ...n, parent: n.parentId }))).map((n) => ({ id: n.id, seq: n.seq, name: n.name, dept: n.dept, deptText: BUSINESS_DEPT_NAME[n.dept], planDate: day(n.planDate) })),
+    nodes: ordered.map((n) => ({ id: n.id, seq: n.seq, code: codes.get(n.id), name: n.name, dept: n.dept, deptText: BUSINESS_DEPT_NAME[n.dept], planDate: day(n.planDate) })),
   }
 }
 
