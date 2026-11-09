@@ -63,16 +63,17 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
     :pagination="false"
     :row-class-name="(r: TableRow) => rowClass(r)"
     :row-expandable="(r: TableRow) => !isPhaseRow(r)"
+    :show-expand-column="false"
     :scroll="{ x: 1100 }"
   >
     <template #emptyText><a-empty :description="data.canEdit ? '还没有节点：选模板“按模板生成”，或“新增节点”' : '还没有编制总计划'" /></template>
     <template #bodyCell="{ column, record }">
       <template v-if="isPhaseRow(record as TableRow)">
         <template v-if="column.key === 'name'">
-          <button type="button" class="fold" :aria-expanded="!isCollapsed(record.id)" :aria-label="`${isCollapsed(record.id) ? '展开' : '收起'}阶段 ${record.phase}`" @click="emit('toggleCollapse', record.id)">
-            {{ isCollapsed(record.id) ? '▸' : '▾' }}
-          </button>
           <span class="phase-line">
+          <button type="button" class="fold" :aria-expanded="!isCollapsed(record.id)" :aria-label="`${isCollapsed(record.id) ? '展开' : '收起'}阶段 ${record.phase}`" @click="emit('toggleCollapse', record.id)">
+            <span class="chevron" :class="{ open: !isCollapsed(record.id) }" aria-hidden="true" />
+          </button>
             <span class="code">{{ record.code }}</span><span class="phase-name">{{ record.phase }}</span>
             <span class="muted">{{ record.count }} 个节点</span>
           </span>
@@ -89,7 +90,10 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
       <template v-else-if="column.key === 'name'">
         <span class="node-name" :class="`lv${levelOf(record as PlanNodeRow)}`">
           <button v-if="record.childCount" type="button" class="fold" :aria-expanded="!isCollapsed(record.id)" :aria-label="`${isCollapsed(record.id) ? '展开' : '收起'}子节点`" @click="emit('toggleCollapse', record.id)">
-            {{ isCollapsed(record.id) ? '▸' : '▾' }}
+            <span class="chevron" :class="{ open: !isCollapsed(record.id) }" aria-hidden="true" />
+          </button>
+          <button v-else type="button" class="fold" :aria-expanded="expanded.includes(record.id)" :aria-label="`${expanded.includes(record.id) ? '收起' : '展开'}节点 ${record.name} 的部门记录`" @click="expanded = expanded.includes(record.id) ? expanded.filter(id => id !== record.id) : [...expanded, record.id]">
+            <span class="chevron" :class="{ open: expanded.includes(record.id) }" aria-hidden="true" />
           </button>
           <span class="code">{{ record.code }}</span>
           <span :class="{ 'summary-name': record.childCount }">{{ record.name }}</span>
@@ -180,18 +184,22 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
 :deep(.focus-row) td { background: var(--ft-risk-bg) !important; }
 :deep(.phase-row) td { background: var(--ft-fill) !important; }
 .phase-name { font-weight: 600; color: var(--ft-text); margin-right: 8px; }
-.phase-line { display: inline-flex; align-items: baseline; white-space: nowrap; }
+.phase-line { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* 大纲分级：阶段行 1 级（灰底粗体），节点 2 级，子节点 3 级（再缩进、虚线分隔）；折叠按钮占固定宽度，编号对齐 */
-.fold { width: 18px; height: 18px; padding: 0; margin-right: 4px; border: 0; background: none; color: var(--ft-text-2); cursor: pointer; font-size: 14px; line-height: 18px; border-radius: 4px; }
+.fold { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 24px; width: 24px; height: 28px; padding: 0; border: 0; background: transparent; color: var(--ft-text-2); cursor: pointer; border-radius: 4px; }
+.fold:hover { background: var(--ft-fill); color: var(--ft-primary); }
+.chevron { width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 0.15s; }
+.chevron.open { transform: rotate(45deg); }
 .fold:focus-visible { outline: 2px solid var(--ft-primary); }
-.code { display: inline-block; min-width: 40px; margin-right: 6px; color: var(--ft-text-2); font-variant-numeric: tabular-nums; }
+.code { display: inline-block; min-width: 32px; color: var(--ft-text-2); font-variant-numeric: tabular-nums; }
 :deep(.phase-row) td { font-weight: 600; }
-.node-name { display: inline-flex; align-items: center; flex-wrap: wrap; }
+.node-name { position: relative; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; }
+.node-name.lv2::before, .node-name.lv3::before { content: ""; position: absolute; left: 11px; top: -16px; width: 13px; height: 32px; border-left: 1px solid var(--ft-border); border-bottom: 1px solid var(--ft-border); border-bottom-left-radius: 4px; pointer-events: none; }
+.node-name.lv3::before { left: 35px; }
 .lv1 { padding-left: 0; }
-.lv2 { padding-left: 22px; }
-.lv3 { padding-left: 52px; }
-.node-name:not(:has(.fold)) .code { margin-left: 22px; }
-.node-note { margin-left: 62px; }
+.lv2 { padding-left: 24px; }
+.lv3 { padding-left: 48px; }
+.node-note { margin-left: 72px; }
 .summary-name { font-weight: 600; }
 :deep(.child-row) td { border-top: 1px dashed var(--ft-border); }
 .affects { margin: 0 0 8px; line-height: 1.6; }
