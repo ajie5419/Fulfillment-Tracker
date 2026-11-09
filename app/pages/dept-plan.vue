@@ -203,7 +203,7 @@ function canSplitNode(n: DeptPlanNode, c: CanCreate): boolean {
                     </template>
                     <span v-else-if="n.tab === 'pending'" class="ft-muted small">等部门负责人接收</span>
                     <template v-if="n.tab !== 'pending' || justAccepted.includes(n.id)">
-                      <a-button v-if="canSplitNode(n, g.canCreate)" size="small" class="split-btn" @click="workRefs[n.id]?.openSplit()">＋ 分解任务</a-button>
+                      <a-button v-if="canSplitNode(n, g.canCreate)" size="small" class="split-btn" @click="workRefs[n.id]?.openSplit()">{{ n.tasks.length ? '＋ 追加任务' : '＋ 分解任务' }}</a-button>
                       <template v-if="n.canComplete">
                         <a-button v-if="!n.done" size="small" @click="openDone(n)">标节点完成</a-button>
                         <a-button v-else-if="n.doneBy === 'MANUAL'" size="small" @click="undoDone(n)">撤销完成</a-button>

@@ -70,6 +70,9 @@ function recordSaved() {
 }
 
 // ───── 其他任务：新建 / 修改 / 删除 ─────
+// Parent refs are resolved during async setup; expose actions before suspending.
+const hasSplitAction = computed(() => canAddTask.value || splitItems.value.length > 0)
+defineExpose({ openSplit, hasSplitAction })
 const { data: master } = await useMaster()
 const taskOpen = ref(false)
 const taskEditing = ref<PlanTask | null>(null)
@@ -175,8 +178,6 @@ const stepSelection = computed(() => ({
   getCheckboxProps: (r: StepOpt) => ({ disabled: r.planNodeId === props.node.id }),
 }))
 
-const hasSplitAction = computed(() => canAddTask.value || splitItems.value.length > 0)
-defineExpose({ openSplit, hasSplitAction })
 </script>
 
 <template>
@@ -226,8 +227,9 @@ defineExpose({ openSplit, hasSplitAction })
     </div>
 
     <div v-if="node.tasks.length && !hideAddButton && hasSplitAction" class="work-foot">
-      <a-button size="small" class="add-btn" @click="openSplit">＋ 分解任务</a-button>
+      <a-button size="small" class="add-btn" @click="openSplit">＋ 追加任务</a-button>
     </div>
+  </div>
 
     <a-modal v-model:open="taskOpen" :title="taskEditing ? `修改任务：${taskEditing.name}` : `分解任务：${node.code} ${node.name}`" :ok-text="directTask ? '保存并指派' : '继续填写'" :confirm-loading="savingTask" :closable="!savingTask" :mask-closable="!savingTask" :cancel-button-props="{ disabled: savingTask }" @ok="saveTask">
       <a-form layout="vertical">
@@ -282,7 +284,6 @@ defineExpose({ openSplit, hasSplitAction })
       <PurchaseEditModal :open="recordOpen === 'purchase'" :line="null" :work-order-number="wo" :preset-node="presetNode" @close="recordOpen = null" @done="recordSaved" />
       <KittingNodeModal :open="recordOpen === 'assembly'" :node="null" :work-order-number="wo" :preset-node="presetNode" @close="recordOpen = null" @done="recordSaved" />
     </template>
-  </div>
 </template>
 
 <style scoped>
