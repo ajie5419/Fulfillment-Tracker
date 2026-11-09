@@ -116,7 +116,7 @@ function setWorkRef(id: string, el: unknown) {
   workRefs[id] = el as { openSplit: () => void } | null
 }
 function canSplitNode(n: DeptPlanNode, c: CanCreate): boolean {
-  if (n.done) return false
+  if (n.doneBy === 'MANUAL') return false
   if (n.canSplit) return true
   if (n.dept === 'TECH' && c.drawing) return true
   if (n.dept === 'PURCHASE' && c.purchase) return true
@@ -217,7 +217,7 @@ function canSplitNode(n: DeptPlanNode, c: CanCreate): boolean {
                   :node="n"
                   :wo="g.workOrder.workOrderNumber"
                   :can-create="g.canCreate"
-                  :view-only="n.done"
+                  :view-only="n.doneBy === 'MANUAL'"
                   hide-add-button
                   @changed="refresh()"
                 />

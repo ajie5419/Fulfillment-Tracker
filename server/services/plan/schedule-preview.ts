@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { Prisma } from '@prisma/client'
 import { dateFieldDay } from '../../../shared/dates'
-import { autoDone } from './node-estimates'
+import { estimateNodes } from './node-estimates'
 import { loadPlans } from './queries'
 import { linkSchedule, type ScheduleNode } from './schedule'
 import { FlowError } from '../flow/errors'
@@ -27,11 +27,16 @@ export async function scheduleSnapshot(tx: Prisma.TransactionClient, wo: string)
   const data = (await loadPlans({ workOrderNumbers: [wo] }, new Date(), tx)).get(wo)
   if (!data) throw new FlowError('总计划不存在，请刷新后重试')
   const deps = await tx.planNodeDep.findMany({ where: { nodeId: { in: data.nodes.map((n) => n.id) } }, orderBy: [{ nodeId: 'asc' }, { predId: 'asc' }] })
+  const completion = new Map(estimateNodes(data.nodes.map((n) => ({
+    id: n.id, parent: n.parentId, planDay: dateFieldDay(n.planDate),
+    manualDoneDay: n.manualDoneAt && n.actualDate ? dateFieldDay(n.actualDate) : null,
+    tasks: data.tasks.filter((t) => t.nodeId === n.id).map((t) => t.facts),
+  })), dateFieldDay(new Date())).map((n) => [n.id, n.done]))
   const nodes: ScheduleNode[] = data.nodes.map((n) => ({
     id: n.id, name: n.name, parent: n.parentId,
     preds: n.customDeps ? deps.filter((d) => d.nodeId === n.id).map((d) => d.predId) : null,
     start: n.startDate ? dateFieldDay(n.startDate) : null, finish: dateFieldDay(n.planDate),
-    done: !!n.manualDoneAt || autoDone(data.tasks.filter((t) => t.nodeId === n.id).map((t) => t.facts), dateFieldDay(new Date())).done,
+    done: completion.get(n.id) ?? false,
   }))
   return { nodes, version: { nodes: data.nodes, tasks: data.tasks, deps, status: data.status } }
 }

@@ -17,6 +17,8 @@ beforeEach(() => {
   returns('planNode.update', node)
   returns('alert.updateMany', { count: 0 })
   returns('planNode.findMany', [])
+  returns('workOrderPlan.findMany', [])
+  returns('qmsWorkOrder.findMany', [])
 })
 
 it('先锁计划再锁节点，锁后重读子节点，新增未完成子节点必须拦截', async () => {

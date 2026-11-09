@@ -89,6 +89,57 @@ exports[`plan service 搬移前特征 > complete 命令的完整副作用顺序 
       },
     ],
     [
+      "workOrderPlan.findMany",
+      {
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "orderBy": [
+          {
+            "seq": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+          {
+            "id": "asc",
+          },
+        ],
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "qmsWorkOrder.findMany",
+      {
+        "select": {
+          "deliveryDate": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
       "planNode.update",
       {
         "data": {

@@ -483,7 +483,10 @@ export async function completeNode(id: string, date: Date | null | undefined, ac
       const done = new Set(est.filter((e) => e.done).map((e) => e.id))
       const undone = kids.filter((k) => !done.has(k.id))
       if (undone.length) throw new FlowError(`还有子节点没完成：${undone.map((k) => k.name).join('、')}（子节点都完成后会自动完成）`)
+      throw new FlowError('有子节点的节点随子节点自动完成，无需手动标记')
     }
+    const data = (await loadPlans({ workOrderNumbers: [node.workOrderNumber] }, now, tx)).get(node.workOrderNumber)
+    if (data?.tasks.some((t) => t.nodeId === id)) throw new FlowError('已分解的节点随任务自动完成，无需手动标记')
     await tx.planNode.update({ where: { id }, data: { actualDate: d, manualDoneBy: actorId, manualDoneAt: now } })
     await clearAlertKeys(tx, [w9Key(id), w9SplitKey(id)])
     return { id, actualDate: day(d) }

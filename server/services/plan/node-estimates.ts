@@ -55,8 +55,11 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
       [...n.tasks, ...myKids.map((c): TaskFacts => ({ kind: 'task', id: c.id, excluded: false, done: c.done, doneDay: c.actualDay, planDay: null }))],
       today,
     )
-    const doneBy = n.manualDoneDay ? 'MANUAL' : auto.done ? 'AUTO' : null
-    const actualDay = n.manualDoneDay ?? auto.day
+    // Once decomposed, child work owns completion. Historical manual marks must
+    // not keep a node closed after work is added or completion is reversed.
+    const manualDay = n.tasks.length || myKids.length ? null : n.manualDoneDay
+    const doneBy = manualDay ? 'MANUAL' : auto.done ? 'AUTO' : null
+    const actualDay = manualDay ?? auto.day
     const myPreds = preds.get(id)!
     let expectedDay: string
     let driver: NodeEstimate['driver']
