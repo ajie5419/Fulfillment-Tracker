@@ -62,7 +62,7 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
     size="small"
     :pagination="false"
     :row-class-name="(r: TableRow) => rowClass(r)"
-    :row-expandable="(r: TableRow) => !isPhaseRow(r)"
+    :row-expandable="(r: TableRow) => !isPhaseRow(r) && r.tasks.length > 0"
     :show-expand-column="false"
     :scroll="{ x: 1100 }"
   >
@@ -92,9 +92,10 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
           <button v-if="record.childCount" type="button" class="fold" :aria-expanded="!isCollapsed(record.id)" :aria-label="`${isCollapsed(record.id) ? '展开' : '收起'}子节点`" @click="emit('toggleCollapse', record.id)">
             <span class="chevron" :class="{ open: !isCollapsed(record.id) }" aria-hidden="true" />
           </button>
-          <button v-else type="button" class="fold" :aria-expanded="expanded.includes(record.id)" :aria-label="`${expanded.includes(record.id) ? '收起' : '展开'}节点 ${record.name} 的部门记录`" @click="expanded = expanded.includes(record.id) ? expanded.filter(id => id !== record.id) : [...expanded, record.id]">
+          <button v-else-if="record.tasks.length" type="button" class="fold" :aria-expanded="expanded.includes(record.id)" :aria-label="`${expanded.includes(record.id) ? '收起' : '展开'}节点 ${record.name} 的部门记录`" @click="expanded = expanded.includes(record.id) ? expanded.filter(id => id !== record.id) : [...expanded, record.id]">
             <span class="chevron" :class="{ open: expanded.includes(record.id) }" aria-hidden="true" />
           </button>
+          <span v-else class="fold-placeholder" aria-hidden="true" />
           <span class="code">{{ record.code }}</span>
           <span :class="{ 'summary-name': record.childCount }">{{ record.name }}</span>
           <span v-if="record.childCount" class="muted small">　汇总 · {{ record.childCount }} 个子节点</span>
@@ -164,12 +165,8 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
       </template>
     </template>
     <template #expandedRowRender="{ record }">
-      <div v-if="data?.network" class="affects small">
-        <template v-if="record.affects.length">晚了会影响 {{ record.affects.length }} 个节点：<span class="muted">{{ affectsText(record as PlanNodeRow) }}</span></template>
-        <span v-else class="muted">晚了不影响其他节点</span>
-      </div>
       <div v-if="record.childCount" class="muted">汇总行：任务挂在下面的子节点上</div>
-      <PlanNodeWork v-else :node="record as PlanNodeRow" :wo="wo" :can-create="data!.canCreate" view-only @changed="emit('changed')" />
+      <PlanNodeWork v-else-if="record.tasks.length" :node="record as PlanNodeRow" :wo="wo" :can-create="data!.canCreate" view-only @changed="emit('changed')" />
     </template>
   </a-table>
 </template>
@@ -187,6 +184,7 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
 .phase-line { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* 大纲分级：阶段行 1 级（灰底粗体），节点 2 级，子节点 3 级（再缩进、虚线分隔）；折叠按钮占固定宽度，编号对齐 */
 .fold { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 24px; width: 24px; height: 28px; padding: 0; border: 0; background: transparent; color: var(--ft-text-2); cursor: pointer; border-radius: 4px; }
+.fold-placeholder { flex: 0 0 24px; width: 24px; }
 .fold:hover { background: var(--ft-fill); color: var(--ft-primary); }
 .chevron { width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 0.15s; }
 .chevron.open { transform: rotate(45deg); }
