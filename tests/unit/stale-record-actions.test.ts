@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Vue from 'vue'
 import * as workbench from '../../shared/workbench'
 import * as drawing from '../../shared/drawing'
+import * as planValidation from '../../shared/plan-validation'
 import * as purchases from '../../shared/purchases'
 import { deferred, flushVue, mountScript } from '../helpers/vue-script'
 
@@ -47,7 +48,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 async function mount(file: string, props: Record<string, unknown> = {}) {
-  const result = await mountScript(file, props, { '#shared/drawing': drawing, '#shared/workbench': workbench, '#shared/purchases': purchases })
+  const result = await mountScript(file, props, { '#shared/plan-validation': planValidation, '#shared/drawing': drawing, '#shared/workbench': workbench, '#shared/purchases': purchases })
   cleanups.push(result.unmount)
   return result
 }

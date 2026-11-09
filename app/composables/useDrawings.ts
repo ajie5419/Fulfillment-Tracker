@@ -18,6 +18,7 @@ export interface DrawingRow {
   ownerName: string | null
   ownerText: string
   planDate: string
+  startDate?: string | null
   drawnDate: string | null
   drawnByName: string | null
   needsCustomerConfirm: boolean

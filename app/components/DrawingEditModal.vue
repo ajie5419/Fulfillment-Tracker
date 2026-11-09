@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isPlanStartLate } from '#shared/plan-validation'
 /**
  * 新建 / 编辑设计任务（R11）：工单、关联工件（可多选，可不选只写部件名称）、部件名称、设计负责人（不选 = 技术部负责人）、
  * 计划完成日、所属总计划节点（R14，工单总计划已发布时必选）、是否需要客户确认 + 客户确认计划日、备注；编辑时还能取消 / 重新启用。设计完成、客户确认在列表上操作。
@@ -16,6 +17,7 @@ const empty = () => ({
   componentName: '',
   ownerId: undefined as string | undefined,
   planDate: undefined as string | undefined,
+  startDate: undefined as string | undefined,
   planNodeId: null as string | null | undefined,
   needsCustomerConfirm: false,
   customerPlanDate: undefined as string | undefined,
@@ -53,6 +55,7 @@ watch(
             componentName: t.componentName,
             ownerId: t.ownerId ?? undefined,
             planDate: dayText(t.planDate),
+            startDate: t.startDate ? dayText(t.startDate) : undefined,
             planNodeId: t.planNodeId,
             needsCustomerConfirm: t.needsCustomerConfirm,
             customerPlanDate: t.customerPlanDate ? dayText(t.customerPlanDate) : undefined,
@@ -101,11 +104,13 @@ async function submit() {
   if (!form.workOrderNumber) return message.warning('请选择工单')
   if (!form.componentName.trim()) return message.warning('请填写部件名称')
   if (!form.planDate) return message.warning('请选择计划完成日')
+  if (isPlanStartLate(form.startDate, form.planDate)) return message.warning('计划开始日不能晚于计划完成日')
   const body = {
     partIds: [...form.partIds],
     componentName: form.componentName.trim(),
     ownerId: form.ownerId ?? null,
     planDate: form.planDate,
+    startDate: form.startDate ?? null,
     planNodeId: form.planNodeId ?? null,
     needsCustomerConfirm: form.needsCustomerConfirm,
     customerPlanDate: form.needsCustomerConfirm ? (form.customerPlanDate ?? null) : null,
@@ -155,6 +160,7 @@ async function submit() {
       <a-form-item label="设计负责人">
         <a-select v-model:value="form.ownerId" allow-clear show-search option-filter-prop="label" placeholder="不选 = 技术部负责人" :options="ownerOptions" />
       </a-form-item>
+      <a-form-item label="计划开始日"><UiDatePicker v-model:value="form.startDate" /></a-form-item>
       <a-form-item label="计划完成日" required>
         <UiDatePicker v-model:value="form.planDate" />
         <div class="muted">计划完成日前 2 天（可在设置里改）还没完成设计黄色预警，过了计划完成日红色</div>

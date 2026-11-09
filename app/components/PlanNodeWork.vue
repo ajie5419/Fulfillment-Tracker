@@ -9,6 +9,7 @@
  */
 import dayjs, { type Dayjs } from 'dayjs'
 import { factoryDay } from '#shared/mobile-todo'
+import { isPlanStartLate } from '#shared/plan-validation'
 import type { CanCreate, PlanNodeRow, PlanTask } from '#shared/plan-view'
 
 const props = withDefaults(defineProps<{ node: PlanNodeRow; wo: string; canCreate: CanCreate; viewOnly?: boolean }>(), { viewOnly: false })
@@ -31,6 +32,7 @@ async function act<T>(fn: () => Promise<T>, ok?: string | ((r: T) => string)) {
 
 // ───── 能做哪些分解（按节点责任部门）─────
 type SplitKey = 'drawing' | 'purchase' | 'assembly' | 'steps'
+const taskKind = ref<SplitKey | 'task'>('task')
 const splitItems = computed<{ key: SplitKey; label: string }[]>(() => {
   if (props.viewOnly) return []
   const c = props.canCreate
@@ -43,6 +45,19 @@ const splitItems = computed<{ key: SplitKey; label: string }[]>(() => {
   return items
 })
 const canAddTask = computed(() => !props.viewOnly && props.node.canSplit)
+const splitOptions = computed(() => [
+  ...splitItems.value.map((it) => ({ value: it.key, label: it.label.replace(/^＋ /, '').replace(/^新建/, '') })),
+  ...(canAddTask.value ? [{ value: 'task' as const, label: '其他任务' }] : []),
+])
+const directTask = computed(() => taskKind.value === 'drawing' || taskKind.value === 'task')
+const savingTask = ref(false)
+const taskStart = ref<string | null>()
+const taskFinish = computed({ get: () => taskForm.planDate?.format('YYYY-MM-DD'), set: (value: string | null | undefined) => { taskForm.planDate = value ? dayjs(value) : undefined } })
+function openSplit() {
+  openTask(null)
+  taskKind.value = splitOptions.value[0]?.value ?? 'task'
+  taskStart.value = props.node.startDate
+}
 const presetNode = computed(() => ({ id: props.node.id, planDate: props.node.planDate }))
 const recordOpen = ref<'drawing' | 'purchase' | 'assembly' | null>(null)
 function onSplit(key: SplitKey) {
@@ -60,6 +75,7 @@ const taskOpen = ref(false)
 const taskEditing = ref<PlanTask | null>(null)
 const taskForm = reactive<{ name: string; ownerId: string | undefined; planDate: Dayjs | undefined; note: string }>({ name: '', ownerId: undefined, planDate: undefined, note: '' })
 function openTask(t: PlanTask | null) {
+  taskKind.value = 'task'
   taskEditing.value = t
   Object.assign(taskForm, { name: t?.name ?? '', ownerId: t?.ownerId ?? undefined, planDate: dayjs(t?.planDate ?? props.node.planDate), note: t?.note ?? '' })
   taskOpen.value = true
@@ -72,15 +88,25 @@ const ownerOptions = computed(() =>
 )
 const taskLate = computed(() => !!taskForm.planDate && taskForm.planDate.format('YYYY-MM-DD') > props.node.planDate)
 async function saveTask() {
+  if (savingTask.value) return
+  if (!directTask.value && taskKind.value !== 'task' && taskKind.value !== 'drawing') {
+    taskOpen.value = false
+    return onSplit(taskKind.value)
+  }
   if (!taskForm.name.trim()) return message.warning('请填写任务名称')
   if (!taskForm.ownerId) return message.warning('请选择责任人')
   if (!taskForm.planDate) return message.warning('请选择计划完成日')
+  if (taskKind.value === 'drawing' && isPlanStartLate(taskStart.value, taskForm.planDate.format('YYYY-MM-DD'))) return message.warning('计划开始日不能晚于计划完成日')
   const body = { name: taskForm.name, ownerId: taskForm.ownerId, planDate: taskForm.planDate.format('YYYY-MM-DD'), note: taskForm.note || null }
   const t = taskEditing.value
+  savingTask.value = true
   const ok = await act(
-    () => (t ? send(`/api/plan/tasks/${t.id}`, { method: 'PATCH', body }) : send(`/api/plan/nodes/${props.node.id}/tasks`, { method: 'POST', body })),
-    t ? '已保存' : '已新增，责任人会收到待办',
+    () => taskKind.value === 'drawing'
+      ? send('/api/drawings', { method: 'POST', body: { workOrderNumber: props.wo, planNodeId: props.node.id, componentName: body.name, ownerId: body.ownerId, startDate: taskStart.value ?? null, planDate: body.planDate, note: body.note, partIds: [], needsCustomerConfirm: false } })
+      : (t ? send(`/api/plan/tasks/${t.id}`, { method: 'PATCH', body }) : send(`/api/plan/nodes/${props.node.id}/tasks`, { method: 'POST', body })),
+    t ? '已保存' : '已分解并指派责任人',
   )
+  savingTask.value = false
   if (ok?.planWarning) message.warning(ok.planWarning)
   if (ok) taskOpen.value = false
 }
@@ -203,22 +229,31 @@ const taskColumns = [
     <div v-else class="empty muted">{{ viewOnly ? '还没有分解：由责任部门在“部门计划”里接收后分解' : '还没有分解任务' }}</div>
 
     <div v-if="canAddTask || splitItems.length" class="adds">
-      <a-button v-if="canAddTask" class="add" @click="openTask(null)">＋ 新增任务（名称 / 责任人 / 日期）</a-button>
-      <a-button v-for="it in splitItems" :key="it.key" class="add" @click="onSplit(it.key)">{{ it.label }}</a-button>
+      <a-button class="add" @click="openSplit">＋ 分解任务</a-button>
       <UiHelpTip v-if="node.dept === 'TECH' || node.dept === 'PURCHASE'" label="已有记录怎么关联">已经建好的设计任务、采购行：在“设计任务”“采购到货”里编辑它，把“所属总计划节点”选成这个节点即可。</UiHelpTip>
     </div>
 
-    <a-modal v-model:open="taskOpen" :title="taskEditing ? `修改任务：${taskEditing.name}` : `分解：${node.code} ${node.name}`" @ok="saveTask">
+    <a-modal v-model:open="taskOpen" :title="taskEditing ? `修改任务：${taskEditing.name}` : `分解任务：${node.code} ${node.name}`" :ok-text="directTask ? '保存并指派' : '继续填写'" :confirm-loading="savingTask" :closable="!savingTask" :mask-closable="!savingTask" :cancel-button-props="{ disabled: savingTask }" @ok="saveTask">
       <a-form layout="vertical">
+        <a-form-item v-if="!taskEditing" label="任务类型">
+          <a-select v-model:value="taskKind" :options="splitOptions" :disabled="savingTask" />
+          <div class="muted" v-if="taskKind === 'drawing'">保存后显示在本节点、设计任务和责任人的工作台；图纸关联、客户确认要求可在设计任务中补充。</div>
+          <div class="muted" v-else-if="taskKind === 'task'">用于会议、资料整理等辅助工作，不进入设计、采购等专项流程。</div>
+        </a-form-item>
+        <template v-if="directTask">
         <a-form-item label="任务名称" required><a-input v-model:value="taskForm.name" :maxlength="191" placeholder="如：坡口加工、BOM 编制" /></a-form-item>
         <a-form-item label="责任人（会收到待办）" required>
           <a-select v-model:value="taskForm.ownerId" show-search option-filter-prop="label" :options="ownerOptions" placeholder="选择责任人" />
         </a-form-item>
+        <a-form-item v-if="taskKind === 'drawing'" label="计划开始日">
+          <UiDatePicker v-model:value="taskStart" />
+        </a-form-item>
         <a-form-item label="计划完成日" required>
-          <a-date-picker v-model:value="taskForm.planDate" :allow-clear="false" style="width: 100%" />
+          <UiDatePicker v-model:value="taskFinish" :allow-clear="false" />
           <div v-if="taskLate" class="late small">晚于节点计划日 {{ node.planDate }}，可以保存，项目计划里会标红</div>
         </a-form-item>
         <a-form-item label="备注"><a-input v-model:value="taskForm.note" :maxlength="500" /></a-form-item>
+        </template>
       </a-form>
     </a-modal>
 

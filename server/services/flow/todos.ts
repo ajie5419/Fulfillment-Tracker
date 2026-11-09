@@ -16,6 +16,7 @@ import { describePlanTaskTodos, transferPlanTaskOwner } from '../plan/tasks'
 import { todayDay } from './dates'
 import { dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { workBucket } from '../../../shared/workbench'
+import { myDesignWork } from '../drawings/workbench'
 
 const ACTION_TEXT: Record<string, string> = {
   [PURCHASE_PLAN_ISSUED]: '执行采购计划',
@@ -36,8 +37,9 @@ const ACTION_TEXT: Record<string, string> = {
  * "完成部门任务"（部门计划二次分解，refType = planTask）发给任务负责人本人，不受可见范围限制；附上任务（planTask，可直接标完成）。
  */
 export async function listMyTodos(userId: string, visibleWorkOrders?: string[], now = new Date()) {
+  const designWork = await myDesignWork(userId, now)
   let todos = await prisma.todo.findMany({ where: { ownerId: userId, status: 'OPEN' }, orderBy: { createdAt: 'asc' } })
-  if (!todos.length) return []
+  if (!todos.length) return designWork
   const stepIds = todos.filter((t) => t.refType === 'step').map((t) => t.refId)
   let steps = await prisma.routeStep.findMany({ where: { id: { in: stepIds } }, include: { part: true } })
   const ready = await describeReadyTodos(todos.filter((t) => t.refType === 'part').map((t) => t.refId))
@@ -166,7 +168,7 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[], 
   // 工作台卡片流（前端改版第二轮）：所属工单、截止日、按工厂时区的今天分组。电脑端工作台和手机端 /m 共用这里的 dueDay / bucket。
   // 截止日：总计划节点确认取节点计划日；工序的"安排发出 / 开工"取工序的应开工日；否则待办自带的 dueAt（按工厂时区取日期）；再没有取工序的要求完成日（日期字段）
   const today = todayDay(now)
-  return rows.map((row) => {
+  const result = rows.map((row) => {
     // 只有"完成部门任务"带 planTask，其余补 null，页面统一按 t.planTask 判断
     const t = { planTask: null, link: null as string | null, ...row }
     const stepRow = t.refType === 'step' ? byId.get(t.refId) : undefined
@@ -180,6 +182,7 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[], 
       bucket: workBucket({ kind: 'todo', dueDay }, today),
     }
   })
+  return [...result, ...designWork]
 }
 
 /** Resolve the business object before delegation; orphaned or unknown references must not grant access. */

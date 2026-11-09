@@ -13,6 +13,7 @@
  * 并发：沿用 R10 采购的做法——READ COMMITTED，加锁顺序 先工件（按 ID 排序）→ 再设计任务（FOR UPDATE）→ 发放单。
  */
 import type { DrawingTask, DrawingTaskStatus, Prisma } from '@prisma/client'
+import { isPlanStartLate } from '../../../shared/plan-validation'
 import { prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey, dateFieldDay, shanghaiDay } from '../alerts/rules'
@@ -34,6 +35,7 @@ export interface Actor {
 }
 
 export interface TaskInput {
+  startDate?: Date | null
   partIds?: string[]
   componentName: string
   ownerId?: string | null
@@ -127,6 +129,10 @@ async function assertParts(tx: Tx, partIds: string[], workOrderNumber: string) {
   if (parts.length !== partIds.length || parts.some((p) => p.workOrderNumber !== workOrderNumber)) throw new FlowError('关联工件不存在或不属于该工单')
 }
 
+function assertStartDate(start: Date | null | undefined, finish: Date) {
+  if (isPlanStartLate(start ? dateFieldDay(start) : null, dateFieldDay(finish))) throw new FlowError('计划开始日不能晚于计划完成日')
+}
+
 function assertCustomerPlan(needs: boolean, customerPlanDate: Date | null | undefined) {
   if (!needs && customerPlanDate) throw new FlowError('不需要客户确认时不用填客户确认计划日')
 }
@@ -140,6 +146,7 @@ const canDraw = (task: { ownerId: string | null }, actor: Actor) => actor.isAdmi
 // ───────────── 新建 / 修改 ─────────────
 
 export async function createTask(input: NewTaskInput, actorId: string) {
+  assertStartDate(input.startDate, input.planDate)
   const partIds = uniq(input.partIds ?? [])
   const needs = !!input.needsCustomerConfirm
   assertCustomerPlan(needs, input.customerPlanDate)
@@ -156,6 +163,7 @@ export async function createTask(input: NewTaskInput, actorId: string) {
         componentName: input.componentName.trim(),
         ownerId: input.ownerId || null,
         planDate: input.planDate,
+        startDate: input.startDate ?? null,
         planNodeId: link.value ?? null,
         needsCustomerConfirm: needs,
         customerPlanDate: needs ? (input.customerPlanDate ?? null) : null,
@@ -174,6 +182,7 @@ export async function updateTask(id: string, input: PatchTaskInput) {
   const newParts = input.partIds ? uniq(input.partIds) : undefined
   return drawingTx(async (tx) => {
     const old = await lockTask(tx, id, newParts)
+    assertStartDate(input.startDate === undefined ? old.startDate : input.startDate, input.planDate ?? old.planDate)
     const before = { status: old.status, partIds: old.parts.map((p) => p.partId) }
     const data: Prisma.DrawingTaskUncheckedUpdateInput = {}
     if (input.componentName !== undefined) data.componentName = input.componentName.trim()
@@ -182,6 +191,7 @@ export async function updateTask(id: string, input: PatchTaskInput) {
       data.ownerId = input.ownerId || null
     }
     if (input.planDate !== undefined) data.planDate = input.planDate
+    if (input.startDate !== undefined) data.startDate = input.startDate
     const link = await resolvePlanNode(tx, old.workOrderNumber, input.planNodeId, { creating: false, oldNodeId: old.planNodeId })
     if (link.value !== undefined) data.planNodeId = link.value
     const needs = input.needsCustomerConfirm ?? old.needsCustomerConfirm

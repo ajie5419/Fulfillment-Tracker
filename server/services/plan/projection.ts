@@ -24,6 +24,7 @@ export function projectPlanTasks({ drawings, purchases, steps, assemblies, other
       id: d.id,
       nodeId: d.planNodeId!,
       name: d.componentName,
+      ...(d.ownerId ? { owner: { id: d.ownerId, name: names.user.get(d.ownerId) ?? d.ownerId } } : {}),
       dateLabel: d.drawnDate && d.needsCustomerConfirm && !d.customerConfirmedDate && d.customerPlanDate ? '客户确认计划日' : '计划完成日',
       // 工艺模块（10-27）：设计任务后面带上料单、工艺状态，工单详情里一眼看到工艺跟上没有
       statusText: d.status === 'CANCELLED' ? DRAWING_STATUS_TEXT[d.status] : `${DRAWING_STATUS_TEXT[d.status]} · ${processSummary(d)}`,

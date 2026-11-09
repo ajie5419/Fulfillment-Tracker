@@ -9,6 +9,7 @@ import Antd, { ConfigProvider, DatePicker, Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import * as purchasePlans from '../../shared/purchase-plans'
+import * as planValidation from '../../shared/plan-validation'
 import { loadComponent } from '../helpers/vue-component'
 import { flushVue } from '../helpers/vue-script'
 
@@ -70,13 +71,14 @@ const targets = [
   ['采购需求日', 'app/components/PurchaseEditModal.vue', { open: true, line: null, workOrderNumber: 'WO' }, 'form', 'needDate', 0],
   ['采购承诺日', 'app/components/PurchaseEditModal.vue', { open: true, line: null, workOrderNumber: 'WO' }, 'form', 'promisedDate', 1],
   ['采购到货日', 'app/components/PurchaseEditModal.vue', { open: true, line: null, workOrderNumber: 'WO' }, 'form', 'arrivedDate', 2],
-  ['设计计划日', 'app/components/DrawingEditModal.vue', { open: true, task: null, workOrderNumber: 'WO' }, 'form', 'planDate', 0],
-  ['客户确认计划日', 'app/components/DrawingEditModal.vue', { open: true, task: null, workOrderNumber: 'WO' }, 'form', 'customerPlanDate', 1],
+  ['设计开始日', 'app/components/DrawingEditModal.vue', { open: true, task: null, workOrderNumber: 'WO' }, 'form', 'startDate', 0],
+  ['设计计划日', 'app/components/DrawingEditModal.vue', { open: true, task: null, workOrderNumber: 'WO' }, 'form', 'planDate', 1],
+  ['客户确认计划日', 'app/components/DrawingEditModal.vue', { open: true, task: null, workOrderNumber: 'WO' }, 'form', 'customerPlanDate', 2],
 ] as const
 
 async function actualModal(target: ModalTarget) {
   const [, file, props, formName, field, index] = target
-  const component = loadComponent(file, { '#shared/purchase-plans': purchasePlans })
+  const component = loadComponent(file, { '#shared/plan-validation': planValidation, '#shared/purchase-plans': purchasePlans })
   const setup = component.setup!
   let state: any
   component.setup = function (props, context) {
@@ -94,6 +96,7 @@ async function actualModal(target: ModalTarget) {
   if (formName === 'itemForm') state.editItem()
   else Object.assign(state.form, { materialName: '减速机', componentName: '总图', needDate: '2026-11-01', planDate: '2026-11-01', needsCustomerConfirm: true })
   state[formName][field] = undefined
+  if (field === 'startDate') state[formName].planDate = '2026-12-31'
   await flushVue()
   const input = document.querySelectorAll<HTMLInputElement>('.ant-modal .ant-picker input')[index]!
   expect(input).toBeTruthy()

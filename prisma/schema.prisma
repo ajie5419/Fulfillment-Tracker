@@ -848,6 +848,8 @@ model DrawingTask {
   /// 部件名称（如"主梁总图"、"液压系统"）
   componentName         String             @db.VarChar(191)
   ownerId               String?            @db.VarChar(64)
+  /// Optional planned start; existing tasks retain an unspecified start.
+  startDate             DateTime?
   /// 计划完成日（设计）、实际设计完成日；日期字段，存当天 UTC 零点
   planDate              DateTime
   drawnDate             DateTime?
