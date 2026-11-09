@@ -81,7 +81,6 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
           <button v-else-if="record.tasks.length" type="button" class="fold" :aria-expanded="expanded.includes(record.id)" :aria-label="`${expanded.includes(record.id) ? '收起' : '展开'}节点 ${record.name} 的部门记录`" @click="expanded = expanded.includes(record.id) ? expanded.filter(id => id !== record.id) : [...expanded, record.id]">
             <span class="chevron" :class="{ open: expanded.includes(record.id) }" aria-hidden="true" />
           </button>
-          <span v-else-if="!record.parentId" class="fold-placeholder" aria-hidden="true" />
           <span class="code">{{ record.code }}</span>
           <span class="node-main">
             <span :class="{ 'summary-name': record.childCount }">{{ record.name }}</span>
@@ -120,6 +119,7 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
 </template>
 
 <style scoped>
+.plan-node-table { border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); overflow: hidden; background: var(--ft-card-bg); }
 .muted { color: var(--ft-text-2); font-size: 12px; font-weight: 400; }
 .small { font-size: 12px; }
 .late { color: var(--ft-late); }
@@ -131,27 +131,25 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
 .phase-code { color: var(--ft-text-2); font-variant-numeric: tabular-nums; }
 .phase-name { font-weight: 600; color: var(--ft-text); margin-right: 4px; }
 .phase-line { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 28px; }
-/* 大纲分级：阶段行 1 级（灰底粗体），节点 2 级，子节点 3 级（贯通树形引导线 + 缩进）；折叠按钮占固定宽度，编号对齐 */
-.fold { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 20px; width: 20px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--ft-text-2); cursor: pointer; border-radius: 4px; }
-.fold-placeholder { flex: 0 0 20px; width: 20px; }
+/* 大纲分级：阶段行 1 级（灰底粗体），节点 2 级，子节点 3 级（贯通树形引导线 + 缩进）；折叠按钮收入左侧缩进槽，编号严格对齐 */
+.fold { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 18px; width: 18px; height: 22px; padding: 0; border: 0; background: transparent; color: var(--ft-text-2); cursor: pointer; border-radius: 4px; }
 .fold:hover { background: var(--ft-fill); color: var(--ft-primary); }
 .chevron { width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 0.15s; }
 .chevron.open { transform: rotate(45deg); }
 .fold:focus-visible { outline: 2px solid var(--ft-primary); }
 .code { flex: 0 0 auto; min-width: 28px; color: var(--ft-text-2); font-variant-numeric: tabular-nums; }
 .node-name { display: flex; align-items: center; gap: 6px; min-height: 28px; }
+.node-name > .fold { margin-left: -24px; }
 .node-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.lv1 { padding-left: 0; }
-.lv2 { padding-left: 20px; }
-.lv3 { padding-left: 48px; }
-/* 子节点连续树形线：沿上级节点折叠箭头中心轴垂直贯通，末尾子节点平齐收尾 */
-:deep(.child-row) td:first-child { position: relative; --tree-x: 42px; }
-:deep(.child-row:has(.lv2)) td:first-child { --tree-x: 22px; }
+.lv1, .lv2 { padding-left: 24px; }
+.lv3, :deep(.child-row) .lv2 { padding-left: 48px; }
+/* 子节点连续树形线：沿上级节点编号正下方垂直贯通，末尾子节点平齐收尾（与甘特图左侧大纲完全一致） */
+:deep(.child-row) td:first-child { position: relative; --tree-x: 44px; }
 :deep(.child-row) td:first-child::before { content: ""; position: absolute; left: var(--tree-x); top: 0; bottom: 0; border-left: 1px solid var(--ft-border-hover); pointer-events: none; }
 :deep(.child-row:not(:has(+ .child-row))) td:first-child::before { bottom: 50%; }
-:deep(.child-row) td:first-child::after { content: ""; position: absolute; left: var(--tree-x); top: 50%; width: 12px; border-top: 1px solid var(--ft-border-hover); pointer-events: none; }
+:deep(.child-row) td:first-child::after { content: ""; position: absolute; left: var(--tree-x); top: 50%; width: 10px; border-top: 1px solid var(--ft-border-hover); pointer-events: none; }
 :deep(.child-row) td { border-top: 1px dashed var(--ft-border); }
-.node-note { margin-left: 54px; }
+.node-note { margin-left: 58px; }
 .node-note.lv3 { margin-left: 82px; }
 .summary-name { font-weight: 600; }
 .preds-text { font-variant-numeric: tabular-nums; word-spacing: 4px; }
