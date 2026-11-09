@@ -1659,7 +1659,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
           "link": "/drawings?id=drawing",
           "name": "图纸",
           "nodeId": "n1",
-          "statusText": "设计完成 · 料单未开始 · 工艺无",
+          "statusText": "设计完成",
         },
         {
           "dateLabel": "承诺到货日",
@@ -1836,7 +1836,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
             "ownerId": null,
             "ownerName": null,
             "planDate": "2026-11-04",
-            "statusText": "设计完成 · 料单未开始 · 工艺无",
+            "statusText": "设计完成",
           },
         ],
         "unsplit": false,
