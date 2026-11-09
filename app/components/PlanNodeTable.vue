@@ -29,17 +29,18 @@ const affectsText = (n: PlanNodeRow) => n.affects.map((p) => `${p.code} ${p.name
 const predsText = (n: PlanNodeRow) => n.preds.map((p) => p.code).join(' ')
 const predsTitle = (n: PlanNodeRow) =>
   [...n.preds.map((p) => `${p.code} ${p.name}`), ...(n.customDeps ? [] : ['（默认：上一个节点）'])].join('\n')
+
 /** 受谁影响：子节点晚了 / 前置节点晚了 */
 const pushedText = (n: PlanNodeRow) => (!n.pushedBy ? '受上游影响' : n.pushedBy.child ? `受子节点影响（${n.pushedBy.code} ${n.pushedBy.name}）` : `受 ${n.pushedBy.code} 影响`)
 
 const columns = [
-  { title: '编号 / 节点', key: 'name', width: 280 },
-  { title: '责任部门', dataIndex: 'deptText', width: 80 },
-  { title: '前置', key: 'preds', width: 72 },
-  { title: '计划开始日期', key: 'start', width: 140 },
-  { title: '计划完成日期', key: 'plan', width: 140 },
+  { title: '编号 / 节点', key: 'name', width: 300 },
+  { title: '责任部门', dataIndex: 'deptText', width: 92 },
+  { title: '前置', key: 'preds', width: 104 },
+  { title: '计划开始日期', key: 'start', width: 132 },
+  { title: '计划完成日期', key: 'plan', width: 132 },
   { title: '预计 / 完成', key: 'expected', width: 140 },
-  { title: '', key: 'ops', width: 148, fixed: 'right' as const },
+  { title: '', key: 'ops', width: 176, align: 'right' as const, fixed: 'right' as const },
 ]
 const rowClass = (n: TableRow) =>
   isPhaseRow(n) ? 'phase-row' : [n.id === props.focusNode ? 'focus-row' : '', !n.done && n.delayDays > 0 ? 'late-row' : '', n.parentId ? 'child-row' : '', n.childCount ? 'summary-row' : ''].join(' ')
@@ -49,6 +50,7 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
 <template>
   <a-table
     v-model:expanded-row-keys="expanded"
+    class="ft-table plan-node-table"
     :columns="columns"
     :data-source="tableRows"
     :loading="loading"
@@ -58,17 +60,18 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
     :row-class-name="(r: TableRow) => rowClass(r)"
     :row-expandable="(r: TableRow) => !isPhaseRow(r) && r.tasks.length > 0"
     :show-expand-column="false"
-    :scroll="{ x: 1100 }"
+    :scroll="{ x: 936 }"
   >
     <template #emptyText><a-empty :description="data.canEdit ? '还没有节点：选模板“按模板生成”，或“新增节点”' : '还没有编制总计划'" /></template>
     <template #bodyCell="{ column, record }">
       <template v-if="isPhaseRow(record as TableRow)">
         <template v-if="column.key === 'name'">
           <span class="phase-line">
-          <button type="button" class="fold" :aria-expanded="!isCollapsed(record.id)" :aria-label="`${isCollapsed(record.id) ? '展开' : '收起'}阶段 ${record.phase}`" @click="emit('toggleCollapse', record.id)">
-            <span class="chevron" :class="{ open: !isCollapsed(record.id) }" aria-hidden="true" />
-          </button>
-            <span class="code">{{ record.code }}</span><span class="phase-name">{{ record.phase }}</span>
+            <button type="button" class="fold" :aria-expanded="!isCollapsed(record.id)" :aria-label="`${isCollapsed(record.id) ? '展开' : '收起'}阶段 ${record.phase}`" @click="emit('toggleCollapse', record.id)">
+              <span class="chevron" :class="{ open: !isCollapsed(record.id) }" aria-hidden="true" />
+            </button>
+            <span class="phase-code">{{ record.code }}</span>
+            <span class="phase-name">{{ record.phase }}</span>
             <span class="muted">{{ record.count }} 个节点</span>
           </span>
         </template>
@@ -80,32 +83,33 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
         </template>
       </template>
       <template v-else-if="column.key === 'name'">
-        <span class="node-name" :class="`lv${levelOf(record as PlanNodeRow)}`">
+        <div class="node-name" :class="`lv${levelOf(record as PlanNodeRow)}`">
           <button v-if="record.childCount" type="button" class="fold" :aria-expanded="!isCollapsed(record.id)" :aria-label="`${isCollapsed(record.id) ? '展开' : '收起'}子节点`" @click="emit('toggleCollapse', record.id)">
             <span class="chevron" :class="{ open: !isCollapsed(record.id) }" aria-hidden="true" />
           </button>
           <button v-else-if="record.tasks.length" type="button" class="fold" :aria-expanded="expanded.includes(record.id)" :aria-label="`${expanded.includes(record.id) ? '收起' : '展开'}节点 ${record.name} 的部门记录`" @click="expanded = expanded.includes(record.id) ? expanded.filter(id => id !== record.id) : [...expanded, record.id]">
             <span class="chevron" :class="{ open: expanded.includes(record.id) }" aria-hidden="true" />
           </button>
-          <span v-else class="fold-placeholder" aria-hidden="true" />
+          <span v-else-if="!record.parentId" class="fold-placeholder" aria-hidden="true" />
           <span class="code">{{ record.code }}</span>
-          <span :class="{ 'summary-name': record.childCount }">{{ record.name }}</span>
-          <span v-if="record.childCount" class="muted small">　汇总 · {{ record.childCount }} 个子节点</span>
-          <a-tag v-if="record.alertLevel" :color="levelColor(record.alertLevel)">W9 {{ record.alertLevel === 'RED' ? '红' : '黄' }}</a-tag>
-        </span>
+          <span class="node-main">
+            <span :class="{ 'summary-name': record.childCount }">{{ record.name }}</span>
+            <span v-if="record.childCount" class="muted">{{ record.childCount }} 个子节点</span>
+            <a-tag v-if="record.alertLevel" :color="levelColor(record.alertLevel)">W9 {{ record.alertLevel === 'RED' ? '红' : '黄' }}</a-tag>
+          </span>
+        </div>
         <div v-if="record.note" class="muted node-note" :class="`lv${levelOf(record as PlanNodeRow)}`">{{ record.note }}</div>
       </template>
       <template v-else-if="column.key === 'preds'">
-        <span v-if="record.childCount" class="muted" title="汇总行：日期由子节点算，看子节点的前置">按子节点</span>
+        <span v-if="record.childCount" class="muted" title="汇总行：日期由子节点算，看子节点的前置">—</span>
         <span v-else-if="!record.preds.length" class="muted">{{ record.customDeps ? '无' : '—' }}</span>
-        <span v-else :class="{ muted: !record.customDeps }" :title="predsTitle(record as PlanNodeRow)">
+        <span v-else class="preds-text" :class="{ muted: !record.customDeps }" :title="predsTitle(record as PlanNodeRow)">
           {{ predsText(record as PlanNodeRow) }}
         </span>
       </template>
       <template v-else-if="column.key === 'start'">{{ record.startDate ?? '—' }}</template>
       <template v-else-if="column.key === 'plan'">
         {{ record.planDate }}
-        <div v-if="record.childCount" class="muted small">子节点汇总</div>
         <div v-if="record.baselineDate && record.baselineDate !== record.planDate" class="muted">基线 <span class="changed">{{ record.baselineDate }}</span></div>
         <div v-else-if="published && !record.baselineDate" class="muted">发布后新增</div>
       </template>
@@ -127,13 +131,11 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
         </template>
       </template>
       <template v-else-if="column.key === 'ops'">
-        <a-space wrap size="small">
-          <template v-if="data.canEdit">
-            <a-button size="small" @click="emit('edit', record as PlanNodeRow)">调整</a-button>
-            <a-button v-if="!record.parentId" size="small" @click="emit('addChild', record as PlanNodeRow)">加子节点</a-button>
-            <a-button size="small" danger @click="emit('remove', record as PlanNodeRow)">删除</a-button>
-          </template>
-        </a-space>
+        <div v-if="data.canEdit" class="row-ops">
+          <a-button size="small" @click="emit('edit', record as PlanNodeRow)">调整</a-button>
+          <a-button v-if="!record.parentId" size="small" @click="emit('addChild', record as PlanNodeRow)">加子节点</a-button>
+          <a-button size="small" class="op-del" @click="emit('remove', record as PlanNodeRow)">删除</a-button>
+        </div>
       </template>
     </template>
     <template #expandedRowRender="{ record }">
@@ -144,33 +146,43 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
 </template>
 
 <style scoped>
-.muted { color: var(--ft-text-2); font-size: 12px; }
+.muted { color: var(--ft-text-2); font-size: 12px; font-weight: 400; }
 .small { font-size: 12px; }
 .late { color: var(--ft-late); }
 .warn { color: var(--ft-upstream); }
 .changed { text-decoration: line-through; color: var(--ft-text-3); }
 :deep(.late-row) td:first-child { box-shadow: inset 3px 0 0 var(--ft-late); }
 :deep(.focus-row) td { background: var(--ft-risk-bg) !important; }
-:deep(.phase-row) td { background: var(--ft-fill) !important; }
-.phase-name { font-weight: 600; color: var(--ft-text); margin-right: 8px; }
-.phase-line { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-/* 大纲分级：阶段行 1 级（灰底粗体），节点 2 级，子节点 3 级（再缩进、虚线分隔）；折叠按钮占固定宽度，编号对齐 */
-.fold { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 24px; width: 24px; height: 28px; padding: 0; border: 0; background: transparent; color: var(--ft-text-2); cursor: pointer; border-radius: 4px; }
-.fold-placeholder { flex: 0 0 24px; width: 24px; }
+:deep(.phase-row) td { background: var(--ft-fill) !important; font-weight: 600; }
+.phase-code { color: var(--ft-text-2); font-variant-numeric: tabular-nums; }
+.phase-name { font-weight: 600; color: var(--ft-text); margin-right: 4px; }
+.phase-line { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 28px; }
+/* 大纲分级：阶段行 1 级（灰底粗体），节点 2 级，子节点 3 级（贯通树形引导线 + 缩进）；折叠按钮占固定宽度，编号对齐 */
+.fold { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 20px; width: 20px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--ft-text-2); cursor: pointer; border-radius: 4px; }
+.fold-placeholder { flex: 0 0 20px; width: 20px; }
 .fold:hover { background: var(--ft-fill); color: var(--ft-primary); }
 .chevron { width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 0.15s; }
 .chevron.open { transform: rotate(45deg); }
 .fold:focus-visible { outline: 2px solid var(--ft-primary); }
-.code { display: inline-block; min-width: 32px; color: var(--ft-text-2); font-variant-numeric: tabular-nums; }
-:deep(.phase-row) td { font-weight: 600; }
-.node-name { position: relative; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; }
-.node-name.lv2::before, .node-name.lv3::before { content: ""; position: absolute; left: 11px; top: -16px; width: 13px; height: 32px; border-left: 1px solid var(--ft-border); border-bottom: 1px solid var(--ft-border); border-bottom-left-radius: 4px; pointer-events: none; }
-.node-name.lv3::before { left: 35px; }
+.code { flex: 0 0 auto; min-width: 28px; color: var(--ft-text-2); font-variant-numeric: tabular-nums; }
+.node-name { display: flex; align-items: center; gap: 6px; min-height: 28px; }
+.node-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .lv1 { padding-left: 0; }
-.lv2 { padding-left: 24px; }
+.lv2 { padding-left: 20px; }
 .lv3 { padding-left: 48px; }
-.node-note { margin-left: 72px; }
-.summary-name { font-weight: 600; }
+/* 子节点连续树形线：沿上级节点折叠箭头中心轴垂直贯通，末尾子节点平齐收尾 */
+:deep(.child-row) td:first-child { position: relative; --tree-x: 42px; }
+:deep(.child-row:has(.lv2)) td:first-child { --tree-x: 22px; }
+:deep(.child-row) td:first-child::before { content: ""; position: absolute; left: var(--tree-x); top: 0; bottom: 0; border-left: 1px solid var(--ft-border-hover); pointer-events: none; }
+:deep(.child-row:not(:has(+ .child-row))) td:first-child::before { bottom: 50%; }
+:deep(.child-row) td:first-child::after { content: ""; position: absolute; left: var(--tree-x); top: 50%; width: 12px; border-top: 1px solid var(--ft-border-hover); pointer-events: none; }
 :deep(.child-row) td { border-top: 1px dashed var(--ft-border); }
+.node-note { margin-left: 54px; }
+.node-note.lv3 { margin-left: 82px; }
+.summary-name { font-weight: 600; }
+.preds-text { font-variant-numeric: tabular-nums; word-spacing: 4px; }
+.row-ops { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+.op-del { color: var(--ft-text-2); }
+.op-del:hover, .op-del:focus-visible { color: var(--ft-late-text) !important; border-color: var(--ft-late) !important; background: var(--ft-late-bg) !important; }
 .affects { margin: 0 0 8px; line-height: 1.6; }
 </style>
