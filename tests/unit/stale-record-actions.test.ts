@@ -69,11 +69,13 @@ describe.each([
     await flushVue()
     expect(state.form[field]).toContain('B')
     expect(state.form.planNodeId).toBe('node-B')
-    if (prop === 'task') expect(state.form.partIds).toEqual(['part-B'])
-    else expect(state.form.partId).toBe('part-B')
+    if (prop === 'line') expect(state.form.partId).toBe('part-B')
     await state.submit()
     expect(send).toHaveBeenCalledWith(`/api/${endpoint}/B`, 'PATCH', expect.objectContaining({ [field]: expect.stringContaining('B') }))
-    if (prop === 'task') expect(send.mock.calls[0]?.[2]).not.toHaveProperty('cancelled')
+    if (prop === 'task') {
+      expect(send.mock.calls[0]?.[2]).not.toHaveProperty('cancelled')
+      expect(send.mock.calls[0]?.[2]).not.toHaveProperty('partIds')
+    }
     expect(events).toEqual([['B']])
   })
 
@@ -118,8 +120,7 @@ describe.each([
     expect(state.form.planNodeId).toBe('node-B')
     state.form.workOrderNumber = 'WO-A'
     expect(state.form.planNodeId).toBeNull()
-    if (prop === 'task') expect(state.form.partIds).toEqual([])
-    else expect(state.form.partId).toBeUndefined()
+    if (prop === 'line') expect(state.form.partId).toBeUndefined()
   })
 
   it('preserves unsaved edits when the same record is refreshed', async () => {

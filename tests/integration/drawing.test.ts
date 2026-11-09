@@ -129,6 +129,8 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     const line = await s.pur.createLine({ workOrderNumber: WO, partId: part.id, materialName: '回转支承', quantity: 1, needDate: dayOff(20) }, 'u-pm')
     const t = await task({ partIds: [part.id] })
     expect(t).toMatchObject({ status: 'PENDING', createdBy: 'u-pm' })
+    await s.dr.updateTask(t.id, { componentName: 'Updated drawing task' })
+    expect(await db.drawingTaskPart.findMany({ where: { taskId: t.id } })).toMatchObject([{ partId: part.id }])
     await expect(task({ partIds: [(await makePart(OTHER_WO)).id] })).rejects.toThrow('不属于该工单')
     await expect(task({ ownerId: 'u-nobody' })).rejects.toThrow('设计负责人不存在')
     await expect(task({ customerPlanDate: dayOff(3) })).rejects.toThrow('不需要客户确认')

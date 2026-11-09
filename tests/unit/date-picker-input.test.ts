@@ -121,6 +121,7 @@ it('renders task-first fields and warns about early customer confirmation withou
   expect(modal.textContent).toContain('关联信息')
   expect(modal.textContent).toContain('请核对是否为提前方案确认')
   expect(modal.textContent).not.toContain('不再跟踪')
+  expect(modal.textContent).not.toContain('关联工件')
   expect(modal.querySelectorAll('.ant-checkbox-wrapper')).toHaveLength(1)
   expect(modal.querySelectorAll('.form-grid .ant-picker')).toHaveLength(2)
 })

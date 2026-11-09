@@ -13,7 +13,6 @@ const { data: master, error: masterError, refresh: refreshMaster } = await useMa
 
 const empty = () => ({
   workOrderNumber: undefined as string | undefined,
-  partIds: [] as string[],
   componentName: '',
   ownerId: undefined as string | undefined,
   planDate: undefined as string | undefined,
@@ -30,13 +29,6 @@ const editing = computed(() => !!props.task)
 let formVersion = 0
 let loadingForm = false
 
-const { data: parts, error: partsError, refresh: refreshParts } = await useFetch('/api/parts', {
-  query: computed(() => ({ workOrderNumber: form.workOrderNumber })),
-  default: () => [],
-  immediate: false,
-  watch: false,
-})
-
 watch(
   [() => props.open, () => props.task?.id, () => props.workOrderNumber, () => props.presetNode?.id, () => props.presetNode?.planDate],
   ([open]) => {
@@ -50,7 +42,6 @@ watch(
       t
         ? {
             workOrderNumber: t.workOrderNumber,
-            partIds: [...t.partIds],
             componentName: t.componentName,
             ownerId: t.ownerId ?? undefined,
             planDate: dayText(t.planDate),
@@ -63,7 +54,6 @@ watch(
         : { ...empty(), workOrderNumber: props.workOrderNumber, planNodeId: props.presetNode?.id ?? null, planDate: props.presetNode?.planDate },
     )
     loadingForm = false
-    if (form.workOrderNumber) refreshParts()
   },
   { immediate: true, flush: 'sync' },
 )
@@ -71,30 +61,18 @@ onBeforeUnmount(() => { formVersion++ })
 
 watch(
   () => form.workOrderNumber,
-  (wo) => {
-    parts.value = []
+  () => {
     if (loadingForm) return
-    form.partIds = []
     form.planNodeId = null
-    if (wo) refreshParts()
   },
   { flush: 'sync' },
 )
-const partOptions = computed(() => (form.workOrderNumber ? parts.value : []).map((p) => ({ value: p.id, label: p.drawingNo ? `${p.name}（${p.drawingNo}）` : p.name })))
 /** 技术部的人排前面（按部门对照换算出的业务部门，班组、科室对到技术部的也算） */
 const ownerOptions = computed(() =>
   [...master.value.users]
     .sort((a, b) => Number(b.businessDept === 'TECH') - Number(a.businessDept === 'TECH'))
     .map((u) => ({ value: u.id, label: `${u.name}（${u.department || '无部门'}）` })),
 )
-/** 选了工件、部件名称还空着时带出工件名 */
-watch(
-  () => form.partIds.length,
-  (n, old) => {
-    if (n === 1 && !old && !form.componentName.trim()) form.componentName = partOptions.value.find((p) => p.value === form.partIds[0])?.label ?? ''
-  },
-)
-
 async function submit() {
   if (!props.open || saving.value) return
   const version = formVersion
@@ -104,7 +82,6 @@ async function submit() {
   if (!form.planDate) return message.warning('请选择计划完成日')
   if (isPlanStartLate(form.startDate, form.planDate)) return message.warning('计划开始日不能晚于计划完成日')
   const body = {
-    partIds: [...form.partIds],
     componentName: form.componentName.trim(),
     ownerId: form.ownerId ?? null,
     planDate: form.planDate,
@@ -175,11 +152,6 @@ async function submit() {
       <div class="section-label">关联信息</div>
       <a-form-item label="所属总计划节点">
         <PlanNodeSelect v-model:value="form.planNodeId" :work-order-number="form.workOrderNumber" :record-date="form.planDate" @pick="(d) => (form.planDate ||= d)" />
-      </a-form-item>
-      <a-form-item>
-        <template #label>关联工件（可选） <UiHelpTip label="关联工件的影响">关联后，设计完成及图纸发放等条件满足前，不会向这些工件发送“可以开工”待办。</UiHelpTip></template>
-        <a-select v-model:value="form.partIds" mode="multiple" allow-clear option-filter-prop="label" :disabled="!!partsError || !form.workOrderNumber" :placeholder="form.workOrderNumber ? '选择需要关联的工件，可多选' : '先选工单'" :options="partOptions" />
-        <div v-if="partsError" class="warn">工件加载失败，<a-button type="link" size="small" @click="refreshParts()">重试</a-button></div>
       </a-form-item>
       <a-form-item label="备注"><a-textarea v-model:value="form.note" :maxlength="500" :auto-size="{ minRows: 2, maxRows: 4 }" placeholder="补充任务要求（可选）" /></a-form-item>
     </a-form>
