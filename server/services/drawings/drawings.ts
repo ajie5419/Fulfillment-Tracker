@@ -412,14 +412,16 @@ const PARTS_INCLUDE = { parts: { select: { partId: true } } } as const
 async function taskStats(scope: Prisma.DrawingTaskWhereInput[], now: Date) {
   const today = todayDate(now)
   const count = (w: Prisma.DrawingTaskWhereInput) => prisma.drawingTask.count({ where: { AND: [...scope, w] } })
-  const [pending, drawn, customerPending, overdue, dueThisWeek] = await Promise.all([
+  const [pending, drawn, customerPending, overdue, dueThisWeek, done, cancelled] = await Promise.all([
     count({ status: 'PENDING' }),
     count({ status: 'DRAWN' }),
     count({ status: 'CUSTOMER_PENDING' }),
     count(overdueWhere(today)),
     count(dueThisWeekWhere(now)),
+    count({ status: 'DONE' }),
+    count({ status: 'CANCELLED' }),
   ])
-  return { pending, drawn, customerPending, overdue, dueThisWeek }
+  return { pending, drawn, customerPending, overdue, dueThisWeek, done, cancelled }
 }
 
 /**

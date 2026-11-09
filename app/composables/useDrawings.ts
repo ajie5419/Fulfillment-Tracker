@@ -38,7 +38,7 @@ export interface DrawingRow {
   /** 所属总计划节点（R14） */
   planNodeId: string | null
   /** 所属总计划节点的序号、名称（列表"总计划节点"列） */
-  planNode: { id: string; seq: number; name: string } | null
+  planNode: { id: string; seq: number; name: string; code?: string } | null
   overdue: boolean
   releases: { id: string; releaseNo: string; typeText: string; status: 'ACTIVE' | 'VOID'; version: string | null }[]
   alertLevel: 'REMIND' | 'YELLOW' | 'RED' | null
@@ -46,6 +46,8 @@ export interface DrawingRow {
 }
 
 export interface DrawingStats {
+  done: number
+  cancelled: number
   pending: number
   drawn: number
   customerPending: number
