@@ -1,8 +1,9 @@
-import type { Ref } from 'vue'
+import { h, type Ref } from 'vue'
 import { isPlanAdjustmentReasonMissing } from '#shared/plan-validation'
 import type { PlanNodeRow } from '#shared/plan-view'
 import type { PlanNodeForm } from './usePlanNodeForm'
 import type { PlanAct } from './usePlanData'
+import type { SchedulePreview } from '../../server/services/plan/schedule-preview'
 
 /**
  * 保存新增 / 编辑节点（PlanEditor 拆分）：校验 → 新增 POST / 编辑 PATCH → 成功关弹窗。
@@ -36,11 +37,38 @@ export function usePlanNodeSave(options: {
       note: form.note || null,
       reason: form.reason || null,
     }
-    const ok = await act(
-      () => (editing.value ? clientRequest(`/api/plan/nodes/${editing.value.id}`, { method: 'PATCH', body }) : clientRequest('/api/plan/nodes', { method: 'POST', body: { workOrderNumber: wo.value, ...body } })),
-      (r) => (('reconfirm' in r && r.reconfirm) || (!editing.value && published.value) ? '已保存，已重新请责任部门接收' : '已保存'),
-    )
-    if (ok) editOpen.value = false
+    const editingId = editing.value?.id
+    const linkedDates = !!editing.value && (body.planDate !== editing.value.planDate || body.startDate !== editing.value.startDate)
+    const save = async (previewToken?: string) => {
+      const ok = await act(
+        () => (editingId ? clientRequest(`/api/plan/nodes/${editingId}`, { method: 'PATCH', body: { ...body, ...(linkedDates ? { linkedDates, previewToken } : {}) } }) : clientRequest('/api/plan/nodes', { method: 'POST', body: { workOrderNumber: wo.value, ...body } })),
+        (r) => ((r && typeof r === 'object' && 'reconfirm' in r && r.reconfirm) || (!editing.value && published.value) ? '已保存，已重新请责任部门接收' : '已保存'),
+      )
+      if (ok) editOpen.value = false
+    }
+    if (!linkedDates || !editingId) return save()
+    try {
+      const result = await clientRequest(`/api/plan/nodes/${editingId}`, { method: 'PATCH', body: { ...body, linkedDates: true, preview: true } })
+      const preview: SchedulePreview | undefined = result.preview
+      if (!preview) throw new Error('未能获取联动预览，请重试')
+      Modal.confirm({
+        title: `确认调整 ${preview.changes.length} 个节点的日期`,
+        width: 720,
+        okText: '确认保存',
+        cancelText: '返回修改',
+        content: h('div', [
+          h('p', '按自然日联动：后续节点最早从前置完成的次日开始，保留工期，先消化空档。前置日期提前时，后续计划保持不动；未填开始日按单日节点处理。'),
+          h('div', { style: { maxHeight: '45vh', overflow: 'auto' } }, preview.changes.map((c) => h('p', { key: c.id }, [
+            h('strong', c.name), h('br'),
+            `原：${c.oldStart ?? '未设开始日'} ～ ${c.oldFinish}`, h('br'),
+            `新：${c.start ?? '未设开始日'} ～ ${c.finish}`,
+          ]))),
+          ...(preview.skipped.length ? [h('p', `已完成，保持原日期：${preview.skipped.join('、')}`)] : []),
+          ...(published.value ? [h('p', '保存后记录调整原因，并重新请受影响的责任部门接收；部门任务日期由部门安排。')] : []),
+        ]),
+        onOk: () => save(preview.token),
+      })
+    } catch (error) { message.error(apiError(error)) }
   }
 
   return { saveNode }

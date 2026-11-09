@@ -67,7 +67,10 @@ beforeEach(() => {
     if (url === '/api/plan') return plan
     if (url === '/api/plan/generate') return { created: 3 }
     if (url === '/api/plan/publish') return { todos: 2, deptsWithoutHead: ['采购部'] }
-    if (url.startsWith('/api/plan/nodes') && opts.method === 'PATCH') return { reconfirm: true }
+    if (url.startsWith('/api/plan/nodes') && opts.method === 'PATCH') {
+      if ((opts.body as { preview?: boolean })?.preview) return { preview: { token: 'a'.repeat(64), changes: [{ id: 'n1', name: '图纸下发', oldStart: '2026-11-01', oldFinish: '2026-11-05', start: '2026-11-01', finish: '2026-11-10' }], skipped: [] } }
+      return { reconfirm: true }
+    }
     return {}
   })
 })
@@ -331,6 +334,24 @@ describe('PlanEditor 节点编辑表单与保存', () => {
     await v.state.saveNode()
     expect(toasts.at(-1)).toEqual(['error', 'boom'])
     expect(v.state.editOpen).toBe(true)
+    v.unmount()
+  })
+})
+
+describe('PlanEditor 联动预览', () => {
+  it('does not save until preview confirmation; cancellation leaves the edit open', async () => {
+    const v = await open()
+    v.state.openEdit(NODES[0])
+    v.state.form.planDate = dayjs('2026-11-10')
+    await v.state.saveNode()
+    expect(planCalls()).toHaveLength(1)
+    expect(planCalls()[0]?.body).toMatchObject({ linkedDates: true, preview: true })
+    expect(v.state.editOpen).toBe(true)
+    expect(v.events).toHaveLength(0)
+    expect(modals[0]?.title).toBe('确认调整 1 个节点的日期')
+    await modals[0]!.onOk()
+    expect(planCalls()[1]?.body).toMatchObject({ linkedDates: true, previewToken: 'a'.repeat(64) })
+    expect(v.state.editOpen).toBe(false)
     v.unmount()
   })
 })

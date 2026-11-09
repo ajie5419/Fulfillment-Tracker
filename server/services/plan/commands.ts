@@ -13,6 +13,7 @@ import { cancelTaskTodos } from './tasks'
 import { CONFIRM_PLAN_NODE, PLAN_REF, addDays, childrenOf, planLink, resolvePreds, topoOrder, treeOrder,
   w9ConfirmKey, w9Key, w9SplitKey, waitsOn } from './constants'
 import { loadPlans } from './queries'
+import { scheduleSnapshot, schedulePreview, SchedulePreviewRollback, type SchedulePreview } from './schedule-preview'
 
 type Tx = Prisma.TransactionClient
 type Db = Tx | typeof prisma
@@ -261,8 +262,10 @@ export async function createNode(workOrderNumber: string, input: NodeInput, acto
   })
 }
 
-/** 改节点（名称、责任部门、阶段、开始日、计划日、顺序、前置节点、备注）。发布后改计划日要写原因（记调整记录）；改了计划日或责任部门的节点重新请部门确认 */
-export async function updateNode(id: string, input: Partial<NodeInput>, actorId: string) {
+/** Published date changes require a reason and department reconfirmation.
+ * Linked-date previews run the same validations as saves and roll back atomically.
+ */
+export async function updateNode(id: string, input: Partial<NodeInput> & { linkedDates?: boolean; preview?: boolean; previewToken?: string }, actorId: string): Promise<{ id: string; reconfirm: boolean; preview?: SchedulePreview }> {
   return prisma.$transaction(async (tx) => {
     const cur = await tx.planNode.findUnique({ where: { id }, select: { workOrderNumber: true } })
     if (!cur) throw new FlowError('总计划节点不存在')
@@ -273,9 +276,13 @@ export async function updateNode(id: string, input: Partial<NodeInput>, actorId:
     const dateChanged = input.planDate !== undefined && day(input.planDate) !== day(old.planDate)
     const deptChanged = input.dept !== undefined && input.dept !== old.dept
     const startChanged = input.startDate !== undefined && (input.startDate ? day(input.startDate) : null) !== (old.startDate ? day(old.startDate) : null)
+    const linked = input.linkedDates && (dateChanged || startChanged)
+    if (input.previewToken && !linked) throw new FlowError('计划日期已变化，请重新打开节点后调整')
+    if (input.preview && !linked) throw new FlowError('日期未变化，请关闭预览后重新保存')
+    const before = linked ? await scheduleSnapshot(tx, old.workOrderNumber) : null
     const hasKids = (await tx.planNode.count({ where: { parentId: id } })) > 0
     summaryDateCheck(hasKids, dateChanged || startChanged, old.name)
-    if (planAdjustmentNeedsReason(published, day(old.planDate), input.planDate !== undefined ? day(input.planDate) : undefined)) needReason(published, input.reason, '改计划日期')
+    if (planAdjustmentNeedsReason(published, day(old.planDate), input.planDate ? day(input.planDate) : undefined, old.startDate ? day(old.startDate) : null, input.startDate === undefined ? undefined : input.startDate ? day(input.startDate) : null)) needReason(published, input.reason, '改计划日期')
     const data: Prisma.PlanNodeUpdateInput = {}
     if (input.name !== undefined) data.name = input.name.trim()
     if (input.dept !== undefined) data.dept = input.dept
@@ -307,20 +314,42 @@ export async function updateNode(id: string, input: Partial<NodeInput>, actorId:
     }
     const seqChanged = input.seq != null && input.seq !== old.seq
     if (depsChanged || seqChanged || parentChanged) await assertNoCycle(tx, node.workOrderNumber)
+    const adjustmentReason = input.reason?.trim() ?? ''
+    if (before) {
+      if (depsChanged || seqChanged || parentChanged) throw new FlowError('联动日期时请先单独保存前置、顺序或上级关系，再调整日期')
+      const after = await scheduleSnapshot(tx, node.workOrderNumber)
+      const { preview: _preview, previewToken: _token, ...intent } = input
+      const preview = schedulePreview(before, after.nodes, id, intent)
+      if (input.preview) throw new SchedulePreviewRollback(preview)
+      if (input.previewToken !== preview.token) throw new FlowError('计划或执行情况已变化，请重新预览联动日期后保存')
+      const linkedChanges = preview.changes.filter((c) => c.id !== id)
+      for (const c of linkedChanges) {
+        const updated = await tx.planNode.update({ where: { id: c.id }, data: { startDate: c.start ? parse(c.start) : null, planDate: parse(c.finish) } })
+        if (published) {
+          if (c.oldFinish !== c.finish) await tx.planChangeLog.create({ data: { workOrderNumber: node.workOrderNumber, nodeId: c.id, nodeName: c.name, kind: 'DATE', oldDate: parse(c.oldFinish), newDate: parse(c.finish), reason: adjustmentReason, actorId } })
+          if (c.oldStart !== c.start) await tx.planChangeLog.create({ data: { workOrderNumber: node.workOrderNumber, nodeId: c.id, nodeName: c.name, kind: 'START', oldDate: c.oldStart ? parse(c.oldStart) : null, newDate: c.start ? parse(c.start) : null, reason: adjustmentReason, actorId } })
+          if (!after.nodes.some((n) => n.parent === c.id)) await requestConfirm(tx, updated)
+        }
+      }
+    }
     if (published && dateChanged) {
       await tx.planChangeLog.create({
         data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'DATE', oldDate: old.planDate, newDate: node.planDate, reason: input.reason!.trim(), actorId },
       })
     }
+    if (published && startChanged) await tx.planChangeLog.create({ data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'START', oldDate: old.startDate, newDate: node.startDate, reason: adjustmentReason, actorId } })
     let reconfirm = false
-    if (published && !hasKids && (dateChanged || deptChanged)) {
+    if (published && !hasKids && (dateChanged || startChanged || deptChanged)) {
       await requestConfirm(tx, node)
       reconfirm = true
     }
     // 子节点的日期、上级变了：重算汇总行（原上级、新上级）
-    if (dateChanged || startChanged || parentChanged) await rollupParents(tx, node.workOrderNumber, published)
+    if (!before && (dateChanged || startChanged || parentChanged)) await rollupParents(tx, node.workOrderNumber, published)
     if (dateChanged || seqChanged || depsChanged || startChanged || parentChanged) await clearDelayAlerts(tx, node.workOrderNumber)
     return { id, reconfirm }
+  }).catch((error: unknown) => {
+    if (error instanceof SchedulePreviewRollback) return { id, reconfirm: false, preview: error.preview }
+    throw error
   })
 }
 

@@ -100,7 +100,7 @@ export interface PlanView {
   canEdit: boolean
   canCreate: { drawing: boolean; purchase: boolean; route: boolean; kitting: boolean }
   nodes: PlanNodeRow[]
-  changeLogs: { id: string; nodeName: string; kind: 'DATE' | 'ADD' | 'DELETE'; oldDate: string | null; newDate: string | null; reason: string; actorName: string | null; createdAt: string }[]
+  changeLogs: { id: string; nodeName: string; kind: keyof typeof import('./plan-validation').PLAN_CHANGE_KIND; oldDate: string | null; newDate: string | null; reason: string; actorName: string | null; createdAt: string }[]
 }
 
 export type CanCreate = PlanView['canCreate']
