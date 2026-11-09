@@ -82,7 +82,7 @@ export interface PlanNodeRow {
   canComplete: boolean
 }
 export interface PlanView {
-  workOrder: { workOrderNumber: string; projectName: string | null; customerName: string | null; deliveryDate: string | null; projectManagerName: string | null }
+  workOrder: { workOrderNumber: string; projectName: string | null; customerName: string | null; deliveryDate: string | null; effectiveTime: string | null; projectManagerName: string | null }
   plan: { status: 'DRAFT' | 'PUBLISHED'; templateName: string | null; publishedAt: string | null; publishedByName: string | null } | null
   expectedDelivery: string | null
   deliveryDelayDays: number | null

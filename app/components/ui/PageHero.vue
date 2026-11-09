@@ -1,16 +1,12 @@
 <script setup lang="ts">
-/**
- * 页面顶部导览头（Ember Editorial Hero）：
- * 左侧大号主标题 + 一句话实时业务数据摘要（带微星标点缀），右侧紧凑操作按钮组。
- * 摘要必须由真实接口数据计算生成，严禁编写虚构环比或假数据。
- */
+/** Summaries must describe live business data; optional decoration stays off by default. */
 withDefaults(
   defineProps<{
     title: string
     summary?: string
     spark?: boolean
   }>(),
-  { summary: undefined, spark: true },
+  { summary: undefined, spark: false },
 )
 </script>
 

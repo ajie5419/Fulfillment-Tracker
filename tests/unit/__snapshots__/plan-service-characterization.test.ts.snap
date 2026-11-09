@@ -1951,6 +1951,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
     "workOrder": {
       "customerName": "客户",
       "deliveryDate": "2026-11-03",
+      "effectiveTime": null,
       "projectManagerId": "owner",
       "projectManagerName": "负责人",
       "projectName": "项目",

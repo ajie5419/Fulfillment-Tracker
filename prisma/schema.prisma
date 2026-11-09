@@ -54,6 +54,7 @@ model QmsWorkOrder {
   /// QMS 乐观锁版本号：履约修改 / 取消工单时原样带回，不符 QMS 返回 409；旧 QMS 同步不输出时为空
   version         Int?
   deliveryDate    DateTime
+  effectiveTime   DateTime?
   status          String   @db.VarChar(20) // OPEN / IN_PROGRESS / COMPLETED / CANCELLED
   isDeleted       Boolean  @default(false)
   updatedAt       DateTime // QMS 的 updatedAt，不是本地写入时间

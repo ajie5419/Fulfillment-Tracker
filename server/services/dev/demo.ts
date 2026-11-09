@@ -17,6 +17,7 @@ import { matchIncomingInspections } from '../purchases/incoming'
 import type { QmsBomItem } from '../bom/client'
 import { CONFIRM_PLAN_NODE, PLAN_NODE_ALERT_REFS, PLAN_REF, PLAN_TASK_REF, planLink } from '../plan/constants'
 import { deptHeads } from '../plan/plan'
+import { DEMO_CUSTOMERS } from './work-orders'
 
 const P = 'DEMO-'
 const DAY = 86_400_000
@@ -363,7 +364,9 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
   const day = dayFn(now)
   await prisma.$transaction(async (tx) => {
     for (const wo of workOrders(day)) {
-      await tx.qmsWorkOrder.upsert({ where: { workOrderNumber: wo.workOrderNumber }, update: {}, create: { ...wo, status: 'IN_PROGRESS', updatedAt: now } })
+      await tx.qmsWorkOrder.upsert({ where: { workOrderNumber: wo.workOrderNumber }, update: {}, create: { ...wo, customerNameId: DEMO_CUSTOMERS.find(c => c.name === wo.customerName)?.id, version: 1, status: 'IN_PROGRESS', updatedAt: now } })
+      // Older demo fixtures predate editable work orders; preserve progress while adding metadata.
+      await tx.qmsWorkOrder.updateMany({ where: { workOrderNumber: wo.workOrderNumber, version: null }, data: { version: 1, customerNameId: DEMO_CUSTOMERS.find(c => c.name === wo.customerName)?.id } })
     }
     for (const s of SUPPLIERS) {
       await tx.qmsSupplier.upsert({ where: { id: s.id }, update: {}, create: { ...s, category: '外协', updatedAt: now } })
@@ -550,7 +553,7 @@ async function seedDemoReleases() {
  * 通知对象、工单项目经理一并清掉，阈值恢复默认（删掉后按默认值，下次写入演示数据时再补上）。停工日不动。
  * uploadDir 给了时顺带删掉照片文件。
  */
-export async function resetDemo(uploadDir?: string) {
+export async function resetDemo(uploadDir?: string, opts: { preserveUsers?: boolean } = {}) {
   const result = await prisma.$transaction(async (tx) => {
     const parts = await tx.part.findMany({ where: { OR: [{ id: { startsWith: P } }, { workOrderNumber: { startsWith: P } }] }, select: { id: true } })
     const partIds = parts.map((p) => p.id)
@@ -646,9 +649,11 @@ export async function resetDemo(uploadDir?: string) {
     })
     await tx.qmsInspection.deleteMany({ where: { id: { in: insIds } } })
     await tx.qmsWorkOrder.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
+    await tx.workOrderLocalSave.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
     await tx.qmsSupplier.deleteMany({ where: { id: { startsWith: P } } })
     await tx.qmsProcess.deleteMany({ where: { id: { startsWith: P } } })
-    await tx.qmsUser.deleteMany({ where: { username: { startsWith: P } } })
+    // Standalone demo users must survive reset so they can sign in and seed again.
+    if (!opts.preserveUsers) await tx.qmsUser.deleteMany({ where: { username: { startsWith: P } } })
     await tx.deptMapping.deleteMany({ where: { qmsDepartmentId: { startsWith: P } } })
     await tx.qmsDepartment.deleteMany({ where: { id: { startsWith: P } } })
     return {

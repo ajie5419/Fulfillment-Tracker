@@ -9,32 +9,47 @@ import { loadComponent } from '../helpers/vue-component'
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Frontend audit P2: accessibility, motion preferences, narrow-screen drawer, and mobile /m ergonomics', () => {
+  it('shows KPI progress only for a real ratio and preserves keyboard activation', async () => {
+    vi.stubGlobal('computed', Vue.computed)
+    const StatCard = loadComponent('app/components/ui/StatCard.vue', { '#components': { NuxtLink: 'a' } })
+    const wrapper = mount(StatCard, { props: { label: '待处理', value: 12, clickable: true } })
+    expect(wrapper.find('.ft-stat-ticks').exists()).toBe(false)
+    await wrapper.trigger('keydown.enter')
+    expect(wrapper.emitted('click')).toHaveLength(1)
+    wrapper.unmount()
+    for (const [ratio, count] of [[0.5, 14], [2, 28], [Number.NaN, 0]] as const) {
+      const progress = mount(StatCard, { props: { label: '完成率', value: 12, ratio } })
+      expect(progress.findAll('.tick.on')).toHaveLength(count)
+      expect(progress.find('.ft-stat-ticks').exists()).toBe(Number.isFinite(ratio))
+      progress.unmount()
+    }
+  })
+
   it('declares global prefers-reduced-motion support in app.vue', () => {
     const app = readFileSync('app/app.vue', 'utf8')
     expect(app).toContain('@media (prefers-reduced-motion: reduce)')
     expect(app).toContain('transition-duration: 0.01ms !important')
   })
 
-  it('upgrades default.vue with 100dvh, Ember inset workspace sheet + bottom profile card, and narrow-screen overlay drawer + Escape', () => {
+  it('keeps viewport sizing, profile access, and narrow-screen overlay drawer + Escape', () => {
     const layout = readFileSync('app/layouts/default.vue', 'utf8')
     expect(layout).toContain('height: 100dvh')
-    expect(layout).toContain('border-radius: 16px')
     expect(layout).toContain('var(--card-sheet-bg)')
     expect(layout).toContain('class="user-card"')
     expect(layout).toContain('class="sider-mask"')
     expect(layout).toContain("e.key === 'Escape'")
   })
 
-  it('enforces 90-degree top-lit tactile card tokens (1px optical hairline, top inner glow, and multi-layer elevation shadows)', () => {
+  it('shares neutral surface tokens across cards without nested panel elevation', () => {
     const baseCss = readFileSync('app/assets/base.css', 'utf8')
     expect(baseCss).toContain('--card-hairline-top:')
     expect(baseCss).toContain('--card-hairline-bottom:')
-    expect(baseCss).toContain('inset 0 1px 0 0 #FFFFFF')
+    expect(baseCss).toContain('--card-panel-shadow: none;')
     expect(baseCss).toContain('background-clip: padding-box')
 
     const statCard = readFileSync('app/components/ui/StatCard.vue', 'utf8')
     expect(statCard).toContain('var(--card-tray-shadow)')
-    expect(statCard).toContain('var(--card-panel-shadow)')
+    expect(statCard).not.toContain('box-shadow: var(--card-panel-shadow)')
 
     const sectionCard = readFileSync('app/components/ui/SectionCard.vue', 'utf8')
     expect(sectionCard).toContain('var(--card-surface-sheen)')

@@ -7,6 +7,8 @@
 
 ## 本地启动
 
+只试用演示数据、不混入 QMS 工单时，使用[独立演示环境](docs/独立演示环境.md)：`pnpm build` 后执行 `pnpm demo`。它使用单独数据库、模拟角色登录与 `https://127.0.0.1:3101` 入口，保留原环境。
+
 ```bash
 pnpm install
 cp .env.example .env                          # 按注释填写

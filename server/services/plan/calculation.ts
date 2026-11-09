@@ -41,7 +41,7 @@ export function calculatePlans(sources: PlanSources): Map<string, PlanData> {
       deliveryDay,
       nodes: mine,
       tasks: myTasks,
-      forecast: forecastPlan(facts, deliveryDay ?? lastPlanDay ?? today, today),
+      forecast: forecastPlan(facts, deliveryDay ?? lastPlanDay ?? today, today, statusOf.get(wo) === 'PUBLISHED'),
     })
   }
   return out

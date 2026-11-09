@@ -20,7 +20,6 @@ const props = defineProps<{
 const expanded = defineModel<string[]>('expanded', { required: true })
 const emit = defineEmits<{ toggleCollapse: [id: string]; edit: [node: PlanNodeRow]; addChild: [node: PlanNodeRow]; remove: [node: PlanNodeRow]; changed: [] }>()
 
-const DRIVER_TEXT: Record<string, string> = { self: '', task: '挂靠任务拖后', prev: '前置节点顺延', today: '计划日已过仍未完成', actual: '' }
 
 const isCollapsed = (id: string) => props.collapsed.includes(id)
 /** 缩进层级：有阶段时 节点 = 2 级、子节点 = 3 级；没阶段时 节点 = 1 级、子节点 = 2 级 */
@@ -30,16 +29,12 @@ const predsText = (n: PlanNodeRow) => n.preds.map((p) => p.code).join(' ')
 const predsTitle = (n: PlanNodeRow) =>
   [...n.preds.map((p) => `${p.code} ${p.name}`), ...(n.customDeps ? [] : ['（默认：上一个节点）'])].join('\n')
 
-/** 受谁影响：子节点晚了 / 前置节点晚了 */
-const pushedText = (n: PlanNodeRow) => (!n.pushedBy ? '受上游影响' : n.pushedBy.child ? `受子节点影响（${n.pushedBy.code} ${n.pushedBy.name}）` : `受 ${n.pushedBy.code} 影响`)
-
 const columns = [
   { title: '编号 / 节点', key: 'name', width: 300 },
   { title: '责任部门', dataIndex: 'deptText', width: 92 },
   { title: '前置', key: 'preds', width: 104 },
   { title: '计划开始日期', key: 'start', width: 132 },
   { title: '计划完成日期', key: 'plan', width: 132 },
-  { title: '预计 / 完成', key: 'expected', width: 140 },
   { title: '', key: 'ops', width: 176, align: 'right' as const, fixed: 'right' as const },
 ]
 const rowClass = (n: TableRow) =>
@@ -77,10 +72,6 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
         </template>
         <template v-else-if="column.key === 'start'">{{ record.start }}</template>
         <template v-else-if="column.key === 'plan'">{{ record.end }}</template>
-        <template v-else-if="column.key === 'expected'">
-          <span v-if="record.expected" :class="{ late: record.late }">{{ record.expected }}</span>
-          <UiStatusTag v-else tone="done">已完成</UiStatusTag>
-        </template>
       </template>
       <template v-else-if="column.key === 'name'">
         <div class="node-name" :class="`lv${levelOf(record as PlanNodeRow)}`">
@@ -112,23 +103,6 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
         {{ record.planDate }}
         <div v-if="record.baselineDate && record.baselineDate !== record.planDate" class="muted">基线 <span class="changed">{{ record.baselineDate }}</span></div>
         <div v-else-if="published && !record.baselineDate" class="muted">发布后新增</div>
-      </template>
-      <template v-else-if="column.key === 'expected'">
-        <template v-if="record.done">
-          <UiStatusTag tone="done">完成 {{ record.actualDate?.slice(5) }}</UiStatusTag>
-          <div class="muted" :class="{ late: record.actualDate > record.planDate }">{{ record.doneBy === 'MANUAL' ? `${record.manualDoneByName ?? ''} 手动标记` : record.childCount ? '子节点全部完成' : '任务全部完成' }}</div>
-        </template>
-        <template v-else>
-          <span :class="{ late: record.delayDays > 0 }">{{ record.expectedDate }}</span>
-          <div v-if="record.delayDays > 0" class="late small">晚 {{ record.delayDays }} 天<template v-if="record.source && DRIVER_TEXT[record.driver] && record.driver !== 'prev'">（{{ DRIVER_TEXT[record.driver] }}）</template></div>
-          <div v-if="record.source && record.upstream" class="late small">其中自身晚 {{ record.selfDelayDays }} 天</div>
-          <div v-if="record.source && record.affects.length" class="late small" :title="affectsText(record as PlanNodeRow)">影响后续 {{ record.affects.length }} 个节点</div>
-          <a-tag v-if="record.upstream && !record.source" color="default" class="small" :title="record.pushedBy ? `被 #${record.pushedBy.code} ${record.pushedBy.name} 推后` : ''">{{ pushedText(record as PlanNodeRow) }}</a-tag>
-          <div v-if="record.slackDays != null">
-            <UiStatusTag v-if="record.critical" tone="primary">关键</UiStatusTag>
-            <span v-else class="muted">余量 {{ record.slackDays }} 天</span>
-          </div>
-        </template>
       </template>
       <template v-else-if="column.key === 'ops'">
         <div v-if="data.canEdit" class="row-ops">

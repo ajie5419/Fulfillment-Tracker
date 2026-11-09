@@ -11,6 +11,7 @@ export default defineNuxtConfig({
   // 全部可被同名 NUXT_* 环境变量覆盖，见 .env.example
   runtimeConfig: {
     devTools: false, // NUXT_DEV_TOOLS=1 时开启演示数据和模拟报检（/api/dev/*），生产不要开
+    isolatedDemo: false, // Standalone demo keeps login accounts when resetting scenarios.
     adminUserIds: '', // NUXT_ADMIN_USER_IDS，逗号分隔的 QMS 用户 ID，可进设置页
     uploadDir: './data/uploads', // NUXT_UPLOAD_DIR，异常照片的存放目录（相对路径按启动目录算）
     qms: {

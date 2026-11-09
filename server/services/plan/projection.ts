@@ -112,6 +112,7 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
       projectName: wo.projectName,
       customerName: wo.customerName,
       deliveryDate: data.deliveryDay,
+      effectiveTime: wo.effectiveTime ? day(wo.effectiveTime) : null,
       projectManagerId: ext?.projectManagerId ?? null,
       projectManagerName: user(ext?.projectManagerId),
     },
@@ -121,7 +122,7 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
     delayedNodes: data.forecast.delayedNodes,
     sourceNodes: data.forecast.sourceNodes,
     /** W9 工单级（预计交期晚于合同交期）的活动预警级别 */
-    planAlertLevel: planAlert?.level ?? null,
+    planAlertLevel: published ? planAlert?.level ?? null : null,
     unlinked,
     network,
     /** 没有后续节点接着的节点（最后一个除外）：它们晚了不影响预计交期，多半是漏连了前置关系 */
@@ -186,8 +187,8 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
         doneCount: e.doneCount,
         overdueCount: e.overdueCount,
         lateCount: e.lateCount,
-        alertLevel: levelOf.get(w9Key(n.id)) ?? null,
-        confirmAlertLevel: levelOf.get(w9ConfirmKey(n.id)) ?? null,
+        alertLevel: published ? levelOf.get(w9Key(n.id)) ?? null : null,
+        confirmAlertLevel: published ? levelOf.get(w9ConfirmKey(n.id)) ?? null : null,
         tasks: tasks.map((t) => {
           const te = e.tasks.find((x) => x.kind === t.kind && x.id === t.id)!
           return {
