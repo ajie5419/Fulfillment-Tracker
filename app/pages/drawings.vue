@@ -65,6 +65,8 @@ const { data, pending, error, refresh } = await useAsyncData(
 )
 const rows = computed(() => pending.value ? [] : data.value.rows as DrawingRow[])
 const stats = computed(() => pending.value || error.value ? null : data.value.stats as DrawingStats | null)
+const openCount = computed(() => (stats.value ? stats.value.pending + stats.value.drawn + stats.value.customerPending : null))
+const drawnCount = computed(() => (stats.value ? stats.value.drawn + stats.value.customerPending : null))
 const viewOptions = computed(() => {
   const s = stats.value
   const open = s ? s.pending + s.drawn + s.customerPending : 0
@@ -79,9 +81,22 @@ function applyView(view: DrawingView) {
   tab.value = 'list'
 }
 const layout = useListLayout()
+function sortByNode(list: DrawingRow[]): DrawingRow[] {
+  if (!list.some((r) => r.planNode)) return list
+  return [...list].sort((a, b) => {
+    const ca = a.planNode?.code ?? String(a.planNode?.seq ?? '')
+    const cb = b.planNode?.code ?? String(b.planNode?.seq ?? '')
+    if (!ca && !cb) return 0
+    if (!ca) return 1
+    if (!cb) return -1
+    return ca.localeCompare(cb, undefined, { numeric: true })
+  })
+}
 /** 分组视图：每个工单一张小表（不再显示工单列）；表格视图：一张表 */
 const tables = computed(() =>
-  layout.value === 'group' ? groupByWorkOrder(rows.value).map((g) => ({ key: g.workOrderNumber, ...g })) : [{ key: '__all', workOrderNumber: '', rows: rows.value }],
+  layout.value === 'group'
+    ? groupByWorkOrder(rows.value).map((g) => ({ key: g.workOrderNumber, ...g, rows: sortByNode(g.rows) }))
+    : [{ key: '__all', workOrderNumber: '', rows: rows.value }],
 )
 const doneOf = (g: { rows: DrawingRow[] }) => groupProgress(g.rows, (r) => isDesignComplete(r.status), (r) => r.status !== 'CANCELLED')
 
@@ -199,18 +214,26 @@ async function released() {
 /** Keep desktop actions visible; narrow screens scroll the table without pinning actions. */
 const columns = [
   { title: '工单', key: 'wo', width: 120 },
-  { title: '所属节点', key: 'planNode', width: 180 },
   { title: '任务名称', key: 'component', width: 180 },
+  { title: '所属节点', key: 'planNode', width: 210 },
   { title: '责任人', key: 'owner', width: 110 },
-  { title: '计划起止', key: 'planDate', width: 160 },
-  { title: '设计状态', key: 'status', width: 155 },
-  { title: '操作', key: 'actions', width: 210, fixed: 'right' as const },
+  { title: '计划起止', key: 'planDate', width: 175 },
+  { title: '设计状态', key: 'status', width: 165 },
+  { title: '操作', key: 'actions', width: 170, align: 'right' as const, fixed: 'right' as const },
 ]
 const sumWidth = (cols: { width: number }[]) => cols.reduce((n, c) => n + c.width, 0)
 const groupColumns = columns.filter((c) => c.key !== 'wo')
 const tableWidth = sumWidth(columns)
 const groupWidth = sumWidth(groupColumns)
 const partNames = (r: DrawingRow) => partsText(r.parts.map((p) => p.name))
+const hasTaskDetails = (r: DrawingRow) => Boolean(r.drawnDate || r.customerConfirmedDate || r.releases.length || r.parts.length || r.note)
+function planRangeText(r: DrawingRow): string {
+  const end = dayText(r.planDate)
+  if (!r.startDate) return end
+  const start = dayText(r.startDate)
+  if (start === end) return end
+  return start.slice(0, 4) === end.slice(0, 4) ? `${start} ~ ${end.slice(5)}` : `${start} ~ ${end}`
+}
 const loadKey = (r: { ownerId: string | null }) => r.ownerId ?? '-'
 const loadColumns = [
   { title: '设计负责人', key: 'owner' },
@@ -228,14 +251,28 @@ const loadColumns = [
   <a-alert v-if="ordersError" type="error" message="工单选项加载失败" :description="apiError(ordersError)"><template #action><a-button @click="refreshOrders()">重试</a-button></template></a-alert>
   <a-alert v-if="masterError" type="error" message="负责人选项加载失败" :description="apiError(masterError)"><template #action><a-button @click="refreshMaster()">重试</a-button></template></a-alert>
   <a-alert v-if="meError" type="error" message="用户权限加载失败" :description="apiError(meError)"><template #action><a-button @click="refreshMe()">重试</a-button></template></a-alert>
-  <div class="drawing-alerts">
-    <UiStatCard label="逾期" :value="stats ? stats.overdue : '—'" unit="项" tone="late" accent icon="alert" clickable :active="filter.view === 'overdue'" sub="设计中过计划完成日，或客户确认过计划日" @click="applyView('overdue')" />
+  <div class="ft-stats">
+    <UiStatCard label="未完成" :value="openCount ?? '—'" unit="项" tone="primary" accent icon="dot" clickable :active="filter.view === 'open'" sub="设计中、待发放或待客户确认" @click="applyView('open')" />
+    <UiStatCard label="待发放 / 待确认" :value="drawnCount ?? '—'" unit="项" tone="upstream" accent icon="ring" clickable :active="filter.view === 'drawn'" sub="已出图待发放到车间或待客户确认" @click="applyView('drawn')" />
     <UiStatCard label="本周到期" :value="stats ? stats.dueThisWeek : '—'" unit="项" tone="risk" accent icon="warn" clickable :active="filter.view === 'week'" sub="设计中且计划完成日在本周" @click="applyView('week')" />
+    <UiStatCard label="逾期" :value="stats ? stats.overdue : '—'" unit="项" tone="late" accent icon="alert" clickable :active="filter.view === 'overdue'" sub="设计中过计划完成日，或客户确认过计划日" @click="applyView('overdue')" />
   </div>
-  <a-card>
+  <UiSectionCard>
+    <template #title>
+      <div class="card-head-left">
+        <span class="ft-title">设计任务</span>
+        <a-segmented v-model:value="tab" :options="[{ value: 'list', label: '任务列表' }, { value: 'load', label: '设计负荷' }]" />
+      </div>
+    </template>
+    <template #extra>
+      <a-space>
+        <UiRefreshButton @click="reload()" />
+        <a-button v-if="canEditTask" type="primary" class="ft-btn-ink" @click="openEdit(null)">新建设计任务</a-button>
+      </a-space>
+    </template>
+
     <div class="ft-toolbar">
       <div class="ft-toolbar-left">
-        <a-segmented v-model:value="tab" :options="[{ value: 'list', label: '设计任务' }, { value: 'load', label: '设计负荷' }]" />
         <a-segmented v-if="tab === 'list'" v-model:value="filter.view" :options="viewOptions" class="state-tabs" />
         <a-tag v-if="tab === 'list' && CARD_VIEWS.includes(filter.view)" closable @close.prevent="filter.view = 'open'">{{ filter.view === 'week' ? '本周到期' : '逾期' }}</a-tag>
       </div>
@@ -246,7 +283,7 @@ const loadColumns = [
           allow-clear
           show-search
           placeholder="全部工单"
-          style="width: 150px"
+          style="width: 148px"
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
         <template v-if="tab === 'list'">
@@ -254,8 +291,6 @@ const loadColumns = [
           <a-input-search v-model:value="keyword" allow-clear placeholder="部件 / 工单 / 备注" style="width: 160px" />
           <a-segmented v-model:value="layout" :options="LAYOUT_OPTIONS" />
         </template>
-        <UiRefreshButton @click="reload()" />
-        <a-button v-if="canEditTask" type="primary" class="ft-btn-ink" @click="openEdit(null)">新建设计任务</a-button>
       </div>
     </div>
 
@@ -276,6 +311,7 @@ const loadColumns = [
           :loading="pending"
           row-key="id"
           size="small"
+          :row-expandable="(r: DrawingRow) => hasTaskDetails(r)"
           :scroll="{ x: layout === 'group' ? groupWidth : tableWidth }"
           :pagination="layout === 'group' ? false : { pageSize: 50, hideOnSinglePage: true }"
         >
@@ -291,27 +327,32 @@ const loadColumns = [
           <template #emptyText><a-empty v-if="!pending" :description="filter.view === 'open' ? '没有未完成的设计任务' : '没有记录'" /></template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'component'">
-              <button v-if="canEditTask" type="button" class="link-btn" @click="openEdit(record as DrawingRow)">{{ record.componentName }}</button>
-              <span v-else>{{ record.componentName }}</span>
-              <div v-if="record.parts.length" class="muted">{{ record.parts.length }} 个关联工件</div>
+              <button v-if="canEditTask" type="button" class="link-btn task-title-btn" @click="openEdit(record as DrawingRow)">{{ record.componentName }}</button>
+              <span v-else class="task-title-text">{{ record.componentName }}</span>
+              <span v-if="record.parts.length" class="muted"> · {{ record.parts.length }} 个工件</span>
             </template>
             <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
             <template v-else-if="column.key === 'planNode'"><PlanNodeCell :work-order-number="record.workOrderNumber" :node="record.planNode" /></template>
             <template v-else-if="column.key === 'owner'"><span :class="{ muted: !record.ownerId }">{{ record.ownerText }}</span></template>
             <template v-else-if="column.key === 'planDate'">
-              <div class="plan-dates"><span class="muted">开始</span><span>{{ record.startDate ? dayText(record.startDate) : '未填' }}</span><span class="muted">完成</span><span :class="{ warn: record.overdue && record.status === 'PENDING' }">{{ dayText(record.planDate) }}</span></div>
+              <span class="plan-range" :class="{ warn: record.overdue && record.status === 'PENDING' }" :title="`开始：${record.startDate ? dayText(record.startDate) : '未填'} / 完成：${dayText(record.planDate)}`">
+                {{ planRangeText(record as DrawingRow) }}
+              </span>
             </template>
             <template v-else-if="column.key === 'status'">
-              <a-tag :color="DRAWING_STATUS_COLOR[record.status as DrawingStatusKey]">{{ record.statusText }}</a-tag>
-              <a-tag v-if="record.alertLevel === 'RED'" color="red">红</a-tag>
-              <a-tag v-else-if="record.alertLevel === 'YELLOW'" color="orange">黄</a-tag>
-              <div v-if="record.overdue" class="warn small">逾期</div>
-              <div v-if="record.needsCustomerConfirm && !record.customerConfirmedDate && record.status !== 'CANCELLED'" class="muted">{{ record.status === 'PENDING' ? '需客户确认' : '待客户确认' }}{{ record.customerPlanDate ? ` · ${dayText(record.customerPlanDate)}` : '' }}</div>
+              <div class="status-cell">
+                <a-tag :color="DRAWING_STATUS_COLOR[record.status as DrawingStatusKey]">{{ record.statusText }}</a-tag>
+                <a-tag v-if="record.alertLevel === 'RED'" color="red">红</a-tag>
+                <a-tag v-else-if="record.alertLevel === 'YELLOW'" color="orange">黄</a-tag>
+                <span v-if="record.overdue" class="warn small">逾期</span>
+                <span v-if="record.needsCustomerConfirm && !record.customerConfirmedDate && record.status !== 'CANCELLED'" class="muted">
+                  {{ record.status === 'PENDING' ? '需确认' : '待确认' }}{{ record.customerPlanDate ? ` ${dayText(record.customerPlanDate).slice(5)}` : '' }}
+                </span>
+              </div>
             </template>
             <template v-else-if="column.key === 'actions'">
-              <a-space size="small" wrap>
+              <div class="row-actions">
                 <a-button v-if="record.permissions.markDrawn" type="primary" size="small" @click="openAct(record as DrawingRow, 'drawn')">登记设计完成</a-button>
-                <span v-else-if="record.status === 'PENDING'" class="muted">待责任人完成</span>
                 <a-button v-if="record.status === 'DRAWN' && canRelease" type="primary" size="small" @click="openRelease(record as DrawingRow)">一键发放</a-button>
                 <a-button v-if="record.permissions.confirm && canEditTask" size="small" @click="openAct(record as DrawingRow, 'confirm')">客户确认</a-button>
                 <a-dropdown v-if="canEditTask || canRelease || record.permissions.undoDrawn">
@@ -325,7 +366,7 @@ const loadColumns = [
                     </a-menu>
                   </template>
                 </a-dropdown>
-              </a-space>
+              </div>
             </template>
           </template>
         </a-table>
@@ -355,7 +396,7 @@ const loadColumns = [
         </template>
       </a-tab-pane>
     </a-tabs>
-  </a-card>
+  </UiSectionCard>
   </div>
 
   <DrawingEditModal :open="editOpen" :task="editing" :work-order-number="filter.workOrderNumber" @close="closeEdit" @done="saved" />
@@ -380,20 +421,22 @@ const loadColumns = [
 
 <style scoped>
 .no-nav :deep(.ant-tabs-nav) { display: none; }
+.card-head-left { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .muted { color: var(--ft-text-2); font-size: 12px; }
 .link-btn { padding: 0; border: 0; background: none; font: inherit; color: var(--ft-primary); text-align: left; cursor: pointer; }
 .link-btn:hover { text-decoration: underline; }
 .link-btn:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; border-radius: 2px; }
+.task-title-btn, .task-title-text { font-weight: 500; }
 .warn { color: var(--ft-late-text); }
 .small { font-size: 12px; }
-.drawing-alerts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .state-tabs { max-width: 100%; overflow-x: auto; }
-.plan-dates { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.plan-range { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ft-text-2); }
+.status-cell { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.row-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
 .task-details { display: grid; gap: 8px; padding: 8px 16px; }
 .task-details > div { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .task-details b { min-width: 84px; font-weight: 500; color: var(--ft-text-2); }
 @media (max-width: 600px) {
-  .drawing-alerts { grid-template-columns: 1fr; }
   .ft-toolbar-left, .ft-toolbar-right { min-width: 0; width: 100%; }
   .state-tabs { min-width: 0; width: 100%; }
   .ft-table :deep(.ant-table-cell-fix-right) { position: static !important; }
