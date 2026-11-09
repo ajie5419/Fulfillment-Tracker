@@ -20,6 +20,7 @@ describe('demo reset login continuity', () => {
   it('preserves demo login accounts while still clearing scenarios in isolated mode', async () => {
     await resetDemo(undefined, { preserveUsers: true })
     expect(method('qmsUser.deleteMany')).not.toHaveBeenCalled()
+    for (const model of ['notifyRole', 'deptMapping', 'qmsDepartment']) expect(method(`${model}.deleteMany`)).not.toHaveBeenCalled()
     expect(method('qmsWorkOrder.deleteMany')).toHaveBeenCalledWith({ where: { workOrderNumber: { startsWith: 'DEMO-' } } })
     expect(method('workOrderPlan.deleteMany')).toHaveBeenCalled()
     expect(method('workOrderLocalSave.deleteMany')).toHaveBeenCalledWith({ where: { workOrderNumber: { startsWith: 'DEMO-' } } })
@@ -29,5 +30,6 @@ describe('demo reset login continuity', () => {
   it('retains the existing default cleanup behavior outside isolated mode', async () => {
     await resetDemo()
     expect(method('qmsUser.deleteMany')).toHaveBeenCalledWith({ where: { username: { startsWith: 'DEMO-' } } })
+    for (const model of ['notifyRole', 'deptMapping', 'qmsDepartment']) expect(method(`${model}.deleteMany`)).toHaveBeenCalled()
   })
 })
