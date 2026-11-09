@@ -12,7 +12,7 @@ import { factoryDay } from '#shared/mobile-todo'
 import { isPlanStartLate } from '#shared/plan-validation'
 import type { CanCreate, PlanNodeRow, PlanTask } from '#shared/plan-view'
 
-const props = withDefaults(defineProps<{ node: PlanNodeRow; wo: string; canCreate: CanCreate; viewOnly?: boolean }>(), { viewOnly: false })
+const props = withDefaults(defineProps<{ node: PlanNodeRow; wo: string; canCreate: CanCreate; viewOnly?: boolean; hideAddButton?: boolean }>(), { viewOnly: false, hideAddButton: false })
 const emit = defineEmits<{ changed: [] }>()
 
 const get = clientRequest
@@ -175,62 +175,58 @@ const stepSelection = computed(() => ({
   getCheckboxProps: (r: StepOpt) => ({ disabled: r.planNodeId === props.node.id }),
 }))
 
-const taskColumns = [
-  { title: '分解的任务', key: 'name' },
-  { title: '类型', dataIndex: 'kindText', width: 84 },
-  { title: '责任人', key: 'owner', width: 90 },
-  { title: '计划完成', key: 'date', width: 150 },
-  { title: '状态', key: 'status', width: 150 },
-  { title: '', key: 'ops', width: 150 },
-]
+const hasSplitAction = computed(() => canAddTask.value || splitItems.value.length > 0)
+defineExpose({ openSplit, hasSplitAction })
 </script>
 
 <template>
-  <div class="work">
-    <a-table v-if="node.tasks.length" class="ft-table" :columns="taskColumns" :data-source="node.tasks" :row-key="(t: PlanTask) => `${t.kind}:${t.id}`" size="small" :pagination="false">
-      <template #bodyCell="{ column: c, record: t }">
-        <template v-if="c.key === 'name'">
+  <div v-if="node.tasks.length || !hideAddButton" class="work">
+    <div v-if="node.tasks.length" class="task-list">
+      <div v-for="t in node.tasks" :key="`${t.kind}:${t.id}`" class="task-row">
+        <div class="task-main">
+          <span class="kind-tag">{{ t.kindText }}</span>
           <template v-if="t.kind === 'task'">
-            {{ t.name }}
-            <div v-if="t.note" class="muted">{{ t.note }}</div>
+            <span class="task-name">{{ t.name }}</span>
+            <span v-if="t.note" class="muted task-note">{{ t.note }}</span>
           </template>
-          <NuxtLink v-else :to="t.link">{{ t.name }}</NuxtLink>
-        </template>
-        <template v-else-if="c.key === 'owner'">{{ t.ownerName ?? '—' }}</template>
-        <template v-else-if="c.key === 'date'">
-          <span :class="{ late: t.lateForNode && !t.done }">{{ t.planDate ?? '未填' }}</span>
-          <span v-if="t.lateForNode && !t.done && !t.excluded" class="late small"> 晚于节点</span>
-          <div v-if="t.kind !== 'task'" class="muted">{{ t.dateLabel }}</div>
-        </template>
-        <template v-else-if="c.key === 'status'">
-          <span v-if="t.excluded" class="muted">{{ t.statusText }}（不计）</span>
-          <template v-else-if="t.done">
-            <UiStatusTag tone="done">{{ t.statusText }}</UiStatusTag>
-            <div class="muted">{{ t.doneDate }}</div>
-          </template>
-          <template v-else>
-            <UiStatusTag v-if="t.overdue" tone="late">逾期</UiStatusTag>
-            <span v-else>{{ t.kind === 'task' ? '未完成' : t.statusText }}</span>
-            <div v-if="t.expectedDate && t.expectedDate !== t.planDate" class="muted">预计 {{ t.expectedDate }}</div>
-          </template>
-        </template>
-        <template v-else-if="c.key === 'ops'">
-          <a-space v-if="t.kind === 'task'" :size="0" wrap>
-            <a-button v-if="t.canDone && !t.done" type="link" size="small" @click="openTaskDone(t as PlanTask)">完成</a-button>
-            <a-button v-if="t.canDone && t.done" type="link" size="small" @click="undoTask(t as PlanTask)">撤销完成</a-button>
-            <template v-if="!viewOnly && t.canEdit">
-              <a-button type="link" size="small" @click="openTask(t as PlanTask)">修改</a-button>
-              <a-button type="link" size="small" danger @click="deleteTask(t as PlanTask)">删除</a-button>
-            </template>
-          </a-space>
-        </template>
-      </template>
-    </a-table>
-    <div v-else class="empty muted">{{ viewOnly ? '还没有分解：由责任部门在“部门计划”里接收后分解' : '还没有分解任务' }}</div>
+          <NuxtLink v-else :to="t.link" class="task-name task-link">{{ t.name }}</NuxtLink>
+        </div>
 
-    <div v-if="canAddTask || splitItems.length" class="adds">
-      <a-button class="add" @click="openSplit">＋ 分解任务</a-button>
-      <UiHelpTip v-if="node.dept === 'TECH' || node.dept === 'PURCHASE'" label="已有记录怎么关联">已经建好的设计任务、采购行：在“设计任务”“采购到货”里编辑它，把“所属总计划节点”选成这个节点即可。</UiHelpTip>
+        <div class="task-meta">
+          <span class="task-owner" title="责任人">{{ t.ownerName ?? '—' }}</span>
+          <span class="task-date" :class="{ late: t.lateForNode && !t.done }" title="计划完成日">
+            {{ t.planDate ?? '未填' }}
+            <span v-if="t.lateForNode && !t.done && !t.excluded" class="late small">晚于节点</span>
+          </span>
+          <span class="task-status">
+            <span v-if="t.excluded" class="muted">{{ t.statusText }}（不计）</span>
+            <template v-else-if="t.done">
+              <UiStatusTag tone="done">{{ t.statusText }}{{ t.doneDate ? ` · ${t.doneDate.slice(5)}` : '' }}</UiStatusTag>
+            </template>
+            <template v-else>
+              <UiStatusTag v-if="t.overdue" tone="late">逾期{{ t.expectedDate && t.expectedDate !== t.planDate ? ` · 预计 ${t.expectedDate.slice(5)}` : '' }}</UiStatusTag>
+              <span v-else class="status-pill">{{ t.kind === 'task' ? '未完成' : t.statusText }}</span>
+            </template>
+          </span>
+          <div v-if="t.kind === 'task' && (t.canDone || (!viewOnly && t.canEdit))" class="task-ops">
+            <a-button v-if="t.canDone && !t.done" size="small" @click="openTaskDone(t as PlanTask)">完成</a-button>
+            <a-button v-if="t.canDone && t.done" size="small" @click="undoTask(t as PlanTask)">撤销</a-button>
+            <template v-if="!viewOnly && t.canEdit">
+              <a-button size="small" @click="openTask(t as PlanTask)">修改</a-button>
+              <a-button size="small" class="op-del" @click="deleteTask(t as PlanTask)">删除</a-button>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-else-if="!hideAddButton" class="empty-bar">
+      <span class="muted">{{ viewOnly ? '还没有分解任务' : '暂未分解任务' }}</span>
+      <a-button v-if="hasSplitAction" size="small" class="add-btn" @click="openSplit">＋ 分解任务</a-button>
+    </div>
+
+    <div v-if="node.tasks.length && !hideAddButton && hasSplitAction" class="work-foot">
+      <a-button size="small" class="add-btn" @click="openSplit">＋ 分解任务</a-button>
     </div>
 
     <a-modal v-model:open="taskOpen" :title="taskEditing ? `修改任务：${taskEditing.name}` : `分解任务：${node.code} ${node.name}`" :ok-text="directTask ? '保存并指派' : '继续填写'" :confirm-loading="savingTask" :closable="!savingTask" :mask-closable="!savingTask" :cancel-button-props="{ disabled: savingTask }" @ok="saveTask">
@@ -290,12 +286,32 @@ const taskColumns = [
 </template>
 
 <style scoped>
-.work { display: flex; flex-direction: column; gap: 8px; }
+.work { border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); overflow: hidden; background: var(--ft-fill); }
+.task-list { display: flex; flex-direction: column; }
+.task-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 7px 12px; border-top: 1px solid var(--card-border-subtle); font-size: 13px; font-variant-numeric: tabular-nums; }
+.task-row:first-child { border-top: 0; }
+.task-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.kind-tag { flex: none; padding: 0 6px; height: 20px; line-height: 20px; border-radius: 4px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); color: var(--ft-text-2); font-size: 11px; }
+.task-name { font-weight: 500; color: var(--ft-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-link { color: var(--ft-primary); }
+.task-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-meta { flex: none; display: flex; align-items: center; gap: 16px; white-space: nowrap; }
+.task-owner { min-width: 68px; color: var(--ft-text-2); }
+.task-date { min-width: 82px; color: var(--ft-text-2); }
+.task-status { display: inline-flex; align-items: center; }
+.status-pill { display: inline-block; padding: 0 8px; height: 22px; line-height: 22px; border-radius: 999px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); color: var(--ft-text-2); font-size: 12px; white-space: nowrap; }
+.task-ops { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.op-del { color: var(--ft-text-2); }
+.op-del:hover, .op-del:focus-visible { color: var(--ft-late-text) !important; border-color: var(--ft-late) !important; background: var(--ft-late-bg) !important; }
+.work-foot { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--card-border-subtle); }
+.empty-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; }
 .muted { color: var(--ft-text-2); font-size: 12px; }
 .small { font-size: 12px; }
 .late { color: var(--ft-late-text); }
 .ok { color: var(--ft-done-text); }
-.empty { padding: 4px 0; }
-.adds { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.add { border-style: dashed; }
+.add-btn { border-style: dashed; background: var(--ft-card-bg); }
+@media (max-width: 760px) {
+  .task-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .task-meta { flex-wrap: wrap; gap: 8px 12px; }
+}
 </style>
