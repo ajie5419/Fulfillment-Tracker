@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { CONFIRM_TONE } from '~/utils/plan-status'
 import type { PlanNodeRow } from '#shared/plan-view'
 import type { PlanData } from '../composables/usePlanData'
 import { isPhaseRow, type TableRow } from '../composables/usePlanPhaseGroups'
@@ -26,11 +25,6 @@ const DRIVER_TEXT: Record<string, string> = { self: '', task: '挂靠任务拖�
 const isCollapsed = (id: string) => props.collapsed.includes(id)
 /** 缩进层级：有阶段时 节点 = 2 级、子节点 = 3 级；没阶段时 节点 = 1 级、子节点 = 2 级 */
 const levelOf = (n: PlanNodeRow) => (n.parentId ? 3 : 2) - (props.hasPhase ? 0 : 1)
-/** 汇总行的"部门执行"：子节点接收情况 */
-function childSummary(n: PlanNodeRow) {
-  const kids = (props.data.nodes ?? []).filter((x) => x.parentId === n.id)
-  return { total: kids.length, accepted: kids.filter((x) => x.confirmStatus === 'CONFIRMED').length, pending: kids.filter((x) => x.confirmStatus === 'PENDING').length }
-}
 const affectsText = (n: PlanNodeRow) => n.affects.map((p) => `${p.code} ${p.name}`).join('、')
 const predsText = (n: PlanNodeRow) => n.preds.map((p) => p.code).join(' ')
 const predsTitle = (n: PlanNodeRow) =>
@@ -42,9 +36,9 @@ const columns = [
   { title: '编号 / 节点', key: 'name', width: 280 },
   { title: '责任部门', dataIndex: 'deptText', width: 80 },
   { title: '前置', key: 'preds', width: 72 },
-  { title: '计划', key: 'plan', width: 112 },
+  { title: '计划开始日期', key: 'start', width: 140 },
+  { title: '计划完成日期', key: 'plan', width: 140 },
   { title: '预计 / 完成', key: 'expected', width: 140 },
-  { title: '部门执行', key: 'exec', width: 180 },
   { title: '', key: 'ops', width: 148, fixed: 'right' as const },
 ]
 const rowClass = (n: TableRow) =>
@@ -78,13 +72,11 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
             <span class="muted">{{ record.count }} 个节点</span>
           </span>
         </template>
-        <template v-else-if="column.key === 'plan'">{{ record.start === record.end ? record.end : `${record.start.slice(5)} ~ ${record.end.slice(5)}` }}</template>
+        <template v-else-if="column.key === 'start'">{{ record.start }}</template>
+        <template v-else-if="column.key === 'plan'">{{ record.end }}</template>
         <template v-else-if="column.key === 'expected'">
           <span v-if="record.expected" :class="{ late: record.late }">{{ record.expected }}</span>
           <UiStatusTag v-else tone="done">已完成</UiStatusTag>
-        </template>
-        <template v-else-if="column.key === 'exec'">
-          <span v-if="published" class="muted">已接收 {{ record.accepted }}/{{ record.leaves }}<template v-if="record.pending"> · <span class="warn">{{ record.pending }} 个待接收</span></template></span>
         </template>
       </template>
       <template v-else-if="column.key === 'name'">
@@ -110,9 +102,9 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
           {{ predsText(record as PlanNodeRow) }}
         </span>
       </template>
+      <template v-else-if="column.key === 'start'">{{ record.startDate ?? '—' }}</template>
       <template v-else-if="column.key === 'plan'">
         {{ record.planDate }}
-        <div v-if="record.startDate" class="muted">开始 {{ record.startDate }}</div>
         <div v-if="record.childCount" class="muted small">子节点汇总</div>
         <div v-if="record.baselineDate && record.baselineDate !== record.planDate" class="muted">基线 <span class="changed">{{ record.baselineDate }}</span></div>
         <div v-else-if="published && !record.baselineDate" class="muted">发布后新增</div>
@@ -131,26 +123,6 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
           <div v-if="record.slackDays != null">
             <UiStatusTag v-if="record.critical" tone="primary">关键</UiStatusTag>
             <span v-else class="muted">余量 {{ record.slackDays }} 天</span>
-          </div>
-        </template>
-      </template>
-      <template v-else-if="column.key === 'exec'">
-        <template v-if="record.childCount">
-          <span v-if="published" class="muted">子节点已接收 {{ childSummary(record as PlanNodeRow).accepted }}/{{ childSummary(record as PlanNodeRow).total }}</span>
-          <span v-else class="muted">按子节点</span>
-        </template>
-        <span v-else-if="!record.confirmStatus" class="muted">{{ published ? '—' : '发布后由部门接收' }}</span>
-        <template v-else>
-          <UiStatusTag :tone="CONFIRM_TONE[record.confirmStatus as keyof typeof CONFIRM_TONE]">{{ record.confirmText }}<template v-if="record.confirmStatus === 'CONFIRMED' && record.confirmedByName"> · {{ record.confirmedByName }}</template></UiStatusTag>
-          <a-tag v-if="record.confirmAlertLevel" :color="levelColor(record.confirmAlertLevel)">超时</a-tag>
-          <div v-if="record.confirmStatus === 'REJECTED' && record.rejectReason" class="late small">{{ record.confirmedByName }}：{{ record.rejectReason }}</div>
-          <div v-if="record.taskCount" class="small">
-            {{ record.taskCount }} 项任务 · {{ record.doneCount }}/{{ record.taskCount }} 完成
-            <span v-if="record.overdueCount" class="late">· 逾期 {{ record.overdueCount }}</span>
-            <span v-if="record.lateCount" class="late">· 晚于节点 {{ record.lateCount }}</span>
-          </div>
-          <div v-else-if="record.confirmStatus === 'CONFIRMED' && !record.done" class="small">
-            <UiStatusTag :tone="record.splitAlertLevel ? 'risk' : 'none'">未分解</UiStatusTag>
           </div>
         </template>
       </template>

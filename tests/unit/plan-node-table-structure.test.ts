@@ -44,11 +44,10 @@ describe('PlanNodeTable 行视图辅助', () => {
     v.unmount()
   })
 
-  it('折叠判断 / 子节点汇总 / 文案', async () => {
+  it('折叠判断 / 文案', async () => {
     const v = await open({ collapsed: ['n2'] })
     expect(v.state.isCollapsed('n2')).toBe(true)
     expect(v.state.isCollapsed('n1')).toBe(false)
-    expect(v.state.childSummary(NODES[1])).toEqual({ total: 2, accepted: 1, pending: 1 })
     expect(v.state.pushedText({ pushedBy: null })).toBe('受上游影响')
     expect(v.state.pushedText({ pushedBy: { code: '1.1', name: 'A', child: true } })).toBe('受子节点影响（1.1 A）')
     expect(v.state.pushedText({ pushedBy: { code: '1.1', name: 'A', child: false } })).toBe('受 1.1 影响')
