@@ -179,7 +179,7 @@ const pastePlaceholder = '从 Word / Excel / PDF 复制明细表整块粘进来�
         </template>
       </a-space>
       <div v-if="!file" class="muted">
-        图纸明细表或 CAD 导出的 BOM（.xlsx），要有 代号（图号）、名称 两列；数量、版号可选，没有数量列按每个图号 1 件建。发放时按图号建工件，生产、工艺签收时就能看到；分批发图纸的每批附自己那部分。
+        Excel 需包含图号、名称；数量和版号可选。分批发图时，只附本批明细。
       </div>
     </template>
     <template v-else>
@@ -229,7 +229,7 @@ const pastePlaceholder = '从 Word / Excel / PDF 复制明细表整块粘进来�
           <span class="muted">螺栓、螺母（生产辅材）和没有图号的外购件（走采购计划）不建工件</span>
           <a-checkbox v-model:checked="showSkipped">显示不建的行</a-checkbox>
         </div>
-        <a-table :columns="columns" :data-source="shown" :row-key="rowKey" size="small" :pagination="false" :scroll="{ y: 460 }">
+        <a-table :columns="columns" :data-source="shown" :row-key="rowKey" size="small" :pagination="false" :scroll="{ x: 780, y: 460 }">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'rows'">{{ (record as Line).rows.join('、') }}</template>
             <template v-else-if="column.key === 'status'">

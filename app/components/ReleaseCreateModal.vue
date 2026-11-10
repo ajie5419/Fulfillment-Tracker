@@ -11,12 +11,12 @@ import type { UploadFile } from 'ant-design-vue'
 const props = defineProps<{ open: boolean; workOrderNumber?: string; prefill?: ReleasePrefill | null }>()
 const emit = defineEmits<{ close: []; done: [id: string] }>()
 
-const { data: workOrders } = await useWorkOrders()
-const { data: master } = await useMaster()
+const { data: workOrders, error: workOrdersError, refresh: refreshWorkOrders } = await useWorkOrders()
+const { data: master, error: masterError, refresh: refreshMaster } = await useMaster()
 const { data: me } = await useMe()
 /** 工艺部只能发工艺文件 */
 const processOnly = computed(() => !!me.value?.can.releaseProcessOnly)
-const typeEntries = computed(() => Object.entries(RELEASE_TYPE_TEXT).filter(([k]) => !processOnly.value || k === 'PROCESS') as [ReleaseTypeKey, string][])
+const typeEntries = computed(() => Object.entries(RELEASE_TYPE_TEXT).filter(([k]) => processOnly.value ? k === 'PROCESS' : !props.prefill?.drawingTaskId || k !== 'PROCESS') as [ReleaseTypeKey, string][])
 
 const form = reactive({
   type: 'DRAWING' as ReleaseTypeKey,
@@ -34,6 +34,7 @@ const bomField = ref<{ prepare: () => Promise<string | null> } | null>(null)
 /** 每次打开换一个 key：BOM 栏（选的文件、粘的明细）跟着清空 */
 const openSeq = ref(0)
 const submitting = ref(false)
+const showExistingParts = ref(false)
 
 /** 打开时装入的工单：工单 watch 碰到它就不清工件（预填的工件要留着）；用户之后改工单照常清空 */
 let loadedWo: string | undefined | null = null
@@ -52,13 +53,16 @@ watch(
       groups: [],
     })
     files.value = []
+    showExistingParts.value = !!p?.partIds?.length
+    bomAttached.value = false
+    bomBlocked.value = false
     openSeq.value++
     loadedWo = form.workOrderNumber
     if (form.workOrderNumber) refreshParts()
   },
 )
 
-const { data: parts, refresh: refreshParts } = await useFetch('/api/parts', {
+const { data: parts, error: partsError, refresh: refreshParts } = await useFetch('/api/parts', {
   query: computed(() => ({ workOrderNumber: form.workOrderNumber })),
   default: () => [],
   immediate: false,
@@ -81,6 +85,45 @@ const userOptions = computed(() => master.value.users.map((u) => ({ value: u.id,
 const deptOptions = computed(() => [...new Set(master.value.users.map((u) => u.department).filter(Boolean))].sort().map((d) => ({ value: d, label: d })))
 const partOptions = computed(() => (form.workOrderNumber ? parts.value : []).map((p) => ({ value: p.id, label: p.drawingNo ? `${p.name}（${p.drawingNo}）` : p.name })))
 
+const recipientOptions = computed(() => [
+  { label: '人员', options: userOptions.value.map(o => ({ ...o, value: `user:${o.value}` })) },
+  { label: '部门全部人员', options: deptOptions.value.map(o => ({ label: `${o.label} · 全部人员`, value: `dept:${o.value}` })) },
+  { label: '角色', options: RECIPIENT_ROLE_OPTIONS.filter(o => o.value).map(o => ({ label: o.label, value: `role:${o.value}` })) },
+])
+const recipientSelection = computed<string[]>({
+  get: () => [...form.userIds.map(id => `user:${id}`), ...form.groups.map(g => g.role ? `role:${g.role}` : `dept:${g.department}`)],
+  set: values => {
+    form.userIds = values.filter(v => v.startsWith('user:')).map(v => v.slice(5))
+    form.groups = values.filter(v => !v.startsWith('user:')).map(v => v.startsWith('dept:')
+      ? { department: v.slice(5), role: '' }
+      : { role: v.slice(5) as (typeof form.groups)[number]['role'] })
+  },
+})
+const recipientCount = ref<number | null>(null)
+const recipientError = ref('')
+const recipientLoading = ref(false)
+let recipientSeq = 0
+async function previewRecipients() {
+  const seq = ++recipientSeq
+  recipientCount.value = null
+  recipientError.value = ''
+  recipientLoading.value = false
+  if (!props.open || !form.workOrderNumber || !recipientSelection.value.length) return
+  recipientLoading.value = true
+  try {
+    const result = await clientRequest('/api/releases/recipients-preview', { method: 'POST', body: {
+      workOrderNumber: form.workOrderNumber, type: form.type, userIds: form.userIds,
+      groups: form.groups.map(g => ({ department: g.department || null, role: g.role || null })),
+    } })
+    if (seq === recipientSeq) recipientCount.value = result.count
+  } catch (error) {
+    if (seq === recipientSeq) recipientError.value = apiError(error)
+  } finally {
+    if (seq === recipientSeq) recipientLoading.value = false
+  }
+}
+watch([() => props.open, () => form.workOrderNumber, () => form.type, recipientSelection], previewRecipients)
+
 function beforeUpload(file: File) {
   if (file.size > MAX_ATTACHMENT_BYTES) {
     message.error(`${file.name} 超过 20MB`)
@@ -98,11 +141,13 @@ function removeFile(f: UploadFile) {
 }
 
 async function submit() {
+  if (submitting.value) return
   if (!form.workOrderNumber) return message.warning('请选择工单')
   if (!form.description.trim()) return message.warning('请填写说明')
   const groups = form.groups.filter((g) => g.department || g.role).map((g) => ({ department: g.department || null, role: g.role || null }))
   if (form.groups.some(g => !g.department && !g.role) && !form.userIds.length && !groups.length) return message.warning('空部门行不代表全部人员，请选择部门或角色')
   if (!form.userIds.length && !groups.length) return message.warning('请选择接收人')
+  if (recipientLoading.value || recipientCount.value === null || recipientError.value) return message.warning('请先确认接收范围预览成功')
   const withBom = form.type === 'DRAWING' && bomAttached.value
   if (withBom && bomBlocked.value) return message.warning('BOM 表还没识别好或有问题，看 BOM 表一栏的提示；不附的话点"不附"或"清空"')
   submitting.value = true
@@ -145,57 +190,67 @@ async function submit() {
 </script>
 
 <template>
-  <a-modal :open="open" :title="prefill?.label ? `新建发放单（${prefill.label}）` : '新建发放单'" ok-text="发放" :confirm-loading="submitting" width="720px" @ok="submit" @cancel="emit('close')">
-    <a-form layout="horizontal" :label-col="{ span: 4 }" :wrapper-col="{ span: 19 }">
-      <a-form-item label="类型" required>
-        <a-radio-group v-model:value="form.type">
-          <a-radio-button v-for="[key, label] in typeEntries" :key="key" :value="key">{{ label }}</a-radio-button>
-        </a-radio-group>
-        <div v-if="form.type === 'CHANGE'" class="muted">关联工件已在加工/在外协的，会通知生产经理和外协专员确认变更影响；还没开工的工序标"等变更"，暂停转序/逾期预警计时。</div>
-      </a-form-item>
-      <a-form-item label="工单" required>
-        <a-select
-          v-model:value="form.workOrderNumber"
-          :disabled="!!prefill?.drawingTaskId"
-          show-search
-          option-filter-prop="label"
-          placeholder="选择工单"
-          :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: `${w.workOrderNumber}　${w.projectName ?? w.customerName}` }))"
-        />
-      </a-form-item>
-      <a-form-item v-if="form.type === 'DRAWING'" label="BOM 表">
-        <ReleaseBomField :key="openSeq" ref="bomField" v-model:attached="bomAttached" v-model:blocked="bomBlocked" :work-order-number="form.workOrderNumber" />
-      </a-form-item>
-      <a-form-item label="关联工件">
-        <a-select v-model:value="form.partIds" mode="multiple" allow-clear option-filter-prop="label" :placeholder="form.workOrderNumber ? (bomAttached && form.type === 'DRAWING' ? 'BOM 里的工件发放时自动关联，这里可不选' : '可多选，可不选') : '先选工单'" :options="partOptions" />
-      </a-form-item>
-      <a-form-item label="版本号"><a-input v-model:value="form.version" :maxlength="64" placeholder="如 A、B、V2，可空" /></a-form-item>
-      <a-form-item label="说明" required>
-        <a-textarea v-model:value="form.description" :rows="3" :maxlength="2000" show-count placeholder="发的是什么、改了什么，如：支腿连接板安装孔由 Φ22 改为 Φ26" />
-      </a-form-item>
-      <a-form-item label="附件">
-        <a-upload :file-list="files" :before-upload="beforeUpload" accept=".pdf,image/jpeg,image/png,image/webp" multiple @remove="removeFile">
-          <a-button size="small">选择 PDF / 照片</a-button>
-        </a-upload>
-        <div class="muted">可选，纸质图纸照旧下发；每个 ≤ 20MB，最多 {{ MAX_ATTACHMENTS }} 个</div>
-      </a-form-item>
-      <a-form-item label="接收范围（按人或按部门 + 角色，至少选一项）" required>
-        <a-select v-model:value="form.userIds" mode="multiple" show-search option-filter-prop="label" placeholder="选择人员" :options="userOptions" />
-      </a-form-item>
-      <a-form-item label="按部门 + 角色（与按人任选其一）">
-        <div v-for="(g, i) in form.groups" :key="i" class="group-row">
-          <a-select v-model:value="g.department" allow-clear placeholder="部门（只选全部人员时必填）" style="width: 180px" :options="deptOptions" />
-          <a-select v-model:value="g.role" style="width: 150px" :options="RECIPIENT_ROLE_OPTIONS.map((o) => ({ ...o }))" />
-          <a-button size="small" type="link" danger @click="form.groups.splice(i, 1)">删除</a-button>
+  <a-modal :open="open" title="新建发放单" ok-text="确认发放" :confirm-loading="submitting" width="760px" :style="{ top: '24px' }" :body-style="{ maxHeight: 'calc(100dvh - 160px)', overflowY: 'auto', paddingRight: '4px' }" @ok="submit" @cancel="emit('close')">
+    <a-form layout="vertical" class="release-form">
+      <UiSectionCard flat title="发放内容">
+        <p v-if="prefill?.label" class="task-context">{{ prefill.label }}</p>
+        <div class="field-grid">
+          <a-form-item label="工单" required>
+            <a-select v-model:value="form.workOrderNumber" :disabled="!!prefill?.drawingTaskId || !!workOrdersError" show-search option-filter-prop="label" placeholder="选择工单" :options="workOrders.map(w => ({ value: w.workOrderNumber, label: w.workOrderNumber + '　' + (w.projectName ?? w.customerName) }))" />
+            <div v-if="workOrdersError" class="error">工单加载失败 <a-button type="link" size="small" @click="refreshWorkOrders()">重试</a-button></div>
+          </a-form-item>
+          <a-form-item label="发放类型" required>
+            <a-segmented v-model:value="form.type" :options="typeEntries.map(([value, label]) => ({ value, label }))" />
+          </a-form-item>
         </div>
-        <a-button size="small" @click="form.groups.push({ department: undefined, role: '' })">+ 添加部门 / 角色</a-button>
-        <div class="muted">发放时展开成人（不含你自己），每人一条签收待办；只选部门 = 该部门全部人员</div>
-      </a-form-item>
+        <p v-if="form.type === 'CHANGE'" class="muted">已开工工件将通知相关人员确认变更影响；未开工工序将暂停并等待变更确认。</p>
+        <a-form-item label="图纸 / 文件版本"><a-input v-model:value="form.version" :maxlength="64" placeholder="如 A、B、V2（可选）" /></a-form-item>
+        <a-form-item label="发放说明" required><a-textarea v-model:value="form.description" :rows="2" :maxlength="2000" show-count placeholder="说明发放内容；设计变更请注明修改位置与内容" /></a-form-item>
+        <a-form-item label="图纸 / 文件附件（可选）">
+          <a-upload :file-list="files" :before-upload="beforeUpload" accept=".pdf,image/jpeg,image/png,image/webp" multiple @remove="removeFile"><a-button>上传 PDF / 照片</a-button></a-upload>
+          <div class="muted">纸质图纸可直接登记发放。每个附件不超过 20MB，最多 {{ MAX_ATTACHMENTS }} 个。</div>
+        </a-form-item>
+      </UiSectionCard>
+      <UiSectionCard flat :title="form.type === 'DRAWING' ? '生产明细（BOM）' : '关联生产工件'">
+        <template v-if="form.type === 'DRAWING'">
+          <p class="muted">可选。发放后按 BOM 创建或匹配生产工件；原理图、技术协议等可不附 BOM。</p>
+          <ReleaseBomField :key="openSeq" ref="bomField" v-model:attached="bomAttached" v-model:blocked="bomBlocked" :work-order-number="form.workOrderNumber" />
+        </template>
+        <a-checkbox v-if="form.type === 'DRAWING'" v-model:checked="showExistingParts" class="existing-toggle">补充关联已有工件（补发图纸时使用）</a-checkbox>
+        <a-form-item v-if="showExistingParts || form.type !== 'DRAWING'" label="已有工件（可选）">
+          <a-select v-model:value="form.partIds" mode="multiple" allow-clear option-filter-prop="label" :disabled="!form.workOrderNumber || !!partsError" placeholder="选择本次发放涉及的已有工件" :options="partOptions" />
+          <div v-if="partsError" class="error">工件加载失败 <a-button type="link" size="small" @click="refreshParts()">重试</a-button></div>
+        </a-form-item>
+        <p v-else-if="form.partIds.length" class="muted">已关联 {{ form.partIds.length }} 个已有工件，展开后可调整。</p>
+      </UiSectionCard>
+      <UiSectionCard flat title="接收范围">
+        <a-form-item label="接收人员 / 部门 / 角色" required>
+          <a-select v-model:value="recipientSelection" mode="multiple" show-search option-filter-prop="label" :disabled="!!masterError" placeholder="搜索并选择人员、部门或角色，可组合选择" :options="recipientOptions" />
+          <div v-if="masterError" class="error">人员加载失败 <a-button type="link" size="small" @click="refreshMaster()">重试</a-button></div>
+        </a-form-item>
+        <div class="release-summary" aria-live="polite">
+          <span v-if="recipientLoading">正在核对接收范围…</span>
+          <span v-else-if="recipientError" class="error">{{ recipientError }} <a-button type="link" size="small" @click="previewRecipients">重试</a-button></span>
+          <span v-else-if="recipientCount !== null">本次发放：{{ recipientCount }} 人待签收<span v-if="form.partIds.length">，另选 {{ form.partIds.length }} 个已有工件</span>。</span>
+          <span v-else>选择接收范围后显示实际签收人数。</span>
+          <div class="muted">重复人员只生成一条签收待办；按部门或角色选择时不包含发放人本人。</div>
+          <div v-if="form.type === 'DRAWING' && !bomAttached" class="muted">未附 BOM，本次不会创建生产工件。</div>
+        </div>
+      </UiSectionCard>
     </a-form>
   </a-modal>
 </template>
 
 <style scoped>
-.muted { color: var(--ft-text-2); font-size: 12px; }
-.group-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.release-form { display: grid; gap: 12px; }
+.release-form :deep(.ant-form-item) { margin-bottom: 14px; }
+.release-form :deep(.ft-section + .ft-section) { border-top: 1px solid var(--ft-border); padding-top: 12px; }
+.field-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.field-grid > * { min-width: 0; }
+.task-context { margin: 0 0 16px; font-weight: 600; }
+.muted { color: var(--ft-text-2); font-size: 12px; line-height: 1.6; }
+.error { color: var(--ft-late-text); }
+.existing-toggle { margin: 16px 0; }
+.release-summary { padding: 12px; background: var(--ft-fill); border-radius: 8px; line-height: 1.8; }
+@media (max-width: 600px) { .field-grid { grid-template-columns: minmax(0, 1fr); gap: 0; } }
 </style>
