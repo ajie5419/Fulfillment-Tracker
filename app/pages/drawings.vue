@@ -55,7 +55,26 @@ watch(() => route.query, (q) => {
   tab.value = q.tab === 'load' ? 'load' : 'list'
 })
 
-const layout = useListLayout('board')
+const layout = useListLayout('board', 'drawing-layout')
+const hasFilters = computed(() => !!filter.workOrderNumber || (tab.value === 'list' && (!!filter.ownerId || !!keyword.value || filter.view !== 'open')))
+const activeViewLabel = computed(() => CARD_VIEWS.includes(filter.view)
+  ? filter.view === 'week' ? '本周到期' : '逾期'
+  : VIEWS.find(v => v.value === filter.view)?.label)
+function clearFilters() {
+  filter.workOrderNumber = undefined
+  if (tab.value !== 'list') return
+  clearTimeout(timer)
+  keyword.value = ''
+  filter.q = ''
+  filter.ownerId = undefined
+  filter.view = 'open'
+}
+function changeLayout(value: unknown) {
+  if (value !== 'group' && value !== 'board' && value !== 'table') return
+  // The stage board has no cancelled column; do not carry that hidden filter into it.
+  return router.replace({ query: { ...route.query, layout: value, view: value === 'board' && filter.view === 'cancelled' ? 'open' : filter.view } })
+}
+onBeforeUnmount(() => clearTimeout(timer))
 const listQuery = computed(() => ({
   workOrderNumber: filter.workOrderNumber,
   ownerId: filter.ownerId,
@@ -292,50 +311,37 @@ const loadColumns = [
     <template #title>
       <div class="card-head-left">
         <span class="ft-title">设计任务</span>
-        <a-segmented v-model:value="tab" :options="[{ value: 'list', label: '任务列表' }, { value: 'load', label: '设计负荷' }]" />
+        <a-segmented v-model:value="tab" :options="[{ value: 'list', label: '任务' }, { value: 'load', label: '人员负荷' }]" />
       </div>
     </template>
     <template #extra>
       <a-space>
-        <a-segmented v-if="tab === 'list'" v-model:value="layout" :options="DRAWING_LAYOUT_OPTIONS" />
         <UiRefreshButton @click="reload()" />
-        <a-button v-if="canEditTask" type="primary" class="ft-btn-ink" @click="openEdit(null)">新建设计任务</a-button>
+        <a-button v-if="canEditTask && tab === 'list'" @click="openEdit(null)">补充任务</a-button>
       </a-space>
     </template>
 
-    <div class="ft-toolbar">
-      <div class="ft-toolbar-left">
-        <a-segmented v-if="tab === 'list' && layout !== 'board'" v-model:value="filter.view" :options="viewOptions" class="state-tabs" />
-        <template v-else-if="tab === 'list' && layout === 'board'">
-          <a-select
-            v-model:value="filter.workOrderNumber"
-            :loading="ordersPending" :disabled="!!ordersError"
-            allow-clear
-            show-search
-            placeholder="全部工单"
-            style="width: 152px"
-            :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
-          />
-          <a-select :loading="masterPending" :disabled="!!masterError" v-model:value="filter.ownerId" allow-clear show-search option-filter-prop="label" placeholder="全部负责人" style="width: 140px" :options="ownerOptions" />
-        </template>
-        <a-tag v-if="tab === 'list' && CARD_VIEWS.includes(filter.view)" closable @close.prevent="filter.view = 'open'">{{ filter.view === 'week' ? '本周到期' : '逾期' }}</a-tag>
-      </div>
-      <div class="ft-toolbar-right">
+    <div class="task-filter-bar">
+      <div class="task-filter-fields">
         <a-select
-          v-if="tab !== 'list' || layout !== 'board'"
           v-model:value="filter.workOrderNumber"
+          aria-label="筛选工单"
           :loading="ordersPending" :disabled="!!ordersError"
-          allow-clear
-          show-search
-          placeholder="全部工单"
-          style="width: 148px"
-          :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
+          allow-clear show-search option-filter-prop="label"
+          placeholder="全部工单" class="order-filter"
+          :options="workOrders.map(w => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
         <template v-if="tab === 'list'">
-          <a-select v-if="layout !== 'board'" :loading="masterPending" :disabled="!!masterError" v-model:value="filter.ownerId" allow-clear show-search option-filter-prop="label" placeholder="全部负责人" style="width: 136px" :options="ownerOptions" />
-          <a-input-search v-model:value="keyword" allow-clear placeholder="部件 / 工单 / 备注" style="width: 176px" />
+          <a-select v-model:value="filter.ownerId" aria-label="筛选负责人" :loading="masterPending" :disabled="!!masterError" allow-clear show-search option-filter-prop="label" placeholder="全部负责人" class="owner-filter" :options="ownerOptions" />
+          <a-input-search v-model:value="keyword" aria-label="搜索任务" allow-clear placeholder="搜索任务、工单或备注" class="task-search" />
         </template>
+        <a-button v-if="hasFilters" type="link" size="small" @click="clearFilters">清除筛选</a-button>
       </div>
+      <a-select v-if="tab === 'list'" :value="layout" aria-label="任务视图" class="layout-select" :options="DRAWING_LAYOUT_OPTIONS" @change="changeLayout" />
+    </div>
+    <div v-if="tab === 'list' && (layout !== 'board' || (filter.view !== 'open' && filter.view !== 'all'))" class="task-state-filters">
+      <a-segmented v-if="layout !== 'board'" v-model:value="filter.view" :options="viewOptions" class="state-tabs" />
+      <a-tag v-if="CARD_VIEWS.includes(filter.view) || (layout === 'board' && filter.view !== 'open' && filter.view !== 'all')" closable @close.prevent="filter.view = 'open'">{{ activeViewLabel }}</a-tag>
     </div>
 
     <!-- 页签栏隐藏，由上方统一单行工具栏切换 -->
@@ -345,8 +351,9 @@ const loadColumns = [
         <template v-else>
         <p v-if="!pending && !error && data.total > rows.length" class="warn">共 {{ data.total }} 项，只显示前 {{ rows.length }} 项，请按工单或负责人筛选</p>
 
+        <a-empty v-if="layout === 'board' && filter.view === 'cancelled'" description="已取消任务不进入阶段看板"><a-button @click="changeLayout('table')">在明细表查看已取消任务</a-button></a-empty>
         <DrawingKanbanBoard
-          v-if="layout === 'board'"
+          v-if="layout === 'board' && filter.view !== 'cancelled'"
           :rows="rows"
           :loading="pending"
           :can-edit-task="canEditTask"
@@ -358,7 +365,7 @@ const loadColumns = [
           @cancel="changeCancellation"
         />
 
-        <template v-else>
+        <template v-else-if="layout !== 'board'">
         <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty v-if="!pending" :description="filter.view === 'open' ? '没有未完成的设计任务' : '没有记录'" /></a-spin>
         <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
         <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" :nodes="distinctPlanNodes(t.rows)" v-bind="doneOf(t)" label="设计完成" :count="t.rows.length" />
@@ -431,9 +438,9 @@ const loadColumns = [
         </template>
       </a-tab-pane>
 
-      <a-tab-pane key="load" tab="设计负荷">
+      <a-tab-pane key="load" tab="人员负荷">
         <a-spin v-if="loadPending" />
-        <a-result v-else-if="loadError" status="error" title="设计负荷加载失败" :sub-title="apiError(loadError)"><template #extra><a-button @click="refreshLoad()">重试</a-button></template></a-result>
+        <a-result v-else-if="loadError" status="error" title="人员负荷加载失败" :sub-title="apiError(loadError)"><template #extra><a-button @click="refreshLoad()">重试</a-button></template></a-result>
         <template v-else>
         <p class="muted">按设计负责人统计{{ filter.workOrderNumber ? `（工单 ${filter.workOrderNumber}）` : '' }}。逾期 = 设计中已过计划完成日，或客户确认已过计划日；本周到期 = 设计中且计划完成日在本周（{{ load.week.monday }} ~ {{ load.week.sunday }}）。点数字看明细。</p>
         <a-table class="ft-table" :columns="loadColumns" :data-source="load.rows" :loading="loadPending" :row-key="loadKey" size="middle" :pagination="false">
@@ -480,6 +487,13 @@ const loadColumns = [
 
 <style scoped>
 .no-nav :deep(.ant-tabs-nav) { display: none; }
+.task-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.task-filter-fields { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.order-filter { width: 164px; }
+.owner-filter { width: 148px; }
+.task-search { width: 224px; }
+.layout-select { width: 128px; }
+.task-state-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .card-head-left { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .risk { color: var(--ft-risk-text); }
 .confirmed { color: var(--ft-done-text); }
@@ -498,7 +512,10 @@ const loadColumns = [
 .task-details > div { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .task-details b { min-width: 84px; font-weight: 500; color: var(--ft-text-2); }
 @media (max-width: 600px) {
-  .ft-toolbar-left, .ft-toolbar-right { min-width: 0; width: 100%; }
+  .task-filter-fields { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .order-filter, .owner-filter, .task-search { width: 100%; min-width: 0; }
+  .task-search { grid-column: 1 / -1; }
+  .task-filter-fields > .ant-btn { justify-self: start; }
   .state-tabs { min-width: 0; width: 100%; }
   .ft-table :deep(.ant-table-cell-fix-right) { position: static !important; }
   .ft-table :deep(.ant-table-cell-fix-right-first::after) { display: none; }

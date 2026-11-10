@@ -413,3 +413,37 @@ describe('mobile send selection', () => {
     expect(message.success).not.toHaveBeenCalled()
   })
 })
+
+it('clears drawing filters without restoring a pending search and changes cancelled view atomically', async () => {
+  vi.useFakeTimers()
+  try {
+    const route = Vue.reactive({ query: { wo: 'WO-A', view: 'cancelled', owner: 'u1', layout: 'table' } as Record<string, string | undefined> })
+    const replace = vi.fn(async ({ query }: { query: Record<string, string | undefined> }) => {
+      await Promise.resolve()
+      route.query = query
+    })
+    vi.stubGlobal('useRoute', () => route)
+    vi.stubGlobal('useRouter', () => ({ replace }))
+    vi.stubGlobal('useMe', async () => ({ data: Vue.ref({}) }))
+    vi.stubGlobal('canDo', () => true)
+    vi.stubGlobal('useListLayout', () => Vue.ref('table'))
+    const { state } = await mount('app/pages/drawings.vue')
+    await state.changeLayout('board')
+    await flushVue()
+    expect(route.query).toMatchObject({ layout: 'board', view: 'open', wo: 'WO-A', owner: 'u1' })
+    state.keyword = 'pending search'
+    await flushVue()
+    state.clearFilters()
+    await flushVue()
+    await vi.advanceTimersByTimeAsync(350)
+    expect(state.filter).toMatchObject({ workOrderNumber: undefined, ownerId: undefined, q: '', view: 'open' })
+    expect(state.keyword).toBe('')
+    expect(state.hasFilters).toBe(false)
+    state.filter.ownerId = 'u2'
+    state.tab = 'load'
+    await flushVue()
+    expect(state.hasFilters).toBe(false)
+  } finally {
+    vi.useRealTimers()
+  }
+})
