@@ -55,7 +55,13 @@ watch(() => route.query, (q) => {
   tab.value = q.tab === 'load' ? 'load' : 'list'
 })
 
-const listQuery = computed(() => ({ workOrderNumber: filter.workOrderNumber, ownerId: filter.ownerId, view: filter.view, q: filter.q || undefined }))
+const layout = useListLayout('board')
+const listQuery = computed(() => ({
+  workOrderNumber: filter.workOrderNumber,
+  ownerId: filter.ownerId,
+  view: (layout.value === 'board' && filter.view === 'open' ? 'all' : filter.view) as DrawingView,
+  q: filter.q || undefined,
+}))
 const requestFetch = useRequestFetch()
 // 只由筛选 key 驱动请求，让不同筛选的结果与加载状态隔离。
 const { data, pending, error, refresh } = await useAsyncData(
@@ -80,7 +86,6 @@ function applyView(view: DrawingView) {
   filter.view = filter.view === view ? 'open' : view
   tab.value = 'list'
 }
-const layout = useListLayout()
 function sortByNode(list: DrawingRow[]): DrawingRow[] {
   if (!list.some((r) => r.planNode)) return list
   return [...list].sort((a, b) => {
@@ -292,6 +297,7 @@ const loadColumns = [
     </template>
     <template #extra>
       <a-space>
+        <a-segmented v-if="tab === 'list'" v-model:value="layout" :options="DRAWING_LAYOUT_OPTIONS" />
         <UiRefreshButton @click="reload()" />
         <a-button v-if="canEditTask" type="primary" class="ft-btn-ink" @click="openEdit(null)">新建设计任务</a-button>
       </a-space>
@@ -299,11 +305,24 @@ const loadColumns = [
 
     <div class="ft-toolbar">
       <div class="ft-toolbar-left">
-        <a-segmented v-if="tab === 'list'" v-model:value="filter.view" :options="viewOptions" class="state-tabs" />
+        <a-segmented v-if="tab === 'list' && layout !== 'board'" v-model:value="filter.view" :options="viewOptions" class="state-tabs" />
+        <template v-else-if="tab === 'list' && layout === 'board'">
+          <a-select
+            v-model:value="filter.workOrderNumber"
+            :loading="ordersPending" :disabled="!!ordersError"
+            allow-clear
+            show-search
+            placeholder="全部工单"
+            style="width: 152px"
+            :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
+          />
+          <a-select :loading="masterPending" :disabled="!!masterError" v-model:value="filter.ownerId" allow-clear show-search option-filter-prop="label" placeholder="全部负责人" style="width: 140px" :options="ownerOptions" />
+        </template>
         <a-tag v-if="tab === 'list' && CARD_VIEWS.includes(filter.view)" closable @close.prevent="filter.view = 'open'">{{ filter.view === 'week' ? '本周到期' : '逾期' }}</a-tag>
       </div>
       <div class="ft-toolbar-right">
         <a-select
+          v-if="tab !== 'list' || layout !== 'board'"
           v-model:value="filter.workOrderNumber"
           :loading="ordersPending" :disabled="!!ordersError"
           allow-clear
@@ -313,9 +332,8 @@ const loadColumns = [
           :options="workOrders.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber }))"
         />
         <template v-if="tab === 'list'">
-          <a-select :loading="masterPending" :disabled="!!masterError" v-model:value="filter.ownerId" allow-clear show-search option-filter-prop="label" placeholder="全部负责人" style="width: 136px" :options="ownerOptions" />
-          <a-input-search v-model:value="keyword" allow-clear placeholder="部件 / 工单 / 备注" style="width: 160px" />
-          <a-segmented v-model:value="layout" :options="LAYOUT_OPTIONS" />
+          <a-select v-if="layout !== 'board'" :loading="masterPending" :disabled="!!masterError" v-model:value="filter.ownerId" allow-clear show-search option-filter-prop="label" placeholder="全部负责人" style="width: 136px" :options="ownerOptions" />
+          <a-input-search v-model:value="keyword" allow-clear placeholder="部件 / 工单 / 备注" style="width: 176px" />
         </template>
       </div>
     </div>
@@ -327,6 +345,20 @@ const loadColumns = [
         <template v-else>
         <p v-if="!pending && !error && data.total > rows.length" class="warn">共 {{ data.total }} 项，只显示前 {{ rows.length }} 项，请按工单或负责人筛选</p>
 
+        <DrawingKanbanBoard
+          v-if="layout === 'board'"
+          :rows="rows"
+          :loading="pending"
+          :can-edit-task="canEditTask"
+          :can-release="canRelease"
+          @edit="openEdit"
+          @act="openAct"
+          @release="openRelease"
+          @undo="undo"
+          @cancel="changeCancellation"
+        />
+
+        <template v-else>
         <a-spin v-if="layout === 'group' && !rows.length" :spinning="pending"><a-empty v-if="!pending" :description="filter.view === 'open' ? '没有未完成的设计任务' : '没有记录'" /></a-spin>
         <div v-for="t in tables" :key="t.key" :class="{ 'ft-wo-group': layout === 'group' }">
         <UiWoGroupHead v-if="layout === 'group'" :no="t.workOrderNumber" :nodes="distinctPlanNodes(t.rows)" v-bind="doneOf(t)" label="设计完成" :count="t.rows.length" />
@@ -395,6 +427,7 @@ const loadColumns = [
           </template>
         </a-table>
         </div>
+        </template>
         </template>
       </a-tab-pane>
 

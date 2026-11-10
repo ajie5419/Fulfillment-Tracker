@@ -42,6 +42,13 @@ export interface DrawingRow {
   overdue: boolean
   releases: { id: string; releaseNo: string; typeText: string; status: 'ACTIVE' | 'VOID'; version: string | null }[]
   alertLevel: 'REMIND' | 'YELLOW' | 'RED' | null
+  presentation?: {
+    designText: string
+    designWarning: string | null
+    designOverdue: boolean
+    customerText: string | null
+    customerOverdue: boolean
+  }
   permissions: { markDrawn: boolean; undoDrawn: boolean; confirm: boolean; release: boolean }
 }
 
