@@ -28,6 +28,7 @@ export function usePlanNodeSave(options: {
     const body = {
       name: form.name,
       dept: form.dept,
+      requiresProcess: form.requiresProcess,
       phase: form.phase || null,
       startDate: form.startDate ? form.startDate.format('YYYY-MM-DD') : null,
       planDate: form.planDate.format('YYYY-MM-DD'),

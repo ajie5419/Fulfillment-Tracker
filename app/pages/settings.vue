@@ -6,7 +6,9 @@
  */
 import dayjs, { type Dayjs } from 'dayjs'
 import type { ClientMethod, ClientBodyArgs } from '../utils/transport'
-import type { BusinessDeptCode } from '#shared/business-depts'
+import { departmentLabel, type BusinessDeptCode } from '#shared/business-depts'
+import { NOTIFY_ROLE_TEXT } from '#shared/notify-roles'
+import { alertReminderFromHours, alertReminderToHours, alertReminderUnit } from '#shared/alert-policy'
 import type { AlertRuleKey } from '#shared/alert-rules'
 
 const { data: me } = await useMe()
@@ -47,14 +49,13 @@ async function call(url: string, method: 'POST' | 'PUT' | 'DELETE', body?: unkno
 // W3、W6、W7、W10 的"提醒"在表里存的是小时数（W3 承诺返回日前、W6 需求日前、W7 计划完成日前、W10 要求完成日前），页面上按天编辑；
 // W8 不提醒，黄 / 红是"需求日前几天"（黄 ≥ 红）；W9 的提醒是"总计划发布后几天节点仍未分解"（按天编辑），黄 / 红是源头节点自身晚几天（未确认超时沿用 W5 阈值）
 type Row = { rule: AlertRuleKey; remind: number | null; yellowDays: number; redDays: number }
-const BY_DAY = (rule: Row['rule']) => rule === 'W3' || rule === 'W6' || rule === 'W7' || rule === 'W9' || rule === 'W10'
 const rows = ref<Row[]>([])
 watch(
   () => data.value?.thresholds,
   (list) => {
     rows.value = (list ?? []).map((t) => ({
       rule: t.rule,
-      remind: t.remindHours == null ? null : BY_DAY(t.rule) ? t.remindHours / 24 : t.remindHours,
+      remind: alertReminderFromHours(t.rule, t.remindHours),
       yellowDays: t.yellowDays,
       redDays: t.redDays,
     }))
@@ -64,9 +65,8 @@ watch(
 const REMIND_LABEL = { W1: '小时后提醒', W2: '（不提醒）', W3: '天前提醒（承诺返回日前）', W4: '（不提醒）', W5: '小时未签收 / 未确认提醒', W6: '天内要用仍无承诺到货日 → 黄（需求日前）', W7: '天内到计划完成日仍未完成设计 → 黄', W8: '（不提醒）', W9: '天后节点仍未分解 → 提醒部门负责人（总计划发布后）', W10: '天前提醒（要求完成日前）', W11: '（红线预警）' } as const
 const YELLOW_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（待受理 / 超期）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 黄（需求日前）', W9: '天（源头节点自身晚于计划日）', W10: '天（超要求完成日）', W11: '天（当前状态，关注）' } as const
 const RED_LABEL = { W1: '天', W2: '天', W3: '天（超期）', W4: '天（超要求解决日）', W5: '天未签收 / 未确认', W6: '天（超承诺到货日）', W7: '天（客户确认超计划日）', W8: '天内到需求日仍未齐套 → 红（需求日前，已过也红）', W9: '天（源头节点自身晚于计划日）', W10: '天（超要求完成日）', W11: '天（当前状态，停滞预警）' } as const
-const NO_REMIND = (rule: Row['rule']) => rule === 'W2' || rule === 'W4' || rule === 'W8' || rule === 'W11'
 function saveThreshold(r: Row) {
-  const remindHours = NO_REMIND(r.rule) || r.remind == null ? null : BY_DAY(r.rule) ? Math.round(r.remind * 24) : r.remind
+  const remindHours = alertReminderToHours(r.rule, r.remind)
   const url = `/api/settings/thresholds/${r.rule}` as const
   return call(url, 'PUT', { remindHours, yellowDays: r.yellowDays, redDays: r.redDays })
 }
@@ -91,11 +91,11 @@ const isOffDay = (d: Dayjs) => !!data.value?.offDays.includes(d.format('YYYY-MM-
 
 // ───── 人员与角色 ─────
 const ROLES = [
-  { role: 'OUTSOURCE_COORDINATOR', label: '外协专员', hint: 'W1 待确认匹配的责任人' },
-  { role: 'DEPT_HEAD', label: '部门负责人', hint: '黄色起：责任人所在部门的负责人（责任人的 QMS 部门经"部门对照"换成业务部门后对应）；采购部负责人是没指定采购负责人的关键物料的责任人；技术部负责人是没指定设计负责人的设计任务的责任人；生产部负责人（生产经理）是没指定负责人的装配节点的责任人，并可编辑所有工单的装配节点' },
-  { role: 'PROJECT_DEPT_HEAD', label: '项目部负责人', hint: '红色：加上项目部负责人' },
-  { role: 'LEADER', label: '分管领导', hint: '红色：加上分管领导' },
-  { role: 'FINANCE', label: '财务', hint: '付款申请标记已付 / 暂缓；卡交期的付款没付、物料超期时收到 W6 预警' },
+  { role: 'OUTSOURCE_COORDINATOR', label: NOTIFY_ROLE_TEXT.OUTSOURCE_COORDINATOR, hint: 'W1 待确认匹配的责任人' },
+  { role: 'DEPT_HEAD', label: NOTIFY_ROLE_TEXT.DEPT_HEAD, hint: '黄色起：责任人所在部门的负责人（责任人的 QMS 部门经"部门对照"换成业务部门后对应）；采购部负责人是没指定采购负责人的关键物料的责任人；技术部负责人是没指定设计负责人的设计任务的责任人；生产部负责人（生产经理）是没指定负责人的装配节点的责任人，并可编辑所有工单的装配节点' },
+  { role: 'PROJECT_DEPT_HEAD', label: NOTIFY_ROLE_TEXT.PROJECT_DEPT_HEAD, hint: '红色：加上项目部负责人' },
+  { role: 'LEADER', label: NOTIFY_ROLE_TEXT.LEADER, hint: '红色：加上分管领导' },
+  { role: 'FINANCE', label: NOTIFY_ROLE_TEXT.FINANCE, hint: '付款申请标记已付 / 暂缓；卡交期的付款没付、物料超期时收到 W6 预警' },
 ] as const
 type RoleKey = (typeof ROLES)[number]['role']
 const roleForm = reactive<Record<RoleKey, { userId?: string; department?: string }>>({
@@ -157,9 +157,9 @@ const woColumns = [
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'rule'">{{ RULE_TEXT[record.rule as Row['rule']] }}</template>
             <template v-else-if="column.key === 'remind'">
-              <span v-if="NO_REMIND(record.rule)" class="muted">{{ record.rule === 'W11' ? '黄线关注，红线预警' : '不提醒，直接黄' }}</span>
+              <span v-if="alertReminderUnit(record.rule) === null" class="muted">{{ record.rule === 'W11' ? '黄线关注，红线预警' : '不提醒，直接黄' }}</span>
               <a-space v-else>
-                <a-input-number v-model:value="record.remind" :min="1" :max="BY_DAY(record.rule) ? 30 : 720" size="small" />
+                <a-input-number v-model:value="record.remind" :min="1" :max="alertReminderUnit(record.rule) === 'day' ? 30 : 720" size="small" />
                 <span>{{ REMIND_LABEL[record.rule as Row['rule']] }}</span>
               </a-space>
             </template>
@@ -225,10 +225,10 @@ const woColumns = [
                 :key="x.id"
                 closable
                 :color="isLegacyDept(x.department) ? 'orange' : undefined"
-                :title="isLegacyDept(x.department) ? '旧的部门名称，不是 7 个业务部门之一，请删掉后重新选部门' : undefined"
+                :title="isLegacyDept(x.department) ? '历史部门身份已保留，请先添加正确业务部门的负责人配置，再移除旧配置' : undefined"
                 @close.prevent="removeRole(x.id)"
               >
-                {{ x.userName }}<template v-if="x.department">（{{ x.department }}<template v-if="isLegacyDept(x.department)">，旧值</template>）</template>
+                {{ x.userName }}<template v-if="x.department">（{{ departmentLabel(x.department) }}<template v-if="isLegacyDept(x.department)">，待映射</template>）</template>
               </a-tag>
             </div>
             <a-space>
@@ -238,7 +238,7 @@ const woColumns = [
                 placeholder="部门"
                 style="width: 140px"
                 size="small"
-                :options="data.departments.map((d) => ({ value: d, label: d }))"
+                :options="data.departments.map((d) => ({ value: d, label: departmentLabel(d) }))"
               />
               <a-select
                 v-model:value="roleForm[r.role].userId"

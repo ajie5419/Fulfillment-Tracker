@@ -14,7 +14,7 @@ const now = new Date('2026-11-01T04:00:00Z')
 const d = (value: string) => new Date(`${value}T00:00:00Z`)
 const ctx: RoleContext = { userId: 'owner', isAdmin: false, roles: [], deptHeadOf: [], businessDept: null, pmOf: new Set() }
 const node = (id = 'n1', fields = {}) => ({
-  id, workOrderNumber: 'WO 1', seq: 1, name: '节点', dept: 'TECH', planDate: d('2026-11-02'), startDate: null,
+  id, workOrderNumber: 'WO 1', seq: 1, name: '节点', dept: 'TECH', requiresProcess: true, planDate: d('2026-11-02'), startDate: null,
   baselineDate: null, parentId: null, phase: '设计', customDeps: false, actualDate: null, manualDoneAt: null,
   manualDoneBy: null, confirmStatus: 'PENDING', confirmedBy: null, confirmedAt: null, rejectReason: null,
   note: null, createdAt: now, ...fields,
@@ -89,7 +89,7 @@ describe('plan service 搬移前特征', () => {
 
   it('模板生成：取消旧任务、逐节点创建、连接前置和上级、汇总后查环', async () => {
     returns('workOrderPlan.findUniqueOrThrow', { status: 'DRAFT' })
-    returns('planTemplate.findUnique', { name: '模板', nodes: [{ seq: 1, name: 'A', dept: 'TECH', daysBeforeDelivery: 2, durationDays: 2, predSeqs: [], parentSeq: null, phase: '设计' }, { seq: 2, name: 'B', dept: 'TECH', daysBeforeDelivery: 1, durationDays: null, predSeqs: [1], parentSeq: 1, phase: null }] })
+    returns('planTemplate.findUnique', { name: '模板', nodes: [{ seq: 1, name: 'A', dept: 'TECH', requiresProcess: true, daysBeforeDelivery: 2, durationDays: 2, predSeqs: [], parentSeq: null, phase: '设计' }, { seq: 2, name: 'B', dept: 'TECH', requiresProcess: false, daysBeforeDelivery: 1, durationDays: null, predSeqs: [1], parentSeq: 1, phase: null }] })
     returns('planNode.deleteMany', { count: 2 })
     returns('planNode.create', n)
     method('planNode.create').mockImplementationOnce(async (...args) => { serviceCalls.push(['planNode.create', ...args]); return { id: 'new1' } })

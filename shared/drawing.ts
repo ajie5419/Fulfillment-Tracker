@@ -1,6 +1,6 @@
 import { dayDiff } from './dates'
 
-export const DO_DESIGN_TASK = 'DO_DESIGN_TASK'
+export { DO_DESIGN_TASK } from './todo-actions'
 export const MAX_CUSTOMER_CONFIRMATION_NOTE_LENGTH = 500
 
 /** Keep lifecycle facts separate from schedule warnings; callers supply factory-local today. */

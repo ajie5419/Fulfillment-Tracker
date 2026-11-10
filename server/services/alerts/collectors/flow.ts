@@ -2,7 +2,7 @@ import { prisma } from '../../../utils/prisma'
 import { ARRANGE_SEND, ARRANGE_START } from '../../flow/flow'
 import { resolveStepResponsibles } from '../../flow/responsible'
 import { loadNames } from '../../flow/names'
-import { PRODUCTION_DEPT } from '../../releases/constants'
+import { PRODUCTION_DEPT_NAME } from '../../releases/constants'
 import { alertKey, type Thresholds, dateFieldDay, durationText, elapsedExcludingOffDays, judgeW3, judgeW10, levelByElapsed } from '../rules'
 import type { Target } from '../types'
 
@@ -166,7 +166,8 @@ export async function collectW10(now: Date, t: Thresholds, offDays: string[]): P
       key: alertKey('W10', 'step', s.id),
       workOrderNumber: s.part.workOrderNumber,
       ownerIds: owners[i] ? [owners[i]!] : [],
-      deptNames: [PRODUCTION_DEPT],
+      deptNames: [PRODUCTION_DEPT_NAME],
+      departmentKeys: ['PRODUCTION'],
       startAt: s.dueDate!,
       level: r.level,
       subject: `${s.part.name} · ${names.process.get(s.processId) ?? s.processId}`,

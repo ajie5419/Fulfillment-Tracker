@@ -1,5 +1,5 @@
 export type PurchasePlanStatus = 'DRAFT' | 'ISSUED' | 'WITHDRAWN'
-export const PURCHASE_PLAN_ISSUED = 'PURCHASE_PLAN_ISSUED'
+export { PURCHASE_PLAN_ISSUED } from './todo-actions'
 export const PURCHASE_PLAN_STATUS_TEXT: Record<PurchasePlanStatus, string> = { DRAFT: '草稿', ISSUED: '已下发', WITHDRAWN: '已撤回' }
 export function purchasePlanEditable(status: PurchasePlanStatus) { return status === 'DRAFT' || status === 'WITHDRAWN' }
 export function purchasePlanTransition(status: PurchasePlanStatus, action: 'issue' | 'withdraw'): PurchasePlanStatus | null {

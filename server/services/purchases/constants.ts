@@ -9,10 +9,10 @@ import { inspectionWorkOrders } from '../flow/inspection'
 import { BUSINESS_DEPT_NAME } from '../../../shared/business-depts'
 
 /** 默认责任部门：采购行没指定采购负责人时，派给这个部门的负责人（notify_role DEPT_HEAD + 部门名称）。与 QMS 进货检验的责任部门一致 */
-export const PURCHASE_DEPT = BUSINESS_DEPT_NAME.PURCHASE
+export const PURCHASE_DEPT_NAME = BUSINESS_DEPT_NAME.PURCHASE
 
 /** 待办：工件的关键物料全部到货，给第一道工序负责人发"可以开工"（refType = part，refId = 工件 ID） */
-export const READY_TO_START = 'READY_TO_START'
+export { READY_TO_START } from '../../../shared/todo-actions'
 
 export const PURCHASE_STATUS_TEXT: Record<PurchaseStatus, string> = SHARED_PURCHASE_STATUS_TEXT
 export const DELAY_REASON_TEXT: Record<DelayReason, string> = SHARED_DELAY_REASON_TEXT

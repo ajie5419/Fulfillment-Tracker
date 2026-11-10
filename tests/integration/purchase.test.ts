@@ -113,8 +113,8 @@ describe.skipIf(!DB)('关键物料到货与付款（R10）', () => {
     })
     await db.notifyRole.createMany({
       data: [
-        { role: 'DEPT_HEAD', userId: 'u-purhead', department: '采购部' },
-        { role: 'DEPT_HEAD', userId: 'u-prodhead', department: '生产部' },
+        { role: 'DEPT_HEAD', userId: 'u-purhead', department: 'PURCHASE' },
+        { role: 'DEPT_HEAD', userId: 'u-prodhead', department: 'PRODUCTION' },
         { role: 'FINANCE', userId: 'u-fin' },
         { role: 'PROJECT_DEPT_HEAD', userId: 'u-pdh' },
         { role: 'LEADER', userId: 'u-lead' },

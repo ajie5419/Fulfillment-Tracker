@@ -7,7 +7,7 @@ vi.mock('../../server/utils/prisma', async () => ({ prisma: (await import('../he
 vi.mock('../../server/services/flow/flow', () => ({ ARRANGE_SEND: 'ARRANGE_SEND', ARRANGE_START: 'ARRANGE_START' }))
 vi.mock('../../server/services/flow/responsible', () => ({ resolveStepResponsibles: async (_db: unknown, steps: unknown[]) => steps.map(() => 'owner') }))
 vi.mock('../../server/services/flow/names', () => ({ loadNames: async () => ({ user: new Map([['owner', '负责人']]), process: new Map([['process', '车削']]), supplier: new Map([['supplier', '供应商']]) }) }))
-vi.mock('../../server/services/auth/departments', async (original) => ({ ...await original<object>(), resolveDeptNames: async () => new Map([['dept', '技术部']]), userDeptNames: async () => new Map([['owner', '技术部']]) }))
+vi.mock('../../server/services/auth/departments', async (original) => ({ ...await original<object>(), resolveDeptNames: async () => new Map([['dept', '技术部']]), userDeptNames: async () => new Map([['owner', '技术部']]), resolveDeptIdentities: async () => new Map([['dept', 'TECH']]), userDeptIdentities: async () => new Map([['owner', 'TECH']]) }))
 vi.mock('../../server/services/kitting/kitting', () => ({ NODE_LINKS: {}, dueWindowWhere: () => ({ window: true }), incompleteWhere: () => ({ incomplete: true }), loadKitCounts: async () => new Map([['node', { total: 2, ready: 1 }]]) }))
 vi.mock('../../server/services/plan/plan', () => ({ loadPlans: dependencies.plans }))
 vi.mock('../../server/services/monitoring/status', () => ({ loadMonitoredEntities: dependencies.monitored }))
@@ -35,7 +35,7 @@ beforeEach(() => {
   dependencies.closed.mockReset().mockResolvedValue(new Set())
   dependencies.lease.mockImplementation(async (_name, _ms, run) => ({ skipped: false, value: await run() }))
   for (const model of ['unmatchedInspection', 'routeStep', 'todo', 'issue', 'release', 'releaseReceipt', 'purchaseLine', 'drawingTask', 'assemblyNode', 'workOrderExt', 'alert', 'threshold', 'offDay']) returns(`${model}.findMany`, [])
-  returns('notifyRole.findMany', [{ role: 'DEPT_HEAD', department: '技术部', userId: 'head' }, { role: 'PROJECT_DEPT_HEAD', userId: 'pdh' }, { role: 'LEADER', userId: 'leader' }, { role: 'FINANCE', userId: 'finance' }])
+  returns('notifyRole.findMany', [{ role: 'DEPT_HEAD', department: 'TECH', userId: 'head' }, { role: 'PROJECT_DEPT_HEAD', userId: 'pdh' }, { role: 'LEADER', userId: 'leader' }, { role: 'FINANCE', userId: 'finance' }])
   returns('qmsWorkOrder.findMany', [{ workOrderNumber: 'WO' }])
 })
 afterEach(() => vi.useRealTimers())
@@ -73,8 +73,8 @@ describe('alerts scan 搬移前特征', () => {
   })
 
   it('通知阶梯保持去重与插入顺序', () => {
-    const target = { ownerIds: ['owner', 'owner'], workOrderNumber: 'WO', watcherIds: ['watcher'], deptNames: ['技术部'] }
-    const ctx = { roles: [{ id: 'head-role', role: 'DEPT_HEAD' as const, department: '技术部', userId: 'head' }, { id: 'pdh-role', role: 'PROJECT_DEPT_HEAD' as const, department: null, userId: 'pdh' }], deptOf: new Map<string, string>(), pmOf: new Map([['WO', 'pm']]) }
+    const target = { ownerIds: ['owner', 'owner'], workOrderNumber: 'WO', watcherIds: ['watcher'], departmentKeys: ['TECH'] }
+    const ctx = { roles: [{ id: 'head-role', role: 'DEPT_HEAD' as const, department: 'TECH', userId: 'head' }, { id: 'pdh-role', role: 'PROJECT_DEPT_HEAD' as const, department: null, userId: 'pdh' }], deptOf: new Map<string, string>(), pmOf: new Map([['WO', 'pm']]) }
     expect(['REMIND', 'YELLOW', 'RED'].map(level => recipientsFor(level as 'REMIND' | 'YELLOW' | 'RED', target, ctx))).toEqual([['owner'], ['owner', 'watcher', 'head', 'pm'], ['owner', 'watcher', 'head', 'pm', 'pdh']])
   })
 

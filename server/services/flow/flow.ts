@@ -8,6 +8,8 @@
  * 数量全部返回才算完成（方案 4.3 分批返厂）。flow_event 只新增，这里不提供修改和删除。
  */
 import type { FlowEventType, FlowSource, Part, Prisma, RouteStep, StepMode } from '@prisma/client'
+import { ARRANGE_SEND, ARRANGE_START, type TodoAction } from '../../../shared/todo-actions'
+export { ARRANGE_SEND, ARRANGE_START } from '../../../shared/todo-actions'
 import { prisma } from '../../utils/prisma'
 import { processTaskWhere } from '../process/eligibility'
 import { clearAlertKeys } from '../alerts/clear'
@@ -31,9 +33,6 @@ export const arrangeAction = (mode: StepMode) => (mode === 'EXTERNAL_OUTSOURCE' 
 
 /** 计入"已返回 / 已完成数量"的事件类型。完工、部分完工（报工）也计入；报废（SCRAP）不计入 */
 export const RETURN_TYPES: FlowEventType[] = ['RETURN', 'RETURN_MANUAL', 'FINISH', 'REPORT']
-
-export const ARRANGE_SEND = 'ARRANGE_SEND'
-export const ARRANGE_START = 'ARRANGE_START'
 
 /**
  * 锁住步骤行再读，保证同一步骤的返厂、发出串行执行（判断"第一次返厂"、累计数量不会算重）。
@@ -63,7 +62,7 @@ async function closeReadyTodos(tx: Tx, partId: string, now: Date) {
 }
 
 /** 关闭该步骤上指定类型的未完成待办 */
-async function closeTodos(tx: Tx, stepId: string, actions: string[], now: Date) {
+async function closeTodos(tx: Tx, stepId: string, actions: TodoAction[], now: Date) {
   await tx.todo.updateMany({
     where: { refType: 'step', refId: stepId, action: { in: actions }, status: 'OPEN' },
     data: { status: 'DONE', doneAt: now },

@@ -17,6 +17,8 @@ type Services = {
   rel: typeof import('../../server/services/releases/releases')
   dr: typeof import('../../server/services/drawings/drawings')
   pc: typeof import('../../server/services/process/process')
+  plan: typeof import('../../server/services/plan/commands')
+  templates: typeof import('../../server/services/plan/templates')
 }
 
 describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
@@ -33,6 +35,9 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
     await db.release.deleteMany()
     await db.drawingTask.deleteMany() // 关联工件、变更记录级联删除
     await db.planNode.deleteMany({ where: { workOrderNumber: { in: [WO, OTHER_WO] } } })
+    await db.planChangeLog.deleteMany({ where: { workOrderNumber: { in: [WO, OTHER_WO] } } })
+    await db.workOrderPlan.deleteMany({ where: { workOrderNumber: { in: [WO, OTHER_WO] } } })
+    await db.planTemplate.deleteMany({ where: { name: { startsWith: 'T-PROC-' } } })
     await db.notifyRole.deleteMany()
     await db.workOrderExt.deleteMany()
     await db.todo.deleteMany()
@@ -54,6 +59,8 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
       rel: await import('../../server/services/releases/releases'),
       dr: await import('../../server/services/drawings/drawings'),
       pc: await import('../../server/services/process/process'),
+      plan: await import('../../server/services/plan/commands'),
+      templates: await import('../../server/services/plan/templates'),
     }
     db = (await import('../../server/utils/prisma')).prisma
     await clean()
@@ -70,9 +77,9 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
     })
     await db.notifyRole.createMany({
       data: [
-        { role: 'DEPT_HEAD', userId: 'u-prochead', department: '工艺部' },
+        { role: 'DEPT_HEAD', userId: 'u-prochead', department: 'PROCESS' },
         // 停用账号不发提醒
-        { role: 'DEPT_HEAD', userId: 'u-gone', department: '工艺部' },
+        { role: 'DEPT_HEAD', userId: 'u-gone', department: 'PROCESS' },
       ],
     })
   })
@@ -95,8 +102,8 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
     await s.dr.markDrawn(id, null, DESIGNER)
     return s.rel.createRelease({ type: 'DRAWING', workOrderNumber: WO, description: '正式发放', userIds: ['u-worker'], drawingTaskId: id }, 'u-des')
   }
-  async function nodeTask(nodeName: string, componentName: string, partIds: string[] = []) {
-    const node = await db.planNode.create({ data: { workOrderNumber: WO, seq: ++seq, name: nodeName, dept: 'TECH', planDate: today() } })
+  async function nodeTask(nodeName: string, componentName: string, partIds: string[] = [], requiresProcess = true) {
+    const node = await db.planNode.create({ data: { workOrderNumber: WO, seq: ++seq, name: nodeName, dept: 'TECH', requiresProcess, planDate: today() } })
     return s.dr.createTask({ workOrderNumber: WO, componentName, ownerId: 'u-des', planDate: today(), planNodeId: node.id, partIds }, 'u-des')
   }
 
@@ -139,7 +146,7 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
 
   it('已取消的设计任务不能改，也不在列表里；设计任务不存在报错', async () => {
     const t = await task('取消的部件')
-    await s.dr.updateTask(t.id, { cancelled: true })
+    await s.dr.updateTask(t.id, { cancelled: true }, 'u-des')
     await expect(act(t.id, 'MATERIAL', 'start')).rejects.toThrow('已取消')
     const { rows } = await s.pc.listProcess({ workOrderNumber: WO, view: 'all' }, true)
     expect(rows.some((r) => r.id === t.id)).toBe(false)
@@ -184,11 +191,11 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
     await s.rel.createRelease({ type: 'DRAWING', workOrderNumber: WO, description: '车桥图纸', userIds: ['u-worker'], drawingTaskId: t.id }, 'u-des')
     await act(t.id, 'MATERIAL', 'start')
     await act(t.id, 'MATERIAL', 'issue')
-    await db.notifyRole.deleteMany({ where: { department: '工艺部' } })
+    await db.notifyRole.deleteMany({ where: { department: 'PROCESS' } })
     const r = await s.rel.createRelease({ type: 'CHANGE', workOrderNumber: WO, description: '车桥变更', userIds: ['u-worker'], drawingTaskId: t.id }, 'u-des')
     expect(r.material).toEqual({ revising: 1, notified: false })
     expect((await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).materialStatus).toBe('REVISING')
-    await db.notifyRole.create({ data: { role: 'DEPT_HEAD', userId: 'u-prochead', department: '工艺部' } })
+    await db.notifyRole.create({ data: { role: 'DEPT_HEAD', userId: 'u-prochead', department: 'PROCESS' } })
   })
 
   it('列表：视图、统计、按钮只给能改的人；设计任务列表带出料单 / 工艺摘要', async () => {
@@ -403,15 +410,16 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
     for (const kind of ['MATERIAL', 'PROCESS'] as const) expect(await act(t.id, kind, 'issue')).toMatchObject({ status: 'ISSUED' })
   })
 
-  it('excludes procurement-plan and commissioning assignments while retaining ordinary drawings and independent tasks', async () => {
+  it('uses explicit eligibility regardless of node or component names, including historical process states', async () => {
     const drawing = await task('采购计划配套结构图纸')
     const commissioningDrawing = await nodeTask('调试图纸', '试验台结构图纸')
+    const explicitlyIncluded = await nodeTask('调试', '需要工艺的同名任务')
     const independent = await task('调试')
     const baseline = await s.pc.listProcess({ workOrderNumber: WO, view: 'all' }, true)
-    for (const expected of [drawing, commissioningDrawing, independent]) expect(baseline.rows.some(row => row.id === expected.id)).toBe(true)
+    for (const expected of [drawing, commissioningDrawing, explicitlyIncluded, independent]) expect(baseline.rows.some(row => row.id === expected.id)).toBe(true)
     const plans = []
     for (const name of ['原材料采购计划', '主要外购件采购计划', '其他外购件采购计划', '电器件采购计划', '液压件采购计划', '调试']) {
-      plans.push(await nodeTask(name, `技术文件-${plans.length}`))
+      plans.push(await nodeTask(name, `技术文件-${plans.length}`, [], false))
     }
     // Legacy process states must not make excluded assignments reappear in counters or filtered views.
     await db.drawingTask.update({ where: { id: plans[0]!.id }, data: { status: 'DONE' } })
@@ -432,7 +440,7 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
   })
 
   it.each(['主要外购件采购计划', '调试'])('rejects direct process actions on a released %s assignment without changing state or logs', async (nodeName) => {
-    const t = await nodeTask(nodeName, '减速机')
+    const t = await nodeTask(nodeName, '减速机', [], false)
     await publish(t.id)
     const before = await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })
     for (const kind of ['MATERIAL', 'PROCESS'] as const) {
@@ -446,7 +454,7 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
 
   it.each(['原材料采购计划', '调试'])('does not revise %s material lists or notify process owners after a change or void', async (nodeName) => {
     const p = await makePart()
-    const t = await nodeTask(nodeName, '技术文件', [p.id])
+    const t = await nodeTask(nodeName, '技术文件', [p.id], false)
     const release = await publish(t.id)
     // Preserve historical statuses and logs; changing module ownership does not rewrite audit history.
     await db.drawingTask.update({ where: { id: t.id }, data: { materialStatus: 'ISSUED', processStatus: 'ISSUED' } })
@@ -466,7 +474,7 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
     const steps: Awaited<ReturnType<Services['steps']['addStep']>>[] = []
     for (const p of parts) steps.push(await s.steps.addStep(p.id, { processId: 'P-CUT', mode: 'SELF', ownerId: 'u-worker' }, 'u-worker'))
     const partIds = parts.map(p => p.id)
-    const technical = await nodeTask(nodeName, '技术文件', partIds)
+    const technical = await nodeTask(nodeName, '技术文件', partIds, false)
     const drawing = await task('真实结构图纸', partIds)
     await publish(drawing.id)
     const rows = async () => (await workshop.listProduction({ workOrderNumber: WO })).rows.filter(row => steps.some(step => step.id === row.stepId))
@@ -486,5 +494,142 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
     await db.qmsSupplier.upsert({ where: { id: 'T-PROC-SUPPLIER' }, update: {}, create: { id: 'T-PROC-SUPPLIER', name: '工艺测试外协厂', updatedAt: new Date() } })
     await db.routeStep.update({ where: { id: steps[1]!.id }, data: { mode: 'EXTERNAL_OUTSOURCE', supplierId: 'T-PROC-SUPPLIER' } })
     await expect(flow.sendStep({ stepId: steps[1]!.id, actorId: 'u-worker', source: 'PC', promisedReturnDate: today() })).resolves.toMatchObject({ status: 'OUT' })
+  })
+
+  it('renames independently and reconciles ready notices when a node policy is disabled, enabled, or retried', async () => {
+    const part = await makePart()
+    await s.steps.addStep(part.id, { processId: 'P-CUT', mode: 'SELF', ownerId: 'u-worker' }, 'u-worker')
+    const t = await nodeTask('普通技术文件', '策略测试文件', [part.id])
+    const nodeId = (await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).planNodeId!
+    const ready = () => db.todo.count({ where: { refId: part.id, action: 'READY_TO_START', status: 'OPEN' } })
+    const visible = async () => (await s.pc.listProcess({ workOrderNumber: WO, view: 'all' }, true)).rows.some(row => row.id === t.id)
+    await publish(t.id)
+    expect(await ready()).toBe(0)
+    await s.plan.updateNode(nodeId, { requiresProcess: false }, 'u-des')
+    expect(await ready()).toBe(1)
+    expect(await visible()).toBe(false)
+    const notices = await db.todo.count({ where: { refId: part.id, action: 'READY_TO_START' } })
+    await s.plan.updateNode(nodeId, { name: '设备联调' }, 'u-des')
+    await s.plan.updateNode(nodeId, { requiresProcess: false }, 'u-des')
+    expect(await ready()).toBe(1)
+    expect(await visible()).toBe(false)
+    expect(await db.todo.count({ where: { refId: part.id, action: 'READY_TO_START' } })).toBe(notices)
+    await s.plan.updateNode(nodeId, { requiresProcess: true, name: '调试' }, 'u-des')
+    expect(await ready()).toBe(0)
+    expect(await visible()).toBe(true)
+    await s.plan.updateNode(nodeId, { requiresProcess: false }, 'u-des')
+    expect(await ready()).toBe(1)
+    expect(await db.planChangeLog.count({ where: { nodeId, kind: 'PROCESS' } })).toBe(3)
+    expect(await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).toMatchObject({ status: 'DONE', materialStatus: 'NOT_STARTED' })
+  })
+
+  it('updates mixed-task process reminders, retires irrelevant ones and restores them without deleting history', async () => {
+    const parts = [await makePart(), await makePart()]
+    const tasks = [await nodeTask('文档甲', '需复核甲', [parts[0]!.id]), await nodeTask('文档乙', '需复核乙', [parts[1]!.id])]
+    for (const t of tasks) { await publish(t.id); await act(t.id, 'MATERIAL', 'start'); await act(t.id, 'MATERIAL', 'issue') }
+    const release = await s.rel.createRelease({ type: 'CHANGE', workOrderNumber: WO, description: '同一变更涉及两份料单', partIds: parts.map(p => p.id), userIds: ['u-worker'] }, 'u-des')
+    const where = { dedupeKey: `PROCESS_REVISE:${release.id}:u-prochead` }
+    const initial = await db.reminder.findUniqueOrThrow({ where })
+    const nodeIds = await Promise.all(tasks.map(async t => (await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).planNodeId!))
+    const logCount = await db.processDocLog.count({ where: { releaseId: release.id } })
+    await s.plan.updateNode(nodeIds[0]!, { requiresProcess: false }, 'u-des')
+    const mixed = await db.reminder.findUniqueOrThrow({ where })
+    expect(mixed.title).not.toContain('需复核甲')
+    expect(mixed.title).toContain('需复核乙')
+    expect(mixed.readAt).toBeNull()
+    await s.plan.updateNode(nodeIds[1]!, { requiresProcess: false }, 'u-des')
+    expect((await db.reminder.findUniqueOrThrow({ where })).readAt).toBeInstanceOf(Date)
+    await s.plan.updateNode(nodeIds[0]!, { requiresProcess: true }, 'u-des')
+    const restored = await db.reminder.findUniqueOrThrow({ where })
+    expect(restored).toMatchObject({ id: initial.id, createdAt: initial.createdAt, readAt: null })
+    expect(restored.title).toContain('需复核甲')
+    expect(restored.title).not.toContain('需复核乙')
+    expect(await db.processDocLog.count({ where: { releaseId: release.id } })).toBe(logCount)
+  })
+
+  it.each(['change', 'void'])('requires review of issued documents after a disabled policy hides a release %s', async (operation) => {
+    const part = await makePart()
+    await s.steps.addStep(part.id, { processId: 'P-CUT', mode: 'SELF', ownerId: 'u-worker' }, 'u-worker')
+    const t = await nodeTask('技术文件', `重新启用复核-${operation}`, [part.id])
+    const nodeId = (await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).planNodeId!
+    const release = await publish(t.id)
+    for (const kind of ['MATERIAL', 'PROCESS'] as const) { await act(t.id, kind, 'start'); await act(t.id, kind, 'issue') }
+    const ready = () => db.todo.count({ where: { refId: part.id, action: 'READY_TO_START', status: 'OPEN' } })
+    expect(await ready()).toBe(1)
+    await s.plan.updateNode(nodeId, { name: '纯展示名称' }, 'u-des')
+    expect(await db.processDocLog.count({ where: { taskId: t.id, toStatus: 'REVISING' } })).toBe(0)
+    await s.plan.updateNode(nodeId, { requiresProcess: false }, 'u-des')
+    if (operation === 'change') await s.rel.createRelease({ type: 'CHANGE', workOrderNumber: WO, description: '关闭期间变更', partIds: [part.id], userIds: ['u-worker'] }, 'u-des')
+    else await s.rel.voidRelease(release.id, DESIGNER)
+    expect(await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).toMatchObject({ materialStatus: 'ISSUED', processStatus: 'ISSUED' })
+    await s.plan.updateNode(nodeId, { requiresProcess: true }, 'u-des')
+    expect(await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).toMatchObject({ materialStatus: 'REVISING', processStatus: 'REVISING' })
+    expect(await ready()).toBe(0)
+    expect((await s.pc.listProcess({ workOrderNumber: WO, view: 'revising' }, true)).rows.some(row => row.id === t.id)).toBe(true)
+    const logs = await db.processDocLog.findMany({ where: { taskId: t.id, toStatus: 'REVISING' } })
+    expect(logs).toHaveLength(2)
+    expect(new Set(logs.map(log => log.kind))).toEqual(new Set(['MATERIAL', 'PROCESS']))
+    for (const log of logs) expect(log).toMatchObject({ fromStatus: 'ISSUED', actorId: 'u-des', releaseId: null, note: '重新启用工艺处理，原已下发文档需复核' })
+    await s.plan.updateNode(nodeId, { requiresProcess: true }, 'u-des')
+    expect(await db.processDocLog.count({ where: { taskId: t.id, toStatus: 'REVISING' } })).toBe(2)
+  })
+
+  it('restores only the current change reminder and never reopens completed changes for policy-only review', async () => {
+    const part = await makePart()
+    const t = await nodeTask('工艺变更归属', '当前轮次文件', [part.id])
+    const nodeId = (await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).planNodeId!
+    await publish(t.id)
+    await act(t.id, 'MATERIAL', 'start')
+    await act(t.id, 'MATERIAL', 'issue')
+    const change = (description: string) => s.rel.createRelease({ type: 'CHANGE', workOrderNumber: WO, description, partIds: [part.id], userIds: ['u-worker'] }, 'u-des')
+    const first = await change('变更 A')
+    await act(t.id, 'MATERIAL', 'issue')
+    const firstWhere = { dedupeKey: `PROCESS_REVISE:${first.id}:u-prochead` }
+    const readAt = new Date()
+    await db.reminder.update({ where: firstWhere, data: { readAt } })
+    const second = await change('变更 B')
+    const secondWhere = { dedupeKey: `PROCESS_REVISE:${second.id}:u-prochead` }
+    await s.plan.updateNode(nodeId, { requiresProcess: false }, 'u-des')
+    await s.plan.updateNode(nodeId, { requiresProcess: true }, 'u-des')
+    expect((await db.reminder.findUniqueOrThrow({ where: firstWhere })).readAt).toEqual(readAt)
+    expect((await db.reminder.findUniqueOrThrow({ where: secondWhere })).readAt).toBeNull()
+    await act(t.id, 'MATERIAL', 'issue')
+    await db.reminder.update({ where: secondWhere, data: { readAt } })
+    await s.plan.updateNode(nodeId, { requiresProcess: false }, 'u-des')
+    await s.plan.updateNode(nodeId, { requiresProcess: true }, 'u-des')
+    for (const where of [firstWhere, secondWhere]) expect((await db.reminder.findUniqueOrThrow({ where })).readAt).toEqual(readAt)
+    expect(await db.processDocLog.findFirstOrThrow({ where: { taskId: t.id }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] })).toMatchObject({ toStatus: 'REVISING', releaseId: null, note: '重新启用工艺处理，原已下发文档需复核' })
+  })
+
+  it('copies process requirements from templates and keeps existing plans independent of later template edits', async () => {
+    const input = { name: 'T-PROC-policy-template', nodes: [{ name: '调试', dept: 'TECH' as const, daysBeforeDelivery: 0, requiresProcess: false }] }
+    const template = await s.templates.createTemplate(input, 'u-des')
+    await s.plan.generateFromTemplate(OTHER_WO, template.id, 'u-des')
+    const instance = await db.planNode.findFirstOrThrow({ where: { workOrderNumber: OTHER_WO } })
+    expect(instance.requiresProcess).toBe(false)
+    await s.templates.updateTemplate(template.id, { ...input, nodes: [{ name: '设备联调', dept: 'TECH', daysBeforeDelivery: 0 }] })
+    expect((await db.planTemplateNode.findFirstOrThrow({ where: { templateId: template.id } })).requiresProcess).toBe(false)
+    await s.templates.updateTemplate(template.id, { ...input, nodes: [{ ...input.nodes[0]!, requiresProcess: true }] })
+    expect((await db.planNode.findUniqueOrThrow({ where: { id: instance.id } })).requiresProcess).toBe(false)
+    await s.plan.updateNode(instance.id, { name: '现场验证' }, 'u-des')
+    expect((await db.planNode.findUniqueOrThrow({ where: { id: instance.id } })).requiresProcess).toBe(false)
+  })
+
+  it.each(['delete', 'replace'])('reconciles detached drawing tasks when an excluded node is removed by %s', async (operation) => {
+    const part = await makePart()
+    await s.steps.addStep(part.id, { processId: 'P-CUT', mode: 'SELF', ownerId: 'u-worker' }, 'u-worker')
+    const t = await nodeTask('不需工艺的文件', `待移除-${operation}`, [part.id], false)
+    const nodeId = (await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).planNodeId!
+    await publish(t.id)
+    const ready = () => db.todo.count({ where: { refId: part.id, action: 'READY_TO_START', status: 'OPEN' } })
+    expect(await ready()).toBe(1)
+    if (operation === 'delete') await s.plan.deleteNode(nodeId, null, 'u-des')
+    else {
+      const template = await s.templates.createTemplate({ name: 'T-PROC-replacement', nodes: [{ name: '新计划', dept: 'TECH', daysBeforeDelivery: 0 }] }, 'u-des')
+      await s.plan.generateFromTemplate(WO, template.id, 'u-des')
+    }
+    expect(await ready()).toBe(0)
+    expect(await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).toMatchObject({ planNodeId: null, status: 'DONE' })
+    expect((await s.pc.listProcess({ workOrderNumber: WO, view: 'all' }, true)).rows.some(row => row.id === t.id)).toBe(true)
   })
 })

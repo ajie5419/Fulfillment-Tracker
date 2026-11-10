@@ -60,13 +60,11 @@ describe('工艺状态', () => {
   })
 })
 
-it('routes procurement planning and commissioning by source node while preserving drawing completion requirements', async () => {
+it('routes tasks by explicit policy while preserving standalone and drawing completion requirements', async () => {
   const { requiresProcessForNode } = await import('../../shared/process')
   const { prereqState } = await import('../../server/services/flow/readiness')
-  for (const node of ['原材料采购计划', '主要外购件采购计划', '其他外购件采购计划', '电器件采购计划', '液压件采购计划', '调试']) {
-    expect(requiresProcessForNode(node)).toBe(false)
-  }
-  for (const node of [null, undefined, '结构图纸', '原材料采购及复验', '外购件图纸、技术协议', '调试图纸', '调试工装设计']) {
+  expect(requiresProcessForNode({ requiresProcess: false })).toBe(false)
+  for (const node of [null, undefined, { requiresProcess: true }]) {
     expect(requiresProcessForNode(node)).toBe(true)
   }
   expect(prereqState({ purchases: [], drawings: [{ status: 'PENDING', materialStatus: 'NOT_STARTED', requiresProcess: false }] })).toMatchObject({ missingDrawing: 1, missingMaterialList: 0 })

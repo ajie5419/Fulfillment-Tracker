@@ -1,4 +1,4 @@
-export const PLAN_CHANGE_KIND = { DATE: '改完成日期', START: '改开始日期', ADD: '加节点', DELETE: '删节点' } as const
+export const PLAN_CHANGE_KIND = { DATE: '改完成日期', START: '改开始日期', ADD: '加节点', DELETE: '删节点', PROCESS: '改工艺处理要求' } as const
 
 /** 总计划无副作用校验；输入是日期字段的 YYYY-MM-DD，不换算为浏览器本地日期。 */
 export function isPlanStartLate(startDay: string | null | undefined, planDay: string | null | undefined): boolean {

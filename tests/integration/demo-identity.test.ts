@@ -38,7 +38,7 @@ describe.skipIf(!DB)('isolated demo identity and missing plan delivery', () => {
     await db.planNode.update({ where: { id: ids[3] }, data: { manualDoneAt: new Date(), actualDate: parseDay('2026-12-01'), manualDoneBy: 'u-011' } })
     const before = await db.planNode.findMany({ where: { workOrderNumber: wo }, orderBy: { id: 'asc' } })
     expect(await repair()).toEqual({ created: 1 })
-    expect(await db.notifyRole.findFirst({ where: { userId: 'u-011', role: 'DEPT_HEAD' } })).toMatchObject({ department: '技术部' })
+    expect(await db.notifyRole.findFirst({ where: { userId: 'u-011', role: 'DEPT_HEAD' } })).toMatchObject({ department: 'TECH' })
     expect(await db.deptMapping.findUnique({ where: { qmsDepartmentId: 'DEMO-DEPT-TECH' } })).toMatchObject({ businessDept: 'TECH' })
     expect(await db.todo.findMany({ where: { refId: { in: ids } } })).toMatchObject([{ ownerId: 'u-011', refId: ids[0], status: 'OPEN', action: 'CONFIRM_PLAN_NODE' }])
     expect(await repair()).toEqual({ created: 0 })

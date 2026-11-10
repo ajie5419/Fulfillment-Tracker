@@ -35,7 +35,7 @@ export async function collectW9(now: Date, t: Thresholds, offDays: string[]): Pr
   const pmOf = new Map(exts.map((e) => [e.workOrderNumber, e.projectManagerId]))
   const liveWos = new Set(live.map((w) => w.workOrderNumber))
   const headsOf = (dept: keyof typeof BUSINESS_DEPT_NAME) =>
-    [...new Set(heads.filter((h) => (h.role === 'DEPT_HEAD' && h.department === BUSINESS_DEPT_NAME[dept]) || (dept === 'PROJECT' && h.role === 'PROJECT_DEPT_HEAD')).map((h) => h.userId))]
+    [...new Set(heads.filter((h) => (h.role === 'DEPT_HEAD' && h.department === dept) || (dept === 'PROJECT' && h.role === 'PROJECT_DEPT_HEAD')).map((h) => h.userId))]
   const names = await loadNames({ user: todos.map((x) => x.ownerId) })
   const out: Target[] = []
   for (const plan of plans.values()) {
@@ -52,6 +52,7 @@ export async function collectW9(now: Date, t: Thresholds, offDays: string[]): Pr
         workOrderNumber: plan.workOrderNumber,
         ownerIds: pm ? [pm] : [],
         deptNames: [], // 不找部门负责人：红色阶梯加项目部负责人、分管领导
+        departmentKeys: [],
         startAt: now,
         level: late,
         subject: '总计划预计交期',
@@ -72,6 +73,7 @@ export async function collectW9(now: Date, t: Thresholds, offDays: string[]): Pr
           workOrderNumber: plan.workOrderNumber,
           ownerIds: headsOf(n.dept),
           deptNames: [dept],
+          departmentKeys: [n.dept],
           startAt: n.planDate,
           level,
           subject,
@@ -91,6 +93,7 @@ export async function collectW9(now: Date, t: Thresholds, offDays: string[]): Pr
           workOrderNumber: plan.workOrderNumber,
           ownerIds: headsOf(n.dept),
           deptNames: [dept],
+          departmentKeys: [n.dept],
           startAt: splitFrom,
           level: split,
           subject,
@@ -111,6 +114,7 @@ export async function collectW9(now: Date, t: Thresholds, offDays: string[]): Pr
         workOrderNumber: plan.workOrderNumber,
         ownerIds: open,
         deptNames: [dept],
+        departmentKeys: [n.dept],
         startAt,
         level: levelByElapsed(elapsed, t.W5),
         subject,

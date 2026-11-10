@@ -15,8 +15,8 @@ const ctx: GroupContext = {
   roles: [
     { role: 'OUTSOURCE_COORDINATOR', userId: 'u-out', department: null },
     { role: 'OUTSOURCE_COORDINATOR', userId: 'u-gone', department: null }, // 已离职：不在 users 里
-    { role: 'DEPT_HEAD', userId: 'u-head', department: '生产部' },
-    { role: 'DEPT_HEAD', userId: 'u-tech', department: '技术部' },
+    { role: 'DEPT_HEAD', userId: 'u-head', department: 'PRODUCTION' },
+    { role: 'DEPT_HEAD', userId: 'u-tech', department: 'TECH' },
     { role: 'PROJECT_DEPT_HEAD', userId: 'u-pdh', department: null },
   ],
 }

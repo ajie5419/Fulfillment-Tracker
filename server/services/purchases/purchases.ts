@@ -26,12 +26,11 @@ import { clearAlertKeys } from '../alerts/clear'
 import { alertKey, dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { FlowError } from '../flow/errors'
 import { loadNames } from '../flow/names'
-import { PRODUCTION_DEPT } from '../releases/constants'
 import { planNodeLabels, planWarning, resolvePlanNode } from '../plan/links'
 import {
   DELAY_REASON_TEXT,
   PAYMENT_STATUS_TEXT,
-  PURCHASE_DEPT,
+  PURCHASE_DEPT_NAME,
   READY_TO_START,
   delayStats,
   lineProgress,
@@ -133,7 +132,7 @@ async function assertPart(tx: Tx, partId: string | null | undefined, workOrderNu
 export async function readyOwners(tx: Tx, first: Pick<FirstStep, 'ownerId' | 'mode' | 'supplierId'>, workOrderNumber: string): Promise<string[]> {
   const owner = await resolveStepResponsible(tx, { ...first, workOrderNumber }, { lock: true })
   if (owner) return [owner]
-  const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PRODUCTION_DEPT }, select: { userId: true } })
+  const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: 'PRODUCTION' }, select: { userId: true } })
   return [...new Set(heads.map((h) => h.userId))]
 }
 
@@ -164,9 +163,9 @@ export async function refreshPartReady(tx: Tx, partId: string | null, notify: bo
   // 与生产调度同一条规则（flow/readiness.ts firstStepTodoReady）：挂了东西、都齐了、第一道还在待开工且没在"等变更"
   // Read routing metadata without extending the task/part locking order to plan nodes.
   const nodeIds = [...new Set(drawings.map(d => d.planNodeId).filter((id): id is string => !!id))]
-  const nodes = nodeIds.length ? await tx.planNode.findMany({ where: { id: { in: nodeIds } }, select: { id: true, name: true } }) : []
-  const nodeNames = new Map(nodes.map(n => [n.id, n.name]))
-  const prereq = prereqState({ purchases: lines.map((l) => l.status), drawings: drawings.map(d => ({ ...d, requiresProcess: requiresProcessForNode(d.planNodeId ? nodeNames.get(d.planNodeId) : null) })) })
+  const nodes = nodeIds.length ? await tx.planNode.findMany({ where: { id: { in: nodeIds } }, select: { id: true, requiresProcess: true } }) : []
+  const processPolicies = new Map(nodes.map(n => [n.id, n]))
+  const prereq = prereqState({ purchases: lines.map((l) => l.status), drawings: drawings.map(d => ({ ...d, requiresProcess: requiresProcessForNode(d.planNodeId ? processPolicies.get(d.planNodeId) : null) })) })
   const ready = firstStepTodoReady(first && { status: first.status, held: !!first.holdReleaseId }, prereq)
   const where = { refType: 'part', refId: partId, action: READY_TO_START, status: 'OPEN' as const }
   if (!ready) {
@@ -379,11 +378,11 @@ async function describeLines(rows: LineWithPayments[], now: Date, amountVisible:
   const [parts, names, heads, planNodes] = await Promise.all([
     partIds.length ? prisma.part.findMany({ where: { id: { in: partIds } }, select: { id: true, name: true, drawingNo: true } }) : [],
     loadNames({ user: rows.flatMap((r) => [r.buyerId, r.arrivedBy]) }),
-    prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PURCHASE_DEPT }, select: { userId: true } }),
+    prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: 'PURCHASE' }, select: { userId: true } }),
     planNodeLabels(rows.map((r) => r.planNodeId)),
   ])
   const headNames = (await loadNames({ user: heads.map((h) => h.userId) })).user
-  const deptHead = heads.length ? `${PURCHASE_DEPT}（${heads.map((h) => headNames.get(h.userId) ?? h.userId).join('、')}）` : `${PURCHASE_DEPT}负责人（未设置）`
+  const deptHead = heads.length ? `${PURCHASE_DEPT_NAME}（${heads.map((h) => headNames.get(h.userId) ?? h.userId).join('、')}）` : `${PURCHASE_DEPT_NAME}负责人（未设置）`
   const partOf = new Map(parts.map((p) => [p.id, p]))
   const alerts = rows.length
     ? await prisma.alert.findMany({ where: { activeKey: { in: rows.map((r) => w6Key(r.id)) } }, select: { activeKey: true, level: true } })

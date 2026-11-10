@@ -25,7 +25,9 @@ import { lockParts, purchaseTx, refreshPartReady } from '../purchases/purchases'
 import { planNodeLabels, planWarning, resolvePlanNode } from '../plan/links'
 import { TYPE_TEXT } from '../releases/constants'
 import { processSummary } from '../process/constants'
-import { DRAWING_STATUS_TEXT, OPEN_DRAWING_STATUSES, TECH_DEPT, canReleaseFrom, deriveStatus, isOverdue, thisWeek } from './constants'
+import { taskRequiresProcess } from '../process/eligibility'
+import { settleProcessRequirementWork } from '../process/requirements'
+import { DRAWING_STATUS_TEXT, OPEN_DRAWING_STATUSES, TECH_DEPT_NAME, canReleaseFrom, deriveStatus, isOverdue, thisWeek } from './constants'
 
 type Tx = Prisma.TransactionClient
 type TaskWithParts = DrawingTask & { parts: { partId: string }[] }
@@ -74,13 +76,13 @@ export class DrawingTaskNotFoundError extends FlowError {
 /** 先锁关联工件（及 alsoParts，如编辑后要关联的新工件），再锁设计任务行并读最新数据 */
 export async function lockTask(tx: Tx, id: string, alsoParts: string[] = []): Promise<TaskWithParts> {
   const cur = await tx.drawingTaskPart.findMany({ where: { taskId: id }, select: { partId: true } })
-  await lockParts(tx, [...cur.map((p) => p.partId), ...alsoParts])
+  const lockedParts = new Set([...cur.map((p) => p.partId), ...alsoParts])
+  await lockParts(tx, [...lockedParts])
   const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM drawing_task WHERE id = ${id} FOR UPDATE`
   if (!rows.length) throw new DrawingTaskNotFoundError()
   const task = await tx.drawingTask.findUniqueOrThrow({ where: { id }, include: { parts: { select: { partId: true } } } })
-  // 极少见：锁之前关联工件刚被改过
-  const extra = task.parts.map((p) => p.partId).filter((p) => !cur.some((c) => c.partId === p))
-  if (extra.length) await lockParts(tx, extra)
+  // A concurrent relink must not make us acquire new part locks after the task lock.
+  if (task.parts.some(p => !lockedParts.has(p.partId))) throw new FlowError('设计任务关联工件已变化，请刷新后重试')
   return task
 }
 
@@ -95,7 +97,7 @@ const blocking = (s: DrawingTaskStatus) => OPEN_DRAWING_STATUSES.includes(s)
  * 按最新事实重算状态并写回；然后对受影响的工件重新评估"可以开工"：
  * 原来挡着某个工件（未完成、且关联着）、现在不再挡（完成 / 取消 / 不再关联）→ notify；其余只作废（还没齐时）。
  */
-export async function settleTask(tx: Tx, before: { status: DrawingTaskStatus; partIds: string[] }, taskId: string) {
+export async function settleTask(tx: Tx, before: { status: DrawingTaskStatus; partIds: string[] }, taskId: string, processRequirement?: { actorId: string; requiresProcess: boolean }) {
   const task = await tx.drawingTask.findUniqueOrThrow({ where: { id: taskId }, include: { parts: { select: { partId: true } } } })
   const status = deriveStatus({
     cancelled: task.status === 'CANCELLED',
@@ -107,8 +109,14 @@ export async function settleTask(tx: Tx, before: { status: DrawingTaskStatus; pa
   if (status !== task.status) await tx.drawingTask.update({ where: { id: taskId }, data: { status } })
   if (!blocking(status)) await clearAlertKeys(tx, [w7Key(taskId)])
   const nowParts = task.parts.map((p) => p.partId)
+  const affectedParts = uniq([...before.partIds, ...nowParts]).sort()
+  // Review documents before evaluating readiness, so re-enabling cannot briefly issue a stale ready notice.
+  if (processRequirement) {
+    const readySent = await settleProcessRequirementWork(tx, { taskIds: [taskId], partIds: affectedParts }, processRequirement.actorId, processRequirement.requiresProcess)
+    return { status, readySent }
+  }
   let readySent = 0
-  for (const partId of uniq([...before.partIds, ...nowParts]).sort()) {
+  for (const partId of affectedParts) {
     const wasBlocking = before.partIds.includes(partId) && blocking(before.status)
     const stillBlocking = nowParts.includes(partId) && blocking(status)
     if ((await refreshPartReady(tx, partId, wasBlocking && !stillBlocking)) === 'sent') readySent++
@@ -179,10 +187,20 @@ export async function createTask(input: NewTaskInput, actorId: string) {
   })
 }
 
-export async function updateTask(id: string, input: PatchTaskInput) {
+export async function updateTask(id: string, input: PatchTaskInput, actorId: string) {
   const newParts = input.partIds ? uniq(input.partIds) : undefined
   return drawingTx(async (tx) => {
     const old = await lockTask(tx, id, newParts)
+    const targetNodeId = input.planNodeId === undefined ? old.planNodeId : input.planNodeId || null
+    let processRequirement: { actorId: string; requiresProcess: boolean } | undefined
+    if (targetNodeId !== old.planNodeId) {
+      // Policy writers lock parts, tasks, then nodes; shared node locks keep both policies stable through relinking.
+      const nodeIds = uniq([old.planNodeId, targetNodeId].filter((nodeId): nodeId is string => !!nodeId)).sort()
+      for (const nodeId of nodeIds) await tx.$queryRaw`SELECT id FROM plan_node WHERE id = ${nodeId} FOR SHARE`
+      const previousRequirement = await taskRequiresProcess(tx, old.planNodeId)
+      const nextRequirement = await taskRequiresProcess(tx, targetNodeId)
+      if (previousRequirement !== nextRequirement) processRequirement = { actorId, requiresProcess: nextRequirement }
+    }
     assertStartDate(input.startDate === undefined ? old.startDate : input.startDate, input.planDate ?? old.planDate)
     const before = { status: old.status, partIds: old.parts.map((p) => p.partId) }
     const data: Prisma.DrawingTaskUncheckedUpdateInput = {}
@@ -220,7 +238,7 @@ export async function updateTask(id: string, input: PatchTaskInput) {
       needs !== old.needsCustomerConfirm ||
       dayOf(newCustomerPlan) !== dayOf(old.customerPlanDate)
     if (datesChanged) await clearAlertKeys(tx, [w7Key(id)])
-    const r = await settleTask(tx, before, id)
+    const r = await settleTask(tx, before, id, processRequirement)
     return { id, ...r, planWarning: planWarning('计划完成日', input.planDate ?? old.planDate, link.node) }
   })
 }
@@ -353,9 +371,9 @@ function viewWhere(view: TaskView, today: Date, now: Date): Prisma.DrawingTaskWh
 }
 
 async function techHeadText() {
-  const heads = await prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: TECH_DEPT }, select: { userId: true } })
+  const heads = await prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: 'TECH' }, select: { userId: true } })
   const names = (await loadNames({ user: heads.map((h) => h.userId) })).user
-  return heads.length ? `${TECH_DEPT}（${heads.map((h) => names.get(h.userId) ?? h.userId).join('、')}）` : `${TECH_DEPT}负责人（未设置）`
+  return heads.length ? `${TECH_DEPT_NAME}（${heads.map((h) => names.get(h.userId) ?? h.userId).join('、')}）` : `${TECH_DEPT_NAME}负责人（未设置）`
 }
 
 async function describeTasks(rows: TaskWithParts[], now: Date, viewer?: Actor) {

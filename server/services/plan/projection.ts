@@ -148,6 +148,7 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
         code: codeOf.get(n.id)!,
         name: n.name,
         dept: n.dept,
+        requiresProcess: n.requiresProcess,
         deptText: BUSINESS_DEPT_NAME[n.dept],
         note: n.note,
         /** 上级节点（子节点）；子节点数 */

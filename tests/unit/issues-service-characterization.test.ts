@@ -5,7 +5,7 @@ import { method, resetServiceDb, returns, serviceCalls, serviceDb } from '../hel
 vi.mock('../../server/utils/prisma', async () => ({ prisma: (await import('../helpers/service-db')).serviceDb }))
 vi.mock('../../server/services/flow/flow', () => ({ lockStep: async (_tx: unknown, id: string) => { serviceCalls.push(['lockStep', id]) }, restoreBlockedStep: async (_tx: unknown, id: string) => { serviceCalls.push(['restoreBlockedStep', id]); return id } }))
 vi.mock('../../server/services/flow/names', () => ({ loadNames: async () => ({ user: new Map([['owner', '负责人']]), supplier: new Map([['supplier', '供应商']]), process: new Map([['process', '车削']]) }) }))
-vi.mock('../../server/services/auth/departments', () => ({ loadDeptIndex: async () => new Map(), representativeDeptId: () => 'dept', resolveDeptName: () => '技术部', resolveDeptNames: async () => new Map([['dept', '技术部']]), deptIdsResolvingTo: () => ['dept'] }))
+vi.mock('../../server/services/auth/departments', () => ({ loadDeptIndex: async () => new Map(), representativeDeptId: () => 'dept', resolveDeptName: () => '技术部', resolveDeptNames: async () => new Map([['dept', '技术部']]), resolveDeptIdentity: () => 'TECH', resolveDeptIdentities: async () => new Map([['dept', 'TECH']]), deptIdsResolvingTo: () => ['dept'] }))
 
 import * as issues from '../../server/services/issues/issues'
 const now = new Date('2026-11-01T04:00:00Z')
@@ -28,7 +28,7 @@ beforeEach(() => {
   returns('qmsUser.findFirst', { id: 'new-owner' })
   returns('qmsUser.findUnique', { departmentId: 'dept' })
   returns('notifyRole.findFirst', { userId: 'owner' })
-  returns('notifyRole.findMany', [{ role: 'DEPT_HEAD', department: '技术部', userId: 'owner' }])
+  returns('notifyRole.findMany', [{ role: 'DEPT_HEAD', department: 'TECH', userId: 'owner' }])
   returns('qmsDepartment.findMany', [{ id: 'dept', name: '技术部', isDeleted: false }, { id: 'new-dept', name: '生产部', isDeleted: false }])
   returns('workOrderExt.findMany', [{ workOrderNumber: 'WO', projectManagerId: 'owner' }])
   returns('routeStep.findMany', [{ id: 'step', part: { id: 'part', name: '工件' }, processId: 'process', status: 'BLOCKED' }])

@@ -2,6 +2,8 @@
 import { isPlanStartLate, planAdjustmentNeedsReason, isPlanAdjustmentReasonMissing } from '../../../shared/plan-validation'
 import { parseDay as parse } from '../../../shared/dates'
 import type { BusinessDept, PlanNode, Prisma } from '@prisma/client'
+import type { z } from 'zod'
+import type { newNodeBody } from '../../schemas/plan'
 import { prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { dateFieldDay, shanghaiDay } from '../alerts/rules'
@@ -9,6 +11,7 @@ import { BUSINESS_DEPT_NAME } from '../auth/departments'
 import { FlowError } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { todayDate } from '../purchases/constants'
+import { lockProcessRequirementWork, settleProcessRequirementWork } from '../process/requirements'
 import { cancelTaskTodos } from './tasks'
 import { CONFIRM_PLAN_NODE, PLAN_REF, addDays, childrenOf, planLink, resolvePreds, topoOrder, treeOrder,
   w9ConfirmKey, w9Key, w9SplitKey, waitsOn } from './constants'
@@ -35,7 +38,7 @@ async function assertWorkOrder(db: Db, workOrderNumber: string) {
 /** 节点责任部门的负责人（项目部另含"项目部负责人"） */
 export async function deptHeads(db: Db, dept: BusinessDept): Promise<string[]> {
   const roles = await db.notifyRole.findMany({
-    where: { OR: [{ role: 'DEPT_HEAD', department: BUSINESS_DEPT_NAME[dept] }, ...(dept === 'PROJECT' ? [{ role: 'PROJECT_DEPT_HEAD' as const }] : [])] },
+    where: { OR: [{ role: 'DEPT_HEAD', department: dept }, ...(dept === 'PROJECT' ? [{ role: 'PROJECT_DEPT_HEAD' as const }] : [])] },
     select: { userId: true },
   })
   return [...new Set(roles.map((r) => r.userId))]
@@ -164,6 +167,9 @@ export async function generateFromTemplate(workOrderNumber: string, templateId: 
     if (!tpl) throw new FlowError('模板不存在')
     if (!tpl.nodes.length) throw new FlowError('模板里还没有节点')
     const delivery = day(wo.deliveryDate)
+    const replacedNodes = await tx.planNode.findMany({ where: { workOrderNumber }, select: { id: true, requiresProcess: true } })
+    // Deleting any node can unlink tasks, so lock every task before FK updates; only excluded nodes change policy.
+    const processWork = await lockProcessRequirementWork(tx, replacedNodes.map(n => n.id), replacedNodes.filter(n => !n.requiresProcess).map(n => n.id))
     // 草稿节点下已分解的其他任务随节点一起删，待办作废
     await cancelTaskTodos(tx, (await tx.planTask.findMany({ where: { workOrderNumber }, select: { id: true } })).map((t) => t.id))
     const replaced = await tx.planNode.deleteMany({ where: { workOrderNumber } })
@@ -177,6 +183,7 @@ export async function generateFromTemplate(workOrderNumber: string, templateId: 
           seq: i + 1,
           name: n.name,
           dept: n.dept,
+          requiresProcess: n.requiresProcess,
           phase: n.phase,
           planDate: parse(plan),
           startDate: n.durationDays && n.durationDays > 0 ? parse(addDays(plan, -(n.durationDays - 1))) : null,
@@ -203,28 +210,12 @@ export async function generateFromTemplate(workOrderNumber: string, templateId: 
     await rollupParents(tx, workOrderNumber, false)
     await assertNoCycle(tx, workOrderNumber)
     await tx.workOrderPlan.update({ where: { workOrderNumber }, data: { templateName: tpl.name } })
+    await settleProcessRequirementWork(tx, processWork, actorId, true)
     return { created: tpl.nodes.length, replaced: replaced.count }
-  })
+  }, { isolationLevel: 'ReadCommitted' })
 }
 
-export interface NodeInput {
-  name: string
-  dept: BusinessDept
-  planDate: Date
-  /** 阶段（分组显示） */
-  phase?: string | null
-  /** 计划开始日（可选，不能晚于计划日） */
-  startDate?: Date | null
-  /** 前置节点 ID：null = 默认；[] = 没有前置 */
-  preds?: string[] | null
-  /** 上级节点 ID（子节点，只有一层）：null = 一级节点 */
-  parentId?: string | null
-  /** 顺序号：小的在前；不填 = 排最后 */
-  seq?: number | null
-  note?: string | null
-  /** 已发布时必填：调整原因 */
-  reason?: string | null
-}
+export type NodeInput = Omit<z.output<typeof newNodeBody>, 'workOrderNumber'>
 
 /** 加节点。发布后加的节点没有基线，要写原因（记调整记录），并请责任部门确认 */
 export async function createNode(workOrderNumber: string, input: NodeInput, actorId: string) {
@@ -242,6 +233,7 @@ export async function createNode(workOrderNumber: string, input: NodeInput, acto
         seq,
         name: input.name.trim(),
         dept: input.dept,
+        requiresProcess: input.requiresProcess ?? true,
         parentId: parent?.id ?? null,
         // 子节点的阶段跟上级
         phase: parent ? parent.phase : input.phase?.trim() || null,
@@ -275,6 +267,7 @@ export async function updateNode(id: string, input: Partial<NodeInput> & { linke
     const published = plan.status === 'PUBLISHED'
     const dateChanged = input.planDate !== undefined && day(input.planDate) !== day(old.planDate)
     const deptChanged = input.dept !== undefined && input.dept !== old.dept
+    const processChanged = input.requiresProcess !== undefined && input.requiresProcess !== old.requiresProcess
     const startChanged = input.startDate !== undefined && (input.startDate ? day(input.startDate) : null) !== (old.startDate ? day(old.startDate) : null)
     const linked = input.linkedDates && (dateChanged || startChanged)
     if (input.previewToken && !linked) throw new FlowError('计划日期已变化，请重新打开节点后调整')
@@ -286,6 +279,7 @@ export async function updateNode(id: string, input: Partial<NodeInput> & { linke
     const data: Prisma.PlanNodeUpdateInput = {}
     if (input.name !== undefined) data.name = input.name.trim()
     if (input.dept !== undefined) data.dept = input.dept
+    if (input.requiresProcess !== undefined) data.requiresProcess = input.requiresProcess
     if (input.planDate !== undefined) data.planDate = input.planDate
     if (input.seq != null) data.seq = input.seq
     if (input.note !== undefined) data.note = input.note?.trim() || null
@@ -302,6 +296,7 @@ export async function updateNode(id: string, input: Partial<NodeInput> & { linke
         : null
     if (parentChanged) data.parent = newParentId ? { connect: { id: newParentId } } : { disconnect: true }
     if (parent) data.phase = parent.phase
+    const processWork = processChanged ? await lockProcessRequirementWork(tx, [id]) : null
     const node = await tx.planNode.update({ where: { id }, data })
     if (!node.parentId && node.phase !== old.phase) await tx.planNode.updateMany({ where: { parentId: id }, data: { phase: node.phase } })
     // 前置节点：页面每次保存都会带上，只有真的变了才重写（避免无谓地清掉、重发延误预警）
@@ -346,8 +341,12 @@ export async function updateNode(id: string, input: Partial<NodeInput> & { linke
     // 子节点的日期、上级变了：重算汇总行（原上级、新上级）
     if (!before && (dateChanged || startChanged || parentChanged)) await rollupParents(tx, node.workOrderNumber, published)
     if (dateChanged || seqChanged || depsChanged || startChanged || parentChanged) await clearDelayAlerts(tx, node.workOrderNumber)
+    if (processWork) {
+      await settleProcessRequirementWork(tx, processWork, actorId, node.requiresProcess)
+      await tx.planChangeLog.create({ data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'PROCESS', reason: node.requiresProcess ? '启用工艺处理' : '取消工艺处理', actorId } })
+    }
     return { id, reconfirm }
-  }).catch((error: unknown) => {
+  }, { isolationLevel: 'ReadCommitted' }).catch((error: unknown) => {
     if (error instanceof SchedulePreviewRollback) return { id, reconfirm: false, preview: error.preview }
     throw error
   })
@@ -365,6 +364,8 @@ export async function deleteNode(id: string, reason: string | null | undefined, 
     const kids = await tx.planNode.count({ where: { parentId: id } })
     if (kids) throw new FlowError(`"${node.name}"下面还有 ${kids} 个子节点：请先删除子节点，或把它们改成一级节点`)
     needReason(published, reason, '删节点')
+    // FK unlinking follows the same lock order even when the effective policy stays enabled.
+    const processWork = await lockProcessRequirementWork(tx, [id], node.requiresProcess ? [] : [id])
     if (published) {
       await tx.planChangeLog.create({ data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'DELETE', oldDate: node.planDate, reason: reason!.trim(), actorId } })
     }
@@ -373,12 +374,13 @@ export async function deleteNode(id: string, reason: string | null | undefined, 
     await cancelTaskTodos(tx, (await tx.planTask.findMany({ where: { planNodeId: id }, select: { id: true } })).map((t) => t.id))
     await clearAlertKeys(tx, [w9Key(id), w9ConfirmKey(id), w9SplitKey(id)])
     await tx.planNode.delete({ where: { id } }) // 前置关系两头都级联删除
+    await settleProcessRequirementWork(tx, processWork, actorId, true)
     if (node.parentId) await rollupParents(tx, node.workOrderNumber, published)
     // 删掉后，紧跟着它、默认等"上一个节点"的节点改等更前面的节点，可能成环：成环就整笔回滚
     await assertNoCycle(tx, node.workOrderNumber)
     await clearDelayAlerts(tx, node.workOrderNumber)
     return { ok: true }
-  })
+  }, { isolationLevel: 'ReadCommitted' })
 }
 
 /**

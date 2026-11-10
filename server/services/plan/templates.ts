@@ -2,18 +2,16 @@
  * 总计划模板（R14）：节点名称、顺序、责任部门、交期前天数；10-22 加阶段、工期、前置节点（模板里按顺序号）。设置页"总计划模板"维护（项目部负责人、管理员，接口层判断）。
  * 改模板不影响已经生成的总计划（生成时复制，复制即版本）。
  */
-import { type BusinessDept, Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
+import type { z } from 'zod'
+import type { templateBody } from '../../schemas/plan'
 import { prisma } from '../../utils/prisma'
 import { BUSINESS_DEPT_NAME } from '../auth/departments'
 import { FlowError } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { childrenOf, resolvePreds, topoOrder, waitsOn } from './constants'
 
-export interface TemplateInput {
-  name: string
-  description?: string | null
-  nodes: { name: string; dept: BusinessDept; daysBeforeDelivery: number; phase?: string | null; durationDays?: number | null; preds?: number[] | null; parent?: number | null }[]
-}
+export type TemplateInput = z.output<typeof templateBody>
 
 const isUnique = (err: unknown) => (err as { code?: string })?.code === 'P2002'
 
@@ -55,6 +53,7 @@ export async function listTemplates() {
       seq: n.seq,
       name: n.name,
       dept: n.dept,
+      requiresProcess: n.requiresProcess,
       deptText: BUSINESS_DEPT_NAME[n.dept],
       daysBeforeDelivery: n.daysBeforeDelivery,
       phase: n.phase,
@@ -67,11 +66,12 @@ export async function listTemplates() {
   }))
 }
 
-const nodeRows = (nodes: TemplateInput['nodes']) =>
+const nodeRows = (nodes: TemplateInput['nodes'], previous: { requiresProcess: boolean }[] = []) =>
   nodes.map((n, i) => ({
     seq: i + 1,
     name: n.name.trim(),
     dept: n.dept,
+    requiresProcess: n.requiresProcess ?? previous[i]?.requiresProcess ?? true,
     daysBeforeDelivery: n.daysBeforeDelivery,
     phase: n.phase?.trim() || null,
     durationDays: n.durationDays ?? null,
@@ -99,12 +99,12 @@ export async function updateTemplate(id: string, input: TemplateInput) {
   assertNodes(input.nodes)
   try {
     return await prisma.$transaction(async (tx) => {
-      const t = await tx.planTemplate.findUnique({ where: { id }, select: { id: true } })
+      const t = await tx.planTemplate.findUnique({ where: { id }, select: { id: true, nodes: { orderBy: { seq: 'asc' }, select: { requiresProcess: true } } } })
       if (!t) throw new FlowError('模板不存在')
       await tx.planTemplateNode.deleteMany({ where: { templateId: id } })
       await tx.planTemplate.update({
         where: { id },
-        data: { name: input.name.trim(), description: input.description?.trim() || null, nodes: { create: nodeRows(input.nodes) } },
+        data: { name: input.name.trim(), description: input.description?.trim() || null, nodes: { create: nodeRows(input.nodes, t.nodes) } },
       })
       return { id }
     })

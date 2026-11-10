@@ -26,13 +26,13 @@ it.each([0, 1, 2, 5])('超期数据库条件与现有规则等价：黄阈值 %i
 
 it.each(['ordinary', 'head', 'pm', 'pdh', 'admin'])('待办数据库条件与逐条权限等价：%s', async (role) => {
   const actor = { userId: 'viewer', isAdmin: role === 'admin' }
-  const roles = (role === 'head' ? [{ role: 'DEPT_HEAD', department: '技术部' }] : role === 'pdh' ? [{ role: 'PROJECT_DEPT_HEAD' }] : []) as NotifyRole[]
+  const roles = (role === 'head' ? [{ role: 'DEPT_HEAD', department: 'TECH' }] : role === 'pdh' ? [{ role: 'PROJECT_DEPT_HEAD' }] : []) as NotifyRole[]
   returns('notifyRole.findMany', roles)
   returns('workOrderExt.findMany', role === 'pm' ? [{ workOrderNumber: 'OWN' }] : [])
   returns('qmsDepartment.findMany', [{ id: 'tech', name: '技术部', parentId: null }, { id: 'child', name: '技术科', parentId: 'tech' }, { id: 'other', name: '其他部门', parentId: null }])
   returns('deptMapping.findMany', [])
   const where = await actionableIssueWhere(actor)
-  const ctx = { actor, roles, pmOf: new Map(role === 'pm' ? [['OWN', 'viewer']] : []), deptName: new Map([['tech', '技术部'], ['child', '技术科'], ['other', '其他部门']]) }
+  const ctx = { actor, roles, pmOf: new Map(role === 'pm' ? [['OWN', 'viewer']] : []), deptName: new Map([['tech', 'TECH'], ['child', '技术科'], ['other', '其他部门']]) }
   for (const status of ['OPEN', 'ACCEPTED', 'RESOLVED', 'CLOSED'] as const) {
     for (const workOrderNumber of ['OWN', 'OTHER']) for (const responsibleDeptId of [null, 'tech', 'child', 'other']) {
       for (const responsibleUserId of [null, 'viewer', 'other']) for (const reporterId of [null, 'viewer', 'other']) {

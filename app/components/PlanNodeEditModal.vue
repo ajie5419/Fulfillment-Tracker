@@ -47,6 +47,14 @@ const DEPTS = BUSINESS_DEPT_OPTIONS
       </a-form-item>
     </div>
 
+    <a-form-item>
+      <span class="ft-title">
+        <a-checkbox v-model:checked="form.requiresProcess">需要工艺处理</a-checkbox>
+        <UiHelpTip label="工艺处理说明">开启后，本节点下的设计任务进入工艺工作台，关联工件开工前需要料单下发。关闭后保留原有任务和文档记录。重新开启时，原已下发的料单和工艺需复核后再下发。子节点各自设置。</UiHelpTip>
+      </span>
+      <div v-if="editing && form.requiresProcess !== editing.requiresProcess" class="muted field-hint">{{ form.requiresProcess ? '重新开启后，原已下发的料单和工艺将转为修改中，复核下发后才能开工。' : '保存后将同步调整工艺列表和关联工件的开工待办，保留历史记录。' }}</div>
+    </a-form-item>
+
     <div class="form-grid cols-parent-seq">
       <a-form-item>
         <template #label>

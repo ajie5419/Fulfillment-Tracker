@@ -3,7 +3,7 @@ import { method, resetServiceDb, returns, serviceCalls } from '../helpers/servic
 
 vi.mock('../../server/utils/prisma', async () => ({ prisma: (await import('../helpers/service-db')).serviceDb, isDeadlock: (e: { code?: string }) => e.code === 'P2034' }))
 vi.mock('../../server/services/flow/names', () => ({ loadNames: async () => ({ user: new Map([['owner', '负责人']]), process: new Map([['process', '车削']]), supplier: new Map() }), departmentNames: async () => new Map([['dept', '技术部']]), userDepartmentNames: async () => new Map([['owner', '技术部']]) }))
-vi.mock('../../server/services/auth/departments', () => ({ loadDeptIndex: async () => new Map(), resolveDeptName: () => '技术部' }))
+vi.mock('../../server/services/auth/departments', () => ({ loadDeptIndex: async () => new Map(), resolveDeptIdentity: () => 'TECH' }))
 vi.mock('../../server/services/drawings/drawings', () => ({
   lockTask: async (_tx: unknown, id: string) => { serviceCalls.push(['lockTask', id]); return { id, status: 'DRAWN', parts: [{ partId: 'part' }] } },
   assertReleasable: (...args: unknown[]) => { serviceCalls.push(['assertReleasable', ...args]) },
@@ -47,7 +47,7 @@ beforeEach(() => {
   returns('qmsWorkOrder.findFirst', { workOrderNumber: 'WO' })
   returns('qmsWorkOrder.findUnique', { projectName: '项目', customerName: '客户' })
   returns('qmsWorkOrder.count', 1)
-  returns('notifyRole.findMany', [{ userId: 'owner', role: 'DEPT_HEAD', department: '技术部' }])
+  returns('notifyRole.findMany', [{ userId: 'owner', role: 'DEPT_HEAD', department: 'TECH' }])
   returns('routeStep.findMany', [step, { ...step, id: 'started', status: 'OUT' }])
   returns('routeStep.findFirst', { id: 'step' })
   returns('routeStep.updateMany', { count: 1 })

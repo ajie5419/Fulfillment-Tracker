@@ -23,6 +23,7 @@ const phase = z
 const nodeFields = {
   name: z.string().trim().min(1, '请填写节点名称').max(191, '节点名称最多 191 字'),
   dept: businessDept,
+  requiresProcess: z.boolean().optional(),
   planDate: day,
   /** 阶段（分组显示） */
   phase,
@@ -62,6 +63,7 @@ export const templateBody = z
         z.object({
           name: z.string().trim().min(1, '请填写节点名称').max(191, '节点名称最多 191 字'),
           dept: businessDept,
+          requiresProcess: z.boolean().optional(),
           daysBeforeDelivery: z.number().int('天数要是整数').min(-365, '天数太小').max(2000, '天数太大'),
           phase,
           /** 工期（天）：空 = 不设开始日 */

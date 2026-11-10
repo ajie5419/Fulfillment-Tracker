@@ -26,7 +26,7 @@ import {
   ACTION_TEXT,
   KIND_TEXT,
   MATERIAL_STATUS_TEXT,
-  PROCESS_DEPT,
+  processRevisionTitle,
   PROCESS_STATUS_TEXT,
   type ProcessAction,
   type ProcessView,
@@ -136,7 +136,7 @@ export async function markRevisingByChange(tx: Tx, release: Pick<Release, 'id' |
   })
   const affected = await tx.drawingTaskPart.findMany({ where: { taskId: { in: tasks.map((t) => t.id) } }, select: { partId: true } })
   for (const partId of uniq(affected.map((p) => p.partId)).sort()) await refreshPartReady(tx, partId, false)
-  const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PROCESS_DEPT }, select: { userId: true } })
+  const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: 'PROCESS' }, select: { userId: true } })
   const candidates = uniq(heads.map((h) => h.userId))
   const active = candidates.length
     ? (await tx.qmsUser.findMany({ where: { id: { in: candidates }, isDeleted: false, status: 'ACTIVE' }, select: { id: true } })).map((u) => u.id)
@@ -145,9 +145,7 @@ export async function markRevisingByChange(tx: Tx, release: Pick<Release, 'id' |
   const users: string[] = []
   for (const id of active) if (canSee(await resolveScope(id, false), release.workOrderNumber)) users.push(id)
   if (users.length) {
-    const names = tasks.map((t) => t.componentName).join('、')
-    const raw = `【料单要改】设计变更 ${release.releaseNo} 涉及已下发的料单，已改为"修改中"：${names}（${release.workOrderNumber}）`
-    const title = raw.length > 190 ? `${raw.slice(0, 189)}…` : raw
+    const title = processRevisionTitle(release, tasks.map((t) => t.componentName))
     await tx.reminder.createMany({
       data: users.map((userId) => ({ userId, kind: 'PROCESS', level: 'YELLOW' as const, title, link: processLink(release.workOrderNumber, 'revising'), dedupeKey: `PROCESS_REVISE:${release.id}:${userId}` })),
       skipDuplicates: true,

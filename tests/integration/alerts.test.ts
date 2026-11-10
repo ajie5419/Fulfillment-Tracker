@@ -106,8 +106,8 @@ describe.skipIf(!DB)('预警与提醒', () => {
     await db.notifyRole.createMany({
       data: [
         { role: 'OUTSOURCE_COORDINATOR', userId: 'u-out' },
-        { role: 'DEPT_HEAD', userId: 'u-head', department: '生产部' },
-        { role: 'DEPT_HEAD', userId: 'u-qa', department: '质量部' }, // 别的部门的负责人不该收到
+        { role: 'DEPT_HEAD', userId: 'u-head', department: 'PRODUCTION' },
+        { role: 'DEPT_HEAD', userId: 'u-qa', department: 'QUALITY' }, // 别的部门的负责人不该收到
         { role: 'PROJECT_DEPT_HEAD', userId: 'u-pdh' },
         { role: 'LEADER', userId: 'u-lead' },
       ],
@@ -285,9 +285,9 @@ describe.skipIf(!DB)('预警与提醒', () => {
     const d2 = s.rules.shanghaiDay(at(t0, 2 * DAY))
     await db.offDay.createMany({ data: [d1, d2].map((d) => ({ date: new Date(`${d}T00:00:00.000Z`) })) })
     try {
-      await s.scan.scanRules(at(t0, 2 * DAY)) // 自然日满 2 天，扣掉停工日不到
+      expect(await s.scan.scanRules(at(t0, 2 * DAY))).toMatchObject({ skipped: false })
       expect(await db.alert.count({ where: { activeKey: key } })).toBe(0)
-      await s.scan.scanRules(at(t0, 4 * DAY)) // 自然日满 4 天，扣掉 2 个停工日 = 2 天 → 黄，不是红
+      expect(await s.scan.scanRules(at(t0, 4 * DAY))).toMatchObject({ skipped: false })
       expect((await db.alert.findUniqueOrThrow({ where: { activeKey: key } })).level).toBe('YELLOW')
     } finally {
       await db.offDay.deleteMany()
@@ -350,7 +350,7 @@ describe.skipIf(!DB)('预警与提醒', () => {
     await db.deptMapping.create({ data: { qmsDepartmentId: 'T-R13-MFG', businessDept: 'PRODUCTION' } })
     const u = (id: string, departmentId: string) => ({ id, username: id, departmentId, status: 'ACTIVE', updatedAt: now })
     await db.qmsUser.createMany({ data: [u('u-r13-team', 'T-R13-TEAM'), u('u-r13-named', 'T-R13-NAMED'), u('u-r13-other', 'T-R13-OTHER')] })
-    const head = await db.notifyRole.create({ data: { role: 'DEPT_HEAD', userId: 'u-r13-head', department: '生产部' } })
+    const head = await db.notifyRole.create({ data: { role: 'DEPT_HEAD', userId: 'u-r13-head', department: 'PRODUCTION' } })
     try {
       const ctx = await s.scan.loadNotifyContext([{ ownerIds: ['u-r13-team', 'u-r13-named', 'u-r13-other'], workOrderNumber: null }])
       const to = (level: 'REMIND' | 'YELLOW', owner: string) => s.scan.recipientsFor(level, { ownerIds: [owner], workOrderNumber: null }, ctx)

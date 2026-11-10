@@ -94,8 +94,8 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     })
     await db.notifyRole.createMany({
       data: [
-        { role: 'DEPT_HEAD', userId: 'u-tech', department: '技术部' },
-        { role: 'DEPT_HEAD', userId: 'u-prodhead', department: '生产部' },
+        { role: 'DEPT_HEAD', userId: 'u-tech', department: 'TECH' },
+        { role: 'DEPT_HEAD', userId: 'u-prodhead', department: 'PRODUCTION' },
         { role: 'PROJECT_DEPT_HEAD', userId: 'u-pdh' },
         { role: 'LEADER', userId: 'u-lead' },
       ],
@@ -129,7 +129,7 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     const line = await s.pur.createLine({ workOrderNumber: WO, partId: part.id, materialName: '回转支承', quantity: 1, needDate: dayOff(20) }, 'u-pm')
     const t = await task({ partIds: [part.id] })
     expect(t).toMatchObject({ status: 'PENDING', createdBy: 'u-pm' })
-    await s.dr.updateTask(t.id, { componentName: 'Updated drawing task' })
+    await s.dr.updateTask(t.id, { componentName: 'Updated drawing task' }, 'u-des')
     expect(await db.drawingTaskPart.findMany({ where: { taskId: t.id } })).toMatchObject([{ partId: part.id }])
     await expect(task({ partIds: [(await makePart(OTHER_WO)).id] })).rejects.toThrow('不属于该工单')
     await expect(task({ ownerId: 'u-nobody' })).rejects.toThrow('设计负责人不存在')
@@ -187,12 +187,12 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     const t2 = await task({ partIds: [part.id], componentName: '主梁零件图' })
     expect((await readyTodos(part.id)).filter((x) => x.status === 'OPEN')).toHaveLength(0)
     // 取消它 → 挡着的没了，重新发
-    expect(await s.dr.updateTask(t2.id, { cancelled: true })).toMatchObject({ status: 'CANCELLED', readySent: 1 })
+    expect(await s.dr.updateTask(t2.id, { cancelled: true }, 'u-des')).toMatchObject({ status: 'CANCELLED', readySent: 1 })
     // 重新启用 → 又挡住
-    expect(await s.dr.updateTask(t2.id, { cancelled: false })).toMatchObject({ status: 'PENDING' })
+    expect(await s.dr.updateTask(t2.id, { cancelled: false }, 'u-des')).toMatchObject({ status: 'PENDING' })
     expect((await readyTodos(part.id)).filter((x) => x.status === 'OPEN')).toHaveLength(0)
     // 改关联工件（移走）→ 原工件不再被挡，重新发
-    expect(await s.dr.updateTask(t2.id, { partIds: [] })).toMatchObject({ status: 'PENDING', readySent: 1 })
+    expect(await s.dr.updateTask(t2.id, { partIds: [] }, 'u-des')).toMatchObject({ status: 'PENDING', readySent: 1 })
   })
 
   it('发放图纸附 BOM：按图号建工件并关联发放单和设计任务；分批累加不重复建；版号变了拦下；没记版号的补上', async () => {
@@ -275,7 +275,7 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     expect(await db.part.count({ where: { workOrderNumber: BWO, drawingNo: 'CJ-010' } })).toBe(1)
 
     // 负责人账号在 QMS 停用了：同样算没人收到
-    const headIds = (await db.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: '生产部' } })).map((h) => h.userId)
+    const headIds = (await db.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: 'PRODUCTION' } })).map((h) => h.userId)
     await db.qmsUser.updateMany({ where: { id: { in: headIds } }, data: { status: 'INACTIVE' } })
     try {
       const r4 = await send([['CJ-012', null, '停用负责人件', 1]], { drawingTaskId: null })
@@ -285,7 +285,7 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     }
 
     // 没设生产部负责人：不建提醒，也不能告诉发放人"已提醒"
-    const heads = await db.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: '生产部' } })
+    const heads = await db.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: 'PRODUCTION' } })
     await db.notifyRole.deleteMany({ where: { id: { in: heads.map((h) => h.id) } } })
     try {
       const r3 = await send([['CJ-011', null, '无人提醒件', 1]], { drawingTaskId: null })
@@ -369,7 +369,7 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     // 设计完成后预警立即消除；取消的下一轮扫描消除
     await s.dr.markDrawn(due.id, null, DESIGNER)
     expect((await db.alert.findFirstOrThrow({ where: { refId: due.id, rule: 'W7' } })).status).toBe('CLEARED')
-    await s.dr.updateTask(noOwner.id, { cancelled: true })
+    await s.dr.updateTask(noOwner.id, { cancelled: true }, 'u-des')
     expect((await db.alert.findFirstOrThrow({ where: { refId: noOwner.id, rule: 'W7' } })).status).toBe('CLEARED')
 
     // 阈值可改：提醒窗口改成 5 天 → "还早"也黄
@@ -388,9 +388,9 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     const otherAlert = async () => db.alert.findFirstOrThrow({ where: { refId: other.id, rule: 'W7' } })
     const firstAt = (await otherAlert()).firstAt
     const old = await db.drawingTask.findUniqueOrThrow({ where: { id: other.id } })
-    await s.dr.updateTask(other.id, { planDate: new Date(old.planDate), needsCustomerConfirm: false, customerPlanDate: null, note: '只改备注' })
+    await s.dr.updateTask(other.id, { planDate: new Date(old.planDate), needsCustomerConfirm: false, customerPlanDate: null, note: '只改备注' }, 'u-des')
     expect(await otherAlert()).toMatchObject({ status: 'ACTIVE', firstAt })
-    await s.dr.updateTask(other.id, { planDate: dayOff(10) })
+    await s.dr.updateTask(other.id, { planDate: dayOff(10) }, 'u-des')
     expect((await otherAlert()).status).toBe('CLEARED')
   })
 

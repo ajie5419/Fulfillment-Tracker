@@ -104,7 +104,7 @@ describe.skipIf(!DB)('齐套（R12）', () => {
     })
     await db.notifyRole.createMany({
       data: [
-        { role: 'DEPT_HEAD', userId: 'u-prodhead', department: '生产部' },
+        { role: 'DEPT_HEAD', userId: 'u-prodhead', department: 'PRODUCTION' },
         { role: 'PROJECT_DEPT_HEAD', userId: 'u-pdh' },
         { role: 'LEADER', userId: 'u-lead' },
       ],
@@ -211,7 +211,7 @@ describe.skipIf(!DB)('齐套（R12）', () => {
     expect(v.shortages.find((x) => x.id === l2.id)).toMatchObject({ overdue: false, lateForNode: true })
 
     // 设计任务取消 → 卡在"待料"（挂在工件上的钢板还没到）
-    await s.dr.updateTask(draw.id, { cancelled: true })
+    await s.dr.updateTask(draw.id, { cancelled: true }, 'u-admin')
     v = await view(n.id)
     expect(partRow()).toMatchObject({ reason: '待料', detail: '钢板' })
     // 到货 → 1/4；取消一项物料 → 不计入（1/3）
@@ -371,7 +371,7 @@ describe.skipIf(!DB)('齐套（R12）', () => {
     const head = await s.kit.listNodes({ mine: { userId: 'u-prodhead', isProductionHead: true } }, PROD, W8)
     expect(head.rows.map((r) => r.id)).toEqual([late.id, done.id, otherWo.id, far.id])
     // 管理员同时是生产经理：仍按生产经理身份带上没指定负责人的节点
-    const role = await db.notifyRole.create({ data: { role: 'DEPT_HEAD', userId: 'u-admin', department: '生产部' } })
+    const role = await db.notifyRole.create({ data: { role: 'DEPT_HEAD', userId: 'u-admin', department: 'PRODUCTION' } })
     const adminCtx = await s.kit.editorContext(ADMIN)
     expect(adminCtx).toMatchObject({ isAdmin: true, isProductionHead: true })
     await db.notifyRole.delete({ where: { id: role.id } })

@@ -2,11 +2,11 @@
  * 角色与操作权限（权限方案 R13 第二、三节）。角色固定，规则写死在这里，不做可配置的权限矩阵。
  * 纯函数，不碰数据库，便于单测；角色上下文由 server/utils/auth.ts 的 getRoleContext 按请求算一次。
  *
- * "部门员工"包括该部门的负责人（DEPT_HEAD 且 department = 该业务部门名）。
+ * Department membership includes heads whose stored department identity matches the business code.
  * 可见范围（resolveScope）不在这里，规则不变。
  */
 import type { NotifyRoleKind } from '@prisma/client'
-import { BUSINESS_DEPT_NAME, type BusinessDept } from './departments'
+import { type BusinessDept } from './departments'
 import { isProjectManagerOf, isObjectOwner, leadsTeam as leadsTeamIds } from '../../../shared/permissions'
 export { leaderTeamOfStep } from '../../../shared/permissions'
 
@@ -29,7 +29,7 @@ const has = (ctx: RoleContext, role: NotifyRoleKind) => ctx.roles.includes(role)
 
 /** 是该业务部门的人：本人业务部门是它，或是它的部门负责人 */
 export function inDept(ctx: RoleContext, dept: BusinessDept): boolean {
-  return ctx.businessDept === dept || ctx.deptHeadOf.includes(BUSINESS_DEPT_NAME[dept])
+  return ctx.businessDept === dept || ctx.deptHeadOf.includes(dept)
 }
 
 /** 领导、项目部负责人、管理员：看全部菜单、领导总览 */
@@ -159,11 +159,11 @@ export function canOperate(ctx: RoleContext, op: Operation, target: OperationTar
 }
 
 /** 项目部负责人：通知角色"项目部负责人"，或部门负责人且部门是项目部 */
-const isProjectHead = (ctx: RoleContext) => has(ctx, 'PROJECT_DEPT_HEAD') || ctx.deptHeadOf.includes(BUSINESS_DEPT_NAME.PROJECT)
+const isProjectHead = (ctx: RoleContext) => has(ctx, 'PROJECT_DEPT_HEAD') || ctx.deptHeadOf.includes('PROJECT')
 
 /** 某业务部门的负责人（项目部另含"项目部负责人"角色） */
 export function isDeptHead(ctx: RoleContext, dept: BusinessDept): boolean {
-  return ctx.deptHeadOf.includes(BUSINESS_DEPT_NAME[dept]) || (dept === 'PROJECT' && has(ctx, 'PROJECT_DEPT_HEAD'))
+  return ctx.deptHeadOf.includes(dept) || (dept === 'PROJECT' && has(ctx, 'PROJECT_DEPT_HEAD'))
 }
 
 /** 财务：通知角色"财务"，或业务部门是财务部的人 */

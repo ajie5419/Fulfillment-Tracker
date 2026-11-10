@@ -65,14 +65,14 @@ describe('部门换算 resolveDeptName', () => {
   })
 
   it('deptIdsResolvingTo：换算后同名的全部部门（本部门筛选）', () => {
-    expect(deptIdsResolvingTo('生产部', idx).sort()).toEqual(['D1', 'D2', 'D3', 'D4', 'D6'])
+    expect(deptIdsResolvingTo('PRODUCTION', idx).sort()).toEqual(['D1', 'D2', 'D3', 'D4', 'D6'])
   })
 
   it('representativeDeptId：先按名称，再按直接对照（上级最少），跳过已删除', () => {
-    expect(representativeDeptId('生产部', idx)).toBe('D4')
+    expect(representativeDeptId('PRODUCTION', idx)).toBe('D4')
     const i2 = index({ A: ['制造中心', '0'], B: ['机加车间', 'A'], X: ['生产部', '0', true] }, { A: 'PRODUCTION', B: 'PRODUCTION' })
-    expect(representativeDeptId('生产部', i2)).toBe('A')
-    expect(representativeDeptId('财务部', i2)).toBeNull()
+    expect(representativeDeptId('PRODUCTION', i2)).toBe('A')
+    expect(representativeDeptId('FINANCE', i2)).toBeNull()
     expect(representativeDeptId('公司领导', i2)).toBeNull()
   })
 })
@@ -89,10 +89,10 @@ const ctx = (over: Partial<RoleContext> = {}): RoleContext => ({
 
 describe('操作权限 canOperate', () => {
   const tech = ctx({ businessDept: 'TECH' })
-  const techHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['技术部'] })
+  const techHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['TECH'] })
   const buyer = ctx({ businessDept: 'PURCHASE' })
   const prod = ctx({ businessDept: 'PRODUCTION' })
-  const prodHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['生产部'] })
+  const prodHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['PRODUCTION'] })
   const outsource = ctx({ roles: ['OUTSOURCE_COORDINATOR'] })
   const pm = ctx({ businessDept: 'PROJECT', pmOf: new Set(['WO-1']) })
   const quality = ctx({ businessDept: 'QUALITY' })
@@ -151,7 +151,7 @@ describe('操作权限 canOperate', () => {
 
   it('工艺部：定工艺路线（改工件和工序）、只发工艺文件；不能开工完工、不能编设计任务', () => {
     const process = ctx({ businessDept: 'PROCESS' })
-    const processHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['工艺部'] })
+    const processHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['PROCESS'] })
     expect(canOperate(process, 'route', { workOrderNumber: 'WO-9' })).toBe(true)
     expect(canOperate(processHead, 'route')).toBe(true)
     expect(canOperate(process, 'release')).toBe(true)
@@ -169,7 +169,7 @@ describe('操作权限 canOperate', () => {
 
   it('工艺模块（10-27）：料单、工艺状态只有工艺部（含负责人）、管理员能改', () => {
     const process = ctx({ businessDept: 'PROCESS' })
-    const processHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['工艺部'] })
+    const processHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['PROCESS'] })
     expect(canOperate(process, 'processDoc')).toBe(true)
     expect(canOperate(processHead, 'processDoc')).toBe(true)
     expect(canOperate(admin, 'processDoc')).toBe(true)
@@ -189,8 +189,8 @@ describe('总计划权限（R14）', () => {
   const pm = ctx({ pmOf: new Set(['WO-1']) })
   const project = ctx({ businessDept: 'PROJECT' })
   const projectHead = ctx({ roles: ['PROJECT_DEPT_HEAD'] })
-  const projectDeptHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['项目部'] })
-  const techHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['技术部'] })
+  const projectDeptHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['PROJECT'] })
+  const techHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['TECH'] })
   const tech = ctx({ businessDept: 'TECH' })
   const admin = ctx({ isAdmin: true })
   const leader = ctx({ roles: ['LEADER'] })
@@ -256,11 +256,11 @@ describe('总计划权限（R14）', () => {
 describe('工单新建 / 修改 / 取消 workOrder（写入 QMS 工单库）', () => {
   const project = ctx({ businessDept: 'PROJECT' })
   const projectHead = ctx({ roles: ['PROJECT_DEPT_HEAD'] })
-  const projectDeptHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['项目部'] })
+  const projectDeptHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['PROJECT'] })
   const admin = ctx({ isAdmin: true })
   const pm = ctx({ pmOf: new Set(['WO-1']) })
   const leader = ctx({ roles: ['LEADER'] })
-  const techHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['技术部'] })
+  const techHead = ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['TECH'] })
   const others = [pm, leader, techHead, ctx({ businessDept: 'TECH' }), ctx({ businessDept: 'PURCHASE' }), ctx({ roles: ['OUTSOURCE_COORDINATOR'] }), ctx()]
 
   it('项目部（含项目部负责人角色、项目部的部门负责人）、管理员可以', () => {
@@ -283,7 +283,7 @@ describe('付款金额可见 canSeeAmount', () => {
     expect(canSeeAmount(ctx({ roles: ['FINANCE'] }), 'WO-1')).toBe(true)
     expect(canSeeAmount(ctx({ businessDept: 'FINANCE' }), 'WO-1')).toBe(true)
     expect(canSeeAmount(ctx({ businessDept: 'PURCHASE' }), 'WO-1')).toBe(true)
-    expect(canSeeAmount(ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['采购部'] }), 'WO-1')).toBe(true)
+    expect(canSeeAmount(ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['PURCHASE'] }), 'WO-1')).toBe(true)
     expect(canSeeAmount(ctx({ roles: ['LEADER'] }), 'WO-1')).toBe(true)
     expect(canSeeAmount(ctx({ roles: ['PROJECT_DEPT_HEAD'] }), 'WO-1')).toBe(true)
     expect(canSeeAmount(ctx({ isAdmin: true }), 'WO-1')).toBe(true)
@@ -296,7 +296,7 @@ describe('付款金额可见 canSeeAmount', () => {
   })
 
   it('技术部、生产部、外协专员、质量部、其他部门不能看', () => {
-    for (const c of [ctx({ businessDept: 'TECH' }), ctx({ businessDept: 'PRODUCTION' }), ctx({ roles: ['OUTSOURCE_COORDINATOR'] }), ctx({ businessDept: 'QUALITY' }), ctx(), ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['生产部'] })]) {
+    for (const c of [ctx({ businessDept: 'TECH' }), ctx({ businessDept: 'PRODUCTION' }), ctx({ roles: ['OUTSOURCE_COORDINATOR'] }), ctx({ businessDept: 'QUALITY' }), ctx(), ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['PRODUCTION'] })]) {
       expect(canSeeAmount(c, 'WO-1')).toBe(false)
     }
   })
@@ -330,7 +330,7 @@ describe('电脑端菜单 menuSections', () => {
 
   it('多角色取并集；部门负责人按负责的部门', () => {
     expect(menuSections(ctx({ businessDept: 'TECH', roles: ['FINANCE'] }))).toEqual(['deptPlan', 'tech', 'process', 'payments'])
-    expect(menuSections(ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['采购部', '质量部'] }))).toEqual(['deptPlan', 'purchase', 'production', 'kitting'])
+    expect(menuSections(ctx({ roles: ['DEPT_HEAD'], deptHeadOf: ['PURCHASE', 'QUALITY'] }))).toEqual(['deptPlan', 'purchase', 'production', 'kitting'])
   })
 
   it('手机端"发出"页签：生产部、外协专员、管理员', () => {
@@ -371,9 +371,9 @@ describe('发放按部门选人 resolveGroup', () => {
   it('选业务部门名时，经部门对照算进来的班组成员也算；按 QMS 原名称选仍然可以', () => {
     const g = {
       users: [
-        { id: 'u1', deptName: '组焊班', businessDeptName: '生产部' },
-        { id: 'u2', deptName: '生产部', businessDeptName: '生产部' },
-        { id: 'u3', deptName: '技术部', businessDeptName: '技术部' },
+        { id: 'u1', deptName: '组焊班', departmentKey: 'PRODUCTION' },
+        { id: 'u2', deptName: '生产部', departmentKey: 'PRODUCTION' },
+        { id: 'u3', deptName: '技术部', departmentKey: 'TECH' },
       ],
       roles: [],
     }

@@ -1,6 +1,6 @@
 import { prisma } from '../../../utils/prisma'
 import { loadNames } from '../../flow/names'
-import { KITTING_DEPT, judgeW8, w8Summary } from '../../kitting/constants'
+import { KITTING_DEPT_NAME, judgeW8, w8Summary } from '../../kitting/constants'
 import { NODE_LINKS, dueWindowWhere, incompleteWhere, loadKitCounts } from '../../kitting/kitting'
 import { alertKey, type Thresholds } from '../rules'
 import type { Target } from '../types'
@@ -16,7 +16,7 @@ export async function collectW8(now: Date, t: Thresholds): Promise<Target[]> {
   if (!nodes.length) return []
   const [wos, heads, kits, names] = await Promise.all([
     prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: [...new Set(nodes.map((n) => n.workOrderNumber))] }, isDeleted: false }, select: { workOrderNumber: true } }),
-    prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: KITTING_DEPT }, select: { userId: true } }),
+    prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: 'PRODUCTION' }, select: { userId: true } }),
     loadKitCounts(nodes),
     loadNames({ user: nodes.map((n) => n.ownerId) }),
   ])
@@ -36,7 +36,8 @@ export async function collectW8(now: Date, t: Thresholds): Promise<Target[]> {
       key: alertKey('W8', 'node', n.id),
       workOrderNumber: n.workOrderNumber,
       ownerIds: n.ownerId ? [n.ownerId] : headIds,
-      deptNames: [KITTING_DEPT],
+      deptNames: [KITTING_DEPT_NAME],
+      departmentKeys: ['PRODUCTION'],
       startAt: n.needDate,
       level: r.level,
       subject: `装配节点 ${n.name}`,

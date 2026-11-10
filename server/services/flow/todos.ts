@@ -1,33 +1,19 @@
 /** 我的待办：附上工单、工件、工序（或发放单）和下一步建议，页面拿到就能展示。 */
-import { PURCHASE_PLAN_ISSUED } from '../../../shared/purchase-plans'
-import { READY_TO_START } from '../purchases/constants'
 import { describeReadyTodos } from '../purchases/purchases'
 import { prisma } from '../../utils/prisma'
-import { CONFIRM_CHANGE, SIGN_RELEASE } from '../releases/constants'
 import { describeReleaseTodos, type Actor } from '../releases/releases'
 import { FlowError, FlowForbidden } from './errors'
 import type { Prisma, Todo } from '@prisma/client'
 import { canSee, resolveScope } from '../../utils/auth'
-import { ARRANGE_SEND, ARRANGE_START } from './flow'
 import { MODE_TEXT, loadNames } from './names'
-import { CONFIRM_PLAN_NODE, DO_PLAN_TASK, PLAN_REF, PLAN_TASK_REF } from '../plan/constants'
+import { PLAN_REF, PLAN_TASK_REF } from '../plan/constants'
 import { describePlanTodos } from '../plan/plan'
 import { describePlanTaskTodos, transferPlanTaskOwner } from '../plan/tasks'
 import { todayDay } from './dates'
 import { dateFieldDay, shanghaiDay } from '../alerts/rules'
 import { workBucket } from '../../../shared/workbench'
 import { myDesignWork } from '../drawings/workbench'
-
-const ACTION_TEXT: Record<string, string> = {
-  [PURCHASE_PLAN_ISSUED]: '执行采购计划',
-  [ARRANGE_SEND]: '安排发出',
-  [ARRANGE_START]: '安排开工',
-  [SIGN_RELEASE]: '签收',
-  [CONFIRM_CHANGE]: '确认变更影响',
-  [READY_TO_START]: '可以开工',
-  [CONFIRM_PLAN_NODE]: '接收计划节点',
-  [DO_PLAN_TASK]: '完成部门任务',
-}
+import { ARRANGE_SEND, PURCHASE_PLAN_ISSUED, SIGN_RELEASE, todoActionText } from '../../../shared/todo-actions'
 
 /**
  * visibleWorkOrders：可见工单（undefined = 全部）；不可见工单上的步骤待办不列出。
@@ -68,7 +54,7 @@ export async function listMyTodos(userId: string, visibleWorkOrders?: string[], 
   const planTasks = await describePlanTaskTodos(todos.filter((t) => t.refType === PLAN_TASK_REF).map((t) => t.refId), visibleWorkOrders)
 
   const rows = todos.map((t) => {
-    const actionText = ACTION_TEXT[t.action] ?? t.action
+    const actionText = todoActionText(t.action)
     if (t.refType === 'purchasePlan') {
       const p = purchasePlanOf.get(t.refId)
       return { ...t, actionText, title: `${actionText}：${p?.workOrderNumber ?? ''} · ${p?.title ?? '计划已删除'}`, suggestion: '技术部已下发，请查看明细并转入采购行', link: `/purchase-plans/${t.refId}`, step: null, release: null, plan: null }

@@ -6,15 +6,14 @@
 import type { BusinessDeptCode } from '#shared/business-depts'
 import { BUSINESS_DEPT_OPTIONS } from '#shared/business-depts'
 
-interface TplNode { name: string; dept: BusinessDeptCode; daysBeforeDelivery: number; phase: string | null; durationDays: number | null; preds: number[] | null; parent: number | null }
-interface Tpl { id: string; name: string; description: string | null; createdByName: string | null; updatedAt: string; nodes: (TplNode & { seq: number; deptText: string })[] }
 /** 编辑中的行：key 稳定（上下移动、删行时前置关系、上级跟着行走，不按位置错位）；preds、parent 存行 key，NONE = 没有前置 */
-interface EditRow { key: number; name: string; dept: BusinessDeptCode; daysBeforeDelivery: number; phase: string; durationDays: number | undefined; preds: number[]; parent: number | undefined }
+interface EditRow { key: number; name: string; dept: BusinessDeptCode; requiresProcess: boolean; daysBeforeDelivery: number; phase: string; durationDays: number | undefined; preds: number[]; parent: number | undefined }
 const NONE = -1
 
 const DEPTS = BUSINESS_DEPT_OPTIONS
 
-const { data, refresh, pending } = await useFetch<Tpl[]>('/api/plan/templates', { default: () => [] })
+const { data, refresh, pending } = await useFetch('/api/plan/templates', { default: () => [] })
+type Tpl = NonNullable<typeof data.value>[number]
 const send = clientRequest
 
 const open = ref(false)
@@ -22,7 +21,7 @@ const saving = ref(false)
 const editingId = ref<string | null>(null)
 const form = reactive<{ name: string; description: string; nodes: EditRow[] }>({ name: '', description: '', nodes: [] })
 let nextKey = 1
-const blank = (from?: EditRow): EditRow => ({ key: nextKey++, name: '', dept: from?.dept ?? 'PROJECT', daysBeforeDelivery: from?.daysBeforeDelivery ?? 0, phase: from?.phase ?? '', durationDays: undefined, preds: [], parent: undefined })
+const blank = (from?: EditRow): EditRow => ({ key: nextKey++, name: '', dept: from?.dept ?? 'PROJECT', requiresProcess: from?.requiresProcess ?? true, daysBeforeDelivery: from?.daysBeforeDelivery ?? 0, phase: from?.phase ?? '', durationDays: undefined, preds: [], parent: undefined })
 
 function edit(t: Tpl | null) {
   editingId.value = t?.id ?? null
@@ -35,6 +34,7 @@ function edit(t: Tpl | null) {
       key: keys[i]!,
       name: n.name,
       dept: n.dept,
+      requiresProcess: n.requiresProcess,
       daysBeforeDelivery: n.daysBeforeDelivery,
       phase: n.phase ?? '',
       durationDays: n.durationDays ?? undefined,
@@ -102,6 +102,7 @@ async function save() {
     const nodes = form.nodes.map((n) => ({
       name: n.name,
       dept: n.dept,
+      requiresProcess: n.requiresProcess,
       daysBeforeDelivery: n.daysBeforeDelivery,
       phase: n.phase.trim() || null,
       durationDays: n.durationDays || null,
@@ -163,7 +164,7 @@ const columns = [
           <template v-for="(n, i) in record.nodes" :key="n.seq">
             <div v-if="n.phase && n.phase !== record.nodes[i - 1]?.phase" class="phase">{{ n.phase }}</div>
             <a-tag class="node-tag" :class="{ child: n.parent }">
-              <template v-if="n.parent">└ </template>{{ n.seq }}. {{ n.name }}（{{ n.deptText }}，交期前 {{ n.daysBeforeDelivery }} 天<template v-if="n.durationDays">，工期 {{ n.durationDays }} 天</template><template v-if="n.preds">，前置 {{ n.preds.length ? n.preds.map((p: number) => `#${p}`).join(' ') : '无' }}</template>）
+              <template v-if="n.parent">└ </template>{{ n.seq }}. {{ n.name }}（{{ n.deptText }}，交期前 {{ n.daysBeforeDelivery }} 天<template v-if="n.durationDays">，工期 {{ n.durationDays }} 天</template><template v-if="n.preds">，前置 {{ n.preds.length ? n.preds.map((p: number) => `#${p}`).join(' ') : '无' }}</template><template v-if="!n.requiresProcess">，不需工艺</template>）
             </a-tag>
           </template>
         </template>
@@ -180,7 +181,8 @@ const columns = [
       <a-form layout="vertical">
         <a-form-item label="模板名称" required><a-input v-model:value="form.name" :maxlength="191" /></a-form-item>
         <a-form-item label="说明"><a-input v-model:value="form.description" :maxlength="500" /></a-form-item>
-        <a-form-item label="节点（按顺序）">
+        <a-form-item>
+          <template #label><span class="ft-title">节点（按顺序） <UiHelpTip label="模板工艺处理说明">勾选“需要工艺处理”的节点，其设计任务进入工艺工作台。生成计划时复制此设置；修改模板不会改变已有计划。</UiHelpTip></span></template>
           <p class="muted">
             完成日 = 交期 − 交期前天数（可以为负 = 交期后）；填了工期的，开始日 = 完成日 − 工期 + 1。前置不选 = 默认上一个节点（子节点默认没有前置）。
             选了上级的是子节点；上级是汇总行：生成计划时日期按子节点汇总（最早开始～最晚完成，上级自己填的天数、工期、前置不起作用），子节点都完成上级才算完成，阶段跟上级。
@@ -204,7 +206,10 @@ const columns = [
               aria-label="上级节点"
               @change="(v: unknown) => onParent(n, v as number | undefined)"
             />
-            <a-input v-model:value="n.name" placeholder="节点名称" style="width: 150px" :maxlength="191" />
+            <div class="node-name">
+              <a-input v-model:value="n.name" placeholder="节点名称" :maxlength="191" />
+              <a-checkbox v-model:checked="n.requiresProcess">需要工艺处理</a-checkbox>
+            </div>
             <a-select v-model:value="n.dept" :options="DEPTS" style="width: 100px" />
             <a-input-number v-model:value="n.daysBeforeDelivery" :min="-365" :max="2000" :precision="0" style="width: 84px" aria-label="交期前天数" />
             <a-input-number v-model:value="n.durationDays" :min="1" :max="2000" :precision="0" placeholder="天" style="width: 72px" aria-label="工期（天）" />
@@ -238,4 +243,6 @@ const columns = [
 .node-row.head { margin-bottom: 2px; flex-wrap: nowrap; }
 .node-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
 .seq { width: 20px; text-align: right; color: var(--ft-text-3); }
+.node-name { display: flex; flex-direction: column; gap: 4px; width: 150px; }
+.node-name :deep(.ant-checkbox-wrapper) { font-size: 12px; }
 </style>

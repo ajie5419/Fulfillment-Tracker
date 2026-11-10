@@ -2,7 +2,7 @@ import type { Issue } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { loadOffDays, loadThresholds } from '../alerts/config'
 import { alertKey } from '../alerts/rules'
-import { loadDeptIndex, resolveDeptNames } from '../auth/departments'
+import { loadDeptIndex, resolveDeptIdentities } from '../auth/departments'
 import { loadNames } from '../flow/names'
 
 import type { Db, Actor, PermContext } from './types'
@@ -13,8 +13,8 @@ export async function loadPermContext(db: Db, actor: Actor, issues: Pick<Issue, 
   const wos = [...new Set(issues.map((i) => i.workOrderNumber))]
   const [roles, deptName, exts] = await Promise.all([
     db.notifyRole.findMany({ where: { userId: actor.userId } }),
-    // 责任部门（QMS 部门 ID）换成业务部门名称，与部门负责人的 department 对应
-    resolveDeptNames(deptIds),
+    // Permission comparisons use stable business codes, not displayed department labels.
+    resolveDeptIdentities(deptIds),
     wos.length ? db.workOrderExt.findMany({ where: { workOrderNumber: { in: wos } }, select: { workOrderNumber: true, projectManagerId: true } }) : [],
   ])
   return {

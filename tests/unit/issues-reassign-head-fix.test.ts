@@ -34,7 +34,7 @@ beforeEach(() => {
   // 只有业务大部门名下有负责人，按 QMS 原名查询必须查不到。
   method('notifyRole.findFirst').mockImplementation(async (args: { where: { role: string; department: string } }) => {
     serviceCalls.push(['notifyRole.findFirst', args])
-    return args.where.role === 'DEPT_HEAD' && args.where.department === '生产部' ? { userId: 'production-head' } : null
+    return args.where.role === 'DEPT_HEAD' && args.where.department === 'PRODUCTION' ? { userId: 'production-head' } : null
   })
 })
 
@@ -47,7 +47,7 @@ describe('异常改派：按业务部门换算查默认负责人', () => {
     await expect(reassignIssue('issue', actor, { responsibleDeptId })).resolves.toEqual({ ok: true })
 
     expect(method('issue.updateMany')).toHaveBeenCalledWith({ where: { id: 'issue', status: 'OPEN' }, data: { status: 'OPEN', responsibleDeptId, responsibleUserId: 'production-head' } })
-    expect(method('notifyRole.findFirst')).toHaveBeenCalledWith({ where: { role: 'DEPT_HEAD', department: '生产部' }, orderBy: { id: 'asc' }, select: { userId: true } })
+    expect(method('notifyRole.findFirst')).toHaveBeenCalledWith({ where: { role: 'DEPT_HEAD', department: 'PRODUCTION' }, orderBy: { id: 'asc' }, select: { userId: true } })
     expect(method('issueLog.create')).toHaveBeenCalledWith({ data: expect.objectContaining({ note: expect.stringContaining('责任人 原负责人 → 生产负责人') }) })
     expect(serviceCalls.at(-1)).toEqual(['transaction.commit'])
   })

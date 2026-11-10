@@ -1,16 +1,17 @@
 import type { Prisma } from '@prisma/client'
+import { BUSINESS_DEPT_NAME } from '../../../shared/business-depts'
 
 const P = 'DEMO-'
 
 // 异常分类的默认责任部门按名称匹配这些部门（方案 6.4）
 export const DEPARTMENTS = [
-  { id: `${P}DEPT-TECH`, name: '技术部' },
-  { id: `${P}DEPT-PROC`, name: '工艺部' },
-  { id: `${P}DEPT-PUR`, name: '采购部' },
-  { id: `${P}DEPT-FIN`, name: '财务部' },
-  { id: `${P}DEPT-QA`, name: '质量部' },
-  { id: `${P}DEPT-PROD`, name: '生产部' },
-  { id: `${P}DEPT-PROJ`, name: '项目部' },
+  { id: `${P}DEPT-TECH`, name: BUSINESS_DEPT_NAME.TECH },
+  { id: `${P}DEPT-PROC`, name: BUSINESS_DEPT_NAME.PROCESS },
+  { id: `${P}DEPT-PUR`, name: BUSINESS_DEPT_NAME.PURCHASE },
+  { id: `${P}DEPT-FIN`, name: BUSINESS_DEPT_NAME.FINANCE },
+  { id: `${P}DEPT-QA`, name: BUSINESS_DEPT_NAME.QUALITY },
+  { id: `${P}DEPT-PROD`, name: BUSINESS_DEPT_NAME.PRODUCTION },
+  { id: `${P}DEPT-PROJ`, name: BUSINESS_DEPT_NAME.PROJECT },
   { id: `${P}DEPT-LEAD`, name: '公司领导' },
   // R13：班组、科室挂在大部门下面（部门对照只对到大部门，下级自动继承）；行政部不对应任何业务部门（算"其他"）
   { id: `${P}DEPT-WELD`, name: '组焊班', parentId: `${P}DEPT-PROD` },
@@ -59,15 +60,15 @@ export const USERS = [
 // 预警升级阶梯的通知对象（方案 6.2）
 export const NOTIFY_ROLES = [
   { id: `${P}ROLE-1`, role: 'OUTSOURCE_COORDINATOR', userId: 'u-001', department: null },
-  { id: `${P}ROLE-2`, role: 'DEPT_HEAD', userId: 'u-002', department: '生产部' },
+  { id: `${P}ROLE-2`, role: 'DEPT_HEAD', userId: 'u-002', department: 'PRODUCTION' },
   { id: `${P}ROLE-3`, role: 'PROJECT_DEPT_HEAD', userId: 'u-004', department: null },
   { id: `${P}ROLE-4`, role: 'LEADER', userId: 'u-005', department: null },
-  { id: `${P}ROLE-5`, role: 'DEPT_HEAD', userId: 'u-006', department: '质量部' },
-  { id: `${P}ROLE-6`, role: 'DEPT_HEAD', userId: 'u-009', department: '采购部' },
+  { id: `${P}ROLE-5`, role: 'DEPT_HEAD', userId: 'u-006', department: 'QUALITY' },
+  { id: `${P}ROLE-6`, role: 'DEPT_HEAD', userId: 'u-009', department: 'PURCHASE' },
   { id: `${P}ROLE-7`, role: 'FINANCE', userId: 'u-010', department: null },
-  { id: `${P}ROLE-8`, role: 'DEPT_HEAD', userId: 'u-011', department: '技术部' },
+  { id: `${P}ROLE-8`, role: 'DEPT_HEAD', userId: 'u-011', department: 'TECH' },
   // 工艺模块（10-27）：设计变更涉及已下发的料单时提醒工艺部负责人
-  { id: `${P}ROLE-9`, role: 'DEPT_HEAD', userId: 'u-015', department: '工艺部' },
+  { id: `${P}ROLE-9`, role: 'DEPT_HEAD', userId: 'u-015', department: 'PROCESS' },
 ] as const
 
 /** Restore only missing fixture identities; preserve administrator edits. */

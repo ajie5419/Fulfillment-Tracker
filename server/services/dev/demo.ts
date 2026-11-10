@@ -218,7 +218,7 @@ const PLAN_NODES = (day: (offset: number) => Date) => [
   { id: `${P}PN-04`, seq: 4, name: '组焊涂装', dept: 'PRODUCTION', planDate: day(14), confirm: 'PENDING' },
   { id: `${P}PN-05`, seq: 5, name: '机加', dept: 'PRODUCTION', planDate: day(18), confirm: 'REJECTED', by: 'u-002', reason: '外协机加厂排产已满，最早只能比计划晚一周' },
   { id: `${P}PN-06`, seq: 6, name: '装配', dept: 'PRODUCTION', planDate: day(25), baseline: day(23), confirm: 'PENDING' },
-  { id: `${P}PN-07`, seq: 7, name: '调试', dept: 'TECH', planDate: day(31), confirm: 'PENDING' },
+  { id: `${P}PN-07`, seq: 7, name: '调试', dept: 'TECH', requiresProcess: false, planDate: day(31), confirm: 'PENDING' },
   { id: `${P}PN-08`, seq: 8, name: '发运', dept: 'PROJECT', planDate: day(35), confirm: 'PENDING' },
 ] as const
 /** 部门记录挂哪个节点 */
@@ -246,6 +246,7 @@ async function seedDemoPlan(day: (offset: number) => Date, now: Date) {
           seq: n.seq,
           name: n.name,
           dept: n.dept,
+          requiresProcess: 'requiresProcess' in n ? n.requiresProcess : true,
           planDate: n.planDate,
           baselineDate: 'baseline' in n ? n.baseline : n.planDate,
           ...(done ? { actualDate: done, manualDoneBy: 'u-003', manualDoneAt: done } : {}),
@@ -449,7 +450,7 @@ async function seedDemoReleases() {
         version: 'A',
         description: '主梁结构件总图及零件图（纸质 12 张），已随件发到车间',
         userIds: ids.filter((id) => id === 'u-003'),
-        groups: ids.some((id) => id !== 'u-003') ? [{ department: '生产部', role: null }] : [],
+        groups: ids.some((id) => id !== 'u-003') ? [{ department: 'PRODUCTION', role: null }] : [],
       },
       issuer,
     ).catch(() => null) // 演示用户不全（连着 QMS）时跳过，不影响其余演示数据

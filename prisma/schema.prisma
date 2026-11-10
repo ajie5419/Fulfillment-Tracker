@@ -1017,6 +1017,8 @@ model PlanTemplateNode {
   seq                Int
   name               String       @db.VarChar(191)
   dept               BusinessDept
+  /// Copied to plan instances; display-name changes must not change workflow eligibility.
+  requiresProcess    Boolean      @default(true)
   /// 交期前多少天（0 = 交期当天，如"发运"）
   daysBeforeDelivery Int
   /// 阶段（如"图纸设计及文件下发""采购"；页面按阶段分组显示）
@@ -1073,6 +1075,8 @@ model PlanNode {
   seq             Int
   name            String           @db.VarChar(191)
   dept            BusinessDept
+  /// Manufacturing-document eligibility, independent of the node display name.
+  requiresProcess Boolean          @default(true)
   /// 阶段（如"图纸设计及文件下发""采购"；页面按阶段分组显示，空 = 不分组）
   phase           String?          @db.VarChar(64)
   /// 计划开始日（可选，日期字段）：甘特图画横道；有开始日时前置节点只在晚到"开始日前一天"之后才往后推（中间的空档是余量）

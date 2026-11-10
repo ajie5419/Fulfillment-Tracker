@@ -30,6 +30,7 @@ export interface PlanNodeRow {
   code: string
   name: string
   dept: string
+  requiresProcess: boolean
   deptText: string
   note: string | null
   /** 上级节点（子节点，只有一层）；子节点数 */

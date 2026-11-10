@@ -23,7 +23,7 @@ describe.skipIf(!DB)('采购计划下发集成', () => {
     await db.qmsWorkOrder.upsert({ where: { workOrderNumber: WO }, create: { workOrderNumber: WO, customerName: '采购计划测试', quantity: 1, deliveryDate: new Date('2026-12-31'), status: 'IN_PROGRESS', updatedAt: new Date() }, update: { isDeleted: false } })
     for (const id of ['pp-tech', 'pp-buyer', 'pp-head']) await db.qmsUser.upsert({ where: { id }, create: { id, realName: id, username: id, status: 'ACTIVE', updatedAt: new Date() }, update: { status: 'ACTIVE', isDeleted: false } })
     await db.notifyRole.deleteMany({ where: { userId: 'pp-head' } })
-    await db.notifyRole.create({ data: { userId: 'pp-head', role: 'DEPT_HEAD', department: '采购部' } })
+    await db.notifyRole.create({ data: { userId: 'pp-head', role: 'DEPT_HEAD', department: 'PURCHASE' } })
   })
   afterAll(async () => {
     if (!db) return

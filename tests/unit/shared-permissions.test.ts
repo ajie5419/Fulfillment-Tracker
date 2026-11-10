@@ -17,7 +17,7 @@ const cases: { name: string; ctx: RoleContext; op: Operation; target: NonNullabl
     { name: `别人工单项目经理 ${op}`, ctx: context({ pmOf: new Set(['OTHER']) }), op, target: { workOrderNumber: 'WO' }, allowed: false },
   ]),
   { name: '项目经理不因负责工单就能改设计', ctx: context({ pmOf: new Set(['WO']) }), op: 'drawing', target: { workOrderNumber: 'WO' }, allowed: false },
-  { name: '部门负责人基准权限', ctx: context({ deptHeadOf: ['采购部'] }), op: 'purchase', target: {}, allowed: true },
+  { name: '部门负责人基准权限', ctx: context({ deptHeadOf: ['PURCHASE'] }), op: 'purchase', target: {}, allowed: true },
   { name: '项目部负责人基准权限', ctx: context({ roles: ['PROJECT_DEPT_HEAD'] }), op: 'plan', target: {}, allowed: true },
   { name: '管理员', ctx: context({ isAdmin: true }), op: 'drawing', target: {}, allowed: true },
   { name: '本人负责人', ctx: context(), op: 'stepAction', target: { ownerId: 'u' }, allowed: true },

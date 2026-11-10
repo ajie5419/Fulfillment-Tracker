@@ -16,7 +16,7 @@ import { flushVue, mountScript } from '../helpers/vue-script'
 const composableModules = import.meta.glob('../../app/composables/usePlan*.ts', { eager: true }) as Record<string, Record<string, unknown>>
 
 const node = (over: Record<string, unknown>) => ({
-  id: 'x', seq: 1, code: '1.1', name: '节点', dept: 'DESIGN', deptText: '设计部', note: null, parentId: null, childCount: 0, phase: null,
+  id: 'x', seq: 1, code: '1.1', name: '节点', dept: 'DESIGN', deptText: '设计部', requiresProcess: true, note: null, parentId: null, childCount: 0, phase: null,
   startDate: null, planDate: '2026-11-05', customDeps: false, preds: [], pushedBy: null, affects: [], slackDays: null, critical: false,
   baselineDate: null, expectedDate: '2026-11-05', actualDate: null, done: false, doneBy: null, manualDoneByName: null, delayDays: 0, driver: 'self',
   selfExpectedDate: '2026-11-05', selfDelayDays: 0, source: false, upstream: false, confirmStatus: null, confirmText: null, confirmedByName: null,
@@ -254,7 +254,7 @@ describe('PlanEditor 节点编辑表单与保存', () => {
     v.state.openEdit(null)
     expect(v.state.editOpen).toBe(true)
     expect(v.state.editing).toBeNull()
-    expect({ ...v.state.form }).toEqual({ name: '', dept: 'PROJECT', phase: '', startDate: undefined, planDate: undefined, seq: undefined, parentId: undefined, depMode: 'default', preds: [], note: '', reason: '' })
+    expect({ ...v.state.form }).toEqual({ name: '', dept: 'PROJECT', requiresProcess: true, phase: '', startDate: undefined, planDate: undefined, seq: undefined, parentId: undefined, depMode: 'default', preds: [], note: '', reason: '' })
     expect(v.state.predOptions.map((o: any) => o.value)).toEqual(['n1', 'n2', 'n3', 'n4', 'n5', 'n6'])
     expect(v.state.parentOptions).toEqual([1, 2, 5, 6].map((i) => ({ value: NODES[i - 1]!.id, label: `${NODES[i - 1]!.code} ${NODES[i - 1]!.name}` })).filter((o) => o.value !== 'n3'))
     expect(v.state.phaseOptions).toEqual([{ value: '设计' }, { value: '采购' }])
@@ -314,14 +314,14 @@ describe('PlanEditor 节点编辑表单与保存', () => {
     v.state.openEdit(null)
     Object.assign(v.state.form, { name: '新节点', dept: 'PROCUREMENT', phase: '采购', seq: 3, note: '备注', depMode: 'custom', preds: ['n1'], startDate: dayjs('2026-11-02'), planDate: dayjs('2026-11-10') })
     await v.state.saveNode()
-    expect(planCalls()).toEqual([{ url: '/api/plan/nodes', method: 'POST', query: undefined, body: { workOrderNumber: 'WO1', name: '新节点', dept: 'PROCUREMENT', phase: '采购', startDate: '2026-11-02', planDate: '2026-11-10', seq: 3, parentId: null, preds: ['n1'], note: '备注', reason: null } }])
+    expect(planCalls()).toEqual([{ url: '/api/plan/nodes', method: 'POST', query: undefined, body: { workOrderNumber: 'WO1', name: '新节点', dept: 'PROCUREMENT', requiresProcess: true, phase: '采购', startDate: '2026-11-02', planDate: '2026-11-10', seq: 3, parentId: null, preds: ['n1'], note: '备注', reason: null } }])
     expect(toasts.at(-1)).toEqual(['success', '已保存'])
     expect(v.state.editOpen).toBe(false)
     expect(v.events).toEqual([['changed']])
 
     v.state.openEdit(NODES[0])
     await v.state.saveNode()
-    expect(planCalls().at(-1)).toEqual({ url: '/api/plan/nodes/n1', method: 'PATCH', query: undefined, body: { name: '图纸下发', dept: 'DESIGN', phase: '设计', startDate: '2026-11-01', planDate: '2026-11-05', seq: 1, parentId: null, preds: null, note: null, reason: null } })
+    expect(planCalls().at(-1)).toEqual({ url: '/api/plan/nodes/n1', method: 'PATCH', query: undefined, body: { name: '图纸下发', dept: 'DESIGN', requiresProcess: true, phase: '设计', startDate: '2026-11-01', planDate: '2026-11-05', seq: 1, parentId: null, preds: null, note: null, reason: null } })
     expect(toasts.at(-1)).toEqual(['success', '已保存，已重新请责任部门接收'])
     expect(v.events).toHaveLength(2)
     v.unmount()
@@ -334,6 +334,19 @@ describe('PlanEditor 节点编辑表单与保存', () => {
     await v.state.saveNode()
     expect(toasts.at(-1)).toEqual(['error', 'boom'])
     expect(v.state.editOpen).toBe(true)
+    v.unmount()
+  })
+
+  it('keeps an explicit process requirement when a node is renamed and sends deliberate changes', async () => {
+    const v = await open()
+    v.state.openEdit({ ...NODES[0], requiresProcess: false })
+    expect(v.state.form.requiresProcess).toBe(false)
+    v.state.form.name = '设备联调'
+    await v.state.saveNode()
+    expect(planCalls().at(-1)?.body).toMatchObject({ name: '设备联调', requiresProcess: false })
+    v.state.form.requiresProcess = true
+    await v.state.saveNode()
+    expect(planCalls().at(-1)?.body).toMatchObject({ requiresProcess: true })
     v.unmount()
   })
 })
