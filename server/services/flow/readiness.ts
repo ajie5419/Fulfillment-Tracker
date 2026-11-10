@@ -12,7 +12,7 @@ import type { DrawingTaskStatus, MaterialListStatus, PurchaseStatus, StepStatus 
 /** 工件开工前提：关键物料和设计任务（已取消的不算） */
 export interface PartPrereq {
   purchases: PurchaseStatus[]
-  drawings: { status: DrawingTaskStatus; materialStatus: MaterialListStatus }[]
+  drawings: { status: DrawingTaskStatus; materialStatus: MaterialListStatus; requiresProcess?: boolean }[]
 }
 
 import type { PrereqState } from '../../../shared/flow-view'
@@ -25,7 +25,7 @@ export function prereqState(p: PartPrereq): PrereqState {
     tracked: lines.length + drawings.length > 0,
     missingMaterial: lines.filter((s) => s !== 'ARRIVED').length,
     missingDrawing: drawings.filter((s) => s.status !== 'DONE').length,
-    missingMaterialList: drawings.filter((s) => s.materialStatus !== 'ISSUED').length,
+    missingMaterialList: drawings.filter((s) => s.requiresProcess !== false && s.materialStatus !== 'ISSUED').length,
   }
 }
 

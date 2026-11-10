@@ -59,3 +59,17 @@ describe('工艺状态', () => {
     expect(processSummary({ materialStatus: 'REVISING', processStatus: 'NONE' })).toBe('料单修改中 · 工艺无')
   })
 })
+
+it('routes procurement planning by its source node while preserving drawing completion requirements', async () => {
+  const { requiresProcessForNode } = await import('../../shared/process')
+  const { prereqState } = await import('../../server/services/flow/readiness')
+  for (const node of ['原材料采购计划', '主要外购件采购计划', '其他外购件采购计划', '电器件采购计划', '液压件采购计划']) {
+    expect(requiresProcessForNode(node)).toBe(false)
+  }
+  for (const node of [null, undefined, '结构图纸', '原材料采购及复验', '外购件图纸、技术协议']) {
+    expect(requiresProcessForNode(node)).toBe(true)
+  }
+  expect(prereqState({ purchases: [], drawings: [{ status: 'PENDING', materialStatus: 'NOT_STARTED', requiresProcess: false }] })).toMatchObject({ missingDrawing: 1, missingMaterialList: 0 })
+  expect(prereqState({ purchases: [], drawings: [{ status: 'DONE', materialStatus: 'NOT_STARTED', requiresProcess: false }] })).toMatchObject({ missingDrawing: 0, missingMaterialList: 0 })
+  expect(prereqState({ purchases: [], drawings: [{ status: 'DONE', materialStatus: 'NOT_STARTED' }] })).toMatchObject({ missingMaterialList: 1 })
+})

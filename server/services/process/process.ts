@@ -14,6 +14,7 @@
 import { Prisma, type DrawingTask, type DrawingTaskStatus, type MaterialListStatus, type ProcessDocKind, type ProcessDocStatus, type Release } from '@prisma/client'
 import { lockTask, drawingTx, isReleased } from '../drawings/drawings'
 import { processReleaseBlockReason } from '../../../shared/process'
+import { processTaskWhere, taskRequiresProcess } from './eligibility'
 import { lockParts, refreshPartReady } from '../purchases/purchases'
 import { prisma } from '../../utils/prisma'
 import { canSee, resolveScope } from '../../utils/auth'
@@ -55,6 +56,7 @@ export async function changeStatus(taskId: string, input: ActionInput, actorId: 
   return drawingTx(async (tx) => {
     const task = await lockTask(tx, taskId)
     if (task.status === 'CANCELLED') throw new FlowError('设计任务已取消，不能再改料单、工艺')
+    if (!await taskRequiresProcess(tx, task.planNodeId)) throw new FlowError('采购计划任务不进入工艺部门，无需编制料单或工艺')
     const current = input.kind === 'MATERIAL' ? task.materialStatus : task.processStatus
     const to = nextStatus(input.kind, current, input.action)
     if (!to) {
@@ -82,6 +84,7 @@ export async function changeStatus(taskId: string, input: ActionInput, actorId: 
 /** 发放单作废：调用方已按工件 → 任务 → 发放单加锁，同一事务内回退已下发文档。 */
 export async function markRevisingByVoid(tx: Tx, task: DrawingTask & { parts: { partId: string }[] }, release: Pick<Release, 'id' | 'releaseNo'>, actorId: string, now: Date) {
   if (task.status === 'CANCELLED') return
+  if (!await taskRequiresProcess(tx, task.planNodeId)) return
   const note = `因发放单作废 ${release.releaseNo}`
   for (const kind of ['MATERIAL', 'PROCESS'] as const) {
     const current = kind === 'MATERIAL' ? task.materialStatus : task.processStatus
@@ -121,7 +124,7 @@ export async function markRevisingByChange(tx: Tx, release: Pick<Release, 'id' |
   const locked = await tx.$queryRaw<{ id: string }[]>`
     SELECT id FROM drawing_task WHERE id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`
   const tasks = await tx.drawingTask.findMany({
-    where: { id: { in: locked.map((l) => l.id) }, workOrderNumber: release.workOrderNumber, materialStatus: 'ISSUED', status: { not: 'CANCELLED' } },
+    where: { AND: [processTaskWhere], id: { in: locked.map((l) => l.id) }, workOrderNumber: release.workOrderNumber, materialStatus: 'ISSUED', status: { not: 'CANCELLED' } },
     select: { id: true, componentName: true },
     orderBy: { id: 'asc' },
   })
@@ -202,7 +205,7 @@ async function stats(scope: Prisma.DrawingTaskWhereInput[]) {
  * 排序：料单状态（未开始 → 编制中 → 修改中 → 已下发）→ 建立时间。canEdit = 看的人能不能改（工艺部、管理员），决定返回哪些按钮。
  */
 export async function listProcess(filter: ListFilter, canEdit: boolean) {
-  const scope: Prisma.DrawingTaskWhereInput[] = [{ status: { not: 'CANCELLED' } }]
+  const scope: Prisma.DrawingTaskWhereInput[] = [{ status: { not: 'CANCELLED' } }, processTaskWhere]
   if (filter.visibleWorkOrders) scope.push({ workOrderNumber: { in: filter.visibleWorkOrders } })
   if (filter.workOrderNumber) scope.push({ workOrderNumber: filter.workOrderNumber })
   const q = filter.q?.trim()

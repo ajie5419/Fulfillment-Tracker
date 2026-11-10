@@ -1,3 +1,4 @@
+import { requiresProcessForNode } from '../../../shared/process'
 /**
  * 关键物料采购跟踪（R10）：采购行增改删、到货确认（手工 / QMS 进货检验）、撤销到货、延误原因、"可以开工"待办。
  *
@@ -156,12 +157,16 @@ export async function refreshPartReady(tx: Tx, partId: string | null, notify: bo
   const part = await tx.$queryRaw<{ id: string; workOrderNumber: string }[]>`SELECT id, workOrderNumber FROM part WHERE id = ${partId} FOR UPDATE`
   if (!part.length) return null
   const lines = await tx.$queryRaw<{ status: PurchaseStatus }[]>`SELECT status FROM purchase_line WHERE partId = ${partId} AND status <> 'CANCELLED' FOR SHARE`
-  const drawings = await tx.$queryRaw<{ status: DrawingTaskStatus; materialStatus: MaterialListStatus }[]>`
-    SELECT t.status, t.materialStatus FROM drawing_task t JOIN drawing_task_part p ON p.taskId = t.id WHERE p.partId = ${partId} AND t.status <> 'CANCELLED' FOR SHARE`
+  const drawings = await tx.$queryRaw<{ status: DrawingTaskStatus; materialStatus: MaterialListStatus; planNodeId: string | null }[]>`
+    SELECT t.status, t.materialStatus, t.planNodeId FROM drawing_task t JOIN drawing_task_part p ON p.taskId = t.id WHERE p.partId = ${partId} AND t.status <> 'CANCELLED' FOR SHARE`
   const now = new Date()
   const first = await tx.routeStep.findFirst({ where: { partId }, orderBy: { seq: 'asc' }, select: { status: true, ownerId: true, mode: true, supplierId: true, holdReleaseId: true } })
   // 与生产调度同一条规则（flow/readiness.ts firstStepTodoReady）：挂了东西、都齐了、第一道还在待开工且没在"等变更"
-  const prereq = prereqState({ purchases: lines.map((l) => l.status), drawings })
+  // Read routing metadata without extending the task/part locking order to plan nodes.
+  const nodeIds = [...new Set(drawings.map(d => d.planNodeId).filter((id): id is string => !!id))]
+  const nodes = nodeIds.length ? await tx.planNode.findMany({ where: { id: { in: nodeIds } }, select: { id: true, name: true } }) : []
+  const nodeNames = new Map(nodes.map(n => [n.id, n.name]))
+  const prereq = prereqState({ purchases: lines.map((l) => l.status), drawings: drawings.map(d => ({ ...d, requiresProcess: requiresProcessForNode(d.planNodeId ? nodeNames.get(d.planNodeId) : null) })) })
   const ready = firstStepTodoReady(first && { status: first.status, held: !!first.holdReleaseId }, prereq)
   const where = { refType: 'part', refId: partId, action: READY_TO_START, status: 'OPEN' as const }
   if (!ready) {

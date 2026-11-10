@@ -9,6 +9,7 @@
  */
 import type { FlowEventType, FlowSource, Part, Prisma, RouteStep, StepMode } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
+import { processTaskWhere } from '../process/eligibility'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey } from '../alerts/rules'
 import { READY_TO_START } from '../purchases/constants'
@@ -84,7 +85,7 @@ export interface SendInput {
 async function assertMaterialListIssued(tx: Tx, step: RouteStep) {
   const prev = await tx.routeStep.findFirst({ where: { partId: step.partId, seq: { lt: step.seq } }, select: { id: true } })
   if (prev) return
-  const missing = await tx.drawingTaskPart.count({ where: { partId: step.partId, task: { status: { not: 'CANCELLED' }, materialStatus: { not: 'ISSUED' } } } })
+  const missing = await tx.drawingTaskPart.count({ where: { partId: step.partId, task: { AND: [processTaskWhere], status: { not: 'CANCELLED' }, materialStatus: { not: 'ISSUED' } } } })
   if (missing) throw new FlowError('料单未下发')
 }
 
