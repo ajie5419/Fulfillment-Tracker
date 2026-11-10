@@ -13,6 +13,7 @@
  * 并发：沿用 R10 采购的做法——READ COMMITTED，加锁顺序 先工件（按 ID 排序）→ 再设计任务（FOR UPDATE）→ 发放单。
  */
 import type { DrawingTask, DrawingTaskStatus, Prisma } from '@prisma/client'
+import { drawingPresentation } from '../../../shared/drawing'
 import { isPlanStartLate } from '../../../shared/plan-validation'
 import { prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
@@ -198,7 +199,7 @@ export async function updateTask(id: string, input: PatchTaskInput) {
     if (input.needsCustomerConfirm !== undefined) data.needsCustomerConfirm = needs
     if (input.customerPlanDate !== undefined) data.customerPlanDate = input.customerPlanDate
     assertCustomerPlan(needs, input.customerPlanDate)
-    if (!needs) Object.assign(data, { customerPlanDate: null, customerConfirmedDate: null, customerConfirmedBy: null })
+    if (!needs) Object.assign(data, { customerPlanDate: null, customerConfirmedDate: null, customerConfirmedBy: null, customerConfirmationNote: null })
     if (input.note !== undefined) data.note = input.note?.trim() || null
     if (input.cancelled !== undefined && input.cancelled !== (old.status === 'CANCELLED')) {
       // 先标成取消 / 设计中，settleTask 再按事实推出准确状态
@@ -250,14 +251,14 @@ export async function undoDrawn(id: string, actor: Actor) {
     if (!canDraw(task, actor)) throw new FlowForbidden('只有设计负责人本人或管理员可以撤销设计完成')
     if (!task.drawnDate) throw new FlowError('还没有完成设计')
     if (await isReleased(tx, id)) throw new FlowError('图纸已经发放了，请先作废发放单再撤销设计完成')
-    await tx.drawingTask.update({ where: { id }, data: { drawnDate: null, drawnBy: null, customerConfirmedDate: null, customerConfirmedBy: null } })
+    await tx.drawingTask.update({ where: { id }, data: { drawnDate: null, drawnBy: null, customerConfirmedDate: null, customerConfirmedBy: null, customerConfirmationNote: null } })
     const r = await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, id)
     return { id, ...r }
   })
 }
 
 /** 录客户确认（独立节点）：能看到该工单的人都可以录。要先完成设计；确认日默认今天、不能晚于今天 */
-export async function confirmCustomer(id: string, confirmedDate: Date | null | undefined, actorId: string) {
+export async function confirmCustomer(id: string, confirmedDate: Date | null | undefined, actorId: string, confirmationNote?: string | null) {
   const now = new Date()
   const day = confirmedDate ?? todayDate(now)
   assertNotFuture(day, now, '客户确认日期')
@@ -266,8 +267,9 @@ export async function confirmCustomer(id: string, confirmedDate: Date | null | u
     if (task.status === 'CANCELLED') throw new FlowError('设计任务已取消')
     if (!task.needsCustomerConfirm) throw new FlowError('这个任务不需要客户确认')
     if (!task.drawnDate) throw new FlowError('还没有完成设计，不能录客户确认')
+    if (dateFieldDay(day) < dateFieldDay(task.drawnDate)) throw new FlowError('客户确认日期不能早于实际设计完成日期')
     if (task.customerConfirmedDate) throw new FlowError('客户已经确认过了，请刷新')
-    await tx.drawingTask.update({ where: { id }, data: { customerConfirmedDate: day, customerConfirmedBy: actorId } })
+    await tx.drawingTask.update({ where: { id }, data: { customerConfirmedDate: day, customerConfirmedBy: actorId, customerConfirmationNote: confirmationNote?.trim() || null } })
     await clearAlertKeys(tx, [w7Key(id)])
     const r = await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, id)
     return { id, ...r }
@@ -278,7 +280,7 @@ export async function undoCustomer(id: string) {
   return drawingTx(async (tx) => {
     const task = await lockTask(tx, id)
     if (!task.customerConfirmedDate) throw new FlowError('客户还没有确认')
-    await tx.drawingTask.update({ where: { id }, data: { customerConfirmedDate: null, customerConfirmedBy: null } })
+    await tx.drawingTask.update({ where: { id }, data: { customerConfirmedDate: null, customerConfirmedBy: null, customerConfirmationNote: null } })
     const r = await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, id)
     return { id, ...r }
   })
@@ -379,6 +381,12 @@ async function describeTasks(rows: TaskWithParts[], now: Date, viewer?: Actor) {
     return {
       ...t,
       statusText: DRAWING_STATUS_TEXT[t.status],
+      presentation: drawingPresentation({
+        ...t, planDate: dateFieldDay(t.planDate), drawnDate: t.drawnDate ? dateFieldDay(t.drawnDate) : null,
+        customerPlanDate: t.customerPlanDate ? dateFieldDay(t.customerPlanDate) : null,
+        customerConfirmedDate: t.customerConfirmedDate ? dateFieldDay(t.customerConfirmedDate) : null,
+        released: mine.some(r => r.status === 'ACTIVE'), alertLevel: levelOf.get(w7Key(t.id)) ?? null,
+      }, shanghaiDay(now)),
       /** 工艺模块（10-27）：料单 / 工艺状态的一句话（列表状态列下面显示） */
       processText: processSummary(t),
       partIds: links.map((p) => p.partId),

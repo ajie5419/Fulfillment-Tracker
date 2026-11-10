@@ -307,11 +307,13 @@ describe.skipIf(!DB)('设计任务（R11）', () => {
     await process.changeStatus(t.id, { kind: 'MATERIAL', action: 'issue' }, 'u-des')
     expect(await readyTodos(part.id)).toHaveLength(0)
     await expect(s.dr.confirmCustomer(t.id, dayOff(1), 'u-pm')).rejects.toThrow('不能晚于今天')
-    expect(await s.dr.confirmCustomer(t.id, null, 'u-pm')).toMatchObject({ status: 'DONE', readySent: 1 })
-    expect(await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).toMatchObject({ customerConfirmedDate: today(), customerConfirmedBy: 'u-pm' })
+    await expect(s.dr.confirmCustomer(t.id, dayOff(-2), 'u-pm')).rejects.toThrow('不能早于实际设计完成')
+    expect(await s.dr.confirmCustomer(t.id, null, 'u-pm', 'Customer email reference C-1')).toMatchObject({ status: 'DONE', readySent: 1 })
+    expect(await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).toMatchObject({ customerConfirmedDate: today(), customerConfirmedBy: 'u-pm', customerConfirmationNote: 'Customer email reference C-1' })
     await expect(s.dr.confirmCustomer(t.id, null, 'u-pm')).rejects.toThrow('已经确认过')
     // 撤销确认 → 回到待客户确认，待办作废
     expect(await s.dr.undoCustomer(t.id)).toMatchObject({ status: 'CUSTOMER_PENDING' })
+    expect(await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).toMatchObject({ customerConfirmationNote: null })
     expect((await readyTodos(part.id)).map((x) => x.status)).toEqual(['CANCELLED'])
 
     // 先确认、后发放：发放后直接完成；不需要客户确认的不能录

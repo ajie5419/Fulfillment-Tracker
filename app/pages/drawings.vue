@@ -8,7 +8,7 @@ import type { ClientOptions } from '../utils/transport'
  * Attention cards filter overdue / this-week work; lifecycle tabs carry scoped counts.
  * 列表默认按工单分组（?layout=group|table），组标题带本组设计完成度。
  */
-import { isDesignComplete } from '#shared/drawing'
+import { isDesignComplete, MAX_CUSTOMER_CONFIRMATION_NOTE_LENGTH } from '#shared/drawing'
 import { distinctPlanNodes, groupByWorkOrder, groupProgress } from '#shared/workbench'
 
 const route = useRoute()
@@ -162,17 +162,21 @@ function closeEdit() {
 // ───── 标记设计完成 / 客户确认（选日期，默认今天）─────
 const acting = ref<{ row: DrawingRow; kind: 'drawn' | 'confirm' } | null>(null)
 const actDate = ref(dayAfter(0))
+const actNote = ref('')
 const busy = ref(false)
 function openAct(row: DrawingRow, kind: 'drawn' | 'confirm') {
   acting.value = { row, kind }
   actDate.value = dayAfter(0)
+  actNote.value = ''
 }
 async function submitAct() {
   const a = acting.value
   if (!a) return
   busy.value = true
   try {
-    const r = await drawingSend(`/api/drawings/${a.row.id}/${a.kind === 'drawn' ? 'drawn' : 'confirm'}`, 'POST', { date: actDate.value })
+    const r = a.kind === 'drawn'
+      ? await drawingSend(`/api/drawings/${a.row.id}/drawn`, 'POST', { date: actDate.value })
+      : await drawingSend(`/api/drawings/${a.row.id}/confirm`, 'POST', { date: actDate.value, note: actNote.value.trim() || null })
     message.success(drawingResultText(r, a.kind === 'drawn' ? '已标记设计完成' : '已录客户确认'), 5)
     acting.value = null
     await reload()
@@ -340,7 +344,8 @@ const loadColumns = [
           <template #expandedRowRender="{ record }">
             <div class="task-details">
               <div><b>实际完成日</b><span>{{ record.drawnDate ? dayText(record.drawnDate) : '尚未完成' }}{{ record.drawnByName ? ` · ${record.drawnByName}` : '' }}</span></div>
-              <div v-if="record.needsCustomerConfirm"><b>客户确认</b><span v-if="record.customerConfirmedDate">已确认 {{ dayText(record.customerConfirmedDate) }} · {{ record.customerConfirmedByName }}</span><span v-else>计划 {{ record.customerPlanDate ? dayText(record.customerPlanDate) : '未定' }}</span></div>
+              <div><b>客户确认</b><span v-if="!record.needsCustomerConfirm">不需要客户确认</span><template v-else><span v-if="record.customerConfirmedDate">已确认 {{ dayText(record.customerConfirmedDate) }} · {{ record.customerConfirmedByName }}</span><span v-else>计划 {{ record.customerPlanDate ? dayText(record.customerPlanDate) : '未定' }}</span></template></div>
+              <div v-if="record.customerConfirmationNote"><b>确认说明</b><span>{{ record.customerConfirmationNote }}</span></div>
               <div v-if="record.releases.length"><b>发放记录</b><span><NuxtLink v-for="rel in record.releases" :key="rel.id" :to="`/releases?id=${encodeURIComponent(rel.id)}`" :class="{ void: rel.status === 'VOID' }">{{ rel.releaseNo }}{{ rel.status === 'VOID' ? '（已作废）' : '' }} </NuxtLink></span></div>
               <div v-if="record.parts.length"><b>关联工件</b><span>{{ partNames(record as DrawingRow) }}</span></div>
               <div v-if="record.note"><b>备注</b><span>{{ record.note }}</span></div>
@@ -363,20 +368,16 @@ const loadColumns = [
             </template>
             <template v-else-if="column.key === 'status'">
               <div class="status-cell">
-                <a-tag :color="DRAWING_STATUS_COLOR[record.status as DrawingStatusKey]">{{ record.statusText }}</a-tag>
-                <a-tag v-if="record.alertLevel === 'RED'" color="red">红</a-tag>
-                <a-tag v-else-if="record.alertLevel === 'YELLOW'" color="orange">黄</a-tag>
-                <span v-if="record.overdue" class="warn small">逾期</span>
-                <span v-if="record.needsCustomerConfirm && !record.customerConfirmedDate && record.status !== 'CANCELLED'" class="muted">
-                  {{ record.status === 'PENDING' ? '需确认' : '待确认' }}{{ record.customerPlanDate ? ` ${dayText(record.customerPlanDate).slice(5)}` : '' }}
-                </span>
+                <a-tag :color="DRAWING_STATUS_COLOR[record.status as DrawingStatusKey]">{{ record.presentation.designText }}</a-tag>
+                <span v-if="record.presentation.designWarning" :class="record.presentation.designOverdue ? 'warn small' : 'risk small'">{{ record.presentation.designWarning }}</span>
+                <span v-if="record.presentation.customerText" :class="record.presentation.customerOverdue ? 'warn small' : record.customerConfirmedDate ? 'confirmed small' : 'muted'">{{ record.presentation.customerText }}</span>
               </div>
             </template>
             <template v-else-if="column.key === 'actions'">
               <div class="row-actions">
                 <a-button v-if="record.permissions.markDrawn" type="primary" size="small" @click="openAct(record as DrawingRow, 'drawn')">登记设计完成</a-button>
                 <a-button v-if="record.status === 'DRAWN' && canRelease" type="primary" size="small" @click="openRelease(record as DrawingRow)">一键发放</a-button>
-                <a-button v-if="record.permissions.confirm && canEditTask" size="small" @click="openAct(record as DrawingRow, 'confirm')">客户确认</a-button>
+                <a-button v-if="record.permissions.confirm && canEditTask" size="small" @click="openAct(record as DrawingRow, 'confirm')">登记客户确认</a-button>
                 <a-dropdown v-if="canEditTask || canRelease || record.permissions.undoDrawn">
                   <a-button size="small">更多</a-button>
                   <template #overlay>
@@ -427,7 +428,7 @@ const loadColumns = [
 
   <a-modal
     :open="!!acting"
-    :title="acting ? `${acting.kind === 'drawn' ? '标记设计完成' : '录客户确认'}：${acting.row.componentName}` : ''"
+    :title="acting ? `${acting.kind === 'drawn' ? '标记设计完成' : '登记客户确认'}：${acting.row.componentName}` : ''"
     ok-text="确定"
     :confirm-loading="busy"
     @ok="submitAct"
@@ -435,7 +436,9 @@ const loadColumns = [
   >
     <a-form v-if="acting" layout="vertical">
       <p class="muted">{{ acting.row.workOrderNumber }} · 计划完成 {{ dayText(acting.row.planDate) }}{{ acting.row.needsCustomerConfirm ? ` · 客户确认计划 ${acting.row.customerPlanDate ? dayText(acting.row.customerPlanDate) : '未定'}` : '' }}</p>
-      <a-form-item :label="acting.kind === 'drawn' ? '设计完成日期' : '客户确认日期'"><UiDatePicker v-model:value="actDate" :allow-clear="false" /></a-form-item>
+      <a-form-item :label="acting.kind === 'drawn' ? '设计完成日期' : '实际客户确认日期'"><UiDatePicker v-model:value="actDate" :allow-clear="false" /></a-form-item>
+      <a-form-item v-if="acting.kind === 'confirm'" label="确认说明（可选）"><a-textarea v-model:value="actNote" :maxlength="MAX_CUSTOMER_CONFIRMATION_NOTE_LENGTH" :rows="3" placeholder="填写客户回复、确认方式或凭据编号" /></a-form-item>
+      <p v-if="acting.kind === 'confirm'" class="muted">登记设计成果确认；实际确认日期不能早于实际设计完成日期。</p>
       <p v-if="acting.kind === 'drawn'" class="muted">设计完成后点"一键发放"生成图纸发放单；发放后{{ acting.row.needsCustomerConfirm ? '、客户确认后' : '' }}任务完成。</p>
     </a-form>
   </a-modal>
@@ -445,6 +448,8 @@ const loadColumns = [
 <style scoped>
 .no-nav :deep(.ant-tabs-nav) { display: none; }
 .card-head-left { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.risk { color: var(--ft-risk-text); }
+.confirmed { color: var(--ft-done-text); }
 .muted { color: var(--ft-text-2); font-size: 12px; }
 .link-btn { padding: 0; border: 0; background: none; font: inherit; color: var(--ft-primary); text-align: left; cursor: pointer; }
 .link-btn:hover { text-decoration: underline; }

@@ -146,7 +146,7 @@ async function submit() {
         <UiHelpTip label="设计完成与客户确认">登记设计完成后计入总计划节点进度；任务的图纸发放和客户确认继续单独跟踪。需要客户确认的任务，发放并确认后才进入“已完成”。</UiHelpTip>
         <a-form-item v-if="form.needsCustomerConfirm" label="客户确认计划日" class="confirmation-date">
           <UiDatePicker v-model:value="form.customerPlanDate" placeholder="未确定可暂不填" />
-          <div v-if="isPlanStartLate(form.planDate, form.customerPlanDate)" class="warn">客户确认早于计划设计完成，请核对是否为提前方案确认。</div>
+          <div v-if="isPlanStartLate(form.planDate, form.customerPlanDate)" class="warn">客户确认计划早于设计完成计划，请调整日期；此处用于设计成果确认。</div>
         </a-form-item>
       </div>
       <div class="section-label">关联信息</div>

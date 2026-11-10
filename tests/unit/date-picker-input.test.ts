@@ -119,7 +119,7 @@ it('renders task-first fields and warns about early customer confirmation withou
   const modal = document.querySelector('.ant-modal')!
   expect(modal.textContent).toContain('任务名称')
   expect(modal.textContent).toContain('关联信息')
-  expect(modal.textContent).toContain('请核对是否为提前方案确认')
+  expect(modal.textContent).toContain('请调整日期；此处用于设计成果确认')
   expect(modal.textContent).not.toContain('不再跟踪')
   expect(modal.textContent).not.toContain('关联工件')
   expect(modal.querySelectorAll('.ant-checkbox-wrapper')).toHaveLength(1)

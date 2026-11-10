@@ -859,6 +859,8 @@ model DrawingTask {
   customerPlanDate      DateTime?
   customerConfirmedDate DateTime?
   customerConfirmedBy   String?            @db.VarChar(64)
+  /// Optional customer response or confirmation reference.
+  customerConfirmationNote String?         @db.VarChar(500)
   status                DrawingTaskStatus  @default(PENDING)
   note                  String?            @db.VarChar(500)
   /// 所属总计划节点（R14，可空；老数据不挂）

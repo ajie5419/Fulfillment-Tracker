@@ -20,7 +20,7 @@ export interface ClientApi {
   '/api/dev/scan': { POST: Endpoint<typeof import('../../server/api/dev/scan.post').default, import('../../server/api/dev/scan.post').RequestBody, never> }
   '/api/dev/seed': { POST: Endpoint<typeof import('../../server/api/dev/seed.post').default, never, never> }
   '/api/dev/sync': { POST: Endpoint<typeof import('../../server/api/dev/sync.post').default, never, never> }
-  '/api/drawings/:id/confirm': { POST: Endpoint<typeof import('../../server/api/drawings/[id]/confirm.post').default, z.input<typeof import('../../server/schemas/drawings').dateBody>, never> }
+  '/api/drawings/:id/confirm': { POST: Endpoint<typeof import('../../server/api/drawings/[id]/confirm.post').default, z.input<typeof import('../../server/schemas/drawings').confirmBody>, never> }
   '/api/drawings/:id/drawn': { POST: Endpoint<typeof import('../../server/api/drawings/[id]/drawn.post').default, z.input<typeof import('../../server/schemas/drawings').dateBody>, never> }
   '/api/drawings/:id/undo-confirm': { POST: Endpoint<typeof import('../../server/api/drawings/[id]/undo-confirm.post').default, never, never> }
   '/api/drawings/:id/undo-drawn': { POST: Endpoint<typeof import('../../server/api/drawings/[id]/undo-drawn.post').default, never, never> }
