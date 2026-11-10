@@ -1,8 +1,9 @@
 import { z } from 'zod'
 import { MAX_BYTES, MAX_FILES_PER_REQUEST, saveUpload } from '../services/issues/uploads'
+import { formatUploadLimit, MULTIPART_OVERHEAD_BYTES } from '../../shared/upload-policy'
 
 /** 整个请求体上限：3 个 × 单个上限 + 表单开销。超过直接 413，不读进内存 */
-const maxRequestBytes = (kind: keyof typeof MAX_BYTES) => MAX_FILES_PER_REQUEST * MAX_BYTES[kind] + 64 * 1024
+const maxRequestBytes = (kind: keyof typeof MAX_BYTES) => MAX_FILES_PER_REQUEST * MAX_BYTES[kind] + MULTIPART_OVERHEAD_BYTES
 
 const query = z.object({ kind: z.enum(['photo', 'attachment', 'bom']).default('photo') })
 
@@ -19,7 +20,8 @@ export default defineFlowHandler(async (event, user) => {
   const length = raw === undefined ? Number.NaN : Number(raw)
   if (!Number.isFinite(length)) throw createError({ statusCode: 411, statusMessage: 'Length Required', message: '缺少 Content-Length' })
   if (length > maxRequestBytes(kind)) {
-    const message = { photo: '照片太大：每张不能超过 8MB，一次最多 3 张', attachment: '附件太大：每个不能超过 20MB，一次最多 3 个', bom: 'BOM 表太大：不能超过 5MB' }[kind]
+    const limit = formatUploadLimit(MAX_BYTES[kind])
+    const message = { photo: `照片太大：每张不能超过 ${limit}，一次最多 ${MAX_FILES_PER_REQUEST} 张`, attachment: `附件太大：每个不能超过 ${limit}，一次最多 ${MAX_FILES_PER_REQUEST} 个`, bom: `BOM 表太大：不能超过 ${limit}` }[kind]
     throw createError({ statusCode: 413, statusMessage: 'Payload Too Large', message })
   }
   const parts = (await readMultipartFormData(event).catch(() => undefined)) ?? []

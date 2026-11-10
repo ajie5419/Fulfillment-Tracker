@@ -15,7 +15,7 @@ const { data, pending, error, refresh } = await useFetch('/api/drawings', {
   query: computed(() => ({ mine: '1', view: tab.value })),
   default: () => ({ rows: [] as DrawingRow[], total: 0, stats: null as DrawingStats | null }),
 })
-const rows = computed(() => (data.value.rows as DrawingRow[]).filter((r) => r.id !== focus.value?.id))
+const rows = computed(() => data.value.rows.filter((r) => r.id !== focus.value?.id))
 const focusId = computed(() => (typeof route.query.id === 'string' && route.query.id ? route.query.id : ''))
 const focus = ref<DrawingRow | null>(null)
 const focusError = ref('')
@@ -39,7 +39,7 @@ function clearFocus() {
   const { id: _id, ...rest } = route.query
   router.replace({ query: rest })
 }
-const stats = computed(() => pending.value || error.value ? null : data.value.stats as DrawingStats | null)
+const stats = computed(() => pending.value || error.value ? null : data.value.stats)
 const { displayStat } = useRequestState({ pending, error }, () => !rows.value.length)
 
 const busy = ref(false)
@@ -73,16 +73,17 @@ async function markDrawn(r: DrawingRow) {
         <div class="m-list">
           <MCard v-for="r in [focus]" :key="r.id" :tone="r.overdue ? 'late' : toneOfVant(DRAWING_STATUS_TYPE[r.status])">
             <div class="m-row">
-              <van-tag :type="r.overdue ? 'danger' : DRAWING_STATUS_TYPE[r.status]">{{ r.overdue ? '逾期' : r.statusText }}</van-tag>
+              <van-tag :type="r.presentation.designOverdue ? 'danger' : DRAWING_STATUS_TYPE[r.status]">{{ r.presentation.designText }}</van-tag>
               <span class="wo">{{ r.workOrderNumber }}</span>
             </div>
             <div class="m-title name">{{ r.componentName }}</div>
         <van-tag v-if="!r.parts.length" plain>文档 / 原理图（无关联零件）</van-tag>
             <div class="m-desc parts">{{ r.parts.length ? partsText(r.parts.map((p) => p.name)) : '未关联工件' }}</div>
             <div class="m-meta">
-              <span :class="{ 'm-text-late': r.overdue }">计划 {{ dayText(r.planDate) }}</span>
+              <span :class="{ 'm-text-late': r.presentation.designOverdue }">计划 {{ dayText(r.planDate) }}</span>
               <span v-if="r.drawnDate" class="m-text-done">设计完成 {{ dayText(r.drawnDate) }}</span>
-              <span v-if="r.needsCustomerConfirm">{{ r.customerConfirmedDate ? '客户已确认' : `客户确认计划 ${r.customerPlanDate ? dayText(r.customerPlanDate) : '未定'}` }}</span>
+              <span v-if="r.presentation.designWarning" :class="r.presentation.designOverdue ? 'm-text-late' : 'm-text-risk'">{{ r.presentation.designWarning }}</span>
+              <span v-if="r.presentation.customerText" :class="{ 'm-text-late': r.presentation.customerOverdue }">{{ r.presentation.customerText }}</span>
             </div>
             <div v-if="r.permissions.markDrawn || r.status === 'DRAWN'" class="m-foot-row">
               <span class="m-spacer" />
@@ -105,16 +106,17 @@ async function markDrawn(r: DrawingRow) {
     <div v-else class="m-list">
       <MCard v-for="r in rows" :key="r.id" :tone="r.overdue ? 'late' : toneOfVant(DRAWING_STATUS_TYPE[r.status])">
         <div class="m-row">
-          <van-tag :type="r.overdue ? 'danger' : DRAWING_STATUS_TYPE[r.status]">{{ r.overdue ? '逾期' : r.statusText }}</van-tag>
+          <van-tag :type="r.presentation.designOverdue ? 'danger' : DRAWING_STATUS_TYPE[r.status]">{{ r.presentation.designText }}</van-tag>
           <span class="wo">{{ r.workOrderNumber }}</span>
         </div>
         <div class="m-title name">{{ r.componentName }}</div>
         <van-tag v-if="!r.parts.length" plain>文档 / 原理图（无关联零件）</van-tag>
         <div class="m-desc parts">{{ r.parts.length ? partsText(r.parts.map((p) => p.name)) : '未关联工件' }}</div>
         <div class="m-meta">
-          <span :class="{ 'm-text-late': r.overdue }">计划 {{ dayText(r.planDate) }}</span>
+          <span :class="{ 'm-text-late': r.presentation.designOverdue }">计划 {{ dayText(r.planDate) }}</span>
           <span v-if="r.drawnDate" class="m-text-done">设计完成 {{ dayText(r.drawnDate) }}</span>
-          <span v-if="r.needsCustomerConfirm">{{ r.customerConfirmedDate ? '客户已确认' : `客户确认计划 ${r.customerPlanDate ? dayText(r.customerPlanDate) : '未定'}` }}</span>
+          <span v-if="r.presentation.designWarning" :class="r.presentation.designOverdue ? 'm-text-late' : 'm-text-risk'">{{ r.presentation.designWarning }}</span>
+          <span v-if="r.presentation.customerText" :class="{ 'm-text-late': r.presentation.customerOverdue }">{{ r.presentation.customerText }}</span>
         </div>
         <div v-if="r.permissions.markDrawn || r.status === 'DRAWN'" class="m-foot-row">
           <span class="m-spacer" />

@@ -88,8 +88,8 @@ const { data, pending, error, refresh } = await useAsyncData(
   (_app, { signal }) => clientRequest('/api/drawings', { query: listQuery.value, signal }, requestFetch),
   { default: () => ({ rows: [] as DrawingRow[], total: 0, stats: null as DrawingStats | null }) },
 )
-const rows = computed(() => pending.value ? [] : data.value.rows as DrawingRow[])
-const stats = computed(() => pending.value || error.value ? null : data.value.stats as DrawingStats | null)
+const rows = computed(() => pending.value ? [] : data.value.rows)
+const stats = computed(() => pending.value || error.value ? null : data.value.stats)
 const openCount = computed(() => (stats.value ? stats.value.pending + stats.value.drawn + stats.value.customerPending : null))
 const drawnCount = computed(() => (stats.value ? stats.value.drawn + stats.value.customerPending : null))
 const viewOptions = computed(() => {

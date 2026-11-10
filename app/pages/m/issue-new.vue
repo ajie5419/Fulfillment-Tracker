@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatUploadLimit } from '#shared/upload-policy'
 /**
  * 手机快速上报异常（方案 7.2，≤ 1 分钟）：选工单 → 可选工件 → 选分类 → 一句话 + 拍照/相册（最多 3 张）→ 提交。
  * 系统按分类默认责任部门和责任人；外协类可选外协单位。从工件页等处进来时可带 ?wo=&partId=。
@@ -50,7 +51,7 @@ function onCalendar(d: Date) {
   showCalendar.value = false
 }
 function onOversize() {
-  showFailToast('每张照片不能超过 8MB')
+  showFailToast(`每张照片不能超过 ${formatUploadLimit(MAX_PHOTO_BYTES)}`)
 }
 
 const submitting = ref(false)
@@ -131,7 +132,7 @@ async function submit() {
         <van-field label="说明" required v-model="description" type="textarea" rows="2" autosize maxlength="500" show-word-limit placeholder="发生了什么？如：涂装件返回有流挂，需返修" />
         <div class="uploader">
           <van-uploader v-model="photos" :max-count="MAX_PHOTOS" :max-size="MAX_PHOTO_BYTES" accept="image/jpeg,image/png,image/webp" multiple @oversize="onOversize" />
-          <div class="muted">拍照或从相册选，最多 3 张，每张不超过 8MB</div>
+          <div class="muted">拍照或从相册选，最多 {{ MAX_PHOTOS }} 张，每张不超过 {{ formatUploadLimit(MAX_PHOTO_BYTES) }}</div>
         </div>
         <van-cell title="要求解决日（可不填）" :value="dueDate || '受理时默认 +3 天'" is-link @click="showCalendar = true" />
       </van-cell-group>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MAX_BOM_BYTES } from '#shared/upload-policy'
+import { MAX_BOM_BYTES, formatUploadLimit } from '#shared/upload-policy'
 /**
  * 图纸发放单上的"BOM 表"一栏，两种给法：
  * - 上传 Excel：图纸明细表或 CAD 导出的 BOM（.xlsx）；
@@ -117,7 +117,7 @@ function clearText() {
 
 function beforeUpload(f: File) {
   if (f.size > MAX_BOM_BYTES) {
-    message.error('BOM 表不能超过 5MB')
+    message.error(`BOM 表不能超过 ${formatUploadLimit(MAX_BOM_BYTES)}`)
     return false
   }
   file.value = f

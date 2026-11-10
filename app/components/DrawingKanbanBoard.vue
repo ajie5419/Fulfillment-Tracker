@@ -152,24 +152,24 @@ function hasMenu(r: DrawingRow): boolean {
                   <span> · {{ scheduleLabel(r, col.key) }}</span>
                 </div>
                 <div
-                  v-if="col.key !== 'DONE' && (r.presentation?.designWarning || r.needsCustomerConfirm)"
+                  v-if="col.key !== 'DONE' && (r.presentation.designWarning || r.needsCustomerConfirm)"
                   class="k-meta-sub"
                 >
                   <span
-                    v-if="r.presentation?.designWarning"
+                    v-if="r.presentation.designWarning"
                     :class="r.presentation.designOverdue ? 'text-late' : 'text-risk'"
                   >
                     {{ r.presentation.designWarning.replace(/^设计\s*/, '') }}
                   </span>
                   <span
-                    v-if="r.presentation?.designWarning && r.needsCustomerConfirm"
+                    v-if="r.presentation.designWarning && r.needsCustomerConfirm"
                     class="k-sep"
                   >·</span>
                   <span
                     v-if="r.needsCustomerConfirm && !r.customerConfirmedDate"
-                    :class="{ 'text-late': r.presentation?.customerOverdue }"
+                    :class="{ 'text-late': r.presentation.customerOverdue }"
                   >
-                    {{ r.presentation?.customerOverdue ? r.presentation.customerText : `需确认${r.customerPlanDate ? ` ${shortDay(r.customerPlanDate)}` : ''}` }}
+                    {{ r.presentation.customerOverdue ? r.presentation.customerText : `需确认${r.customerPlanDate ? ` ${shortDay(r.customerPlanDate)}` : ''}` }}
                   </span>
                   <span v-else-if="r.customerConfirmedDate" class="text-done">
                     已确认 {{ shortDay(r.customerConfirmedDate) }}

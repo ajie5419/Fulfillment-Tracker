@@ -4,6 +4,7 @@ import * as workbench from '../../shared/workbench'
 import * as drawing from '../../shared/drawing'
 import * as planValidation from '../../shared/plan-validation'
 import * as purchases from '../../shared/purchases'
+import * as purchaseQuantity from '../../shared/purchase-quantity'
 import { deferred, flushVue, mountScript } from '../helpers/vue-script'
 
 const cleanups: (() => void)[] = []
@@ -48,7 +49,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 async function mount(file: string, props: Record<string, unknown> = {}) {
-  const result = await mountScript(file, props, { '#shared/plan-validation': planValidation, '#shared/drawing': drawing, '#shared/workbench': workbench, '#shared/purchases': purchases })
+  const result = await mountScript(file, props, { '#shared/plan-validation': planValidation, '#shared/drawing': drawing, '#shared/workbench': workbench, '#shared/purchases': purchases, '#shared/purchase-quantity': purchaseQuantity })
   cleanups.push(result.unmount)
   return result
 }

@@ -1,7 +1,8 @@
 import type { ClientBodyArgs, ClientResponse, ClientFetch, ClientPath } from '../utils/transport'
 import { RELEASE_TYPE_TEXT as SHARED_RELEASE_TYPE_TEXT, RECEIPT_STATUS_TEXT as SHARED_RECEIPT_STATUS_TEXT } from '#shared/releases'
 /** 发放签收（R9）页面共用：文案、颜色、提交、上传附件。 */
-import { MAX_ATTACHMENT_BYTES as SHARED_MAX_ATTACHMENT_BYTES, MAX_RELEASE_ATTACHMENTS } from '#shared/upload-policy'
+import { MAX_ATTACHMENT_BYTES as SHARED_MAX_ATTACHMENT_BYTES, MAX_RELEASE_ATTACHMENTS, MAX_FILES_PER_REQUEST } from '#shared/upload-policy'
+import { NOTIFY_ROLE_TEXT } from '#shared/notify-roles'
 
 export const RELEASE_TYPE_TEXT = SHARED_RELEASE_TYPE_TEXT
 export const RELEASE_TYPE_COLOR = { DRAWING: 'blue', CHANGE: 'volcano', PROCESS: 'default' } as const
@@ -14,10 +15,10 @@ export const PROGRESS_COLOR: Record<string, string> = { 签收中: 'orange', 有
 /** 按"部门 + 角色"选人时的角色（与设置页"人员与角色"一致）；空 = 该部门全部人员 */
 export const RECIPIENT_ROLE_OPTIONS = [
   { value: '', label: '全部人员' },
-  { value: 'DEPT_HEAD', label: '部门负责人' },
-  { value: 'OUTSOURCE_COORDINATOR', label: '外协专员' },
-  { value: 'PROJECT_DEPT_HEAD', label: '项目部负责人' },
-  { value: 'LEADER', label: '分管领导' },
+  { value: 'DEPT_HEAD', label: NOTIFY_ROLE_TEXT.DEPT_HEAD },
+  { value: 'OUTSOURCE_COORDINATOR', label: NOTIFY_ROLE_TEXT.OUTSOURCE_COORDINATOR },
+  { value: 'PROJECT_DEPT_HEAD', label: NOTIFY_ROLE_TEXT.PROJECT_DEPT_HEAD },
+  { value: 'LEADER', label: NOTIFY_ROLE_TEXT.LEADER },
 ] as const
 
 export type ReleaseTypeKey = keyof typeof RELEASE_TYPE_TEXT
@@ -45,13 +46,13 @@ export function releasePost(url: string, body: unknown = {}) {
   return sendClientRequest(url, { method: 'POST', body })
 }
 
-/** 上传附件（PDF 或照片，multipart 字段 file），每次最多 3 个，分批传，返回 upload_file id */
+/** Batch attachments by the shared request limit while preserving selection order. */
 export async function uploadAttachments(files: File[]): Promise<string[]> {
   const send = clientRequest
   const ids: string[] = []
-  for (let i = 0; i < files.length; i += 3) {
+  for (let i = 0; i < files.length; i += MAX_FILES_PER_REQUEST) {
     const form = new FormData()
-    for (const f of files.slice(i, i + 3)) form.append('file', f, f.name || 'file')
+    for (const f of files.slice(i, i + MAX_FILES_PER_REQUEST)) form.append('file', f, f.name || 'file')
     const saved = await send('/api/uploads?kind=attachment', { method: 'POST', body: form })
     ids.push(...saved.map((s) => s.id))
   }

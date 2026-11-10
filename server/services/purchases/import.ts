@@ -23,12 +23,13 @@ import { MAX_IMPORT_ROWS, normalizeName } from './constants'
 import { lockParts, purchaseTx, refreshPartReady } from './purchases'
 import { clearAlertKeys } from '../alerts/clear'
 import { w9SplitKey } from '../plan/constants'
+import { isPurchaseQuantity, PURCHASE_QUANTITY_DECIMALS } from '../../../shared/purchase-quantity'
 
 export const TEMPLATE_COLUMNS = [
   { key: 'workOrderNumber', header: '工单号', required: true, width: 18, hint: '必填，QMS 工单号' },
   { key: 'materialName', header: '物料名称', required: true, width: 22, hint: '必填。QMS 进货检验按这个名称自动确认到货，尽量与 QMS 物料名称一致' },
   { key: 'spec', header: '规格型号', required: false, width: 18, hint: '可空' },
-  { key: 'quantity', header: '数量', required: true, width: 10, hint: '必填，大于 0，最多 3 位小数' },
+  { key: 'quantity', header: '数量', required: true, width: 10, hint: `必填，大于 0，最多 ${PURCHASE_QUANTITY_DECIMALS} 位小数` },
   { key: 'unit', header: '单位', required: false, width: 8, hint: '可空，如 台、t、套' },
   { key: 'supplier', header: '供应商', required: false, width: 22, hint: '可空。与 QMS 供应商名称完全一致时自动关联' },
   { key: 'needDate', header: '需求日', required: true, width: 13, hint: '必填，日期，如 2026-11-20' },
@@ -164,9 +165,7 @@ export function parseDateCell(v: Cell): string | null | undefined {
 
 export function parseQuantity(v: Cell): number | undefined {
   const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v.replace(/,/g, '')) : Number.NaN
-  if (!Number.isFinite(n) || n <= 0 || n > 1e9) return undefined
-  if (Math.abs(n * 1000 - Math.round(n * 1000)) > 1e-6) return undefined
-  return n
+  return isPurchaseQuantity(n) ? n : undefined
 }
 
 const text = (v: Cell) => (v === null ? null : v instanceof Date ? dateFieldDay(v) : String(v).trim() || null)
@@ -232,7 +231,7 @@ export function validateRows(rows: RawRow[], ctx: ImportContext): { lines: Impor
     const spec = text(v.spec ?? null)
     if (spec && spec.length > 191) msgs.push('规格型号最多 191 字')
     const quantity = parseQuantity(v.quantity ?? null)
-    if (quantity === undefined) msgs.push(v.quantity == null ? '数量必填' : '数量要大于 0，最多 3 位小数')
+    if (quantity === undefined) msgs.push(v.quantity == null ? '数量必填' : `数量要大于 0，最多 ${PURCHASE_QUANTITY_DECIMALS} 位小数`)
     const unit = text(v.unit ?? null)
     if (unit && unit.length > 20) msgs.push('单位最多 20 字')
     const dates = { needDate: '需求日', promisedDate: '承诺到货日', arrivedDate: '实际到货日' } as const

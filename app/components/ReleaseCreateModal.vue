@@ -7,6 +7,7 @@
  */
 import type { ClientOptions } from '../utils/transport'
 import type { UploadFile } from 'ant-design-vue'
+import { formatUploadLimit } from '#shared/upload-policy'
 
 const props = defineProps<{ open: boolean; workOrderNumber?: string; prefill?: ReleasePrefill | null }>()
 const emit = defineEmits<{ close: []; done: [id: string] }>()
@@ -126,7 +127,7 @@ watch([() => props.open, () => form.workOrderNumber, () => form.type, recipientS
 
 function beforeUpload(file: File) {
   if (file.size > MAX_ATTACHMENT_BYTES) {
-    message.error(`${file.name} 超过 20MB`)
+    message.error(`${file.name} 超过 ${formatUploadLimit(MAX_ATTACHMENT_BYTES)}`)
     return false
   }
   if (files.value.length >= MAX_ATTACHMENTS) {
@@ -208,7 +209,7 @@ async function submit() {
         <a-form-item label="发放说明" required><a-textarea v-model:value="form.description" :rows="2" :maxlength="2000" show-count placeholder="说明发放内容；设计变更请注明修改位置与内容" /></a-form-item>
         <a-form-item label="图纸 / 文件附件（可选）">
           <a-upload :file-list="files" :before-upload="beforeUpload" accept=".pdf,image/jpeg,image/png,image/webp" multiple @remove="removeFile"><a-button>上传 PDF / 照片</a-button></a-upload>
-          <div class="muted">纸质图纸可直接登记发放。每个附件不超过 20MB，最多 {{ MAX_ATTACHMENTS }} 个。</div>
+          <div class="muted">纸质图纸可直接登记发放。每个附件不超过 {{ formatUploadLimit(MAX_ATTACHMENT_BYTES) }}，最多 {{ MAX_ATTACHMENTS }} 个。</div>
         </a-form-item>
       </UiSectionCard>
       <UiSectionCard flat :title="form.type === 'DRAWING' ? '生产明细（BOM）' : '关联生产工件'">

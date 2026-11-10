@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import * as Vue from 'vue'
 import { mountScript, flushVue, deferred } from '../helpers/vue-script'
 import { RELEASE_TYPE_TEXT } from '../../shared/releases'
+import * as uploadPolicy from '../../shared/upload-policy'
 
 const cleanup: (() => void)[] = []
 const request = vi.fn()
@@ -22,7 +23,7 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup.splice(0).forEach(fn => fn()); vi.unstubAllGlobals() })
 async function setup() {
-  const mounted = await mountScript('app/components/ReleaseCreateModal.vue', { open: false, prefill: { drawingTaskId: 'task', workOrderNumber: 'WO', description: 'Drawing' } })
+  const mounted = await mountScript('app/components/ReleaseCreateModal.vue', { open: false, prefill: { drawingTaskId: 'task', workOrderNumber: 'WO', description: 'Drawing' } }, { '#shared/upload-policy': uploadPolicy })
   cleanup.push(mounted.unmount)
   mounted.props.open = true
   await flushVue()
@@ -54,4 +55,14 @@ it('ignores stale recipient responses and blocks issuing after preview failure',
   expect(state.recipientError).toBe('No recipients')
   await state.submit()
   expect(releasePost).not.toHaveBeenCalled()
+})
+
+it('reports the configured attachment limit instead of a copied size label', async () => {
+  vi.stubGlobal('MAX_ATTACHMENT_BYTES', 3 * 1024 * 1024)
+  const { state } = await setup()
+  const file = new File(['data'], 'drawing.pdf')
+  Object.defineProperty(file, 'size', { value: 4 * 1024 * 1024 })
+  state.beforeUpload(file)
+  expect(message.error).toHaveBeenCalledWith('drawing.pdf 超过 3MB')
+  expect(state.files).toEqual([])
 })

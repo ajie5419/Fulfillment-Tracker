@@ -9,6 +9,7 @@ import Antd, { ConfigProvider, DatePicker, Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import * as purchasePlans from '../../shared/purchase-plans'
+import * as purchaseQuantity from '../../shared/purchase-quantity'
 import * as planValidation from '../../shared/plan-validation'
 import { loadComponent } from '../helpers/vue-component'
 import { flushVue } from '../helpers/vue-script'
@@ -78,7 +79,7 @@ const targets = [
 
 async function actualModal(target: ModalTarget) {
   const [, file, props, formName, field, index] = target
-  const component = loadComponent(file, { '#shared/plan-validation': planValidation, '#shared/purchase-plans': purchasePlans })
+  const component = loadComponent(file, { '#shared/plan-validation': planValidation, '#shared/purchase-plans': purchasePlans, '#shared/purchase-quantity': purchaseQuantity })
   const setup = component.setup!
   let state: any
   component.setup = function (props, context) {

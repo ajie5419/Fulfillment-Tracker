@@ -8,6 +8,7 @@ import { kittingSend, fetchKitNode } from '../../app/composables/useKitting'
 import { processAction, fetchProcessLogs } from '../../app/composables/useProcess'
 import { issueAction, uploadPhotos } from '../../app/composables/useIssues'
 import type { ClientResponse } from '../../app/utils/transport'
+import type { DrawingRow, DrawingStats, DrawingResult } from '../../app/composables/useDrawings'
 
 const fetch = vi.fn()
 beforeEach(() => {
@@ -115,3 +116,12 @@ function checkContracts() {
   releasePost('/api/releases/unknown/missing')
 }
 void checkContracts
+
+it('设计列表与操作类型沿用真实响应，确认依据和展示字段不能丢失', () => {
+  expectTypeOf<DrawingRow>().toEqualTypeOf<ClientResponse<'/api/drawings', 'GET'>['rows'][number]>()
+  expectTypeOf<DrawingStats>().toEqualTypeOf<ClientResponse<'/api/drawings', 'GET'>['stats']>()
+  expectTypeOf<DrawingResult>().toEqualTypeOf<ClientResponse<'/api/drawings/:id/drawn', 'POST'>>()
+  expectTypeOf<DrawingRow['customerConfirmationNote']>().toEqualTypeOf<string | null>()
+  expectTypeOf<DrawingRow['presentation']>().not.toBeNullable()
+  expectTypeOf<DrawingRow['planDate']>().toEqualTypeOf<string>()
+})
