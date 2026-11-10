@@ -1,9 +1,11 @@
 export type ProcessKind = 'MATERIAL' | 'PROCESS'
 export type ProcessAction = 'start' | 'issue' | 'revise' | 'reset'
 
-/** Existing plans identify procurement deliverables by their node name, not component names. */
+/** Route by source nodes; exact names preserve drawing tasks such as commissioning drawings. */
 export const PROCUREMENT_PLAN_NODE_MARKER = '采购计划'
-export const requiresProcessForNode = (name?: string | null) => !name?.includes(PROCUREMENT_PLAN_NODE_MARKER)
+export const PROCESS_EXCLUDED_NODE_NAMES = ['调试'] as const
+export const requiresProcessForNode = (name?: string | null) =>
+  !name?.includes(PROCUREMENT_PLAN_NODE_MARKER) && !PROCESS_EXCLUDED_NODE_NAMES.some(nodeName => nodeName === name)
 
 /** 只有向前编制、下发需要有效发放单；修改、撤回始终允许回退。前后端共用文案。 */
 export function processReleaseBlockReason(kind: ProcessKind, action: ProcessAction, released: boolean): string | null {

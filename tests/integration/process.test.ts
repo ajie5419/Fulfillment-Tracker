@@ -95,7 +95,7 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
     await s.dr.markDrawn(id, null, DESIGNER)
     return s.rel.createRelease({ type: 'DRAWING', workOrderNumber: WO, description: '正式发放', userIds: ['u-worker'], drawingTaskId: id }, 'u-des')
   }
-  async function procurementTask(nodeName: string, componentName: string, partIds: string[] = []) {
+  async function nodeTask(nodeName: string, componentName: string, partIds: string[] = []) {
     const node = await db.planNode.create({ data: { workOrderNumber: WO, seq: ++seq, name: nodeName, dept: 'TECH', planDate: today() } })
     return s.dr.createTask({ workOrderNumber: WO, componentName, ownerId: 'u-des', planDate: today(), planNodeId: node.id, partIds }, 'u-des')
   }
@@ -403,19 +403,22 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
     for (const kind of ['MATERIAL', 'PROCESS'] as const) expect(await act(t.id, kind, 'issue')).toMatchObject({ status: 'ISSUED' })
   })
 
-  it('excludes procurement-plan assignments from every process view and statistic while retaining technical tasks', async () => {
+  it('excludes procurement-plan and commissioning assignments while retaining ordinary drawings and independent tasks', async () => {
     const drawing = await task('采购计划配套结构图纸')
+    const commissioningDrawing = await nodeTask('调试图纸', '试验台结构图纸')
+    const independent = await task('调试')
     const baseline = await s.pc.listProcess({ workOrderNumber: WO, view: 'all' }, true)
-    expect(baseline.rows.some(row => row.id === drawing.id)).toBe(true)
+    for (const expected of [drawing, commissioningDrawing, independent]) expect(baseline.rows.some(row => row.id === expected.id)).toBe(true)
     const plans = []
-    for (const name of ['原材料采购计划', '主要外购件采购计划', '其他外购件采购计划', '电器件采购计划', '液压件采购计划']) {
-      plans.push(await procurementTask(name, `技术文件-${plans.length}`))
+    for (const name of ['原材料采购计划', '主要外购件采购计划', '其他外购件采购计划', '电器件采购计划', '液压件采购计划', '调试']) {
+      plans.push(await nodeTask(name, `技术文件-${plans.length}`))
     }
-    // Legacy process states must not make procurement documents reappear in counters or filtered views.
+    // Legacy process states must not make excluded assignments reappear in counters or filtered views.
     await db.drawingTask.update({ where: { id: plans[0]!.id }, data: { status: 'DONE' } })
     await db.drawingTask.update({ where: { id: plans[1]!.id }, data: { materialStatus: 'DRAFTING', processStatus: 'DRAFTING' } })
     await db.drawingTask.update({ where: { id: plans[2]!.id }, data: { materialStatus: 'REVISING', processStatus: 'REVISING' } })
     await db.drawingTask.update({ where: { id: plans[3]!.id }, data: { materialStatus: 'ISSUED', processStatus: 'ISSUED' } })
+    await db.drawingTask.update({ where: { id: plans[5]!.id }, data: { status: 'DONE', materialStatus: 'DRAFTING', processStatus: 'DRAFTING' } })
     const ids = new Set(plans.map(plan => plan.id))
     for (const view of ['all', 'todo', 'waiting', 'drafting', 'revising', 'issued'] as const) {
       const result = await s.pc.listProcess({ workOrderNumber: WO, view }, true)
@@ -428,27 +431,27 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
     expect(await db.planNode.count({ where: { drawingTasks: { some: { id: { in: [...ids] } } } } })).toBe(plans.length)
   })
 
-  it('rejects direct process actions on a released procurement-plan task without changing state or logs', async () => {
-    const t = await procurementTask('主要外购件采购计划', '减速机')
+  it.each(['主要外购件采购计划', '调试'])('rejects direct process actions on a released %s assignment without changing state or logs', async (nodeName) => {
+    const t = await nodeTask(nodeName, '减速机')
     await publish(t.id)
     const before = await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })
     for (const kind of ['MATERIAL', 'PROCESS'] as const) {
       for (const action of ['start', 'issue', 'revise', 'reset'] as const) {
-        await expect(act(t.id, kind, action)).rejects.toThrow('采购计划任务不进入工艺部门')
+        await expect(act(t.id, kind, action)).rejects.toThrow('当前节点任务不进入工艺部门')
       }
     }
     expect(await db.drawingTask.findUniqueOrThrow({ where: { id: t.id } })).toEqual(before)
     expect(await db.processDocLog.count({ where: { taskId: t.id } })).toBe(0)
   })
 
-  it('does not revise procurement material lists or notify process owners after a change or void', async () => {
+  it.each(['原材料采购计划', '调试'])('does not revise %s material lists or notify process owners after a change or void', async (nodeName) => {
     const p = await makePart()
-    const t = await procurementTask('原材料采购计划', '原材料', [p.id])
+    const t = await nodeTask(nodeName, '技术文件', [p.id])
     const release = await publish(t.id)
     // Preserve historical statuses and logs; changing module ownership does not rewrite audit history.
     await db.drawingTask.update({ where: { id: t.id }, data: { materialStatus: 'ISSUED', processStatus: 'ISSUED' } })
     const reminders = await db.reminder.count({ where: { kind: 'PROCESS' } })
-    const changed = await s.rel.createRelease({ type: 'CHANGE', workOrderNumber: WO, description: '采购文件更新', partIds: [p.id], userIds: ['u-worker'] }, 'u-des')
+    const changed = await s.rel.createRelease({ type: 'CHANGE', workOrderNumber: WO, description: `${nodeName}文件更新`, partIds: [p.id], userIds: ['u-worker'] }, 'u-des')
     expect(changed.material).toEqual({ revising: 0, notified: false })
     expect(await db.reminder.count({ where: { kind: 'PROCESS' } })).toBe(reminders)
     await s.rel.voidRelease(release.id, DESIGNER)
@@ -456,14 +459,14 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
     expect(await db.processDocLog.count({ where: { taskId: t.id } })).toBe(0)
   })
 
-  it('requires technical completion but no procurement material list before ready notices, in-plant start or outsourcing', async () => {
+  it.each(['原材料采购计划', '调试'])('requires technical completion but no %s material list before ready notices, in-plant start or outsourcing', async (nodeName) => {
     const workshop = await import('../../server/services/flow/workshop')
     const flow = await import('../../server/services/flow/flow')
     const parts = [await makePart(), await makePart()]
-    const steps = []
+    const steps: Awaited<ReturnType<Services['steps']['addStep']>>[] = []
     for (const p of parts) steps.push(await s.steps.addStep(p.id, { processId: 'P-CUT', mode: 'SELF', ownerId: 'u-worker' }, 'u-worker'))
     const partIds = parts.map(p => p.id)
-    const technical = await procurementTask('原材料采购计划', '原材料文件', partIds)
+    const technical = await nodeTask(nodeName, '技术文件', partIds)
     const drawing = await task('真实结构图纸', partIds)
     await publish(drawing.id)
     const rows = async () => (await workshop.listProduction({ workOrderNumber: WO })).rows.filter(row => steps.some(step => step.id === row.stepId))
@@ -480,7 +483,7 @@ describe.skipIf(!DB)('工艺模块（料单、工艺）', () => {
     expect((await rows()).every(row => row.column === 'ready')).toBe(true)
     expect(await db.drawingTask.findUniqueOrThrow({ where: { id: technical.id } })).toMatchObject({ status: 'DONE', materialStatus: 'NOT_STARTED', processStatus: 'NONE' })
     await expect(flow.startStep({ stepId: steps[0]!.id, actorId: 'u-worker', source: 'PC' })).resolves.toMatchObject({ status: 'IN_PROGRESS' })
-    await db.qmsSupplier.create({ data: { id: 'T-PROC-SUPPLIER', name: '工艺测试外协厂', updatedAt: new Date() } })
+    await db.qmsSupplier.upsert({ where: { id: 'T-PROC-SUPPLIER' }, update: {}, create: { id: 'T-PROC-SUPPLIER', name: '工艺测试外协厂', updatedAt: new Date() } })
     await db.routeStep.update({ where: { id: steps[1]!.id }, data: { mode: 'EXTERNAL_OUTSOURCE', supplierId: 'T-PROC-SUPPLIER' } })
     await expect(flow.sendStep({ stepId: steps[1]!.id, actorId: 'u-worker', source: 'PC', promisedReturnDate: today() })).resolves.toMatchObject({ status: 'OUT' })
   })

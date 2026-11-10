@@ -1,11 +1,14 @@
 import type { Prisma } from '@prisma/client'
-import { PROCUREMENT_PLAN_NODE_MARKER, requiresProcessForNode } from '../../../shared/process'
+import { PROCUREMENT_PLAN_NODE_MARKER, PROCESS_EXCLUDED_NODE_NAMES, requiresProcessForNode } from '../../../shared/process'
 
-/** Preserve standalone drawing tasks; procurement planning does not require manufacturing documents. */
+/** Preserve drawing tasks; procurement planning and commissioning do not require manufacturing documents. */
 export const processTaskWhere: Prisma.DrawingTaskWhereInput = {
   OR: [
     { planNodeId: null },
-    { planNode: { is: { NOT: { name: { contains: PROCUREMENT_PLAN_NODE_MARKER } } } } },
+    { planNode: { is: { NOT: [
+      { name: { contains: PROCUREMENT_PLAN_NODE_MARKER } },
+      { name: { in: [...PROCESS_EXCLUDED_NODE_NAMES] } },
+    ] } } },
   ],
 }
 

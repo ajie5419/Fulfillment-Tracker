@@ -56,7 +56,7 @@ export async function changeStatus(taskId: string, input: ActionInput, actorId: 
   return drawingTx(async (tx) => {
     const task = await lockTask(tx, taskId)
     if (task.status === 'CANCELLED') throw new FlowError('设计任务已取消，不能再改料单、工艺')
-    if (!await taskRequiresProcess(tx, task.planNodeId)) throw new FlowError('采购计划任务不进入工艺部门，无需编制料单或工艺')
+    if (!await taskRequiresProcess(tx, task.planNodeId)) throw new FlowError('当前节点任务不进入工艺部门，无需编制料单或工艺')
     const current = input.kind === 'MATERIAL' ? task.materialStatus : task.processStatus
     const to = nextStatus(input.kind, current, input.action)
     if (!to) {
