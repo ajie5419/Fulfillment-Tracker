@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * 设计任务四阶段看板视图（R11）：
- * 按「1. 设计中 → 2. 待客户确认 → 3. 待图纸发放 → 4. 已发放完成」四列并排展示，
- * 直观呈现各环节在手任务与临期/超期预警，支持卡片内一键流转到下一阶段。
+ * 按「设计中 → 待客户确认 → 待图纸发放 → 已发放完成」四列并排展示。
+ * 遵循前端设计规范：单层白底卡片 + 1px 中性灰细边框，不用左侧色条与多余彩色底块，用文字颜色表达临期/逾期状态。
  */
 const props = defineProps<{
   rows: DrawingRow[]
@@ -21,11 +21,11 @@ const emit = defineEmits<{
 
 type StageKey = 'PENDING' | 'CONFIRM' | 'RELEASE' | 'DONE'
 
-const STAGES: { key: StageKey; title: string; dotClass: string; emptyText: string }[] = [
-  { key: 'PENDING', title: '1. 设计中', dotClass: 'dot-blue', emptyText: '暂无设计中的任务' },
-  { key: 'CONFIRM', title: '2. 待客户确认', dotClass: 'dot-amber', emptyText: '完成需确认的设计后流转至此' },
-  { key: 'RELEASE', title: '3. 待图纸发放', dotClass: 'dot-indigo', emptyText: '设计完成 / 客户确认后在此发放' },
-  { key: 'DONE', title: '4. 已发放完成', dotClass: 'dot-green', emptyText: '暂无已发放完成的任务' },
+const STAGES: { key: StageKey; title: string; emptyText: string }[] = [
+  { key: 'PENDING', title: '设计中', emptyText: '暂无设计中的任务' },
+  { key: 'CONFIRM', title: '待客户确认', emptyText: '完成需确认的设计后流转至此' },
+  { key: 'RELEASE', title: '待图纸发放', emptyText: '设计完成 / 客户确认后在此发放' },
+  { key: 'DONE', title: '已发放完成', emptyText: '暂无已发放完成的任务' },
 ]
 
 function stageOf(r: DrawingRow): StageKey | null {
@@ -38,7 +38,6 @@ function stageOf(r: DrawingRow): StageKey | null {
 
 function sortStageRows(list: DrawingRow[]): DrawingRow[] {
   return [...list].sort((a, b) => {
-    // 逾期或临期预警优先排在前面，方便第一时间处理
     const ua = a.overdue ? 2 : a.alertLevel === 'YELLOW' ? 1 : 0
     const ub = b.overdue ? 2 : b.alertLevel === 'YELLOW' ? 1 : 0
     if (ua !== ub) return ub - ua
@@ -97,10 +96,7 @@ function hasMenu(r: DrawingRow): boolean {
     <div class="kanban-board">
       <div v-for="col in columns" :key="col.key" class="board-col">
         <div class="col-head">
-          <span class="col-title">
-            <span class="col-dot" :class="col.dotClass" />
-            <span>{{ col.title }}</span>
-          </span>
+          <span class="col-title">{{ col.title }}</span>
           <span class="col-count">{{ col.items.length }}</span>
         </div>
 
@@ -109,15 +105,7 @@ function hasMenu(r: DrawingRow): boolean {
         </div>
 
         <div v-else class="col-cards">
-          <div
-            v-for="r in col.items"
-            :key="r.id"
-            class="k-card"
-            :class="{
-              'is-overdue': r.overdue && col.key !== 'DONE',
-              'is-risk': !r.overdue && r.alertLevel === 'YELLOW' && col.key !== 'DONE',
-            }"
-          >
+          <div v-for="r in col.items" :key="r.id" class="k-card">
             <div class="k-top">
               <div class="k-title-wrap">
                 <button
@@ -134,7 +122,7 @@ function hasMenu(r: DrawingRow): boolean {
                 </span>
               </div>
               <div class="k-top-right">
-                <WoLink :no="r.workOrderNumber" class="k-wo-pill" />
+                <WoLink :no="r.workOrderNumber" />
                 <a-dropdown v-if="hasMenu(r)" placement="bottomRight">
                   <button type="button" class="k-more-btn" aria-label="更多操作">···</button>
                   <template #overlay>
@@ -153,64 +141,55 @@ function hasMenu(r: DrawingRow): boolean {
               </div>
             </div>
 
-            <div v-if="r.planNode" class="k-node">
-              <PlanNodeCell :work-order-number="r.workOrderNumber" :node="r.planNode" />
-            </div>
-
-            <div
-              v-if="(r.presentation?.designWarning || (r.needsCustomerConfirm && col.key !== 'DONE')) && col.key !== 'DONE'"
-              class="k-badges"
-            >
+            <div v-if="r.planNode || (r.needsCustomerConfirm && col.key !== 'DONE')" class="k-sub">
+              <PlanNodeCell v-if="r.planNode" :work-order-number="r.workOrderNumber" :node="r.planNode" />
               <span
-                v-if="r.presentation?.designWarning"
-                class="k-badge"
-                :class="r.presentation.designOverdue ? 'badge-late' : 'badge-risk'"
+                v-if="r.needsCustomerConfirm && !r.customerConfirmedDate && col.key !== 'DONE'"
+                class="k-confirm-note"
+                :class="{ 'text-late': r.presentation?.customerOverdue }"
               >
-                {{ r.presentation.designWarning }}
+                {{ r.presentation?.customerOverdue ? r.presentation.customerText : `需客户确认${r.customerPlanDate ? ` ${shortDay(r.customerPlanDate)}` : ''}` }}
               </span>
-              <span
-                v-if="r.needsCustomerConfirm && !r.customerConfirmedDate"
-                class="k-badge"
-                :class="r.presentation?.customerOverdue ? 'badge-late' : 'badge-risk'"
-              >
-                {{ r.presentation?.customerOverdue ? r.presentation.customerText : `需客户确认${r.customerPlanDate ? ` (${shortDay(r.customerPlanDate)})` : ''}` }}
-              </span>
-              <span v-else-if="r.customerConfirmedDate" class="k-badge badge-done">
-                客户已确认 ({{ shortDay(r.customerConfirmedDate) }})
+              <span v-else-if="r.customerConfirmedDate && col.key !== 'DONE'" class="k-confirm-note text-done">
+                已确认 {{ shortDay(r.customerConfirmedDate) }}
               </span>
             </div>
 
             <div class="k-foot">
-              <span class="k-meta" :class="{ 'is-unassigned': !r.ownerId }">
-                {{ r.ownerText }} · {{ scheduleLabel(r, col.key) }}
-              </span>
+              <div class="k-meta">
+                <span :class="{ 'is-unassigned': !r.ownerId }">{{ r.ownerText }}</span>
+                <span> · {{ scheduleLabel(r, col.key) }}</span>
+                <span
+                  v-if="r.presentation?.designWarning && col.key !== 'DONE'"
+                  :class="r.presentation.designOverdue ? 'text-late' : 'text-risk'"
+                >
+                  · {{ r.presentation.designWarning.replace(/^设计\s*/, '') }}
+                </span>
+              </div>
 
-              <button
+              <a-button
                 v-if="col.key === 'PENDING' && r.permissions.markDrawn"
-                type="button"
-                class="k-action-btn"
+                size="small"
                 @click="emit('act', r, 'drawn')"
               >
-                完成设计 →
-              </button>
-              <button
+                完成设计
+              </a-button>
+              <a-button
                 v-else-if="col.key === 'CONFIRM' && r.permissions.confirm && canEditTask"
-                type="button"
-                class="k-action-btn"
+                size="small"
                 @click="emit('act', r, 'confirm')"
               >
-                客户确认 →
-              </button>
-              <button
+                客户确认
+              </a-button>
+              <a-button
                 v-else-if="col.key === 'RELEASE' && r.status === 'DRAWN' && canRelease"
-                type="button"
-                class="k-action-btn"
+                size="small"
                 @click="emit('release', r)"
               >
-                一键发放 →
-              </button>
-              <span v-else-if="col.key === 'DONE'" class="k-done-tag">
-                ✓ 已完成
+                一键发放
+              </a-button>
+              <span v-else-if="col.key === 'DONE'" class="text-done">
+                已完成
               </span>
             </div>
           </div>
@@ -232,7 +211,7 @@ function hasMenu(r: DrawingRow): boolean {
 .board-col {
   background: var(--ft-fill);
   border: 1px solid var(--ft-border);
-  border-radius: 12px;
+  border-radius: var(--card-radius-inner);
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -245,33 +224,21 @@ function hasMenu(r: DrawingRow): boolean {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 4px 6px;
+  padding: 2px 4px 4px;
   font-size: 13px;
   font-weight: 600;
   color: var(--ft-text);
 }
 
 .col-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  color: var(--ft-text);
 }
-
-.col-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.dot-blue { background: var(--ft-primary); }
-.dot-amber { background: var(--ft-risk); }
-.dot-indigo { background: var(--ft-indigo); }
-.dot-green { background: var(--ft-done); }
 
 .col-count {
   font-size: 12px;
-  padding: 1px 8px;
+  padding: 0 7px;
+  height: 20px;
+  line-height: 18px;
   border-radius: 999px;
   background: var(--ft-card-bg);
   border: 1px solid var(--ft-border);
@@ -282,7 +249,7 @@ function hasMenu(r: DrawingRow): boolean {
 
 .col-empty {
   flex: 1;
-  border: 1px dashed var(--ft-border-hover);
+  border: 1px dashed var(--ft-border);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -302,12 +269,11 @@ function hasMenu(r: DrawingRow): boolean {
 .k-card {
   background: var(--ft-card-bg);
   border: 1px solid var(--ft-border);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  box-shadow: var(--ft-card-shadow);
+  gap: 6px;
   transition: border-color 0.15s ease;
 }
 
@@ -315,17 +281,9 @@ function hasMenu(r: DrawingRow): boolean {
   border-color: var(--ft-border-hover);
 }
 
-.k-card.is-risk {
-  border-left: 3px solid var(--ft-risk);
-}
-
-.k-card.is-overdue {
-  border-left: 3px solid var(--ft-late);
-}
-
 .k-top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
@@ -362,7 +320,7 @@ function hasMenu(r: DrawingRow): boolean {
 }
 
 .k-parts-count {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--ft-text-3);
   white-space: nowrap;
 }
@@ -370,19 +328,9 @@ function hasMenu(r: DrawingRow): boolean {
 .k-top-right {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex-shrink: 0;
-}
-
-.k-wo-pill {
-  font-size: 11px;
-  font-weight: 600;
-  background: var(--ft-primary-bg);
-  color: var(--ft-primary-text);
-  padding: 1px 6px;
-  border-radius: 4px;
-  line-height: 18px;
-  text-decoration: none;
+  font-size: 12px;
 }
 
 .k-more-btn {
@@ -406,40 +354,21 @@ function hasMenu(r: DrawingRow): boolean {
   color: var(--ft-text);
 }
 
-.k-node {
+.k-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 12px;
   min-width: 0;
 }
 
-.k-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.k-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 7px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16px;
-}
-
-.badge-risk {
-  background: var(--ft-risk-bg);
-  color: var(--ft-risk-text);
-}
-
-.badge-late {
-  background: var(--ft-late-bg);
-  color: var(--ft-late-text);
-}
-
-.badge-done {
-  background: var(--ft-done-bg);
-  color: var(--ft-done-text);
+.k-confirm-note {
+  color: var(--ft-text-3);
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .k-foot {
@@ -449,7 +378,7 @@ function hasMenu(r: DrawingRow): boolean {
   gap: 8px;
   padding-top: 6px;
   border-top: 1px solid var(--card-border-subtle);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--ft-text-2);
 }
 
@@ -461,32 +390,20 @@ function hasMenu(r: DrawingRow): boolean {
   font-variant-numeric: tabular-nums;
 }
 
-.k-meta.is-unassigned {
+.k-meta .is-unassigned {
   color: var(--ft-text-3);
 }
 
-.k-action-btn {
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 5px;
-  border: 1px solid var(--ft-border);
-  background: var(--ft-primary-bg);
-  color: var(--ft-primary-text);
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: filter 0.15s ease;
+.text-risk {
+  color: var(--ft-risk-text);
 }
 
-.k-action-btn:hover {
-  filter: brightness(0.96);
+.text-late {
+  color: var(--ft-late-text);
 }
 
-.k-done-tag {
+.text-done {
   color: var(--ft-done-text);
-  font-weight: 500;
   white-space: nowrap;
   flex-shrink: 0;
 }
