@@ -18,7 +18,7 @@ defineProps<{ workOrderNumber: string; node: { id: string; seq: number; name: st
 </template>
 
 <style scoped>
-.node-cell-link { display: inline-flex; align-items: center; gap: 6px; color: var(--ft-text-2); text-decoration: none; max-width: 100%; }
+.node-cell-link { display: inline-flex; align-items: center; gap: 6px; color: var(--ft-text-2); text-decoration: none; max-width: 100%; min-width: 0; }
 .node-cell-link:hover { color: var(--ft-primary); }
 .node-code { flex: none; padding: 0 5px; height: 19px; line-height: 19px; border-radius: 4px; background: var(--ft-fill); border: 1px solid var(--ft-border); color: var(--ft-text-2); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .node-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

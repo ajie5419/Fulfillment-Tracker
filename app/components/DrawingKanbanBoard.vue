@@ -141,30 +141,40 @@ function hasMenu(r: DrawingRow): boolean {
               </div>
             </div>
 
-            <div v-if="r.planNode || (r.needsCustomerConfirm && col.key !== 'DONE')" class="k-sub">
-              <PlanNodeCell v-if="r.planNode" :work-order-number="r.workOrderNumber" :node="r.planNode" />
-              <span
-                v-if="r.needsCustomerConfirm && !r.customerConfirmedDate && col.key !== 'DONE'"
-                class="k-confirm-note"
-                :class="{ 'text-late': r.presentation?.customerOverdue }"
-              >
-                {{ r.presentation?.customerOverdue ? r.presentation.customerText : `需客户确认${r.customerPlanDate ? ` ${shortDay(r.customerPlanDate)}` : ''}` }}
-              </span>
-              <span v-else-if="r.customerConfirmedDate && col.key !== 'DONE'" class="k-confirm-note text-done">
-                已确认 {{ shortDay(r.customerConfirmedDate) }}
-              </span>
+            <div v-if="r.planNode" class="k-sub">
+              <PlanNodeCell :work-order-number="r.workOrderNumber" :node="r.planNode" />
             </div>
 
             <div class="k-foot">
               <div class="k-meta">
-                <span :class="{ 'is-unassigned': !r.ownerId }">{{ r.ownerText }}</span>
-                <span> · {{ scheduleLabel(r, col.key) }}</span>
-                <span
-                  v-if="r.presentation?.designWarning && col.key !== 'DONE'"
-                  :class="r.presentation.designOverdue ? 'text-late' : 'text-risk'"
+                <div class="k-meta-line">
+                  <span :class="{ 'is-unassigned': !r.ownerId }">{{ r.ownerText }}</span>
+                  <span> · {{ scheduleLabel(r, col.key) }}</span>
+                </div>
+                <div
+                  v-if="col.key !== 'DONE' && (r.presentation?.designWarning || r.needsCustomerConfirm)"
+                  class="k-meta-sub"
                 >
-                  · {{ r.presentation.designWarning.replace(/^设计\s*/, '') }}
-                </span>
+                  <span
+                    v-if="r.presentation?.designWarning"
+                    :class="r.presentation.designOverdue ? 'text-late' : 'text-risk'"
+                  >
+                    {{ r.presentation.designWarning.replace(/^设计\s*/, '') }}
+                  </span>
+                  <span
+                    v-if="r.presentation?.designWarning && r.needsCustomerConfirm"
+                    class="k-sep"
+                  >·</span>
+                  <span
+                    v-if="r.needsCustomerConfirm && !r.customerConfirmedDate"
+                    :class="{ 'text-late': r.presentation?.customerOverdue }"
+                  >
+                    {{ r.presentation?.customerOverdue ? r.presentation.customerText : `需确认${r.customerPlanDate ? ` ${shortDay(r.customerPlanDate)}` : ''}` }}
+                  </span>
+                  <span v-else-if="r.customerConfirmedDate" class="text-done">
+                    已确认 {{ shortDay(r.customerConfirmedDate) }}
+                  </span>
+                </div>
               </div>
 
               <a-button
@@ -274,6 +284,8 @@ function hasMenu(r: DrawingRow): boolean {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+  overflow: hidden;
   transition: border-color 0.15s ease;
 }
 
@@ -357,18 +369,9 @@ function hasMenu(r: DrawingRow): boolean {
 .k-sub {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   font-size: 12px;
   min-width: 0;
-}
-
-.k-confirm-note {
-  color: var(--ft-text-3);
-  font-size: 12px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
+  overflow: hidden;
 }
 
 .k-foot {
@@ -380,14 +383,32 @@ function hasMenu(r: DrawingRow): boolean {
   border-top: 1px solid var(--card-border-subtle);
   font-size: 12px;
   color: var(--ft-text-2);
+  min-width: 0;
 }
 
 .k-meta {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   font-variant-numeric: tabular-nums;
+}
+
+.k-meta-line,
+.k-meta-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 4px;
+  line-height: 18px;
+}
+
+.k-meta-sub {
+  color: var(--ft-text-3);
+}
+
+.k-sep {
+  color: var(--ft-text-3);
 }
 
 .k-meta .is-unassigned {
