@@ -140,6 +140,14 @@ describe('质量门禁的统计口径', () => {
 })
 
 describe('质量门禁的基线比较', () => {
+  it('架构违规不能通过记入相同基线而豁免', () => {
+    const root = project({
+      'app/model.ts': 'interface DrawingRow { id: string }',
+    })
+    const result = analyzeProject(root)
+    expect(compareBaseline(result, result)).toEqual([expect.stringContaining('derived-api-model')])
+  })
+
   it('所有指标上涨均拒绝，回到原值或计数下降允许通过', () => {
     const root = project()
     const baseline = analyzeProject(root)

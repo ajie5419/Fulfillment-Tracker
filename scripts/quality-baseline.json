@@ -4,7 +4,7 @@
   "counts": {
     "explicitAny": 0,
     "doubleAssertions": 6,
-    "nonNullAssertions": 243,
+    "nonNullAssertions": 242,
     "duplicateStatusDictionaryGroups": 0,
     "runtimeCycleGroups": 0,
     "oversizedFiles": 0
