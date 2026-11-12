@@ -25,13 +25,13 @@ export const timeText = (v: string | Date | null | undefined) => (v ? new Date(v
 export { localDayAfter as dayAfter } from '#shared/dates'
 
 export function useMaster() {
-  return useFetch('/api/master', { key: 'master', default: () => ({ suppliers: [], processes: [], users: [] }) })
+  return useApiFetch('/api/master', { key: 'master', default: () => ({ suppliers: [], processes: [], users: [] }) })
 }
 
 export function useWorkOrders() {
-  return useFetch('/api/work-orders', { key: 'work-orders', default: () => [] })
+  return useApiFetch('/api/work-orders', { key: 'work-orders', default: () => [] })
 }
 
 export function useTodos() {
-  return useFetch('/api/todos', { key: 'todos', default: () => [] })
+  return useApiFetch('/api/todos', { key: 'todos', default: () => [] })
 }

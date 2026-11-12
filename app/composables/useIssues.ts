@@ -32,7 +32,7 @@ export const BOARD_COLOR = SHARED_BOARD_COLOR
 export const BOARD_TEXT = SHARED_BOARD_TEXT
 
 export function useIssueOptions() {
-  return useFetch('/api/issues/options', { key: 'issue-options', default: () => ({ categories: [], departments: [] }) })
+  return useApiFetch('/api/issues/options', { key: 'issue-options', default: () => ({ categories: [], departments: [] }) })
 }
 
 /** 提交异常操作；body 里 undefined 的字段不改 */

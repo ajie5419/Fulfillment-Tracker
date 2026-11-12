@@ -73,9 +73,9 @@ async function call(fn: () => unknown, ok?: string) {
     emit('changed')
   }
 }
-const patchStep = (s: StepRow, body: Record<string, unknown>) => call(() => $fetch(`/api/steps/${s.id}`, { method: 'PATCH', body }))
-const moveStep = (s: StepRow, direction: 'up' | 'down') => call(() => $fetch(`/api/steps/${s.id}/move`, { method: 'POST', body: { direction } }))
-const removeStep = (s: StepRow) => call(() => $fetch(`/api/steps/${s.id}`, { method: 'DELETE' }), '已删除')
+const patchStep = (s: StepRow, body: Record<string, unknown>) => call(() => apiFetch(`/api/steps/${s.id}`, { method: 'PATCH', body }))
+const moveStep = (s: StepRow, direction: 'up' | 'down') => call(() => apiFetch(`/api/steps/${s.id}/move`, { method: 'POST', body: { direction } }))
+const removeStep = (s: StepRow) => call(() => apiFetch(`/api/steps/${s.id}`, { method: 'DELETE' }), '已删除')
 
 // ───── 加一道 ─────
 const draft = reactive<{ processId?: string; mode: StepModeKey; supplierId?: string; ownerId?: string; planStartDate?: string; dueDate?: string; planNodeId?: string }>({ mode: 'SELF' })
@@ -83,14 +83,14 @@ async function addStep() {
   if (!props.part) return
   if (!draft.processId) return message.warning('请选择工序')
   if (props.planOpts.published && !draft.planNodeId) return message.warning('该工单已发布总计划，请选择所属总计划节点')
-  await call(() => $fetch(`/api/parts/${props.part!.id}/steps`, { method: 'POST', body: { ...draft, supplierId: draft.supplierId ?? null, planStartDate: draft.planStartDate ?? null, planNodeId: draft.planNodeId ?? null } }))
+  await call(() => apiFetch(`/api/parts/${props.part!.id}/steps`, { method: 'POST', body: { ...draft, supplierId: draft.supplierId ?? null, planStartDate: draft.planStartDate ?? null, planNodeId: draft.planNodeId ?? null } }))
   Object.assign(draft, { processId: undefined, supplierId: undefined, ownerId: undefined, planStartDate: undefined, dueDate: undefined })
 }
 
 // ───── 模板、复制 ─────
 const templateTarget = ref<{ partId: string; partName: string; mode: 'apply' | 'save' } | null>(null)
 const copyForm = reactive({ open: false, fromWo: undefined as string | undefined, fromPartId: undefined as string | undefined })
-const { data: copyParts, error: copyPartsError } = await useFetch('/api/parts', {
+const { data: copyParts, error: copyPartsError } = await useApiFetch('/api/parts', {
   query: computed(() => ({ workOrderNumber: copyForm.fromWo })),
   default: () => [],
   immediate: false,
@@ -101,7 +101,7 @@ function openCopy() {
 }
 async function doCopy() {
   if (!props.part || !copyForm.fromPartId) return message.warning('请选择来源工件')
-  await call(() => $fetch(`/api/parts/${props.part!.id}/copy-route`, { method: 'POST', body: { fromPartId: copyForm.fromPartId } }), '已复制')
+  await call(() => apiFetch(`/api/parts/${props.part!.id}/copy-route`, { method: 'POST', body: { fromPartId: copyForm.fromPartId } }), '已复制')
   copyForm.open = false
 }
 
@@ -121,7 +121,7 @@ watch(() => props.part, (p) => {
 async function saveInfo() {
   if (!props.part) return
   if (!info.name.trim()) return message.warning('请填写工件名称')
-  await call(() => $fetch(`/api/parts/${props.part!.id}`, { method: 'PATCH', body: { name: info.name, drawingNo: info.drawingNo || null, revision: info.revision || null, quantity: info.quantity, qmsPartId: info.qmsPartId || null } }), '已保存')
+  await call(() => apiFetch(`/api/parts/${props.part!.id}`, { method: 'PATCH', body: { name: info.name, drawingNo: info.drawingNo || null, revision: info.revision || null, quantity: info.quantity, qmsPartId: info.qmsPartId || null } }), '已保存')
 }
 function removePart() {
   const p = props.part
@@ -132,7 +132,7 @@ function removePart() {
     okType: 'danger',
     onOk: async () => {
       try {
-        await $fetch(`/api/parts/${p.id}`, { method: 'DELETE' })
+        await apiFetch(`/api/parts/${p.id}`, { method: 'DELETE' })
         message.success('已删除')
         emit('deleted')
       } catch (e) {

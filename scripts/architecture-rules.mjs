@@ -19,6 +19,21 @@ export function inspectArchitecture(file, content) {
     const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
     const line = node => source.getLineAndCharacterOfPosition(node.getStart(source)).line + offset + 1
     function visit(node) {
+      if (file.startsWith('server/api/') && ts.isExportAssignment(node)) {
+        const expression = node.expression
+        const handler = ts.isCallExpression(expression) && ts.isIdentifier(expression.expression) ? expression.expression.text : ''
+        const files = ['server/api/files/[id].get.ts', 'server/api/purchases/template.get.ts']
+        const allowed = files.includes(file) ? ['defineFileHandler'] : ['defineApiHandler', 'defineFlowHandler', 'defineAdminHandler']
+        if (!allowed.includes(handler)) add(line(node), 'api-response-contract: API 必须通过统一响应入口，下载入口单独列明')
+      }
+      if (file.startsWith('app/') && ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+        const name = node.expression.text
+        const boundary = ['app/utils/api-fetch.ts', 'app/composables/useApiFetch.ts', 'app/plugins/api-401.client.ts'].includes(file)
+        const logout = name === '$fetch' && ts.isStringLiteralLike(node.arguments[0] ?? node) && node.arguments[0].text === '/auth/logout'
+        if (!boundary && !logout && ['$fetch', 'useFetch', 'useRequestFetch', 'fetch'].includes(name)) {
+          add(line(node), 'api-response-contract: 页面请求必须通过统一解包层')
+        }
+      }
       if (file.startsWith('app/') && (ts.isImportDeclaration(node) || ts.isExportDeclaration(node))) {
         const clause = ts.isImportDeclaration(node) ? node.importClause : node.exportClause
         const typeOnly = node.isTypeOnly || clause?.isTypeOnly || (clause?.namedBindings && ts.isNamedImports(clause.namedBindings) && !clause.name && clause.namedBindings.elements.length > 0 && clause.namedBindings.elements.every(n => n.isTypeOnly))

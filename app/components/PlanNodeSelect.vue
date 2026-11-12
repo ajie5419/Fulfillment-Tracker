@@ -20,7 +20,7 @@ const props = withDefaults(
 const value = defineModel<string | null | undefined>('value')
 const emit = defineEmits<{ pick: [planDate: string] }>()
 
-const requestFetch = useRequestFetch()
+const requestFetch = useApiRequestFetch()
 const opts = ref<{ published: boolean; nodes: Opt[] }>({ published: false, nodes: [] })
 const loadError = ref(false)
 const loading = ref(false)

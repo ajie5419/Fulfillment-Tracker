@@ -2,6 +2,12 @@ import type { H3Event } from 'h3'
 import type { z } from 'zod'
 import { FlowError, FlowForbidden, FlowHttpError } from '../services/flow/errors'
 import { BUSINESS_ERROR_HTTP, businessCodeForStatus, isBusinessErrorCode } from '../../shared/errors'
+import { apiSuccess } from '../../shared/api-response'
+
+/** All JSON routes wrap at this boundary; services keep returning domain data. */
+export function defineApiHandler<T>(handler: (event: H3Event) => T | Promise<T>) {
+  return defineEventHandler(async event => apiSuccess(await handler(event)))
+}
 
 /**
  * 业务接口统一入口：要求登录 + canSee（先算好本请求的可见范围），并把服务层的业务错误转成中文提示：
@@ -9,7 +15,7 @@ import { BUSINESS_ERROR_HTTP, businessCodeForStatus, isBusinessErrorCode } from 
  * 路由只做三件事：zod 校验 → 调服务 → 返回。
  */
 export function defineFlowHandler<T>(handler: (event: H3Event, user: AuthUser) => Promise<T>) {
-  return defineEventHandler(async (event) => {
+  return defineApiHandler(async (event) => {
     const user = requireUser(event)
     await assertCanSee(event)
     return runFlow(event, user, handler)
@@ -18,7 +24,16 @@ export function defineFlowHandler<T>(handler: (event: H3Event, user: AuthUser) =
 
 /** 设置页接口：仅管理员（NUXT_ADMIN_USER_IDS），其他人 403。不能只靠前端隐藏菜单 */
 export function defineAdminHandler<T>(handler: (event: H3Event, user: AuthUser) => Promise<T>) {
-  return defineEventHandler(async (event) => runFlow(event, requireAdmin(event), handler))
+  return defineApiHandler(async (event) => runFlow(event, requireAdmin(event), handler))
+}
+
+/** Downloads preserve their bytes and headers while sharing business authorization. */
+export function defineFileHandler<T>(handler: (event: H3Event, user: AuthUser) => Promise<T>) {
+  return defineEventHandler(async event => {
+    const user = requireUser(event)
+    await assertCanSee(event)
+    return runFlow(event, user, handler)
+  })
 }
 
 async function runFlow<T>(event: H3Event, user: AuthUser, handler: (event: H3Event, user: AuthUser) => Promise<T>) {

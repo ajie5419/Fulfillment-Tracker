@@ -56,12 +56,12 @@ beforeEach(() => {
   for (const mod of Object.values(composableModules)) for (const [key, value] of Object.entries(mod)) if (/^use[A-Z]/.test(key)) vi.stubGlobal(key, value)
   vi.stubGlobal('clientRequest', clientRequest)
   vi.stubGlobal('useRoute', () => route)
-  vi.stubGlobal('useFetch', async () => ({ data: Vue.ref([{ id: 't1', name: '模板一', nodes: [] }, { id: 't2', name: '模板二', nodes: [] }]) }))
+  vi.stubGlobal('useApiFetch', async () => ({ data: Vue.ref([{ id: 't1', name: '模板一', nodes: [] }, { id: 't2', name: '模板二', nodes: [] }]) }))
   vi.stubGlobal('apiError', (e: unknown) => (e instanceof Error ? e.message : String(e)))
   vi.stubGlobal('message', Object.fromEntries(['success', 'error', 'warning'].map((k) => [k, (text: string) => toasts.push([k, text])])))
   vi.stubGlobal('Modal', { confirm: (opts: Record<string, any>) => modals.push(opts) })
   vi.stubGlobal('document', { querySelector: (selector: string) => ({ scrollIntoView: (opts: unknown) => scrolls.push([selector, opts]) }) })
-  vi.stubGlobal('$fetch', async (url: string, opts: { method?: string; body?: unknown; query?: unknown } = {}) => {
+  vi.stubGlobal('apiFetch', async (url: string, opts: { method?: string; body?: unknown; query?: unknown } = {}) => {
     calls.push({ url, method: opts.method ?? 'GET', body: opts.body, query: opts.query })
     if (failNext === url) throw new Error('boom')
     if (url === '/api/plan') return plan

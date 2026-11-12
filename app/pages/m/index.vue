@@ -44,7 +44,7 @@ async function open(t: Todo) {
       return // 取消
     }
     try {
-      await $fetch(`/api/plan/tasks/${t.planTask.id}/complete`, { method: 'POST', body: {} })
+      await apiFetch(`/api/plan/tasks/${t.planTask.id}/complete`, { method: 'POST', body: {} })
       showSuccessToast('已完成')
       await refreshTodos()
     } catch (e) {
@@ -63,7 +63,7 @@ async function open(t: Todo) {
       return // 取消
     }
     try {
-      await $fetch(`/api/steps/${t.step.id}/start`, { method: 'POST', body: { source: 'MOBILE' } })
+      await apiFetch(`/api/steps/${t.step.id}/start`, { method: 'POST', body: { source: 'MOBILE' } })
       showSuccessToast('已开工，完工时到"生产"的"在做"点完工')
       await refreshTodos()
     } catch (e) {
@@ -81,7 +81,7 @@ async function transfer(action: { id: string }) {
   transferring.value = null
   if (!t) return
   try {
-    await $fetch(`/api/todos/${t.id}/transfer`, { method: 'POST', body: { toUserId: action.id } })
+    await apiFetch(`/api/todos/${t.id}/transfer`, { method: 'POST', body: { toUserId: action.id } })
     showSuccessToast('已转交')
     await refreshTodos()
   } catch (e) {

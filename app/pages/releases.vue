@@ -19,11 +19,11 @@ const filter = reactive({
   progress: (route.query.progress as string) || undefined,
   mine: (route.query.mine as string) || '',
 })
-const { data: rows, pending, error, refresh: refreshRows } = await useFetch('/api/releases', {
+const { data: rows, pending, error, refresh: refreshRows } = await useApiFetch('/api/releases', {
   query: computed(() => ({ ...filter, mine: filter.mine || undefined })),
   default: () => [],
 })
-const { data: stats, pending: statsPending, error: statsError, refresh: refreshStats } = await useFetch('/api/releases/stats', {
+const { data: stats, pending: statsPending, error: statsError, refresh: refreshStats } = await useApiFetch('/api/releases/stats', {
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber, type: filter.type, mine: filter.mine || undefined })),
   default: () => null,
 })

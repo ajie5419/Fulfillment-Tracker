@@ -5,7 +5,7 @@
  * 关联 / 忽略：生产部、外协专员、该工单项目经理、管理员（权限方案 R13），其他人只读。
  */
 const emit = defineEmits<{ changed: [] }>()
-const { data: rows, pending, error, refresh } = await useFetch('/api/unmatched', { default: () => [] })
+const { data: rows, pending, error, refresh } = await useApiFetch('/api/unmatched', { default: () => [] })
 defineExpose({ refresh, count: computed(() => rows.value.length) })
 type Row = (typeof rows.value)[number]
 const { data: me } = await useMe()
@@ -20,7 +20,7 @@ async function act(r: Pick<Row, 'qmsInspectionId'>, kind: 'resolve' | 'ignore') 
   const stepId = chosen[r.qmsInspectionId]
   if (kind === 'resolve' && !stepId) return message.warning('请先选择要关联的步骤')
   try {
-    await $fetch(`/api/unmatched/${encodeURIComponent(r.qmsInspectionId)}/${kind}`, {
+    await apiFetch(`/api/unmatched/${encodeURIComponent(r.qmsInspectionId)}/${kind}`, {
       method: 'POST',
       body: kind === 'resolve' ? { stepId } : {},
     })

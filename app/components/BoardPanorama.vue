@@ -5,7 +5,7 @@ import { aggregatePanorama, filterPanoramaRows, PANORAMA_METRICS, type PanoramaM
 const props = defineProps<{ mobile?: boolean; listOnly?: boolean }>()
 const route = useRoute()
 const router = useRouter()
-const { data, pending, error, refresh } = await useFetch('/api/board', { query: { closed: '1' }, key: 'board:panorama' })
+const { data, pending, error, refresh } = await useApiFetch('/api/board', { query: { closed: '1' }, key: 'board:panorama' })
 const rows = computed(() => data.value?.rows ?? [])
 const stats = computed(() => aggregatePanorama(rows.value))
 const selected = computed(() => filterPanoramaRows(rows.value, route.query))

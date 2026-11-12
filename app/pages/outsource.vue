@@ -29,12 +29,12 @@ watch(() => route.query, () => {
 })
 
 const query = computed(() => ({ wo: filter.wo || undefined, supplierId: filter.supplierId || undefined }))
-const { data: prod, pending: prodPending, error: prodError, refresh: refreshProd } = await useFetch('/api/production', { query, default: () => ({ rows: [], unroutedParts: 0 }) })
-const { data: transit, pending: transitPending, error: transitError, refresh: refreshTransit } = await useFetch('/api/transit', {
+const { data: prod, pending: prodPending, error: prodError, refresh: refreshProd } = await useApiFetch('/api/production', { query, default: () => ({ rows: [], unroutedParts: 0 }) })
+const { data: transit, pending: transitPending, error: transitError, refresh: refreshTransit } = await useApiFetch('/api/transit', {
   query: computed(() => ({ workOrderNumber: filter.wo || undefined, supplierId: filter.supplierId || undefined })),
   default: () => [],
 })
-const { data: unmatched, error: unmatchedError, refresh: refreshUnmatched } = await useFetch('/api/unmatched', { default: () => [] })
+const { data: unmatched, error: unmatchedError, refresh: refreshUnmatched } = await useApiFetch('/api/unmatched', { default: () => [] })
 type ProdRow = (typeof prod.value.rows)[number]
 type TransitRow = (typeof transit.value)[number]
 

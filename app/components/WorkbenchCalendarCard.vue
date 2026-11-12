@@ -3,7 +3,7 @@
  * 工作台"项目日历"卡片（zhao 10-21）：本周、下周、本月计划完成多少台、实际完成多少台、逾期未完成多少台，点进项目日历。
  * 所有人都显示（不分权限）。数据单独取、不挡工作台首屏（lazy）；取失败只在卡片里提示。
  */
-const { data, error } = await useFetch('/api/calendar/summary', { key: 'calendar-summary', lazy: true })
+const { data, error } = await useApiFetch('/api/calendar/summary', { key: 'calendar-summary', lazy: true })
 const items = computed(() =>
   (data.value?.items ?? []).map((i) => {
     const s = i.summary

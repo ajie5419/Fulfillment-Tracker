@@ -14,7 +14,7 @@ async function teamOptions(ids: string[]) {
   return rows
 }
 
-export default defineEventHandler(async (event) => {
+export default defineApiHandler(async (event) => {
   const user = requireUser(event)
   const [qmsUser, scope, ctx] = await Promise.all([
     prisma.qmsUser.findUnique({ where: { id: user.qmsUserId }, select: { departmentId: true, roleName: true } }),

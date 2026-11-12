@@ -16,7 +16,7 @@ const dept = computed(() => q('dept'))
 const focusId = computed(() => q('node'))
 
 const EMPTY: DeptPlanView = { dept: null, deptText: null, deptOptions: [], workOrderOptions: [], groups: [], summary: { pending: 0, returned: 0, unsplit: 0, overdueTasks: 0, dueSoonTasks: 0, active: 0, done: 0 }, focusNodeId: null }
-const { data, pending, refresh } = await useFetch<DeptPlanView>('/api/plan/dept', {
+const { data, pending, refresh } = await useApiFetch<DeptPlanView>('/api/plan/dept', {
   query: computed(() => ({ dept: dept.value, node: focusId.value })),
   default: () => EMPTY,
 })

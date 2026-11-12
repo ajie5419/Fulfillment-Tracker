@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const props = defineProps<{ redOnly?: boolean }>()
-const { data, error, pending, refresh } = await useFetch('/api/monitoring/status', { key: 'status-monitoring' })
+const { data, error, pending, refresh } = await useApiFetch('/api/monitoring/status', { key: 'status-monitoring' })
 const top = computed(() => data.value?.top.filter((e) => !props.redOnly || e.level === 'RED') ?? [])
 </script>
 

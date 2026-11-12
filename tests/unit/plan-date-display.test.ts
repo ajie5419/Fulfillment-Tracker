@@ -65,7 +65,7 @@ describe('日期冲突双端展示与权限契约', () => {
     vi.stubGlobal('computed', computed)
     vi.stubGlobal('useRoute', () => ({ query: { wo: 'WO-MOBILE' } }))
     const fetchPlan = vi.fn(async () => ({ data: ref(data), pending: ref(false), error: ref(null), refresh: vi.fn() }))
-    vi.stubGlobal('useFetch', fetchPlan)
+    vi.stubGlobal('useApiFetch', fetchPlan)
     const component = loadComponent('app/pages/m/plan.vue', { '#shared/plan': plan })
     const banner = loadComponent('app/components/PlanDateConflicts.vue', { '#shared/plan-schedule': schedule })
     const wrapper = mount({ render: () => h(Suspense, null, { default: () => h(component) }) }, {

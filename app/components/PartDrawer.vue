@@ -16,8 +16,8 @@ const emit = defineEmits<{ close: []; changed: []; edit: [part: { id: string; wo
 const tab = ref<'info' | 'timeline' | 'comments'>('info')
 watch(() => props.partId, (id) => { if (id) tab.value = props.tab ?? 'info' }, { immediate: true })
 
-const { data: part, pending, refresh, error } = await useFetch<PartDetail>(() => `/api/parts/${props.partId}`, { immediate: !!props.partId, watch: false })
-const { data: timeline, pending: tlPending, refresh: refreshTimeline } = await useFetch(() => `/api/parts/${props.partId}/timeline`, { immediate: false, watch: false })
+const { data: part, pending, refresh, error } = await useApiFetch<PartDetail>(() => `/api/parts/${props.partId}`, { immediate: !!props.partId, watch: false })
+const { data: timeline, pending: tlPending, refresh: refreshTimeline } = await useApiFetch(() => `/api/parts/${props.partId}/timeline`, { immediate: false, watch: false })
 watch(() => props.partId, (id) => {
   // 切到别的工件：先清掉上一个工件的内容和弹窗，避免加载期间看到 / 点到旧工件
   part.value = undefined

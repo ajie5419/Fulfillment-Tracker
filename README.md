@@ -5,6 +5,8 @@
 
 技术栈：Nuxt 3（Nitro 服务端）+ Prisma 6 + MySQL 8；电脑端 Ant Design Vue，手机端（`/m`）Vant。Node 22，pnpm。
 
+内部接口遵循 [API 响应规范](docs/API响应规范.md)：成功和失败统一 `{ code, data, message }`，保留真实 HTTP 状态码；桌面与手机通过公共请求层解包。
+
 ## 本地启动
 
 只试用演示数据、不混入 QMS 工单时，使用[独立演示环境](docs/独立演示环境.md)：`pnpm build` 后执行 `pnpm demo`。它使用单独数据库、模拟角色登录与 `https://127.0.0.1:3101` 入口，保留原环境。

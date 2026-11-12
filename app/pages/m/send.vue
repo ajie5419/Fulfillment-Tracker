@@ -18,7 +18,7 @@ const promisedReturnDate = ref<string>('')
 const note = ref('')
 const lastSupplierId = ref<string | null>(null)
 
-const fetchParts = (wo: string) => $fetch('/api/parts', { query: { workOrderNumber: wo } })
+const fetchParts = (wo: string) => apiFetch('/api/parts', { query: { workOrderNumber: wo } })
 type PartRow = Awaited<ReturnType<typeof fetchParts>>[number]
 const parts = ref<PartRow[]>([])
 let partsSeq = 0
@@ -47,7 +47,7 @@ const workOrder = computed(() => workOrders.value.find((w) => w.workOrderNumber 
 onMounted(async () => {
   const version = selectionVersion
   try {
-    lastSupplierId.value = (await $fetch('/api/last-supplier')).supplierId
+    lastSupplierId.value = (await apiFetch('/api/last-supplier')).supplierId
   } catch (e) {
     if (version === selectionVersion) showFailToast(apiError(e))
   }
@@ -55,7 +55,7 @@ onMounted(async () => {
   const fromTodo = route.query.stepId
   if (typeof fromTodo === 'string' && fromTodo) {
     try {
-      const s = await $fetch(`/api/steps/${encodeURIComponent(fromTodo)}`)
+      const s = await apiFetch(`/api/steps/${encodeURIComponent(fromTodo)}`)
       if (version !== selectionVersion) return
       workOrderNumber.value = s.part.workOrderNumber
       if (await refreshParts() && version === selectionVersion) choosePart(s.partId, s.id)
@@ -118,7 +118,7 @@ async function submit() {
   const submittedSupplier = supplierId.value
   submitting.value = true
   try {
-    await $fetch(`/api/steps/${stepId.value}/send`, {
+    await apiFetch(`/api/steps/${stepId.value}/send`, {
       method: 'POST',
       body: { supplierId: supplierId.value, promisedReturnDate: promisedReturnDate.value, note: note.value || null, source: 'MOBILE' },
     })

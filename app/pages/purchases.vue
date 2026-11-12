@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const requestFetch = useRequestFetch()
+const requestFetch = useApiRequestFetch()
 /**
  * 采购到货（R10）：关键物料采购行列表、登记 / 编辑、Excel 导入、确认到货、申请付款。
  * 顶部统计：未到货、缺料、无承诺日、卡付款；延误按原因分"付款原因"和"管理原因"。

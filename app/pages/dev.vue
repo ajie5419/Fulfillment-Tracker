@@ -3,9 +3,9 @@
 const { data: me } = await useMe()
 const { data: workOrders, refresh: refreshWo } = await useWorkOrders()
 const { data: master, refresh: refreshMaster } = await useMaster()
-const { data: transit, refresh: refreshTransit } = await useFetch('/api/transit', { default: () => [] })
+const { data: transit, refresh: refreshTransit } = await useApiFetch('/api/transit', { default: () => [] })
 type TransitRow = (typeof transit.value)[number]
-const { data: inspections, refresh: refreshInspections } = await useFetch('/api/dev/inspections', { default: () => [] })
+const { data: inspections, refresh: refreshInspections } = await useApiFetch('/api/dev/inspections', { default: () => [] })
 
 const busy = ref(false)
 const lastResult = ref<string>('')
@@ -13,7 +13,7 @@ const lastResult = ref<string>('')
 async function run(path: string, label: string) {
   busy.value = true
   try {
-    const r = await $fetch(path, { method: 'POST' })
+    const r = await apiFetch(path, { method: 'POST' })
     lastResult.value = `${label}：${JSON.stringify(r)}`
     message.success(`${label}完成`)
     await Promise.all([refreshWo(), refreshMaster(), refreshTransit(), refreshInspections(), refreshPurchases(), refreshNuxtData(['todos', 'me'])])
@@ -28,7 +28,7 @@ async function run(path: string, label: string) {
 async function scan(plusDays: number) {
   busy.value = true
   try {
-    const r = await $fetch('/api/dev/scan', { method: 'POST', body: { plusDays } })
+    const r = await apiFetch('/api/dev/scan', { method: 'POST', body: { plusDays } })
     lastResult.value = r.skipped
       ? '另一轮扫描正在进行，本次跳过'
       : `扫描完成（按 ${timeText(r.now)} 计）：新建 ${r.created}、升级 ${r.escalated}、消除 ${r.cleared}，写入提醒 ${r.reminders} 条，活动预警 ${r.active} 条，红色转异常 ${r.converted} 条，QMS 不合格转异常 ${r.nonconforming} 条`
@@ -139,7 +139,7 @@ function breakIt() {
 }
 
 // ───── 模拟进货检验（R10）─────
-const { data: openPurchases, refresh: refreshPurchases } = await useFetch('/api/purchases', { query: { view: 'open' }, default: () => ({ rows: [] as PurchaseRow[], total: 0, stats: null }) })
+const { data: openPurchases, refresh: refreshPurchases } = await useApiFetch('/api/purchases', { query: { view: 'open' }, default: () => ({ rows: [] as PurchaseRow[], total: 0, stats: null }) })
 const openLines = computed(() => openPurchases.value.rows as PurchaseRow[])
 const incomingLine = ref<string | undefined>()
 const incomingName = ref('')
@@ -170,7 +170,7 @@ async function submit() {
   if (!form.workOrderNumber) return message.warning('请选择工单')
   busy.value = true
   try {
-    const r = await $fetch('/api/dev/inspections', {
+    const r = await apiFetch('/api/dev/inspections', {
       method: 'POST',
       body: {
         workOrderNumber: form.workOrderNumber,

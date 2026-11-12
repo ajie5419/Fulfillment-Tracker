@@ -13,7 +13,7 @@ import type { DrawingRow, DrawingStats, DrawingResult } from '../../app/composab
 const fetch = vi.fn()
 beforeEach(() => {
   fetch.mockReset()
-  vi.stubGlobal('$fetch', fetch)
+  vi.stubGlobal('apiFetch', fetch)
   vi.stubGlobal('clientRequest', clientRequest)
   vi.stubGlobal('sendClientRequest', sendClientRequest)
 })

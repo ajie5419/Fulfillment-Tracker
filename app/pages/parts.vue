@@ -34,7 +34,7 @@ watch(() => [route.query.wo, route.query.noRoute], ([wo, nr]) => {
   else if (routeFilter.value === 'none') routeFilter.value = 'all'
 })
 
-const { data: parts, pending, error, refresh } = await useFetch('/api/parts', {
+const { data: parts, pending, error, refresh } = await useApiFetch('/api/parts', {
   query: { workOrderNumber },
   default: () => [],
   immediate: !!workOrderNumber.value,
@@ -54,7 +54,7 @@ const canRoute = computed(() => canDo(me.value, 'route', { workOrderNumber: work
 
 // ───── 总计划节点（同一工单，整页取一次）─────
 type PlanOpts = { published: boolean; nodes: { id: string; seq: number; name: string; deptText: string; planDate: string }[] }
-const { data: planOpts, error: planOptsError, refresh: refreshPlanOpts } = await useFetch<PlanOpts>('/api/plan/options', {
+const { data: planOpts, error: planOptsError, refresh: refreshPlanOpts } = await useApiFetch<PlanOpts>('/api/plan/options', {
   query: { workOrderNumber },
   default: () => ({ published: false, nodes: [] }),
   immediate: !!workOrderNumber.value,
@@ -121,7 +121,7 @@ const partForm = reactive({ open: false, name: '', drawingNo: '', revision: '', 
 async function createPart() {
   if (!partForm.name.trim()) return message.warning('请填写工件名称')
   try {
-    const p = await $fetch('/api/parts', { method: 'POST', body: { workOrderNumber: workOrderNumber.value, name: partForm.name, drawingNo: partForm.drawingNo || null, revision: partForm.revision || null, quantity: partForm.quantity, qmsPartId: partForm.qmsPartId || null } })
+    const p = await apiFetch('/api/parts', { method: 'POST', body: { workOrderNumber: workOrderNumber.value, name: partForm.name, drawingNo: partForm.drawingNo || null, revision: partForm.revision || null, quantity: partForm.quantity, qmsPartId: partForm.qmsPartId || null } })
     message.success('已新建，接着排工序')
     partForm.open = false
     await refresh()

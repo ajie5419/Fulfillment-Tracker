@@ -57,7 +57,7 @@ const statusOf = (l: Line): { text: string; tone: 'primary' | 'none' | 'risk' | 
 }
 
 const postText = (body: string, save: boolean) =>
-  $fetch<Preview & { fileId?: string }>('/api/bom/text', { method: 'POST', body: { workOrderNumber: props.workOrderNumber, text: body, save } })
+  apiFetch<Preview & { fileId?: string }>('/api/bom/text', { method: 'POST', body: { workOrderNumber: props.workOrderNumber, text: body, save } })
 
 let seq = 0
 async function load() {

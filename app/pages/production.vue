@@ -40,7 +40,7 @@ watch(() => route.query, () => {
   filter.mine = q('mine') === '1'
 })
 
-const { data, pending, error, refresh } = await useFetch('/api/production', {
+const { data, pending, error, refresh } = await useApiFetch('/api/production', {
   query: computed(() => ({ wo: filter.wo || undefined, supplierId: filter.supplierId || undefined, mine: filter.mine ? '1' : undefined })),
   default: () => ({ rows: [], unroutedParts: 0 }),
 })

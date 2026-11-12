@@ -8,7 +8,7 @@ const wo = computed(() => typeof route.query.wo === 'string' ? route.query.wo : 
 const status = computed(() => typeof route.query.status === 'string' ? route.query.status : undefined)
 const page = computed(() => Math.max(1, Number(route.query.page) || 1))
 function filter(key: string, value: unknown) { void router.replace({ query: { ...route.query, [key]: value as string | undefined, page: undefined } }) }
-const { data, error, pending, refresh } = await useFetch('/api/purchase-plans', { query: computed(() => ({ workOrderNumber: wo.value, status: status.value, page: page.value })) })
+const { data, error, pending, refresh } = await useApiFetch('/api/purchase-plans', { query: computed(() => ({ workOrderNumber: wo.value, status: status.value, page: page.value })) })
 const creating = ref(false)
 const saving = ref(false)
 const form = reactive({ workOrderNumber: '', title: '', category: '', planNodeId: null as string | null | undefined, note: '' })
@@ -16,7 +16,7 @@ const statusOptions = Object.entries(PURCHASE_PLAN_STATUS_TEXT).map(([value, lab
 async function create() {
   saving.value = true
   try {
-    const result = await $fetch('/api/purchase-plans', { method: 'POST', body: form })
+    const result = await apiFetch('/api/purchase-plans', { method: 'POST', body: form })
     creating.value = false
     await navigateTo(`/purchase-plans/${result.id}`)
   } catch (err) { message.error(apiError(err)) } finally { saving.value = false }

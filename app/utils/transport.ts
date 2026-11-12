@@ -23,7 +23,7 @@ export type ClientPath<M extends string, R = keyof ClientApi> = R extends keyof 
 export type ClientResponse<P extends string, M extends PropertyKey> = Response<P, M>
 export type ClientBodyArgs<P extends string, M extends PropertyKey> = [Field<Contract<P, M>, 'body'>] extends [never]
   ? [body?: Record<string, never>] : {} extends Field<Contract<P, M>, 'body'> ? [body?: Field<Contract<P, M>, 'body'>] : [body: Field<Contract<P, M>, 'body'>]
-export type ClientFetch = ReturnType<typeof useRequestFetch>
+export type ClientFetch = ReturnType<typeof useApiRequestFetch>
 type GetArgs<P extends string> = 'GET' extends Method<P>
   ? {} extends ClientOptions<P, 'GET'> ? [options?: ClientOptions<P, 'GET'>, fetcher?: ClientFetch] : [options: ClientOptions<P, 'GET'>, fetcher?: ClientFetch]
   : [options: never]
@@ -39,10 +39,10 @@ export function clientErrorMessage(error: unknown): string {
   return text(data?.message) || text(data?.statusMessage) || text(source?.message) || '操作失败'
 }
 
-/** H3 把业务字段放在响应 data 中，ofetch 再把整个响应放到 error.data 中。 */
+/** ofetch stores the wire envelope in error.data; normalized errors expose code directly. */
 export function clientErrorCode(error: unknown): string | undefined {
   const source = record(error), data = record(source?.data)
-  return text(source?.code) || text(data?.code) || text(record(data?.data)?.code)
+  return text(source?.code) || text(data?.code)
 }
 
 export class ClientRequestError extends Error {
@@ -62,15 +62,15 @@ export class ClientRequestError extends Error {
   }
 }
 
-/** 无缓存、无重试策略：原样传递 signal/headers；SSR 调用者传入 useRequestFetch()。 */
+/** 无缓存、无重试策略：原样传递 signal/headers；SSR 调用者传入 useApiRequestFetch()。 */
 export function clientRequest<const P extends string, M extends Method<P>>(url: P, options: ClientOptions<P, M> & { method: M }, fetcher?: ClientFetch): Promise<Response<P, M>>
 export function clientRequest<const P extends string>(url: P, ...args: GetArgs<P>): Promise<Response<P, 'GET'>>
-export async function clientRequest(url: string, options?: unknown, fetcher: ClientFetch = $fetch): Promise<unknown> {
+export async function clientRequest(url: string, options?: unknown, fetcher: ClientFetch = apiFetch): Promise<unknown> {
   return sendClientRequest(url, options, fetcher)
 }
 
 /** 供领域函数重载的实现使用：返回 unknown，不能由调用点指定响应类型。 */
-export async function sendClientRequest(url: string, options?: unknown, fetcher: ClientFetch = $fetch): Promise<unknown> {
+export async function sendClientRequest(url: string, options?: unknown, fetcher: ClientFetch = apiFetch): Promise<unknown> {
   try {
     return await fetcher<unknown, string>(url, options as NitroFetchOptions<string> | undefined)
   } catch (error) {

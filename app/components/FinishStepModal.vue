@@ -30,7 +30,7 @@ async function submit() {
   saving.value = true
   try {
     const body = short.value > 0 ? { source: 'PC', qty: qty.value, rest: rest.value, note: rest.value === 'SCRAP' ? note.value || null : null } : { source: 'PC' }
-    const res = await $fetch(`/api/steps/${props.step.id}/finish`, { method: 'POST', body })
+    const res = await apiFetch(`/api/steps/${props.step.id}/finish`, { method: 'POST', body })
     message.success(short.value <= 0 ? '已完工' : rest.value === 'CONTINUE' ? `已报完工 ${qty.value} 件` : `已完工，报废已转异常 ${res.issueNo ?? ''}`)
     emit('done')
   } catch (e) {

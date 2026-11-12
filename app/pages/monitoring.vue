@@ -17,7 +17,7 @@ const positiveInt = (value: unknown, fallback: number) => typeof value === 'stri
 const page = computed(() => positiveInt(route.query.page, 1))
 const pageSize = computed(() => Math.min(100, positiveInt(route.query.pageSize, 20)))
 const query = computed(() => ({ entityType: entityType.value, status: status.value, level: redOnly.value ? 'RED' : undefined, page: page.value, pageSize: pageSize.value }))
-const { data, pending, error, refresh } = await useFetch('/api/monitoring/entities', { query, immediate: !!me.value?.can.overview })
+const { data, pending, error, refresh } = await useApiFetch('/api/monitoring/entities', { query, immediate: !!me.value?.can.overview })
 function changeEntity(value: MonitoringEntityType | undefined) {
   router.replace({ query: { ...route.query, entityType: value, status: undefined, page: undefined } })
 }

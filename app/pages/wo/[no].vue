@@ -26,7 +26,7 @@ definePageMeta({
 
 const route = useRoute()
 const no = computed(() => String(route.params.no ?? ''))
-const { data, error, pending, refresh } = await useFetch<WorkOrderDetail>(() => `/api/work-orders/${encodeURIComponent(no.value)}/detail`, {
+const { data, error, pending, refresh } = await useApiFetch<WorkOrderDetail>(() => `/api/work-orders/${encodeURIComponent(no.value)}/detail`, {
   key: computed(() => `wo-detail:${no.value}`),
 })
 const d = computed(() => data.value)
@@ -185,7 +185,7 @@ function confirmCancel() {
       cancelling.value = true
       try {
         // 带页面上看到的版本号（乐观锁）：别人在这期间改过，QMS 返回 409"请刷新后再改"
-        await $fetch(`/api/work-orders/${enc(x.workOrder.workOrderNumber)}/cancel`, { method: 'POST', body: { version: x.workOrder.edit.version } })
+        await apiFetch(`/api/work-orders/${enc(x.workOrder.workOrderNumber)}/cancel`, { method: 'POST', body: { version: x.workOrder.edit.version } })
         message.success('工单已取消')
         await refresh()
         void refreshNuxtData('work-orders')

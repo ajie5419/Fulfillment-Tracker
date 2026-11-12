@@ -52,7 +52,7 @@ onMounted(() => {
   if (saved === 'list') router.replace({ query: { ...route.query, mode: 'list' } })
 })
 
-const { data, pending, error, refresh } = await useFetch('/api/calendar', { key: 'calendar', query: { view: 'month', d } })
+const { data, pending, error, refresh } = await useApiFetch('/api/calendar', { key: 'calendar', query: { view: 'month', d } })
 
 const period = computed(() => data.value?.period ?? null)
 function go(day: string | undefined) {

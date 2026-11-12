@@ -4,7 +4,7 @@ const route = useRoute()
 const { data: me } = await useMe()
 const id = computed(() => String(route.params.id))
 const url = computed(() => `/api/purchase-plans/${id.value}` as const)
-const { data: plan, error, pending, refresh } = await useFetch(url)
+const { data: plan, error, pending, refresh } = await useApiFetch(url)
 type Item = NonNullable<typeof plan.value>['items'][number]
 const editable = computed(() => !!plan.value && !!me.value?.can.purchasePlan && purchasePlanEditable(plan.value.status))
 // 动态明细路径的 PATCH / POST 共用表单；显式约束写请求，避免 Nitro 对联合路径进行递归推断。
@@ -16,7 +16,7 @@ const editingId = ref<string | null>(null)
 const head = reactive({ title: '', category: '', planNodeId: null as string | null | undefined, note: '' })
 const emptyItem = () => ({ materialName: '', spec: '', quantity: 1, unit: '', needDate: undefined as string | undefined, partId: undefined as string | undefined, supplierName: '', note: '', sortOrder: 0 })
 const itemForm = reactive(emptyItem())
-const { data: parts, error: partError, refresh: refreshParts } = await useFetch('/api/parts', { query: computed(() => ({ workOrderNumber: plan.value?.workOrderNumber })), immediate: !!plan.value })
+const { data: parts, error: partError, refresh: refreshParts } = await useApiFetch('/api/parts', { query: computed(() => ({ workOrderNumber: plan.value?.workOrderNumber })), immediate: !!plan.value })
 const conversionErrors = ref<{ itemId: string; error?: string }[]>([])
 async function action(fn: () => Promise<unknown>) {
   busy.value = true

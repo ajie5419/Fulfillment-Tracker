@@ -12,7 +12,7 @@ const NONE = -1
 
 const DEPTS = BUSINESS_DEPT_OPTIONS
 
-const { data, refresh, pending } = await useFetch('/api/plan/templates', { default: () => [] })
+const { data, refresh, pending } = await useApiFetch('/api/plan/templates', { default: () => [] })
 type Tpl = NonNullable<typeof data.value>[number]
 const send = clientRequest
 

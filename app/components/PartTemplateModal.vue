@@ -8,7 +8,7 @@ const props = defineProps<{ target: { partId: string; partName: string; mode: 'a
 const emit = defineEmits<{ close: []; done: [] }>()
 
 interface TemplateRow { id: string; name: string; description: string | null; steps: { processName: string; mode: StepModeKey; supplierName: string | null; defaultDays: number | null }[] }
-const requestFetch = useRequestFetch()
+const requestFetch = useApiRequestFetch()
 const post = clientRequest
 
 const templates = ref<TemplateRow[]>([])

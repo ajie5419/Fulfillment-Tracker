@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const requestFetch = useRequestFetch()
+const requestFetch = useApiRequestFetch()
 /** 电脑端发出登记弹窗：选外协厂（默认工序链里计划的，或上次用的）+ 承诺返回日 + 随件发料（外协带料时写上发了什么，在途里能看到） */
 const props = defineProps<{ step: { id: string; supplierId: string | null; title: string } | null }>()
 const emit = defineEmits<{ close: []; done: [] }>()
@@ -27,7 +27,7 @@ async function submit() {
   if (!supplierId.value || !promisedReturnDate.value) return message.warning('请选择外协厂和承诺返回日')
   saving.value = true
   try {
-    await $fetch(`/api/steps/${props.step.id}/send`, {
+    await apiFetch(`/api/steps/${props.step.id}/send`, {
       method: 'POST',
       body: { supplierId: supplierId.value, promisedReturnDate: promisedReturnDate.value, note: note.value || null, source: 'PC' },
     })

@@ -37,8 +37,8 @@ type Detail = {
   logs: { id: string; fromStatus: IssueStatusKey | null; toStatus: IssueStatusKey | null; note: string | null; actorName: string; createdAt: string }[]
 }
 
-// 深链 SSR 也必须转发当前登录 Cookie；普通 $fetch 在服务端不带用户请求头。
-const requestFetch = useRequestFetch()
+// 深链 SSR 也必须转发当前登录 Cookie；普通 apiFetch 在服务端不带用户请求头。
+const requestFetch = useApiRequestFetch()
 const idRef = computed(() => props.id)
 const { data: detail, pending, error: detailError, refresh } = await useAsyncData<Detail | null>(
   computed(() => `issue-detail:${idRef.value ?? 'closed'}`),

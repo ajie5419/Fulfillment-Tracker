@@ -25,14 +25,14 @@ beforeEach(() => {
   vi.stubGlobal('useMaster', async () => ({ data: Vue.ref({ suppliers: [], users: [] }) }))
   vi.stubGlobal('useMe', async () => ({ data: Vue.ref({ can: { purchasePlan: true } }) }))
   vi.stubGlobal('useRoute', () => ({ params: { id: 'plan' }, query: {} }))
-  vi.stubGlobal('useFetch', async (url: unknown) => ({ data: Vue.ref(typeof url === 'string' ? [] : { id: 'plan', workOrderNumber: 'WO', status: 'DRAFT', items: [], progress: { total: 0, converted: 0, arrived: 0 } }), error: Vue.ref(null), pending: Vue.ref(false), refresh: vi.fn() }))
+  vi.stubGlobal('useApiFetch', async (url: unknown) => ({ data: Vue.ref(typeof url === 'string' ? [] : { id: 'plan', workOrderNumber: 'WO', status: 'DRAFT', items: [], progress: { total: 0, converted: 0, arrived: 0 } }), error: Vue.ref(null), pending: Vue.ref(false), refresh: vi.fn() }))
   vi.stubGlobal('message', { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() })
   vi.stubGlobal('dayText', (value?: string) => value?.slice(0, 10) ?? '')
   vi.stubGlobal('dayAfter', () => '2026-10-29')
   vi.stubGlobal('apiError', (error: Error) => error.message)
   vi.stubGlobal('purchaseSend', vi.fn().mockResolvedValue({ id: 'line' }))
   vi.stubGlobal('drawingSend', vi.fn().mockResolvedValue({ id: 'task' }))
-  vi.stubGlobal('$fetch', vi.fn().mockResolvedValue({ id: 'item' }))
+  vi.stubGlobal('apiFetch', vi.fn().mockResolvedValue({ id: 'item' }))
 })
 afterEach(() => {
   cleanups.splice(0).forEach(cleanup => cleanup())
@@ -148,7 +148,7 @@ it.each(targets)('%s 手打后直接保存提交最新日期', async (...target)
 })
 
 function expectSubmitted(file: string, field: string, value: string) {
-  if (file.includes('purchase-plans')) expect($fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ body: expect.objectContaining({ [field]: value }) }))
+  if (file.includes('purchase-plans')) expect(apiFetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ body: expect.objectContaining({ [field]: value }) }))
   else expect(file.includes('PurchaseEdit') ? purchaseSend : drawingSend).toHaveBeenCalledWith(expect.any(String), 'POST', expect.objectContaining({ [field]: value }))
 }
 
@@ -333,7 +333,7 @@ it('采购计划编辑明细手打日期提交 PATCH', async () => {
   const input = document.querySelector<HTMLInputElement>('.ant-modal .ant-picker input')!
   await typeDate(input, '2026-11-05')
   await clickSave()
-  expect($fetch).toHaveBeenCalledWith('/api/purchase-plans/plan/items/item', expect.objectContaining({ method: 'PATCH', body: expect.objectContaining({ needDate: '2026-11-05' }) }))
+  expect(apiFetch).toHaveBeenCalledWith('/api/purchase-plans/plan/items/item', expect.objectContaining({ method: 'PATCH', body: expect.objectContaining({ needDate: '2026-11-05' }) }))
 })
 
 it.each(['blur', 'enter', 'save'])('初始空值输入残缺日期后 %s 恢复为空', async finish => {

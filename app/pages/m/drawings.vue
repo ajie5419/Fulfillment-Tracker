@@ -11,7 +11,7 @@ const route = useRoute()
 const router = useRouter()
 const tab = ref<'pending' | 'drawn'>(route.query.tab === 'drawn' ? 'drawn' : 'pending')
 watch(tab, (t) => router.replace({ query: { ...route.query, tab: t } }))
-const { data, pending, error, refresh } = await useFetch('/api/drawings', {
+const { data, pending, error, refresh } = await useApiFetch('/api/drawings', {
   query: computed(() => ({ mine: '1', view: tab.value })),
   default: () => ({ rows: [] as DrawingRow[], total: 0, stats: null as DrawingStats | null }),
 })
