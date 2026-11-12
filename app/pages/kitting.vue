@@ -209,7 +209,7 @@ const crossColumns = [
       :loading="pending"
       row-key="id"
       size="small"
-      :pagination="{ pageSize: 50, hideOnSinglePage: true }"
+      :pagination="{ pageSize: DEFAULT_TABLE_PAGE_SIZE, hideOnSinglePage: true }"
       :expand-row-by-click="false"
       :scroll="{ x: 1100 }"
     >
@@ -224,11 +224,14 @@ const crossColumns = [
           <div :class="record.incomplete && record.daysLeft <= (stats?.windowDays ?? 5) ? 'warn small' : 'muted'">{{ daysLeftText(record.daysLeft) }}</div>
         </template>
         <template v-else-if="column.key === 'name'">
-          <button type="button" class="link-btn" @click="showWorkOrder(record.workOrderNumber, record.id)">{{ record.name }}</button>
+          <span class="kit-name-cell">
+            <button type="button" class="link-btn" @click="showWorkOrder(record.workOrderNumber, record.id)">{{ record.name }}</button>
+            <UiAlertMark :level="record.alertLevel === 'RED' ? 'late' : record.alertLevel === 'YELLOW' ? 'risk' : null" />
+          </span>
         </template>
         <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
         <template v-else-if="column.key === 'planNode'"><PlanNodeCell :work-order-number="record.workOrderNumber" :node="record.planNode" /></template>
-        <template v-else-if="column.key === 'owner'"><span :class="{ muted: !record.ownerId }">{{ record.ownerText }}</span></template>
+        <template v-else-if="column.key === 'owner'"><UiUserChip :name="record.ownerText" :muted="!record.ownerId" /></template>
         <template v-else-if="column.key === 'percent'">
           <a-progress v-if="record.percent != null" :percent="record.percent" size="small" :status="kitProgressStatus(record as KitNode)" />
           <span v-else class="muted">清单为空</span>
@@ -256,6 +259,7 @@ const crossColumns = [
 
 <style scoped>
 .avg { display: inline-flex; align-items: center; gap: 10px; }
+.kit-name-cell { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .avg :deep(.txt) { font-size: 12px; }
 .reasons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .reason { margin: 0; font-size: 11px; line-height: 18px; }

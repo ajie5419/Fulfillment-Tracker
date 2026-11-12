@@ -189,12 +189,15 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
       <a-spin v-else :spinning="pending">
         <template v-if="filter.view === 'list'">
           <a-empty v-if="!listRows.length" :description="EMPTY_TEXT[filter.tab]" />
-          <a-table v-else class="ft-table" :columns="tableColumns" :data-source="listRows" row-key="stepId" :row-class-name="rowClass" size="small" :scroll="{ x: 980 }" :pagination="listRows.length > 50 ? { pageSize: 50, showSizeChanger: false } : false">
+          <a-table v-else class="ft-table" :columns="tableColumns" :data-source="listRows" row-key="stepId" :row-class-name="rowClass" size="small" :scroll="{ x: 980 }" :pagination="listRows.length > DEFAULT_TABLE_PAGE_SIZE ? { pageSize: DEFAULT_TABLE_PAGE_SIZE, showSizeChanger: false } : false">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'wo'"><span class="nowrap"><WoLink :no="record.workOrderNumber" /></span></template>
               <template v-else-if="column.key === 'name'">
-                <button type="button" class="name-btn" @click="openPart(record.partId)">{{ record.partName }}</button>
-                <span class="muted"> · {{ record.seq }}. </span>{{ record.processName }}
+                <span class="step-name-line">
+                  <button type="button" class="name-btn" @click="openPart(record.partId)">{{ record.partName }}</button>
+                  <span class="muted"> · {{ record.seq }}. </span>{{ record.processName }}
+                  <UiAlertMark :level="dateInfo(record as Row).tone === 'late' ? 'late' : record.stuckText ? 'risk' : null" />
+                </span>
                 <div v-if="record.stuckText" class="stuck">{{ record.stuckText }}
                   <NuxtLink v-for="i in record.issues" :key="i.id" :to="`/issues?id=${encodeURIComponent(i.id)}`" class="issue">{{ i.issueNo }}</NuxtLink>
                   <NuxtLink v-if="record.stuckKind === 'HELD' && record.holdReleaseId" :to="`/releases?id=${encodeURIComponent(record.holdReleaseId)}`" class="issue">看变更</NuxtLink>
@@ -202,8 +205,8 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
               </template>
               <template v-else-if="column.key === 'mode'"><span class="muted">{{ modeText(record as Row) }}</span></template>
               <template v-else-if="column.key === 'owner'">
-                <span v-if="record.ownerName">{{ record.ownerName }}</span>
-                <span v-else-if="record.leaderName" class="muted">班组长 {{ record.leaderName }}</span>
+                <UiUserChip v-if="record.ownerName" :name="record.ownerName" />
+                <UiUserChip v-else-if="record.leaderName" :name="`班组长 ${record.leaderName}`" muted />
                 <UiStatusTag v-else tone="risk">未指定</UiStatusTag>
               </template>
               <template v-else-if="column.key === 'qty'"><span class="num">{{ record.doneQty ? `${record.doneQty}/` : '' }}{{ record.quantity }} 件</span></template>
@@ -237,7 +240,10 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
                 </div>
                 <button type="button" class="name-btn name" @click="openPart(c.partId)">{{ c.partName }} · {{ c.seq }}. {{ c.processName }}</button>
                 <div class="meta">{{ modeText(c) }} · {{ c.doneQty ? `${c.doneQty}/` : '' }}{{ c.quantity }} 件</div>
-                <div class="meta">{{ c.ownerName ?? (c.leaderName ? `班组长 ${c.leaderName}` : '未指定负责人') }}{{ dateInfo(c).tone === 'late' ? '' : ` · ${dateInfo(c).text}` }}</div>
+                <div class="meta meta-owner">
+                  <UiUserChip :name="c.ownerName ?? (c.leaderName ? `班组长 ${c.leaderName}` : null)" fallback="未指定负责人" :muted="!c.ownerName" />
+                  <span v-if="dateInfo(c).tone !== 'late'"> · {{ dateInfo(c).text }}</span>
+                </div>
                 <div v-if="c.stuckText" class="stuck">{{ c.stuckText }}</div>
                 <div v-if="actionOf(c) && canAct(c, actionOf(c)!)" class="card-foot">
                   <a-button size="small" :type="actionOf(c) === 'assign' ? 'default' : 'primary'" @click="host?.run(actionOf(c)!, c)">{{ ACTION_TEXT[actionOf(c)!] }}</a-button>
@@ -279,9 +285,11 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
 .col { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .col-head { display: flex; align-items: center; gap: 8px; }
 .count { font-size: 14px; font-weight: 600; color: var(--ft-text); }
-.col-body { display: flex; flex-direction: column; gap: 8px; min-height: 120px; padding: 10px; background: var(--card-canvas-bg); border-radius: var(--card-radius-inner); }
+.col-body { display: flex; flex-direction: column; gap: 8px; min-height: 120px; padding: 10px; background: var(--ft-tray-bg); border: 1px solid var(--ft-tray-border); border-radius: var(--card-radius); }
 .empty { margin: 8px 0; color: var(--ft-text-2); font-size: 13px; text-align: center; }
-.card { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); color: var(--ft-text); }
+.card { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); color: var(--ft-text); min-width: 0; overflow: hidden; }
+.step-name-line { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.meta-owner { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .card.late { border-color: var(--ft-late); }
 .card-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .wo { font-size: 12px; color: var(--ft-text-2); }

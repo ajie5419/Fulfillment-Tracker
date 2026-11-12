@@ -137,7 +137,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
       size="small"
       :custom-row="rowProps"
       :scroll="{ x: 1000 }"
-      :pagination="layout === 'group' ? false : { pageSize: 50, hideOnSinglePage: true }"
+      :pagination="layout === 'group' ? false : { pageSize: DEFAULT_TABLE_PAGE_SIZE, hideOnSinglePage: true }"
     >
       <template #emptyText><a-empty description="还没有发放单" /></template>
       <template #bodyCell="{ column, record }">
