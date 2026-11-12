@@ -36,7 +36,7 @@ description: 接手、解释、开发或排查项目履约系统 Fulfillment-Tra
 | 任务 | 文档 | 实现入口 |
 | --- | --- | --- |
 | 接手、解释功能 | README、[系统方案设计](../../../docs/系统方案设计.md)、[维护性治理](../../../docs/系统维护性治理.md) | `app/pages/`、`server/services/`、Prisma schema |
-| 页面与交互 | [前端设计规范](../../../docs/前端设计规范.md)、[页面文件对照](../../../docs/前端页面文件对照.md) | `app/components/ui/`、`app/assets/base.css`、`app/pages/m/` |
+| 页面与交互 | [ft-frontend](../ft-frontend/SKILL.md)、[前端设计规范](../../../docs/前端设计规范.md)、[页面文件对照](../../../docs/前端页面文件对照.md) | `app/components/ui/`、`app/assets/base.css`、`app/pages/m/` |
 | 业务 API | 下方 API 说明、相邻路由和测试 | `server/utils/api.ts`、`server/schemas/`、相应 service |
 | 登录与权限 | 当前鉴权实现、维护性治理 | `server/utils/auth.ts`、`server/services/auth/permissions.ts`、`server/services/auth/` |
 | 计划日期与发布 | [总计划设计](../../../docs/总计划设计.md)、[生产日历方案](../../../docs/生产日历方案.md) | `server/services/plan/`、`server/services/calendar/` |

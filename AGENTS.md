@@ -1,8 +1,12 @@
 # 项目履约（Fulfillment-Tracker）
 
+## 项目接手入口
+
+首次接手本项目或需要定位功能、架构、API、验证方式时，读取 [ft-project-guide](.agents/skills/ft-project-guide/SKILL.md)，再按任务读取相关文档；已加载时不重复读取。Skill 负责导航，下方规范及其引用文档仍是规则来源。仅解释或审查时保持只读。
+
 ## 前端页面
 
-页面风格已定稿（电脑端和手机端），**新增或修改任何页面都按 [docs/前端设计规范.md](docs/前端设计规范.md) 做**：
+页面风格已定稿（电脑端和手机端），**新增、修改或优化任何页面都按 [docs/前端设计规范.md](docs/前端设计规范.md) 及前端技能 [ft-frontend](.agents/skills/ft-frontend/SKILL.md) 做**：
 优先用 `app/components/ui/` 里的通用组件（`UiSectionCard`、`UiStatCard`、`UiListItem`、`UiColumnChart`、`UiDonut`、`UiStatusTag`、`UiFilterButton`、`UiFilterChips`、`UiHelpTip`、`UiRefreshButton` 等），
 颜色只用 `app/assets/base.css` 的 `--ft-*` 变量，不在页面里新增十六进制颜色。手机端 `/m`（vant）按规范第 6 节。
 
