@@ -995,7 +995,9 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(res.status).toBe(200)
     const text = await res.text()
     expect(text).not.toContain('"amount"')
-    const d = JSON.parse(text) as {
+    const envelope = JSON.parse(text)
+    expect(envelope.code).toBe(0)
+    const d = envelope.data as {
       today: string
       published: boolean
       workOrder: { workOrderNumber: string; deliveryDate: string; projectManagerName: string | null }
