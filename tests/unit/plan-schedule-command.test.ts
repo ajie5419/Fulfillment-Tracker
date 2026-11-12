@@ -115,6 +115,45 @@ describe('linked date command transaction', () => {
     ])
     expect(method('todo.createMany')).toHaveBeenCalledTimes(2)
   })
+  it('previews and persists completed summary dates and downstream dates without editing completed leaves', async () => {
+    published = true
+    const reason = 'Correct the completed child plan dates'
+    const child = { ...row, parentId: 'parent', planDate: parseDay('2026-11-03'), startDate: parseDay('2026-11-02') }
+    const parent = { ...child, id: 'parent', name: 'Summary', parentId: null }
+    method('planNode.findUnique').mockImplementation(async ({ where }) => where.id === 'a' ? child : parent)
+    method('planNode.update').mockImplementation(async ({ where, data }) => ({ ...(where.id === 'a' ? child : row), id: where.id, ...data }))
+    snapshot = [
+      { id: 'parent', name: 'Summary', parent: null, preds: [], start: '2026-11-02', finish: '2026-11-03', done: true },
+      { id: 'a', name: 'Child', parent: 'parent', preds: [], start: '2026-11-02', finish: '2026-11-03', done: true },
+      { id: 'sibling', name: 'Sibling', parent: 'parent', preds: [], start: '2026-11-02', finish: '2026-11-03', done: true },
+      { id: 'b', name: 'Next', parent: null, preds: ['parent'], start: '2026-11-04', finish: '2026-11-05', done: false },
+      { id: 'completed', name: 'Completed', parent: null, preds: ['parent'], start: '2026-11-04', finish: '2026-11-05', done: true },
+    ]
+
+    const preview = (await updateNode('a', { ...input, reason, preview: true }, 'pm')).preview!
+    expect(preview.changes.map(change => [change.id, change.start, change.finish])).toEqual([
+      ['parent', '2026-11-02', '2026-11-10'], ['a', '2026-11-02', '2026-11-10'], ['b', '2026-11-11', '2026-11-12'],
+    ])
+    expect(preview.skipped).toEqual(['Completed'])
+    expect(serviceCalls.at(-1)).toEqual(['transaction.rollback'])
+    expect(method('todo.createMany')).not.toHaveBeenCalled()
+    expect(method('planChangeLog.create')).not.toHaveBeenCalled()
+
+    method('planNode.update').mockClear()
+    await updateNode('a', { ...input, reason, previewToken: preview.token }, 'pm')
+    expect(method('planNode.update').mock.calls).toEqual([
+      [{ where: { id: 'a' }, data: { planDate: input.planDate, phase: null } }],
+      [{ where: { id: 'parent' }, data: { startDate: parseDay('2026-11-02'), planDate: parseDay('2026-11-10') } }],
+      [{ where: { id: 'b' }, data: { startDate: parseDay('2026-11-11'), planDate: parseDay('2026-11-12') } }],
+      [{ where: { id: 'b' }, data: { confirmStatus: 'PENDING', confirmedBy: null, confirmedAt: null, rejectReason: null } }],
+      [{ where: { id: 'a' }, data: { confirmStatus: 'PENDING', confirmedBy: null, confirmedAt: null, rejectReason: null } }],
+    ])
+    expect(method('todo.createMany').mock.calls.flatMap(([arg]) => arg.data.map((todo: { refId: string }) => todo.refId))).toEqual(['b', 'a'])
+    expect(method('planChangeLog.create').mock.calls.map(([arg]) => [arg.data.nodeId, arg.data.kind])).toEqual([
+      ['parent', 'DATE'], ['b', 'DATE'], ['b', 'START'], ['a', 'DATE'],
+    ])
+    expect(serviceCalls.at(-1)).toEqual(['transaction.commit'])
+  })
 })
 
 describe('linked date calendar snapshot', () => {

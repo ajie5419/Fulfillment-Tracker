@@ -54,6 +54,19 @@ describe('planned date dependency cascade', () => {
     expect(r.nodes[0]).toMatchObject({ start: day(1), finish: day(12) })
     expect(r.nodes[3]).toMatchObject({ start: day(13), finish: day(14) })
   })
+  it('rolls completed summaries up before protecting completed leaves, then cascades the new range', () => {
+    const result = linkSchedule([
+      n('parent', day(2), day(3), { done: true }),
+      n('a', day(1), day(10), { parent: 'parent', done: true }),
+      n('sibling', day(2), day(3), { parent: 'parent', done: true }),
+      n('next', day(4), day(5), { preds: ['parent'] }),
+      n('completed', day(4), day(5), { preds: ['parent'], done: true }),
+    ], 'a')
+    expect(result.nodes[0]).toMatchObject({ start: day(1), finish: day(10), done: true })
+    expect(result.nodes[3]).toMatchObject({ start: day(11), finish: day(12) })
+    expect(result.nodes[4]).toMatchObject({ start: day(4), finish: day(5), done: true })
+    expect(result.skipped).toEqual(['completed'])
+  })
   it('honors default top-level dependencies but not implicit sibling dependencies', () => {
     const r = linkSchedule([n('a', null, day(10), { preds: null }), n('b', day(2), day(4), { preds: null })], 'a')
     expect(r.nodes[1]).toMatchObject({ start: day(11), finish: day(13) })

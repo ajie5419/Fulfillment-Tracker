@@ -36,16 +36,17 @@ export function linkSchedule(input: ScheduleNode[], editedId: string, offDays: R
     const deps = waits.get(id) ?? []
     if (!deps.some((p) => changed.has(p))) continue
     const n = node(id)
-    if (n.done) { skipped.push(n.name); continue }
     const kids = children.get(id) ?? []
     let start = n.start
     let finish = n.finish
     if (kids.length) {
+      // Summary dates remain derived from child plans even after all child work is complete.
       const rows = kids.map(node)
       finish = rows.map((k) => k.finish).reduce((a, b) => a > b ? a : b)
       start = rows.map((k) => k.start ?? k.finish).reduce((a, b) => a < b ? a : b)
       if (start === finish) start = null
     } else {
+      if (n.done) { skipped.push(n.name); continue }
       const earliest = nextFactoryWorkDay(deps.map((p) => node(p).finish).reduce((a, b) => a > b ? a : b), offDays)
       const previousStart = n.start ?? n.finish
       if (earliest > previousStart) {
