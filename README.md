@@ -11,6 +11,8 @@
 
 ## 本地启动
 
+演示验收后首次部署生产，统一按 [首次生产部署](docs/首次生产部署.md) 执行；生产配置模板为 `deploy/production.env.example`。演示可用、基础部署通过和真实业务验收分别记录。
+
 只试用演示数据、不混入 QMS 工单时，使用[独立演示环境](docs/独立演示环境.md)：`pnpm build` 后执行 `pnpm demo`。它使用单独数据库、模拟角色登录与 `https://127.0.0.1:3101` 入口，保留原环境。
 
 ```bash
@@ -177,11 +179,12 @@ docker compose up -d
 |---|---|
 | `DATABASE_URL` | 履约库连接串。生产账号只授予 `fulfillment` 库权限 |
 | `NUXT_QMS_API_BASE` | QMS 后端地址（服务端调用）。生产 `http://qms-backend:3000` |
-| `NUXT_QMS_AUTHORIZE_URL` | QMS 授权页完整地址（浏览器跳转）。本地 `http://localhost:5666/identity/authorize`，生产 `http://<IP>/#/identity/authorize` |
+| `NUXT_QMS_AUTHORIZE_URL` | QMS 授权页完整地址（浏览器跳转）。本地可用 HTTP，生产必须使用 HTTPS |
 | `NUXT_QMS_CLIENT_ID` / `NUXT_QMS_CLIENT_SECRET` | 与 QMS 的 `QMS_IDENTITY_CLIENT_ID` / `QMS_IDENTITY_CLIENT_SECRET` 一致，密钥 ≥32 位 |
 | `NUXT_QMS_CALLBACK_URL` | 回调地址，必须 https、不带 `?` `#`，与 QMS 的 `QMS_IDENTITY_CALLBACK` 完全一致 |
 | `DEV_HTTPS_KEY` / `DEV_HTTPS_CERT` | 仅本地开发：mkcert 证书路径 |
 | `NUXT_DEV_TOOLS` | 仅本地开发：`1` 开启演示数据和模拟报检，默认关闭 |
+| `FT_DEPLOYMENT_MODE` | 生产固定 `production`，启用严格配置保护；演示为 `demo`，沙盒为 `sandbox` |
 | `NUXT_QMS_SYNC_ENABLED` | QMS 数据同步开关，默认开启；`0` 关闭（复用 `NUXT_QMS_API_BASE` 与客户端凭据） |
 | `NUXT_ADMIN_USER_IDS` | 管理员（设置页：阈值、停工日、通知对象、工单项目经理），逗号分隔的 QMS 用户 ID；演示时用 `u-001` |
 

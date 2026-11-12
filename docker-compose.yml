@@ -16,9 +16,21 @@ services:
         mode: non-blocking
         max-buffer-size: "4m"
         labels: com.ft.log-source
-    env_file: .env
     environment:
-      NUXT_QMS_API_BASE: http://qms-backend:3000
+      # Pass only app settings; SMTP and Grafana credentials belong to monitoring services.
+      FT_DEPLOYMENT_MODE: production
+      DATABASE_URL: ${DATABASE_URL:?Set the production database URL}
+      NUXT_DEV_TOOLS: ${NUXT_DEV_TOOLS:-0}
+      NUXT_ISOLATED_DEMO: ${NUXT_ISOLATED_DEMO:-0}
+      NUXT_SANDBOX: ${NUXT_SANDBOX:-0}
+      NUXT_QMS_SYNC_ENABLED: ${NUXT_QMS_SYNC_ENABLED:-1}
+      NUXT_QMS_API_BASE: ${NUXT_QMS_API_BASE:-http://qms-backend:3000}
+      NUXT_QMS_AUTHORIZE_URL: ${NUXT_QMS_AUTHORIZE_URL:?Set the QMS HTTPS authorization URL}
+      NUXT_QMS_CALLBACK_URL: ${NUXT_QMS_CALLBACK_URL:?Set the HTTPS callback URL}
+      NUXT_QMS_CLIENT_ID: ${NUXT_QMS_CLIENT_ID:-fulfillment}
+      NUXT_QMS_CLIENT_SECRET: ${NUXT_QMS_CLIENT_SECRET:?Set the QMS client secret}
+      NUXT_ADMIN_USER_IDS: ${NUXT_ADMIN_USER_IDS:?Set at least one QMS administrator ID}
+      NUXT_UPLOAD_DIR: ${NUXT_UPLOAD_DIR:-/app/data/uploads}
     volumes:
       - uploads:/app/data/uploads # 异常照片（命名卷：首次创建时沿用镜像里 node 用户的目录权限）
     ports:

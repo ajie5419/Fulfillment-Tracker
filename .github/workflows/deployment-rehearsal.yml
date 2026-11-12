@@ -1,0 +1,22 @@
+name: Production image rehearsal
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deployment-rehearsal-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  rehearsal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Rehearse a fresh production image and database
+        run: node scripts/rehearse-production.mjs
