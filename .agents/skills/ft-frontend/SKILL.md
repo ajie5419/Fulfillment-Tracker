@@ -53,10 +53,13 @@ description: 开发、重构、优化或审查项目履约系统 Fulfillment-Tra
 | --- | --- | --- |
 | 页面顶部导览头 | `UiPageHero` | 概览型页面主标题 + 实况一句话摘要，右侧 `#actions` 放 `.ft-btn-ink` |
 | 顶部统计指标行 | `.ft-stats` + `UiStatCard` | 4 列（或 `.cols-3`），支持 `clickable` 与 `:active` 联动列表筛选；加载/报错时传 `'—'` |
+| 顶部双栏行动聚焦卡 | `UiSpotlightGrid` | 左右双栏直列迷你卡片（左侧「今日启动 / 近期推进」、右侧「需要关注 / 临期与逾期」），免去先点击统计卡再找行的路径 |
 | 主内容分区卡 | `UiSectionCard` | 页面所有区块统一容器；表格贴边时可用 `padding="none"`，内嵌多卡时用 `flat` |
 | 状态胶囊标签 | `UiStatusTag` | `tone="late\|risk\|done\|upstream\|none\|primary"`，插槽文字必填 |
+| 线性微图标标记 | `UiAlertMark` | `level="late\|risk"`，14px 菱形/方形感叹号线性图标，用于表格/看板/甘特图行内轻量风险标记，替代笨重彩色胶囊 |
+| 人员/部门首字微头像 | `UiUserChip` | 20px 低饱和撞色圆角首字微头像 + 名称，用于责任人、责任部门列及聚焦卡 |
 | 状态图标 | `UiStatusIcon` | 用形状区分状态，不单靠颜色 |
-| 工单分组条 | `UiWoGroupHead` | 按工单分组时的统一灰色顶栏（带工单号、关联节点、进度与项数） |
+| 工单分组托盘与顶栏 | `.ft-wo-group` + `UiWoGroupHead` | 「浅灰大圆角托盘（`--ft-tray-bg`）+ 托盘顶栏 + 纯白内嵌卡（`#FFFFFF`）」三层物理容器层次 |
 | 工单 / 节点链接 | `WoLink`、`PlanNodeCell` | 统一跳转链接与节点编号胶囊；Flex 容器内注意 `min-width: 0` |
 | 筛选抽屉与标签 | `UiFilterButton`、`UiFilterChips` | 工具栏只放 1~2 个高频下拉，其余收进 `UiFilterButton`，已选条件用 `UiFilterChips` 展示 |
 | 字段长说明 | `UiHelpTip` | 表单或标题旁的长篇业务规则说明全部收进气泡，不直接铺在页面上 |
@@ -95,7 +98,7 @@ description: 开发、重构、优化或审查项目履约系统 Fulfillment-Tra
   - 卡片底部左侧采用双行紧凑排版（第一行 `责任人 · 日期`，第二行按需展示 `到期预警 · 需确认日期`），右侧放单个 `<a-button size="small">` 流转按钮，避免窄列下文字越界或关键日期被 `...` 截断。
 
 ### 5. 甘特图与多字段编辑弹窗（如 [`PlanGantt.vue`](../../../app/components/PlanGantt.vue)、[`PlanNodeEditModal.vue`](../../../app/components/PlanNodeEditModal.vue)）
-- **甘特图**：父节点用深色括号形汇总条（两端向下耳标），子节点用圆角进度条；前置依赖通过全画布 SVG 绘制 Finish-to-Start 折线箭头；鼠标悬停节点时高亮其直接上下游链路并置灰无关行；「今天」与「交期」除竖向虚线外在表头固定醒目胶囊。
+- **左表右甘特同屏一体视图（`PlanGantt.vue`）**：外层采用浅灰项目托盘（`.gantt-tray`）+ 内嵌纯白卡片（`.gantt-inner-card`）；左侧固定 4 列明细（`节点/任务名称`、`责任部门/人`（`UiUserChip`）、`进度`（彩色百分比文字）、`计划起止`），右侧无缝衔接日历时间轴；子节点采用「左深色已完成段 + 右浅色剩余段」双色进度胶囊条；前置依赖通过全画布 SVG 绘制 Finish-to-Start 折线箭头；鼠标悬停节点时高亮其直接上下游链路并置灰无关行。
 - **编辑弹窗**：表单项超过 5 个时，将短字段（负责人、部门、开始日、完成日、周期、前置节点）排成 **2 列紧凑 Grid**，长文本（节点名称、说明）跨双列，长篇业务说明收进 `<UiHelpTip>`，底部左侧放危险删除按钮、右侧放取消/保存。
 
 ---

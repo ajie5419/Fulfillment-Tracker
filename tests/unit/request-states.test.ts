@@ -50,7 +50,7 @@ async function page(file: string) {
     global: { plugins: [(app: Vue.App) => Object.assign(app.config.globalProperties, { apiError: (e: unknown) => e instanceof Error ? e.message : '', canDo: () => false, LAYOUT_OPTIONS: [], DRAWING_LAYOUT_OPTIONS: [] })], stubs: Object.fromEntries([
       ...['ACard', 'AResult', 'AAlert', 'ATabs', 'ATabPane', 'AEmpty', 'VanEmpty', 'VanTabs'].map(name => [name, container]),
       ['AButton', button], ['VanButton', button], ['UiStatCard', stat],
-      ...['ASpin', 'VanLoading', 'ASelect', 'ASegmented', 'ACheckbox', 'ATable', 'UiHelpTip', 'UiRefreshButton', 'UiRing', 'VanTab', 'VanNavBar', 'DrawingEditModal', 'DrawingKanbanBoard', 'ReleaseCreateModal', 'ReleaseDrawer', 'KittingNodeModal', 'AModal', 'AInputSearch', 'ATag', 'ASpace', 'KittingNodeCard', 'KittingShortageTable', 'WoLink', 'PlanNodeCell', 'VanTag', 'MCard', 'UiStatusIcon', 'UiWoGroupHead', 'UiStatusTag', 'UiDatePicker', 'AFormItem', 'AForm', 'AProgress', 'NuxtLink', 'AMenuItem', 'AMenu', 'ADropdown'].map(name => [name, true]),
+      ...['ASpin', 'VanLoading', 'ASelect', 'ASegmented', 'ACheckbox', 'ATable', 'UiHelpTip', 'UiRefreshButton', 'UiRing', 'VanTab', 'VanNavBar', 'DrawingEditModal', 'DrawingKanbanBoard', 'ReleaseCreateModal', 'ReleaseDrawer', 'KittingNodeModal', 'AModal', 'AInputSearch', 'ATag', 'ASpace', 'KittingNodeCard', 'KittingShortageTable', 'WoLink', 'PlanNodeCell', 'VanTag', 'MCard', 'UiStatusIcon', 'UiWoGroupHead', 'UiStatusTag', 'UiDatePicker', 'UiUserChip', 'UiAlertMark', 'UiSpotlightGrid', 'AFormItem', 'AForm', 'AProgress', 'NuxtLink', 'AMenuItem', 'AMenu', 'ADropdown'].map(name => [name, true]),
     ]) },
   })
   cleanups.push(() => wrapper.unmount())

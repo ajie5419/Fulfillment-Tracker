@@ -31,7 +31,7 @@ const predsTitle = (n: PlanNodeRow) =>
 
 const columns = [
   { title: '编号 / 节点', key: 'name', width: 300 },
-  { title: '责任部门', dataIndex: 'deptText', width: 92 },
+  { title: '责任部门', key: 'dept', width: 108 },
   { title: '前置', key: 'preds', width: 104 },
   { title: '计划开始日期', key: 'start', width: 132 },
   { title: '计划完成日期', key: 'plan', width: 132 },
@@ -39,7 +39,12 @@ const columns = [
 ]
 const rowClass = (n: TableRow) =>
   isPhaseRow(n) ? 'phase-row' : [n.id === props.focusNode ? 'focus-row' : '', !n.done && n.delayDays > 0 ? 'late-row' : '', n.parentId ? 'child-row' : '', n.childCount ? 'summary-row' : ''].join(' ')
-const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ? 'orange' : l === 'REMIND' ? 'blue' : undefined)
+const alertLevelOf = (n: PlanNodeRow): 'late' | 'risk' | null => {
+  if (n.done) return null
+  if (n.delayDays > 0 || n.alertLevel === 'RED') return 'late'
+  if (n.alertLevel === 'YELLOW' || n.lateTasks > 0) return 'risk'
+  return null
+}
 </script>
 
 <template>
@@ -84,11 +89,15 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
           <span class="code">{{ record.code }}</span>
           <span class="node-main">
             <span :class="{ 'summary-name': record.childCount }">{{ record.name }}</span>
+            <UiAlertMark :level="alertLevelOf(record as PlanNodeRow)" />
             <span v-if="record.childCount" class="muted">{{ record.childCount }} 个子节点</span>
-            <a-tag v-if="record.alertLevel" :color="levelColor(record.alertLevel)">W9 {{ record.alertLevel === 'RED' ? '红' : '黄' }}</a-tag>
+            <span v-if="record.alertLevel" class="small" :class="record.alertLevel === 'RED' ? 'late' : 'warn'">W9 {{ record.alertLevel === 'RED' ? '红' : '黄' }}</span>
           </span>
         </div>
         <div v-if="record.note" class="muted node-note" :class="`lv${levelOf(record as PlanNodeRow)}`">{{ record.note }}</div>
+      </template>
+      <template v-else-if="column.key === 'dept'">
+        <UiUserChip :name="record.deptText" />
       </template>
       <template v-else-if="column.key === 'preds'">
         <span v-if="record.childCount" class="muted" title="汇总行：日期由子节点算，看子节点的前置">—</span>

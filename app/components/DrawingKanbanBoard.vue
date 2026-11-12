@@ -117,6 +117,7 @@ function hasMenu(r: DrawingRow): boolean {
                   {{ r.componentName }}
                 </button>
                 <span v-else class="k-name-text">{{ r.componentName }}</span>
+                <UiAlertMark :level="r.overdue ? 'late' : r.alertLevel === 'YELLOW' ? 'risk' : null" />
                 <span v-if="r.parts.length" class="k-parts-count" :title="r.parts.map((p) => p.name).join('、')">
                   · {{ r.parts.length }} 件
                 </span>
@@ -148,7 +149,7 @@ function hasMenu(r: DrawingRow): boolean {
             <div class="k-foot">
               <div class="k-meta">
                 <div class="k-meta-line">
-                  <span :class="{ 'is-unassigned': !r.ownerId }">{{ r.ownerText }}</span>
+                  <UiUserChip :name="r.ownerText" :muted="!r.ownerId" />
                   <span> · {{ scheduleLabel(r, col.key) }}</span>
                 </div>
                 <div
@@ -219,9 +220,9 @@ function hasMenu(r: DrawingRow): boolean {
 }
 
 .board-col {
-  background: var(--ft-fill);
-  border: 1px solid var(--ft-border);
-  border-radius: var(--card-radius-inner);
+  background: var(--ft-tray-bg);
+  border: 1px solid var(--ft-tray-border);
+  border-radius: var(--card-radius);
   padding: 10px;
   display: flex;
   flex-direction: column;

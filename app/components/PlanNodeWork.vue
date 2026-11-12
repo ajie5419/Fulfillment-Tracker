@@ -191,10 +191,11 @@ const stepSelection = computed(() => ({
             <span v-if="t.note" class="muted task-note">{{ t.note }}</span>
           </template>
           <NuxtLink v-else :to="t.link" class="task-name task-link">{{ t.name }}</NuxtLink>
+          <UiAlertMark :level="!t.done && !t.excluded ? (t.overdue ? 'late' : t.lateForNode ? 'risk' : null) : null" />
         </div>
 
         <div class="task-meta">
-          <span class="task-owner" title="责任人">{{ t.ownerName ?? '—' }}</span>
+          <UiUserChip :name="t.ownerName" :muted="!t.ownerName" />
           <span class="task-date" :class="{ late: t.lateForNode && !t.done }" title="计划完成日">
             {{ t.planDate ?? '未填' }}
             <span v-if="t.lateForNode && !t.done && !t.excluded" class="late small">晚于节点</span>

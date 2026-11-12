@@ -40,6 +40,44 @@ const { saveNode } = usePlanNodeSave({ wo, published, editing, form, editOpen, s
 
 // ───── 删除 ─────
 const { reasonOpen, reasonText, reasonFor, askDelete, submitReason } = usePlanNodeDelete({ published, act })
+
+// ───── 顶部双栏焦点迷你清单（Brick 风格） ─────
+const upcomingSpotlight = computed(() => {
+  const list = (data.value?.nodes ?? []).filter((n) => !n.done && !n.childCount && n.planDate >= today.value)
+  return [...list]
+    .sort((a, b) => (a.startDate ?? a.planDate).localeCompare(b.startDate ?? b.planDate))
+    .slice(0, 3)
+    .map((n) => ({
+      id: n.id,
+      title: `${n.code} ${n.name}`,
+      meta: n.deptText,
+      ownerName: n.confirmedByName || n.deptText,
+      rightText: `计划 ${n.planDate.slice(5)}`,
+    }))
+})
+
+const attentionSpotlight = computed(() => {
+  const list = (data.value?.nodes ?? []).filter((n) => !n.done && !n.childCount && (n.delayDays > 0 || n.overdueCount > 0 || n.dateConflict || n.confirmStatus === 'PENDING'))
+  return [...list]
+    .sort((a, b) => b.delayDays - a.delayDays)
+    .slice(0, 4)
+    .map((n) => {
+      const pct = n.taskCount ? Math.round((n.doneCount / n.taskCount) * 100) : 0
+      const reason = n.delayDays > 0
+        ? `已延误 ${n.delayDays} 天 · 计划 ${n.planDate.slice(5)} · 已完 ${pct}%`
+        : n.dateConflict
+          ? `排期冲突 · ${n.planDate.slice(5)}`
+          : `待接收确认 · 计划 ${n.planDate.slice(5)}`
+      return {
+        id: n.id,
+        title: `${n.code} ${n.name}`,
+        meta: n.deptText,
+        ownerName: n.confirmedByName || n.deptText,
+        rightText: reason,
+        level: (n.delayDays > 0 || n.overdueCount > 0 ? 'late' : 'risk') as 'late' | 'risk',
+      }
+    })
+})
 </script>
 
 <template>
@@ -65,7 +103,25 @@ const { reasonOpen, reasonText, reasonFor, askDelete, submitReason } = usePlanNo
     <template v-else>
       <PlanSummaryPanel :data="data" :published="published" />
 
-      <PlanGantt v-if="view === 'gantt'" :nodes="data.nodes" :delivery-date="data.workOrder.deliveryDate" :today="today" @select="selectFromGantt" />
+      <UiSpotlightGrid
+        v-if="data.nodes.length"
+        style="margin-bottom: 14px"
+        left-title="今日与近期节点"
+        :left-items="upcomingSpotlight"
+        right-title="需要关注 / 延误与待确认"
+        :right-items="attentionSpotlight"
+        @select="(it) => selectFromGantt(it.id)"
+      />
+
+      <PlanGantt
+        v-if="view === 'gantt'"
+        :nodes="data.nodes"
+        :delivery-date="data.workOrder.deliveryDate"
+        :today="today"
+        :wo="wo"
+        :project-name="data.workOrder.projectName ?? data.workOrder.customerName"
+        @select="selectFromGantt"
+      />
 
       <PlanNodeTable
         v-else
