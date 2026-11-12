@@ -145,4 +145,42 @@ describe('plan service 搬移前特征', () => {
     await expect(plan.completeNode('n1', d('2026-11-02'), 'actor', now)).rejects.toThrow('完成日期不能晚于今天')
     expect(serviceCalls).toMatchSnapshot()
   })
+
+  it.each(['drawing', 'purchase'] as const)('仅取消的 %s 保留手动完成入口和指定完成日，混合有效任务仍自动完成', async (kind) => {
+    let currentNode = node()
+    method('planNode.findMany').mockImplementation(async (args) => {
+      serviceCalls.push(['planNode.findMany', args])
+      return args.where.parentId ? [] : [currentNode]
+    })
+    const configureTasks = (active?: 'pending' | 'done') => {
+      const records = [{ id: 'cancelled', cancelled: true }, ...(active ? [{ id: 'active', cancelled: false }] : [])]
+      if (kind === 'drawing') returns('drawingTask.findMany', records.map(({ id, cancelled }) => ({
+        id, planNodeId: 'n1', componentName: id, status: cancelled ? 'CANCELLED' : active === 'done' ? 'DONE' : 'PENDING',
+        planDate: d('2026-11-02'), drawnDate: active === 'done' && !cancelled ? d('2026-10-31') : null,
+        needsCustomerConfirm: false, customerPlanDate: null, customerConfirmedDate: null,
+      })))
+      else returns('purchaseLine.findMany', records.map(({ id, cancelled }) => ({
+        id, planNodeId: 'n1', materialName: id, status: cancelled ? 'CANCELLED' : active === 'done' ? 'ARRIVED' : 'OPEN',
+        needDate: d('2026-11-02'), promisedDate: null, arrivedDate: active === 'done' && !cancelled ? d('2026-10-31') : null,
+      })))
+    }
+    const ownerContext = { ...ctx, pmOf: new Set(['WO 1']) }
+    configureTasks()
+    expect((await plan.getPlan('WO 1', ownerContext, now)).nodes[0]).toMatchObject({ done: false, taskCount: 0, canComplete: true, tasks: [expect.objectContaining({ excluded: true })] })
+    expect(await plan.completeNode('n1', d('2026-10-30'), 'actor', now)).toEqual({ id: 'n1', actualDate: '2026-10-30' })
+    expect(method('planNode.update')).toHaveBeenCalledWith({ where: { id: 'n1' }, data: { actualDate: d('2026-10-30'), manualDoneBy: 'actor', manualDoneAt: now } })
+    currentNode = node('n1', { actualDate: d('2026-10-30'), manualDoneAt: now })
+    expect((await plan.getPlan('WO 1', ownerContext, now)).nodes[0]).toMatchObject({ done: true, doneBy: 'MANUAL', actualDate: '2026-10-30', taskCount: 0 })
+
+    configureTasks('pending')
+    expect((await plan.getPlan('WO 1', ownerContext, now)).nodes[0]).toMatchObject({ done: false, doneBy: null, actualDate: null, taskCount: 1, canComplete: false })
+    currentNode = node()
+    await expect(plan.completeNode('n1', null, 'actor', now)).rejects.toThrow('已分解的节点随任务自动完成')
+    configureTasks('done')
+    expect((await plan.getPlan('WO 1', ownerContext, now)).nodes[0]).toMatchObject({ done: true, doneBy: 'AUTO', actualDate: '2026-10-31', taskCount: 1, doneCount: 1, canComplete: false })
+    await expect(plan.completeNode('n1', null, 'actor', now)).rejects.toThrow('已分解的节点随任务自动完成')
+    configureTasks()
+    currentNode = node('n1', { actualDate: d('2026-10-30'), manualDoneAt: now })
+    expect((await plan.getPlan('WO 1', ownerContext, now)).nodes[0]).toMatchObject({ done: true, doneBy: 'MANUAL', actualDate: '2026-10-30', taskCount: 0, canComplete: true })
+  })
 })

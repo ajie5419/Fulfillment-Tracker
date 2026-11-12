@@ -493,7 +493,8 @@ export async function completeNode(id: string, date: Date | null | undefined, ac
       throw new FlowError('有子节点的节点随子节点自动完成，无需手动标记')
     }
     const data = (await loadPlans({ workOrderNumbers: [node.workOrderNumber] }, now, tx)).get(node.workOrderNumber)
-    if (data?.tasks.some((t) => t.nodeId === id)) throw new FlowError('已分解的节点随任务自动完成，无需手动标记')
+    // Cancelled tasks no longer own completion, matching forecasts and the UI.
+    if (data?.tasks.some((t) => t.nodeId === id && !t.facts.excluded)) throw new FlowError('已分解的节点随任务自动完成，无需手动标记')
     await tx.planNode.update({ where: { id }, data: { actualDate: d, manualDoneBy: actorId, manualDoneAt: now } })
     await clearAlertKeys(tx, [w9Key(id), w9SplitKey(id)])
     return { id, actualDate: day(d) }

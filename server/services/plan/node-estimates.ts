@@ -56,9 +56,9 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
       [...n.tasks, ...myKids.map((c): TaskFacts => ({ kind: 'task', id: c.id, excluded: false, done: c.done, doneDay: c.actualDay, planDay: null }))],
       today,
     )
-    // Once decomposed, child work owns completion. Historical manual marks must
-    // not keep a node closed after work is added or completion is reversed.
-    const manualDay = n.tasks.length || myKids.length ? null : n.manualDoneDay
+    // Active child work owns completion; cancelled tasks no longer suppress a
+    // historical manual completion date when no effective work remains.
+    const manualDay = counted.length || myKids.length ? null : n.manualDoneDay
     const doneBy = manualDay ? 'MANUAL' : auto.done ? 'AUTO' : null
     const actualDay = manualDay ?? auto.day
     const myPreds = preds.get(id)!

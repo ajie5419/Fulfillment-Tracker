@@ -224,7 +224,8 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
         /** 能在这个节点下分解（加其他任务；4 类记录另看 canCreate） */
         canSplit,
         canConfirm: published && n.confirmStatus !== null && (canOperate(ctx, 'planConfirm', { dept: n.dept }) || mine.has(n.id)),
-        canComplete: !tasks.length && !e.children.length && canOperate(ctx, 'planNodeDone', { workOrderNumber, dept: n.dept }),
+        // Cancelled records remain visible but no longer own node completion.
+        canComplete: !e.taskCount && !e.children.length && canOperate(ctx, 'planNodeDone', { workOrderNumber, dept: n.dept }),
       }
     }),
     changeLogs: logs.map((l) => ({

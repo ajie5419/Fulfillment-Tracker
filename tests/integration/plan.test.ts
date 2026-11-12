@@ -759,4 +759,39 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     await scanAfter(50)
     expect(await confirmAlert()).toBeNull()
   })
+
+  it.each(['drawing', 'purchase'] as const)('仅取消的 %s 可手动完成并保留日期，混合有效任务仍自动完成', async (kind) => {
+    const wo = `T-WO-R14-CANCELLED-${kind}`
+    await db.qmsWorkOrder.create({ data: { workOrderNumber: wo, customerName: '取消任务回归', status: 'IN_PROGRESS', quantity: 1, deliveryDate: dayOff(20), updatedAt: new Date() } })
+    const node = await s.plan.createNode(wo, { name: '任务完成回归', dept: 'TECH', planDate: dayOff(10) }, 'u-pm')
+    const createTask = async (cancelled: boolean) => kind === 'drawing'
+      ? db.drawingTask.create({ data: { workOrderNumber: wo, planNodeId: node.id, componentName: '图纸', planDate: dayOff(10), status: cancelled ? 'CANCELLED' : 'PENDING' } })
+      : db.purchaseLine.create({ data: { workOrderNumber: wo, planNodeId: node.id, materialName: '钢板', quantity: 1, needDate: dayOff(10), status: cancelled ? 'CANCELLED' : 'OPEN' } })
+    const setTaskState = async (id: string, state: 'pending' | 'done' | 'cancelled') => kind === 'drawing'
+      ? db.drawingTask.update({ where: { id }, data: { status: state === 'cancelled' ? 'CANCELLED' : state === 'done' ? 'DONE' : 'PENDING', drawnDate: state === 'done' ? dayOff(-1) : null } })
+      : db.purchaseLine.update({ where: { id }, data: { status: state === 'cancelled' ? 'CANCELLED' : state === 'done' ? 'ARRIVED' : 'OPEN', arrivedDate: state === 'done' ? dayOff(-1) : null } })
+    await createTask(true)
+    await s.plan.publishPlan(wo, 'u-pm')
+    const ctx = await ctxOf('u-techhead')
+    const readNode = async (now?: Date) => (await s.plan.getPlan(wo, ctx, now)).nodes[0]
+
+    expect(await readNode()).toMatchObject({ done: false, taskCount: 0, canComplete: true, tasks: [expect.objectContaining({ kind, excluded: true })] })
+    expect(await s.plan.completeNode(node.id, dayOff(-2), 'u-techhead')).toEqual({ id: node.id, actualDate: dayStr(-2) })
+    expect(await db.planNode.findUniqueOrThrow({ where: { id: node.id } })).toMatchObject({ actualDate: dayOff(-2), manualDoneBy: 'u-techhead', manualDoneAt: expect.any(Date) })
+    expect(await readNode(dayOff(1))).toMatchObject({ done: true, doneBy: 'MANUAL', actualDate: dayStr(-2), taskCount: 0 })
+
+    const active = await createTask(false)
+    expect(await readNode()).toMatchObject({ done: false, doneBy: null, actualDate: null, taskCount: 1, canComplete: false })
+    await setTaskState(active.id, 'cancelled')
+    expect(await readNode()).toMatchObject({ done: true, doneBy: 'MANUAL', actualDate: dayStr(-2), taskCount: 0 })
+
+    await setTaskState(active.id, 'pending')
+    await s.plan.undoCompleteNode(node.id)
+    await expect(s.plan.completeNode(node.id, null, 'u-techhead')).rejects.toThrow('已分解的节点随任务自动完成')
+    await setTaskState(active.id, 'done')
+    expect(await readNode()).toMatchObject({ done: true, doneBy: 'AUTO', actualDate: dayStr(-1), taskCount: 1, doneCount: 1, canComplete: false })
+    await expect(s.plan.completeNode(node.id, null, 'u-techhead')).rejects.toThrow('已分解的节点随任务自动完成')
+    await setTaskState(active.id, 'cancelled')
+    expect(await readNode()).toMatchObject({ done: false, doneBy: null, actualDate: null, taskCount: 0, canComplete: true })
+  })
 })
