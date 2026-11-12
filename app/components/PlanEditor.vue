@@ -46,13 +46,13 @@ const upcomingSpotlight = computed(() => {
   const list = (data.value?.nodes ?? []).filter((n) => !n.done && !n.childCount && n.planDate >= today.value)
   return [...list]
     .sort((a, b) => (a.startDate ?? a.planDate).localeCompare(b.startDate ?? b.planDate))
-    .slice(0, 3)
+    .slice(0, SPOTLIGHT_MAX_ITEMS)
     .map((n) => ({
       id: n.id,
       title: `${n.code} ${n.name}`,
       meta: n.deptText,
       ownerName: n.confirmedByName || n.deptText,
-      rightText: `计划 ${n.planDate.slice(5)}`,
+      rightText: `计划 ${shortDayText(n.planDate)}`,
     }))
 })
 
@@ -60,14 +60,14 @@ const attentionSpotlight = computed(() => {
   const list = (data.value?.nodes ?? []).filter((n) => !n.done && !n.childCount && (n.delayDays > 0 || n.overdueCount > 0 || n.dateConflict || n.confirmStatus === 'PENDING'))
   return [...list]
     .sort((a, b) => b.delayDays - a.delayDays)
-    .slice(0, 4)
+    .slice(0, SPOTLIGHT_MAX_ITEMS)
     .map((n) => {
       const pct = n.taskCount ? Math.round((n.doneCount / n.taskCount) * 100) : 0
       const reason = n.delayDays > 0
-        ? `已延误 ${n.delayDays} 天 · 计划 ${n.planDate.slice(5)} · 已完 ${pct}%`
+        ? `已延误 ${n.delayDays} 天 · 计划 ${shortDayText(n.planDate)} · 已完 ${pct}%`
         : n.dateConflict
-          ? `排期冲突 · ${n.planDate.slice(5)}`
-          : `待接收确认 · 计划 ${n.planDate.slice(5)}`
+          ? `排期冲突 · ${shortDayText(n.planDate)}`
+          : `待接收确认 · 计划 ${shortDayText(n.planDate)}`
       return {
         id: n.id,
         title: `${n.code} ${n.name}`,

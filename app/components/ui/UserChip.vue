@@ -12,6 +12,8 @@ const props = withDefaults(
   { name: null, fallback: '未指派', muted: false },
 )
 
+const AVATAR_PALETTE_COUNT = 5
+
 const displayText = computed(() => props.name?.trim() || props.fallback)
 const initial = computed(() => {
   const s = props.name?.trim()
@@ -28,7 +30,7 @@ const paletteIndex = computed(() => {
   for (let i = 0; i < s.length; i++) {
     hash = (hash * 31 + s.charCodeAt(i)) >>> 0
   }
-  return (hash % 5) + 1
+  return (hash % AVATAR_PALETTE_COUNT) + 1
 })
 </script>
 

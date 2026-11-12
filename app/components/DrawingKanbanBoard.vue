@@ -67,23 +67,17 @@ const columns = computed(() => {
   }))
 })
 
-function shortDay(d: string | null | undefined): string {
-  if (!d) return ''
-  const s = dayText(d)
-  return s.length === 10 ? s.slice(5) : s
-}
-
 function scheduleLabel(r: DrawingRow, stage: StageKey): string {
   if (stage === 'DONE') {
-    return r.drawnDate ? `${shortDay(r.drawnDate)} 已发放` : '已发放'
+    return r.drawnDate ? `${shortDayText(r.drawnDate)} 已发放` : '已发放'
   }
   if (stage === 'CONFIRM' && r.customerPlanDate) {
-    return `确认计划 ${shortDay(r.customerPlanDate)}`
+    return `确认计划 ${shortDayText(r.customerPlanDate)}`
   }
   if (r.drawnDate) {
-    return `${shortDay(r.drawnDate)} 完成设计`
+    return `${shortDayText(r.drawnDate)} 完成设计`
   }
-  return `${shortDay(r.planDate)} 止`
+  return `${shortDayText(r.planDate)} 止`
 }
 
 function hasMenu(r: DrawingRow): boolean {
@@ -170,10 +164,10 @@ function hasMenu(r: DrawingRow): boolean {
                     v-if="r.needsCustomerConfirm && !r.customerConfirmedDate"
                     :class="{ 'text-late': r.presentation.customerOverdue }"
                   >
-                    {{ r.presentation.customerOverdue ? r.presentation.customerText : `需确认${r.customerPlanDate ? ` ${shortDay(r.customerPlanDate)}` : ''}` }}
+                    {{ r.presentation.customerOverdue ? r.presentation.customerText : `需确认${r.customerPlanDate ? ` ${shortDayText(r.customerPlanDate)}` : ''}` }}
                   </span>
                   <span v-else-if="r.customerConfirmedDate" class="text-done">
-                    已确认 {{ shortDay(r.customerConfirmedDate) }}
+                    已确认 {{ shortDayText(r.customerConfirmedDate) }}
                   </span>
                 </div>
               </div>

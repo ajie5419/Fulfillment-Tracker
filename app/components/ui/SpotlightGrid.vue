@@ -25,6 +25,7 @@ withDefaults(
     rightItems: SpotlightItem[]
     rightEmpty?: string
     rightActive?: boolean
+    maxItems?: number
   }>(),
   {
     leftCount: null,
@@ -33,6 +34,7 @@ withDefaults(
     rightCount: null,
     rightEmpty: '当前无逾期或预警项',
     rightActive: false,
+    maxItems: SPOTLIGHT_MAX_ITEMS,
   },
 )
 
@@ -57,7 +59,7 @@ const emit = defineEmits<{
       </div>
       <div v-else class="sp-list">
         <button
-          v-for="it in leftItems"
+          v-for="it in leftItems.slice(0, maxItems)"
           :key="it.id"
           type="button"
           class="sp-row"
@@ -88,7 +90,7 @@ const emit = defineEmits<{
       </div>
       <div v-else class="sp-list">
         <button
-          v-for="it in rightItems"
+          v-for="it in rightItems.slice(0, maxItems)"
           :key="it.id"
           type="button"
           class="sp-row"

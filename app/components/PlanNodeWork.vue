@@ -203,10 +203,10 @@ const stepSelection = computed(() => ({
           <span class="task-status">
             <span v-if="t.excluded" class="muted">{{ t.statusText }}（不计）</span>
             <template v-else-if="t.done">
-              <UiStatusTag tone="done">{{ t.statusText }}{{ t.doneDate ? ` · ${t.doneDate.slice(5)}` : '' }}</UiStatusTag>
+              <UiStatusTag tone="done">{{ t.statusText }}{{ t.doneDate ? ` · ${shortDayText(t.doneDate)}` : '' }}</UiStatusTag>
             </template>
             <template v-else>
-              <UiStatusTag v-if="t.overdue" tone="late">逾期{{ t.expectedDate && t.expectedDate !== t.planDate ? ` · 预计 ${t.expectedDate.slice(5)}` : '' }}</UiStatusTag>
+              <UiStatusTag v-if="t.overdue" tone="late">逾期{{ t.expectedDate && t.expectedDate !== t.planDate ? ` · 预计 ${shortDayText(t.expectedDate)}` : '' }}</UiStatusTag>
               <span v-else class="status-pill">{{ t.kind === 'task' ? '未完成' : t.statusText }}</span>
             </template>
           </span>

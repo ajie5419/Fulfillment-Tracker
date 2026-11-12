@@ -19,7 +19,28 @@ export function apiError(e: unknown): string {
 
 /** 'YYYY-MM-DD'；日期字段存的是当天 UTC 零点 */
 export const dayText = (v: string | Date | null | undefined) => (v ? new Date(v).toISOString().slice(0, 10) : '')
+/** 'MM-DD' 短日期（用于看板卡片、聚焦迷你卡、甘特图紧凑列） */
+export const shortDayText = (v: string | Date | null | undefined) => {
+  if (!v) return ''
+  const s = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : dayText(v)
+  return s.length === 10 ? s.slice(5) : s
+}
+/** 紧凑日期区间：同年或同月自动省略重复前缀（如 '10-08 ~ 15' 或 '09-28 ~ 10-05'） */
+export const shortRangeText = (start: string | Date | null | undefined, end: string | Date | null | undefined) => {
+  const e = shortDayText(end)
+  if (!start) return e
+  const s = shortDayText(start)
+  if (!s || s === e) return e
+  return s.slice(0, 2) === e.slice(0, 2) ? `${s} ~ ${e.slice(3)}` : `${s} ~ ${e}`
+}
 export const timeText = (v: string | Date | null | undefined) => (v ? new Date(v).toLocaleString('zh-CN', { hour12: false }) : '')
+
+/** 顶部双栏行动聚焦卡（UiSpotlightGrid）单栏默认最大展示条数 */
+export const SPOTLIGHT_MAX_ITEMS = 4
+/** 列表搜索框输入防抖毫秒数 */
+export const FILTER_DEBOUNCE_MS = 300
+/** 桌面端明细表格默认每页条数 */
+export const DEFAULT_TABLE_PAGE_SIZE = 50
 
 /** 兼容入口：保留经过小时数后取本地日期的原口径。 */
 export { localDayAfter as dayAfter } from '#shared/dates'

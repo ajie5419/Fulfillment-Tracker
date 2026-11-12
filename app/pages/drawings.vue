@@ -41,7 +41,7 @@ const keyword = ref('')
 let timer: ReturnType<typeof setTimeout> | undefined
 watch(keyword, (v) => {
   clearTimeout(timer)
-  timer = setTimeout(() => (filter.q = v.trim()), 300)
+  timer = setTimeout(() => (filter.q = v.trim()), FILTER_DEBOUNCE_MS)
 })
 watch(
   () => [filter.workOrderNumber, filter.view, filter.ownerId, tab.value],
@@ -125,41 +125,39 @@ const tables = computed(() =>
 const doneOf = (g: { rows: DrawingRow[] }) => groupProgress(g.rows, (r) => isDesignComplete(r.status), (r) => r.status !== 'CANCELLED')
 
 // ───── 顶部双栏行动聚焦卡（Spotlight Actionable Mini-List Cards）─────
-function shortDay(d: string | null | undefined): string {
-  if (!d) return ''
-  const s = dayText(d)
-  return s.length === 10 ? s.slice(5) : s
-}
 const spotlightLeftItems = computed(() => {
   const openRows = rows.value.filter((r) => r.status !== 'DONE' && r.status !== 'CANCELLED' && !r.overdue)
   return [...openRows]
     .sort((a, b) => dayText(a.planDate).localeCompare(dayText(b.planDate)))
-    .slice(0, 4)
-    .map((r) => ({
-      id: r.id,
-      title: r.componentName,
-      ownerName: r.ownerText,
-      subText: r.workOrderNumber,
-      rightPrefix: r.status === 'PENDING' ? '计划完成' : r.needsCustomerConfirm && !r.customerConfirmedDate ? '待确认' : '待发放',
-      rightText: shortDay(r.customerPlanDate && r.status !== 'PENDING' ? r.customerPlanDate : r.planDate),
-    }))
+    .slice(0, SPOTLIGHT_MAX_ITEMS)
+    .map((r) => {
+      const stagePrefix = r.status === 'PENDING' ? '计划完成' : r.needsCustomerConfirm && !r.customerConfirmedDate ? '待确认' : '待发放'
+      const targetDate = shortDayText(r.customerPlanDate && r.status !== 'PENDING' ? r.customerPlanDate : r.planDate)
+      return {
+        id: r.id,
+        title: r.componentName,
+        meta: r.workOrderNumber,
+        ownerName: r.ownerText,
+        rightText: `${stagePrefix} ${targetDate}`,
+      }
+    })
 })
 const spotlightRightItems = computed(() => {
   const attentionRows = rows.value.filter((r) => r.status !== 'DONE' && r.status !== 'CANCELLED' && (r.overdue || r.alertLevel === 'YELLOW' || r.presentation.designWarning))
   return [...attentionRows]
     .sort((a, b) => Number(b.overdue) - Number(a.overdue) || dayText(a.planDate).localeCompare(dayText(b.planDate)))
-    .slice(0, 4)
+    .slice(0, SPOTLIGHT_MAX_ITEMS)
     .map((r) => ({
       id: r.id,
       title: r.componentName,
+      meta: r.workOrderNumber,
       ownerName: r.ownerText,
-      subText: r.workOrderNumber,
-      alertLevel: (r.overdue ? 'late' : 'risk') as 'late' | 'risk',
-      rightText: `${r.presentation.designWarning || (r.overdue ? '已逾期' : '临期')} · 止 ${shortDay(r.planDate)}`,
+      level: (r.overdue ? 'late' : 'risk') as 'late' | 'risk',
+      rightText: `${r.presentation.designWarning || (r.overdue ? '已逾期' : '临期')} · 止 ${shortDayText(r.planDate)}`,
     }))
 })
-function selectSpotlightTask(id: string) {
-  const target = rows.value.find((r) => r.id === id)
+function selectSpotlightTask(it: { id: string }) {
+  const target = rows.value.find((r) => r.id === it.id)
   if (!target) return
   if (canEditTask.value) openEdit(target)
   else keyword.value = target.componentName
@@ -429,7 +427,7 @@ const loadColumns = [
           size="small"
           :row-expandable="(r: DrawingRow) => hasTaskDetails(r)"
           :scroll="{ x: layout === 'group' ? groupWidth : tableWidth }"
-          :pagination="layout === 'group' ? false : { pageSize: 50, hideOnSinglePage: true }"
+          :pagination="layout === 'group' ? false : { pageSize: DEFAULT_TABLE_PAGE_SIZE, hideOnSinglePage: true }"
         >
           <template #expandedRowRender="{ record }">
             <div class="task-details">

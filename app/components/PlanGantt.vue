@@ -43,11 +43,21 @@ const props = withDefaults(
 const emit = defineEmits<{ select: [id: string] }>()
 
 const DAY = 86_400_000
-const ROW_H = 38
-const SVG_W = 1000
-const SHORT_SPAN_DAYS = 45
-const MID_MONTH_DAY = 15
-const COMPACT_ROW_SPAN = 4
+const GANTT_LAYOUT = {
+  leftWidth: 490,
+  rowHeight: 38,
+  headHeight: 42,
+  svgWidth: 1000,
+  shortSpanDays: 45,
+  midMonthDay: 15,
+  compactRowSpan: 4,
+  maxInlinePreds: 2,
+} as const
+const ganttCssVars = {
+  '--gantt-left-w': `${GANTT_LAYOUT.leftWidth}px`,
+  '--gantt-row-h': `${GANTT_LAYOUT.rowHeight}px`,
+  '--gantt-head-h': `${GANTT_LAYOUT.headHeight}px`,
+}
 
 const hoverId = ref<string | null>(null)
 
@@ -74,12 +84,12 @@ const ticks = computed(() => {
   const out: { left: string; label: string; major: boolean }[] = []
   const { min, span } = range.value
   const start = new Date(min)
-  const short = span < SHORT_SPAN_DAYS * DAY
+  const short = span < GANTT_LAYOUT.shortSpanDays * DAY
   for (let d = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()); d <= min + span; d += DAY) {
     const x = new Date(d)
     const date = x.getUTCDate()
     const month = date === 1
-    const minor = short ? x.getUTCDay() === 1 : date === MID_MONTH_DAY
+    const minor = short ? x.getUTCDay() === 1 : date === GANTT_LAYOUT.midMonthDay
     if (month || minor) {
       const m = x.getUTCMonth() + 1
       const label = month ? (m === 1 ? `${x.getUTCFullYear()}年1月` : `${m}月`) : `${m}/${date}`
@@ -155,13 +165,6 @@ function nodeAlertLevel(n: GNode): 'late' | 'risk' | null {
   return null
 }
 
-function shortRange(start: string | null, end: string): string {
-  const e = end.length === 10 ? end.slice(5) : end
-  if (!start || start === end) return e
-  const s = start.length === 10 ? start.slice(5) : start
-  return s.slice(0, 2) === e.slice(0, 2) ? `${s} ~ ${e.slice(3)}` : `${s} ~ ${e}`
-}
-
 function barStyle(n: GNode) {
   const l = pos(n.startDate ?? n.planDate)
   return { left: pct(l), width: pct(Math.max(0.8, pos(n.planDate, true) - l)) }
@@ -177,8 +180,8 @@ const baseStyle = (n: GNode) => {
 /** 节点右侧前置短标签：显示前置编号，让用户不悬停也能直接看到前置来源 */
 function predBadgeText(n: GNode): string | null {
   if ((n.childCount ?? 0) > 0 || !n.preds.length) return null
-  if (n.preds.length <= 2) return `← ${n.preds.map((p) => p.code).join('、')}`
-  const head = n.preds.slice(0, 2).map((p) => p.code).join('、')
+  if (n.preds.length <= GANTT_LAYOUT.maxInlinePreds) return `← ${n.preds.map((p) => p.code).join('、')}`
+  const head = n.preds.slice(0, GANTT_LAYOUT.maxInlinePreds).map((p) => p.code).join('、')
   return `← ${head} 等${n.preds.length}项`
 }
 
@@ -236,17 +239,17 @@ const depEdges = computed<DepEdge[]>(() => {
       const fromEntry = map.get(p.id)
       if (!fromEntry) continue
       const from = fromEntry.node
-      const x1 = (clampPct(pos(from.planDate, true)) / 100) * SVG_W
-      const y1 = fromEntry.idx * ROW_H + ROW_H / 2
+      const x1 = (clampPct(pos(from.planDate, true)) / 100) * GANTT_LAYOUT.svgWidth
+      const y1 = fromEntry.idx * GANTT_LAYOUT.rowHeight + GANTT_LAYOUT.rowHeight / 2
       const toStart = isMilestone(to)
         ? pos(to.planDate) + (pos(to.planDate, true) - pos(to.planDate)) / 2
         : pos(to.startDate ?? to.planDate)
-      const x2 = (clampPct(toStart) / 100) * SVG_W
-      const y2 = toEntry.idx * ROW_H + ROW_H / 2
+      const x2 = (clampPct(toStart) / 100) * GANTT_LAYOUT.svgWidth
+      const y2 = toEntry.idx * GANTT_LAYOUT.rowHeight + GANTT_LAYOUT.rowHeight / 2
 
       const rowDist = Math.abs(toEntry.idx - fromEntry.idx)
       const critical = from.critical && to.critical && !from.done && !to.done
-      const compact = rowDist <= COMPACT_ROW_SPAN
+      const compact = rowDist <= GANTT_LAYOUT.compactRowSpan
       const isEdgeActive = active === from.id || active === to.id
       const isDimmed = !!active && !isEdgeActive
 
@@ -256,7 +259,7 @@ const depEdges = computed<DepEdge[]>(() => {
         path = `M ${x1.toFixed(1)} ${y1} L ${midX.toFixed(1)} ${y1} L ${midX.toFixed(1)} ${y2} L ${x2.toFixed(1)} ${y2}`
       } else {
         const dir = y2 >= y1 ? 1 : -1
-        const detY = y1 + dir * (ROW_H * 0.45)
+        const detY = y1 + dir * (GANTT_LAYOUT.rowHeight * 0.45)
         const leftX = Math.max(4, x2 - 8)
         path = `M ${x1.toFixed(1)} ${y1} L ${(x1 + 5).toFixed(1)} ${y1} L ${(x1 + 5).toFixed(1)} ${detY.toFixed(1)} L ${leftX.toFixed(1)} ${detY.toFixed(1)} L ${leftX.toFixed(1)} ${y2} L ${x2.toFixed(1)} ${y2}`
       }
@@ -277,7 +280,7 @@ const depEdges = computed<DepEdge[]>(() => {
   return edges.sort((a, b) => Number(a.active) - Number(b.active) || Number(a.critical) - Number(b.critical))
 })
 
-const svgHeight = computed(() => Math.max(ROW_H, rows.value.length * ROW_H))
+const svgHeight = computed(() => Math.max(GANTT_LAYOUT.rowHeight, rows.value.length * GANTT_LAYOUT.rowHeight))
 
 function relationRole(id: string): 'self' | 'pred' | 'succ' | null {
   const active = hoverId.value
@@ -306,7 +309,7 @@ const deliveryLeft = computed(() => (props.deliveryDate ? pct(pos(props.delivery
 </script>
 
 <template>
-  <div class="gantt-wrap">
+  <div class="gantt-wrap" :style="ganttCssVars">
     <!-- Brick 风格浅灰圆角大托盘 + 纯白内嵌卡 -->
     <div class="project-tray">
       <div class="tray-head">
@@ -320,7 +323,7 @@ const deliveryLeft = computed(() => (props.deliveryDate ? pct(pos(props.delivery
           <span class="tray-scope">总计划同屏甘特</span>
         </div>
         <div class="tray-right">
-          <span v-if="deliveryDate">合同交期 <b class="tray-strong">{{ deliveryDate.slice(5) }}</b></span>
+          <span v-if="deliveryDate">合同交期 <b class="tray-strong">{{ shortDayText(deliveryDate) }}</b></span>
           <span class="mini-progress">
             <span class="mini-track"><span class="mini-fill" :style="{ width: `${overallPct}%` }" /></span>
             <span>{{ doneLeafCount }}/{{ totalLeafCount }} 已完成</span>
@@ -357,7 +360,7 @@ const deliveryLeft = computed(() => (props.deliveryDate ? pct(pos(props.delivery
             <!-- SVG 前置依赖连线层 -->
             <svg
               class="g-deps"
-              :viewBox="`0 0 ${SVG_W} ${svgHeight}`"
+              :viewBox="`0 0 ${GANTT_LAYOUT.svgWidth} ${svgHeight}`"
               preserveAspectRatio="none"
               aria-hidden="true"
             >
@@ -379,7 +382,7 @@ const deliveryLeft = computed(() => (props.deliveryDate ? pct(pos(props.delivery
                   <span class="col-prog" :class="{ 'c-done': r.count && r.done === r.count }">
                     {{ r.count ? `${Math.round((r.done / r.count) * 100)}%` : '—' }}
                   </span>
-                  <span class="col-date">{{ shortRange(r.start, r.end) }}</span>
+                  <span class="col-date">{{ shortRangeText(r.start, r.end) }}</span>
                 </div>
                 <div class="g-track" role="cell">
                   <span class="phase-bar" :style="{ left: pct(pos(r.start)), width: pct(Math.max(0.8, pos(r.end, true) - pos(r.start))) }" :title="`${r.phase}：${r.start} ~ ${r.end}`" />
@@ -416,7 +419,7 @@ const deliveryLeft = computed(() => (props.deliveryDate ? pct(pos(props.delivery
                     {{ nodeProgress(r.n) }}%
                   </span>
                   <span class="col-date" :class="{ 'c-danger': !r.n.done && r.n.delayDays > 0, 'c-warn': !r.n.done && r.n.dateConflict }">
-                    {{ shortRange(r.n.startDate, r.n.planDate) }}
+                    {{ shortRangeText(r.n.startDate, r.n.planDate) }}
                   </span>
                 </button>
 
@@ -536,11 +539,11 @@ const deliveryLeft = computed(() => (props.deliveryDate ? pct(pos(props.delivery
   background: var(--ft-card-bg);
 }
 .gantt { min-width: 1060px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
-.g-row { display: grid; grid-template-columns: 490px 1fr; height: 38px; align-items: center; border-bottom: 1px solid var(--card-border-subtle); transition: background-color 0.12s, opacity 0.15s; }
+.g-row { display: grid; grid-template-columns: var(--gantt-left-w) 1fr; height: var(--gantt-row-h); align-items: center; border-bottom: 1px solid var(--card-border-subtle); transition: background-color 0.12s, opacity 0.15s; }
 .g-body > .g-row:last-child { border-bottom: none; }
 
 /* 表头 */
-.g-head { height: 42px; background: var(--ft-card-bg); color: var(--ft-text-3); font-size: 11.5px; font-weight: 600; border-bottom: 1px solid var(--ft-border); }
+.g-head { height: var(--gantt-head-h); background: var(--ft-card-bg); color: var(--ft-text-3); font-size: 11.5px; font-weight: 600; border-bottom: 1px solid var(--ft-border); }
 .g-head-track { overflow: hidden; }
 
 /* 左半边 4 列精简表（节点名称 | 责任人 | 进度 | 计划起止） */
@@ -600,7 +603,7 @@ const deliveryLeft = computed(() => (props.deliveryDate ? pct(pos(props.delivery
 .g-track { position: relative; height: 100%; cursor: pointer; }
 .g-phase .g-track, .g-head .g-track { cursor: default; }
 .g-body { position: relative; }
-.g-lines { position: absolute; inset: 0 0 0 490px; pointer-events: none; z-index: 0; }
+.g-lines { position: absolute; inset: 0 0 0 var(--gantt-left-w); pointer-events: none; z-index: 0; }
 .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--ft-border); }
 .tick.minor { border-left: 1px dashed var(--card-border-subtle); }
 .tick-label { position: absolute; top: 11px; transform: translateX(5px); white-space: nowrap; color: var(--ft-text-2); font-weight: 500; }
@@ -614,7 +617,7 @@ const deliveryLeft = computed(() => (props.deliveryDate ? pct(pos(props.delivery
 .delivery-pill { background: var(--ft-text); color: var(--ft-card-bg); }
 
 /* SVG 依赖连线 */
-.g-deps { position: absolute; inset: 0 0 0 490px; width: calc(100% - 490px); height: 100%; pointer-events: none; z-index: 1; overflow: visible; }
+.g-deps { position: absolute; inset: 0 0 0 var(--gantt-left-w); width: calc(100% - var(--gantt-left-w)); height: 100%; pointer-events: none; z-index: 1; overflow: visible; }
 .dep-line { fill: none; stroke: var(--ft-border-hover); stroke-width: 1.2px; stroke-dasharray: 3 3; opacity: 0.45; transition: stroke 0.15s, stroke-width 0.15s, opacity 0.15s; }
 .dep-dot { fill: var(--ft-border-hover); opacity: 0.5; transition: fill 0.15s, opacity 0.15s; }
 .dep-group.compact .dep-line { stroke-dasharray: none; opacity: 0.75; }

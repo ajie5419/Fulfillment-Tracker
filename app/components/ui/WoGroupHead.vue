@@ -18,6 +18,7 @@ const props = withDefaults(
   }>(),
   { nodes: () => [], unit: '项' },
 )
+const MAX_INLINE_NODES = 2
 const pct = computed(() => (props.total ? Math.round((props.done / props.total) * 100) : 0))
 </script>
 
@@ -30,8 +31,8 @@ const pct = computed(() => (props.total ? Math.round((props.done / props.total) 
         <span class="sep" aria-hidden="true">/</span>
         <span class="nodes">
           总计划节点
-          <template v-for="(n, i) in nodes.slice(0, 2)" :key="n.id"><template v-if="i">、</template><WoLink :no="no" :node="n.id" :text="`${n.code ?? n.seq} ${n.name}`" /></template>
-          <template v-if="nodes.length > 2"> 等 {{ nodes.length }} 个</template>
+          <template v-for="(n, i) in nodes.slice(0, MAX_INLINE_NODES)" :key="n.id"><template v-if="i">、</template><WoLink :no="no" :node="n.id" :text="`${n.code ?? n.seq} ${n.name}`" /></template>
+          <template v-if="nodes.length > MAX_INLINE_NODES"> 等 {{ nodes.length }} 个</template>
         </span>
       </template>
     </div>
