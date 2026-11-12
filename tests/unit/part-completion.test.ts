@@ -2,6 +2,7 @@ import type { Part, RouteStep } from '@prisma/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const db = vi.hoisted(() => ({
+  auditLog: { create: vi.fn() },
   $queryRaw: vi.fn(),
   $transaction: vi.fn(),
   part: { update: vi.fn(), updateMany: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },

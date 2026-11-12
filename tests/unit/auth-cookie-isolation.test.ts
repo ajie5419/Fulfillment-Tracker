@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+vi.mock('../../server/observability/request', () => ({ withRequestContext: (_event: unknown, run: () => unknown) => run() }))
 
 const mocks = vi.hoisted(() => ({
   startLogin: vi.fn(), consumeLogin: vi.fn(), createSession: vi.fn(), resolveSession: vi.fn(), destroySession: vi.fn(),

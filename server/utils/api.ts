@@ -3,10 +3,13 @@ import type { z } from 'zod'
 import { FlowError, FlowForbidden, FlowHttpError } from '../services/flow/errors'
 import { BUSINESS_ERROR_HTTP, businessCodeForStatus, isBusinessErrorCode } from '../../shared/errors'
 import { apiSuccess } from '../../shared/api-response'
+import { withRequestContext } from '../observability/request'
+import { logEvent } from '../observability/logger'
+import { logContext } from '../observability/context'
 
 /** All JSON routes wrap at this boundary; services keep returning domain data. */
 export function defineApiHandler<T>(handler: (event: H3Event) => T | Promise<T>) {
-  return defineEventHandler(async event => apiSuccess(await handler(event)))
+  return defineEventHandler(event => withRequestContext(event, async () => apiSuccess(await handler(event))))
 }
 
 /**
@@ -29,14 +32,16 @@ export function defineAdminHandler<T>(handler: (event: H3Event, user: AuthUser) 
 
 /** Downloads preserve their bytes and headers while sharing business authorization. */
 export function defineFileHandler<T>(handler: (event: H3Event, user: AuthUser) => Promise<T>) {
-  return defineEventHandler(async event => {
+  return defineEventHandler(event => withRequestContext(event, async () => {
     const user = requireUser(event)
     await assertCanSee(event)
     return runFlow(event, user, handler)
-  })
+  }))
 }
 
 async function runFlow<T>(event: H3Event, user: AuthUser, handler: (event: H3Event, user: AuthUser) => Promise<T>) {
+  const context = logContext.getStore()
+  if (context) context.actorId = user.qmsUserId
   try {
     return await handler(event, user)
   } catch (err) {
@@ -47,9 +52,9 @@ async function runFlow<T>(event: H3Event, user: AuthUser, handler: (event: H3Eve
     const mapped = code ? BUSINESS_ERROR_HTTP[code] : undefined
     if (err instanceof FlowForbidden) throw createError({ statusCode: 403, statusMessage: 'Forbidden', message: err.message, ...extra })
     if (err instanceof FlowHttpError) {
-      // 带 detail 的（QMS 连不上）把原因写进服务器日志；detail 里不含密钥
+      // Upstream diagnostics may contain sensitive values; log only the failure category.
       const detail = (err as { detail?: unknown }).detail
-      if (detail) console.error(`[qms-write] ${String(detail)}`)
+      if (detail) logEvent('error', 'qms.write.failed', { statusCode: err.statusCode }, err)
       throw createError({ statusCode: mapped?.statusCode ?? err.statusCode, message: err.message, ...extra })
     }
     throw createError({ statusCode: mapped?.statusCode ?? 400, statusMessage: mapped?.statusMessage ?? 'Bad Request', message: err.message, ...extra })

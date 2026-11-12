@@ -1,3 +1,4 @@
+import { recordProcessLog, recordProcessLogs } from '../audit/record'
 /**
  * 工艺模块（10-27，zhao 定）：按部件（设计任务）跟踪料单、工艺两个状态。
  *
@@ -71,7 +72,7 @@ export async function changeStatus(taskId: string, input: ActionInput, actorId: 
         ? { materialStatus: to as MaterialListStatus, materialAt: now, materialBy: actorId }
         : { processStatus: to as ProcessDocStatus, processAt: now, processBy: actorId }
     await tx.drawingTask.update({ where: { id: taskId }, data })
-    await tx.processDocLog.create({
+    await recordProcessLog(tx, {
       data: { taskId, kind: input.kind, fromStatus: current, toStatus: to, note: input.note?.trim() || null, actorId, createdAt: now },
     })
     if (input.kind === 'MATERIAL') {
@@ -95,7 +96,7 @@ export async function markRevisingByVoid(tx: Tx, task: DrawingTask & { parts: { 
         ? { materialStatus: 'REVISING', materialAt: now, materialBy: actorId }
         : { processStatus: 'REVISING', processAt: now, processBy: actorId },
     })
-    await tx.processDocLog.create({ data: { taskId: task.id, kind, fromStatus: current, toStatus: 'REVISING', note, releaseId: release.id, actorId, createdAt: now } })
+    await recordProcessLog(tx, { data: { taskId: task.id, kind, fromStatus: current, toStatus: 'REVISING', note, releaseId: release.id, actorId, createdAt: now } })
   }
   if (task.materialStatus === 'ISSUED') {
     for (const partId of task.parts.map((p) => p.partId).sort()) await refreshPartReady(tx, partId, false)
@@ -131,7 +132,7 @@ export async function markRevisingByChange(tx: Tx, release: Pick<Release, 'id' |
   if (!tasks.length) return { revising: 0, notified: false }
   const note = `设计变更 ${release.releaseNo}`
   await tx.drawingTask.updateMany({ where: { id: { in: tasks.map((t) => t.id) } }, data: { materialStatus: 'REVISING', materialAt: now, materialBy: release.issuerId } })
-  await tx.processDocLog.createMany({
+  await recordProcessLogs(tx, {
     data: tasks.map((t) => ({ taskId: t.id, kind: 'MATERIAL' as const, fromStatus: 'ISSUED', toStatus: 'REVISING', note, releaseId: release.id, actorId: release.issuerId, createdAt: now })),
   })
   const affected = await tx.drawingTaskPart.findMany({ where: { taskId: { in: tasks.map((t) => t.id) } }, select: { partId: true } })

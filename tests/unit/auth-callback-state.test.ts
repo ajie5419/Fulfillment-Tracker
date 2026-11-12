@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { consumeLogin } = vi.hoisted(() => ({ consumeLogin: vi.fn() }))
+vi.mock('../../server/observability/request', () => ({ withRequestContext: (_event: unknown, run: () => unknown) => run() }))
 vi.mock('../../server/services/auth/login-attempt', () => ({
   LOGIN_STATE_COOKIE: 'ft_login_state',
   consumeLogin,

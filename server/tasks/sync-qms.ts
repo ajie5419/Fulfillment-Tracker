@@ -1,3 +1,5 @@
+import { observeTask } from '../observability/task'
+import { logEvent } from '../observability/logger'
 import { runSyncJob } from '../services/sync/job'
 
 /**
@@ -8,20 +10,11 @@ import { runSyncJob } from '../services/sync/job'
 export default defineTask({
   meta: { name: 'sync-qms', description: '增量同步 QMS 数据；返厂匹配；进货检验确认到货；QMS 不合格转异常' },
   async run() {
-    const result = await runSyncJob({ config: qmsSyncConfig(), adminIds: adminIds() })
-    if (result.skipped !== 'not-configured') console.log(`[sync-qms] ${new Date().toISOString()} ${JSON.stringify(summary(result))}`)
-    return { result }
+    return observeTask('sync-qms', async () => {
+      const result = await runSyncJob({ config: qmsSyncConfig(), adminIds: adminIds() })
+      const incomplete = result.sync?.resources.some(x => x.status !== 'ok') || [result.match, result.incoming, result.nonconforming].some(x => x && 'error' in x)
+      logEvent(incomplete ? 'warn' : 'info', 'sync.result', { resultCode: result.skipped ?? (incomplete ? 'partial-failure' : 'completed'), count: result.sync?.resources.reduce((sum, x) => sum + x.rows, 0) ?? 0 })
+      return { result }
+    })
   },
 })
-
-/** 日志摘要：每类资源的状态和行数 */
-function summary(r: Awaited<ReturnType<typeof runSyncJob>>) {
-  if (r.skipped) return { skipped: r.skipped }
-  return {
-    resources: r.sync?.resources.map((x) => `${x.resource}:${x.status}:${x.rows}${x.error ? `(${x.error})` : ''}`),
-    alerted: r.sync?.alerted,
-    match: r.match,
-    incoming: r.incoming,
-    nonconforming: r.nonconforming,
-  }
-}

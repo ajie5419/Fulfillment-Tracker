@@ -1,6 +1,7 @@
 import { send, setResponseHeader, setResponseStatus, type H3Error, type H3Event } from 'h3'
 import { apiErrorCode, isBusinessErrorCode } from '../shared/errors'
 import type { ApiFailure } from '../shared/api-response'
+import { finishRequest, recordRequestError } from './observability/request'
 
 /** Unexpected failures must not disclose stack traces or database diagnostics. */
 export function apiFailure(error: H3Error): ApiFailure {
@@ -21,7 +22,8 @@ export default function apiErrorHandler(error: H3Error, event: H3Event) {
   if (!(path === '/api' || path?.startsWith('/api/')) || event.handled) return
   const status = error.statusCode >= 400 && error.statusCode <= 599 ? error.statusCode : 500
   setResponseStatus(event, status)
+  recordRequestError(event, error, status)
   setResponseHeader(event, 'content-type', 'application/json; charset=utf-8')
   setResponseHeader(event, 'cache-control', 'no-store')
-  return send(event, JSON.stringify(apiFailure(error)))
+  return send(event, JSON.stringify(apiFailure(error))).finally(() => finishRequest(event))
 }

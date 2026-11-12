@@ -1,3 +1,4 @@
+import { logEvent } from '../../observability/logger'
 /**
  * 同步任务的一整轮：同步 → 返厂匹配 → 进货检验确认到货（R10）→ QMS 不合格转异常（server/tasks/sync-qms.ts 每 5 分钟、演示工具"立即同步一次"调用）。
  * job_lock 租约（sync-qms）防重叠，拿不到直接返回 skipped。QMS 未配置时什么都不做。
@@ -28,7 +29,7 @@ async function step<T>(name: string, fn: () => Promise<T>): Promise<T | { error:
     return await fn()
   } catch (err) {
     if (err instanceof LeaseLostError) throw err
-    console.error(`[sync-qms] ${name} 失败`, err)
+    logEvent('error', 'sync.step.failed', { module: name }, err)
     return { error: String((err as Error)?.message ?? err) }
   }
 }

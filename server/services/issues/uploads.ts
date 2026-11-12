@@ -1,3 +1,4 @@
+import { logEvent } from '../../observability/logger'
 /**
  * 异常照片、发放单附件的上传与读取。
  *
@@ -102,7 +103,7 @@ async function readStoredFile(dir: string, file: { id: string; storedName: strin
     return await readFile(safePath(dir, file.storedName))
   } catch (err) {
     if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT') return null
-    console.error('[uploads] 读取文件失败', { id: file.id, storedName: file.storedName }, err)
+    logEvent('error', 'upload.read.failed', { entityId: file.id }, err)
     throw new FlowHttpError('文件读取失败，请稍后重试', 500)
   }
 }

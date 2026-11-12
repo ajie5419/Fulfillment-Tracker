@@ -1,3 +1,4 @@
+import { logEvent } from '../../../observability/logger'
 import { z } from 'zod'
 import { resolveUnmatched } from '../../../services/flow/match'
 import { syncNonconforming } from '../../../services/issues/nonconforming'
@@ -13,6 +14,6 @@ export default defineFlowHandler(async (event, user) => {
   await assertCanOperateStep(event, 'route', stepId)
   const r = await resolveUnmatched(id, stepId, user.qmsUserId)
   // 关联已提交；这里生成不合格异常失败不影响本次结果，定时扫描会补上
-  await syncNonconforming().catch((err) => console.error('[unmatched/resolve] syncNonconforming 失败', err))
+  await syncNonconforming().catch((err) => logEvent('error', 'inspection.followup.failed', {}, err))
   return r
 })

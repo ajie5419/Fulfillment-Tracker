@@ -1,3 +1,5 @@
+import { observeTask } from '../observability/task'
+import { logEvent } from '../observability/logger'
 import { generateDailyDigest } from '../services/alerts/digest'
 import { scanRules } from '../services/alerts/scan'
 import { syncNonconforming } from '../services/issues/nonconforming'
@@ -7,7 +9,7 @@ async function step<T>(name: string, fn: () => Promise<T>): Promise<T | { error:
   try {
     return await fn()
   } catch (err) {
-    console.error(`[scan-rules] ${name} 失败`, err)
+    logEvent('error', 'scan.step.failed', { module: name }, err)
     return { error: String((err as Error)?.message ?? err) }
   }
 }
@@ -21,10 +23,13 @@ async function step<T>(name: string, fn: () => Promise<T>): Promise<T | { error:
 export default defineTask({
   meta: { name: 'scan-rules', description: 'QMS 不合格转异常；执行 W1–W6；生成每日汇总' },
   async run() {
-    const nonconforming = await step('QMS 不合格转异常', syncNonconforming)
-    const result = await step('预警扫描', () => scanRules())
-    const digest = await step('每日汇总', () => generateDailyDigest({ adminIds: adminIds() }))
-    console.log(`[scan-rules] ${new Date().toISOString()} ${JSON.stringify({ nonconforming, result, digest })}`)
-    return { result: { nonconforming, scan: result, digest } }
+    return observeTask('scan-rules', async () => {
+      const nonconforming = await step('QMS 不合格转异常', syncNonconforming)
+      const result = await step('预警扫描', () => scanRules())
+      const digest = await step('每日汇总', () => generateDailyDigest({ adminIds: adminIds() }))
+      const incomplete = [nonconforming, result, digest].some(x => 'error' in x)
+      logEvent(incomplete ? 'warn' : 'info', 'scan.result', { resultCode: incomplete ? 'partial-failure' : 'completed' })
+      return { result: { nonconforming, scan: result, digest } }
+    })
   },
 })

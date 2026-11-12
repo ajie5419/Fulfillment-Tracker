@@ -1,0 +1,45 @@
+# Use together with docker-compose.yml on the Linux Docker host.
+services:
+  alloy:
+    image: grafana/alloy:v1.21.3
+    command: [run, --storage.path=/var/lib/alloy, /etc/alloy/config.alloy]
+    restart: unless-stopped
+    user: "0:0"
+    volumes:
+      - ./deploy/observability/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/lib/docker/containers:/var/log/docker:ro
+      - alloy-data:/var/lib/alloy
+    networks: [observability]
+    logging: &bounded-logs
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+  loki:
+    image: grafana/loki:3.7.9
+    command: [-config.file=/etc/loki/config.yaml]
+    restart: unless-stopped
+    volumes:
+      - ./deploy/observability/loki.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+    networks: [observability]
+    logging: *bounded-logs
+  grafana:
+    image: grafana/grafana:13.3.1
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set a unique Grafana administrator password}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    ports: ["127.0.0.1:3300:3000"]
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/observability/grafana:/etc/grafana/provisioning:ro
+    networks: [observability]
+    logging: *bounded-logs
+volumes:
+  alloy-data:
+  loki-data:
+  grafana-data:
+networks:
+  observability:
+    internal: true

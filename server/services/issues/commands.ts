@@ -1,3 +1,4 @@
+import { recordIssueLog } from '../audit/record'
 import type { Issue, IssueCategory, IssueStatus, Prisma } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
 import { MAX_ISSUE_PHOTOS } from '../../../shared/upload-policy'
@@ -42,7 +43,7 @@ async function move(tx: Tx, issue: Issue, to: IssueStatus, data: Prisma.IssueUnc
   const r = await tx.issue.updateMany({ where: { id: issue.id, status: issue.status }, data: { ...data, status: to } })
   if (!r.count) throw new FlowError('状态已变化，请刷新', 'CONFLICT')
   const changed = to !== issue.status
-  await tx.issueLog.create({
+  await recordIssueLog(tx, {
     data: { issueId: issue.id, fromStatus: changed ? issue.status : null, toStatus: changed ? to : null, note, actorId },
   })
 }
@@ -96,7 +97,7 @@ export async function createIssue(input: NewIssueInput, reporterId: string) {
       })
       if (bound.count !== photoIds.length) throw new FlowError('照片无效或已被使用，请重新上传')
     }
-    await tx.issueLog.create({ data: { issueId: issue.id, toStatus: 'OPEN', note: '上报', actorId: reporterId } })
+    await recordIssueLog(tx, { data: { issueId: issue.id, toStatus: 'OPEN', note: '上报', actorId: reporterId } })
     return issue
   })
 }
@@ -124,7 +125,7 @@ export async function createSystemIssue(tx: Tx, input: SystemIssueInput) {
       responsibleSupplierId: input.responsibleSupplierId ?? null,
     },
   })
-  await tx.issueLog.create({ data: { issueId: issue.id, toStatus: 'OPEN', note: input.note, actorId: input.actorId ?? null } })
+  await recordIssueLog(tx, { data: { issueId: issue.id, toStatus: 'OPEN', note: input.note, actorId: input.actorId ?? null } })
   return issue
 }
 
@@ -251,6 +252,6 @@ export async function addIssueNote(id: string, actor: Actor, note: string) {
   if (!note.trim()) throw new FlowError('请填写备注')
   const issue = await prisma.issue.findUnique({ where: { id }, select: { id: true } })
   if (!issue) throw new FlowError('异常不存在', 'NOT_FOUND')
-  await prisma.issueLog.create({ data: { issueId: id, note: note.trim(), actorId: actor.userId } })
+  await prisma.$transaction(tx => recordIssueLog(tx, { data: { issueId: id, note: note.trim(), actorId: actor.userId } }))
   return { ok: true }
 }

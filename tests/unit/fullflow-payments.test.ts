@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 const db = vi.hoisted(() => ({
+  auditLog: { create: vi.fn() },
   paymentRequest: { findMany: vi.fn(), count: vi.fn(), update: vi.fn() },
   qmsWorkOrder: { findMany: vi.fn() }, notifyRole: { findFirst: vi.fn() },
   purchaseLine: { updateMany: vi.fn() }, $transaction: vi.fn(), $queryRaw: vi.fn(),

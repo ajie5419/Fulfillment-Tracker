@@ -45,4 +45,5 @@ export function resetServiceDb() {
   methods.clear()
   models.clear()
   serviceCalls.length = 0
+  returns('auditLog.create', { id: 'audit' })
 }

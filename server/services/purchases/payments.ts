@@ -8,6 +8,7 @@
  */
 import type { PaymentStatus, Prisma } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
+import { recordAudit } from '../audit/record'
 import { FlowError, FlowForbidden } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { MAX_PAYMENT_LINES, PAYMENT_STATUS_TEXT, comparePayments, lineProgress, num } from './constants'
@@ -46,17 +47,21 @@ export async function workOrderOfLines(ids: string[]): Promise<string> {
 export async function createPayment(input: NewPaymentInput, requesterId: string) {
   const workOrderNumber = await workOrderOfLines(input.purchaseLineIds)
   const ids = [...new Set(input.purchaseLineIds)]
-  return prisma.paymentRequest.create({
-    data: {
-      workOrderNumber,
-      amount: input.amount,
-      requestDate: input.requestDate,
-      blocksDelivery: input.blocksDelivery,
-      note: input.note?.trim() || null,
-      requesterId,
-      lines: { create: ids.map((purchaseLineId) => ({ purchaseLineId })) },
-    },
-    select: { id: true },
+  return prisma.$transaction(async tx => {
+    const result = await tx.paymentRequest.create({
+      data: {
+        workOrderNumber,
+        amount: input.amount,
+        requestDate: input.requestDate,
+        blocksDelivery: input.blocksDelivery,
+        note: input.note?.trim() || null,
+        requesterId,
+        lines: { create: ids.map((purchaseLineId) => ({ purchaseLineId })) },
+      },
+      select: { id: true },
+    })
+    await recordAudit(tx, { action: 'payment.create', entityType: 'PaymentRequest', entityId: result.id, actorId: requesterId, metadata: { status: 'PENDING', amount: input.amount } })
+    return result
   })
 }
 
@@ -78,6 +83,7 @@ export async function setPaymentStatus(id: string, status: PaymentStatus, note: 
         data: { delayReason: null, delayNote: null },
       })
     }
+    await recordAudit(tx, { action: 'payment.status', entityType: 'PaymentRequest', entityId: id, actorId: actor.userId, metadata: { status } })
     return updated
   })
 }
@@ -91,6 +97,7 @@ export async function deletePayment(id: string, actor: Actor) {
     if (!actor.isAdmin && p.requesterId !== actor.userId) throw new FlowForbidden('只有申请人或管理员可以删除')
     if (p.status === 'PAID') throw new FlowError('已付的不能删除')
     await tx.paymentRequest.delete({ where: { id } })
+    await recordAudit(tx, { action: 'payment.delete', entityType: 'PaymentRequest', entityId: id, actorId: actor.userId, metadata: { status: p.status, amount: String(p.amount) } })
     return { ok: true }
   })
 }

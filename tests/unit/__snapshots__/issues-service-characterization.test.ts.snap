@@ -82,6 +82,22 @@ exports[`issues service 搬移前特征 > accept 状态、日志、预警与工�
       },
     ],
     [
+      "auditLog.create",
+      {
+        "data": {
+          "action": "issue.log",
+          "actorId": "owner",
+          "entityId": "issue",
+          "entityType": "Issue",
+          "metadata": {
+            "fromStatus": "OPEN",
+            "toStatus": "ACCEPTED",
+          },
+          "requestId": null,
+        },
+      },
+    ],
+    [
       "alert.updateMany",
       {
         "data": {
@@ -199,6 +215,22 @@ exports[`issues service 搬移前特征 > close 状态、日志、预警与工�
           "issueId": "issue",
           "note": "确认关闭；确认",
           "toStatus": "CLOSED",
+        },
+      },
+    ],
+    [
+      "auditLog.create",
+      {
+        "data": {
+          "action": "issue.log",
+          "actorId": "owner",
+          "entityId": "issue",
+          "entityType": "Issue",
+          "metadata": {
+            "fromStatus": "RESOLVED",
+            "toStatus": "CLOSED",
+          },
+          "requestId": null,
         },
       },
     ],
@@ -691,6 +723,9 @@ exports[`issues service 搬移前特征 > note 状态、日志、预警与工序
       },
     ],
     [
+      "transaction.begin",
+    ],
+    [
       "issueLog.create",
       {
         "data": {
@@ -699,6 +734,25 @@ exports[`issues service 搬移前特征 > note 状态、日志、预警与工序
           "note": "备注",
         },
       },
+    ],
+    [
+      "auditLog.create",
+      {
+        "data": {
+          "action": "issue.log",
+          "actorId": "owner",
+          "entityId": "issue",
+          "entityType": "Issue",
+          "metadata": {
+            "fromStatus": null,
+            "toStatus": null,
+          },
+          "requestId": null,
+        },
+      },
+    ],
+    [
+      "transaction.commit",
     ],
   ],
   "result": {
@@ -935,6 +989,22 @@ exports[`issues service 搬移前特征 > reassign 状态、日志、预警与�
       },
     ],
     [
+      "auditLog.create",
+      {
+        "data": {
+          "action": "issue.log",
+          "actorId": "owner",
+          "entityId": "issue",
+          "entityType": "Issue",
+          "metadata": {
+            "fromStatus": null,
+            "toStatus": null,
+          },
+          "requestId": null,
+        },
+      },
+    ],
+    [
       "alert.updateMany",
       {
         "data": {
@@ -1040,6 +1110,22 @@ exports[`issues service 搬移前特征 > reject 状态、日志、预警与工�
       },
     ],
     [
+      "auditLog.create",
+      {
+        "data": {
+          "action": "issue.log",
+          "actorId": "owner",
+          "entityId": "issue",
+          "entityType": "Issue",
+          "metadata": {
+            "fromStatus": "RESOLVED",
+            "toStatus": "ACCEPTED",
+          },
+          "requestId": null,
+        },
+      },
+    ],
+    [
       "transaction.commit",
     ],
   ],
@@ -1108,6 +1194,22 @@ exports[`issues service 搬移前特征 > resolve 状态、日志、预警与工
           "issueId": "issue",
           "note": "处理结果：已解决",
           "toStatus": "RESOLVED",
+        },
+      },
+    ],
+    [
+      "auditLog.create",
+      {
+        "data": {
+          "action": "issue.log",
+          "actorId": "owner",
+          "entityId": "issue",
+          "entityType": "Issue",
+          "metadata": {
+            "fromStatus": "ACCEPTED",
+            "toStatus": "RESOLVED",
+          },
+          "requestId": null,
         },
       },
     ],
@@ -1451,6 +1553,22 @@ exports[`issues service 搬移前特征 > 手工上报：先读默认责任，�
       },
     ],
     [
+      "auditLog.create",
+      {
+        "data": {
+          "action": "issue.log",
+          "actorId": "owner",
+          "entityId": "issue",
+          "entityType": "Issue",
+          "metadata": {
+            "fromStatus": null,
+            "toStatus": "OPEN",
+          },
+          "requestId": null,
+        },
+      },
+    ],
+    [
       "transaction.commit",
     ],
   ],
@@ -1571,6 +1689,22 @@ exports[`issues service 搬移前特征 > 系统异常沿用调用方事务：�
           "issueId": "issue",
           "note": "QMS 不合格",
           "toStatus": "OPEN",
+        },
+      },
+    ],
+    [
+      "auditLog.create",
+      {
+        "data": {
+          "action": "issue.log",
+          "actorId": null,
+          "entityId": "issue",
+          "entityType": "Issue",
+          "metadata": {
+            "fromStatus": null,
+            "toStatus": "OPEN",
+          },
+          "requestId": null,
         },
       },
     ],
