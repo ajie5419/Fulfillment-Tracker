@@ -29,12 +29,14 @@ export default defineNuxtConfig({
   //   scan-rules 每 15 分钟（server/tasks/scan-rules.ts）：QMS 不合格转异常（兜底）、W1–W4 扫描、每日汇总
   nitro: {
     experimental: { tasks: true },
-    scheduledTasks: { '*/5 * * * *': ['sync-qms'], '*/15 * * * *': ['scan-rules'] },
+    scheduledTasks: process.env.NUXT_SANDBOX === '1' ? {} : { '*/5 * * * *': ['sync-qms'], '*/15 * * * *': ['scan-rules'] },
   },
+
+  appConfig: { sandbox: process.env.NUXT_SANDBOX === '1' },
 
   app: {
     head: {
-      title: '项目履约',
+      title: process.env.NUXT_SANDBOX === '1' ? '【独立单工单测试·QMS写回禁用】项目履约' : '项目履约',
       htmlAttrs: { lang: 'zh-CN' },
       meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' }],
       link: [

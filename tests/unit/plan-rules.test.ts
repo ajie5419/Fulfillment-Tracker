@@ -132,10 +132,9 @@ describe('节点预计日与顺延 estimateNodes', () => {
       ['2026-11-30', 10, 'task'],
     ])
   })
-  it('后续节点有余量（顺延后仍不晚于自己的计划日）就吸收掉', () => {
+  it('计划原本倒挂时，后续预计完成不能早于前置完成次日', () => {
     const est = estimateNodes([node('A', '2026-10-25', [task({ planDay: '2026-10-27' })]), node('B', '2026-10-20')], TODAY)
-    // B 的计划日早于 A（间隔为负）：顺延到 2026-10-22，仍晚于 B 计划日 → 晚 2 天
-    expect(est[1]).toMatchObject({ expectedDay: '2026-10-22', delayDays: 2, driver: 'prev' })
+    expect(est[1]).toMatchObject({ expectedDay: '2026-10-28', expectedStartDay: null, delayDays: 8, driver: 'prev' })
   })
   it('有任务时忽略历史手动完成：预计 = 自动完成日，后续按实际顺延', () => {
     const est = estimateNodes(
@@ -162,7 +161,8 @@ describe('节点预计日与顺延 estimateNodes', () => {
 describe('预计交期 forecastPlan', () => {
   it('最后一个节点的预计日；与 QMS 交期比得出拖期；延误节点数', () => {
     const f = forecastPlan([node('A', '2026-10-25', [task({ planDay: '2026-10-29' })]), node('B', '2026-11-30')], '2026-11-30', TODAY)
-    expect(f).toMatchObject({ expectedDelivery: '2026-12-04', deliveryDelayDays: 4, delayedNodes: 2, sourceNodes: 1 })
+    expect(f).toMatchObject({ expectedDelivery: null, deliveryDelayDays: null, delayedNodes: 2, sourceNodes: 1 })
+    expect(f.dateConflicts).toContainEqual(expect.objectContaining({ code: 'MISSING_START', nodeId: 'B', blocksPublish: true }))
   })
   it('不拖期为 0 或负；没有节点为 null', () => {
     expect(forecastPlan([node('A', '2026-11-20')], '2026-11-30', TODAY)).toMatchObject({ expectedDelivery: '2026-11-20', deliveryDelayDays: -10, delayedNodes: 0 })
@@ -284,7 +284,7 @@ describe('前置节点 resolvePreds / topoOrder', () => {
     expect(linkFloat('2026-10-10', '2026-10-15')).toBe(4)
     expect(linkFloat('2026-10-14', '2026-10-15')).toBe(0)
     expect(linkFloat('2026-10-20', '2026-10-15')).toBe(0) // 计划本来就重叠
-    expect(linkFloat('2026-10-10', null)).toBe(0)
+    expect(linkFloat('2026-10-10', null)).toBeNull()
   })
 })
 
@@ -294,7 +294,7 @@ describe('机场行李车计划：只沿前置节点顺延、余量、关键节�
     ['开工通知', 99, 1, []], ['结构图纸', 46, 53, [1]], ['原材料采购计划', 54, 45, [1]], ['主要外购件采购计划', 81, 18, [1]],
     ['其他外购件采购计划', 74, 25, [1]], ['电器件采购计划', 81, 18, [1]], ['液压件采购计划', 81, 18, [1]], ['原材料采购及复验', 31, 23, [3]],
     ['车桥、轮辋、轮胎', 18, 63, [4]], ['油缸', 21, 60, [4]], ['标准件', 21, 53, [5]], ['电气件', 21, 60, [6]], ['液压件', 21, 60, [7]],
-    ['车架', 19, 27, [2, 8]], ['表面处理喷漆', 17, 2, [14]], ['装配', 9, 8, [9, 10, 11, 12, 13, 15]], ['调试', 1, 8, [16]], ['发货', 0, 1, [17]],
+    ['车架', 19, 12, [2, 8]], ['表面处理喷漆', 17, 2, [14]], ['装配', 9, 8, [9, 10, 11, 12, 13, 15]], ['调试', 1, 8, [16]], ['发货', 0, 1, [17]],
   ]
   const DELIVERY = '2026-10-31'
   /** doneUpTo：前几个节点按计划完成；late：第 seq 个节点挂一条预计到某天的任务 */
@@ -315,8 +315,9 @@ describe('机场行李车计划：只沿前置节点顺延、余量、关键节�
   it('8/12 三份清单晚 1 天：旧的一条主线把后面 15 个节点全推晚、交期拖 1 天；按前置只影响对应的采购线，交期不变', () => {
     // 8/12：开工通知完成；8/11 到期的三份清单（主要外购件、电器件、液压件）都还没完成
     const old = forecastPlan(build(1, {}, true), DELIVERY, '2026-08-12')
-    expect(old.deliveryDelayDays).toBe(1)
-    expect(late(old)).toHaveLength(15)
+    expect(old.deliveryDelayDays).toBeNull()
+    expect(old.dateConflicts.some((conflict) => conflict.code === 'MISSING_START')).toBe(true)
+    expect(late(old)).toEqual(['3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18'])
     const f = forecastPlan(build(1), DELIVERY, '2026-08-12')
     expect(f.deliveryDelayDays).toBe(0)
     // 只有三份清单自己和它们各自的采购线晚 1 天；车架、装配、发货不受影响
@@ -419,7 +420,7 @@ describe('子节点：上级等子节点、子节点默认没有前置', () => {
   })
 
   it('预计交期看最后一个一级节点；余量沿子节点 → 上级 → 后续往回算', () => {
-    const f = forecastPlan(input, '2026-12-05', TODAY)
+    const f = forecastPlan(input.map((n) => n.id === 'B' ? { ...n, startDay: '2026-11-21' } : n), '2026-12-05', TODAY)
     expect(f.lastNodeId).toBe('B')
     expect(f.expectedDelivery).toBe('2026-11-30')
     const slack = new Map(f.nodes.map((e) => [e.id, e.slackDays]))

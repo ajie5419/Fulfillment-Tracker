@@ -15,7 +15,7 @@ export async function loadPlanSources(filter: { workOrderNumbers?: string[]; pub
   const nodes = await db.planNode.findMany({ where: { workOrderNumber: { in: wos } }, orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] })
   const nodeIds = nodes.map((n) => n.id)
   const linked = { planNodeId: { in: nodeIds } }
-  const [workOrders, drawings, purchases, steps, assemblies, others, deps] = await Promise.all([
+  const [workOrders, drawings, purchases, steps, assemblies, others, deps, offDays] = await Promise.all([
     db.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: wos } }, select: { workOrderNumber: true, deliveryDate: true } }),
     nodeIds.length ? db.drawingTask.findMany({ where: linked, orderBy: { planDate: 'asc' }, select: {
       id: true, planNodeId: true, componentName: true, ownerId: true, status: true, planDate: true, drawnDate: true,
@@ -28,13 +28,14 @@ export async function loadPlanSources(filter: { workOrderNumbers?: string[]; pub
     nodeIds.length ? db.assemblyNode.findMany({ where: linked, include: NODE_LINKS, orderBy: { needDate: 'asc' } }) : [],
     nodeIds.length ? db.planTask.findMany({ where: linked, orderBy: [{ planDate: 'asc' }, { createdAt: 'asc' }] }) : [],
     nodeIds.length ? db.planNodeDep.findMany({ where: { nodeId: { in: nodeIds } } }) : [],
+    db.offDay.findMany({ select: { date: true } }),
   ])
   const today = shanghaiDay(now)
   const [kits, names] = await Promise.all([
     loadKitCounts(assemblies as NodeWithLinks[], db),
     loadNames({ process: steps.map((s) => s.processId), user: [...others.map((t) => t.ownerId), ...drawings.map((d) => d.ownerId)] }),
   ])
-  return { plans, wos, nodes, workOrders, drawings, purchases, steps, assemblies, others, deps, today, kits, names }
+  return { plans, wos, nodes, workOrders, drawings, purchases, steps, assemblies, others, deps, today, kits, names, offDays: new Set(offDays.map((row) => row.date.toISOString().slice(0, 10))) }
 }
 
 export type PlanSources = NonNullable<Awaited<ReturnType<typeof loadPlanSources>>>

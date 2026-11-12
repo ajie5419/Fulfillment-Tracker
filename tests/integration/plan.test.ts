@@ -165,10 +165,15 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     await expect(s.tpl.createTemplate({ name: '重名节点', nodes: [{ name: 'x', dept: 'TECH', daysBeforeDelivery: 1 }, { name: 'x', dept: 'TECH', daysBeforeDelivery: 0 }] }, 'u-pdh')).rejects.toThrow('节点名称重复')
     const small = await s.tpl.createTemplate({ name: '简版', nodes: [{ name: '设计', dept: 'TECH', daysBeforeDelivery: 30 }, { name: '发运', dept: 'PROJECT', daysBeforeDelivery: 0 }] }, 'u-pdh')
 
-    expect(await s.plan.generateFromTemplate(WO, small.id, 'u-pm')).toEqual({ created: 2, replaced: 0 })
+    expect(await s.plan.generateFromTemplate(WO, small.id, 'u-pm')).toEqual({
+      created: 2, replaced: 0,
+      dateConflicts: [expect.objectContaining({ code: 'MISSING_START', nodeName: '发运', blocksPublish: true })],
+    })
     // 重新生成：替换
-    expect(await s.plan.generateFromTemplate(WO, 'plan-tpl-generic', 'u-pm')).toEqual({ created: 11, replaced: 2 })
+    const generated = await s.plan.generateFromTemplate(WO, 'plan-tpl-generic', 'u-pm')
+    expect(generated).toMatchObject({ created: 11, replaced: 2 })
     const nodes = await nodesOf(WO)
+    expect(generated.dateConflicts).toEqual(nodes.slice(1).map((n) => expect.objectContaining({ code: 'MISSING_START', nodeId: n.id, blocksPublish: true })))
     expect(nodes.map((n) => n.name)).toEqual(['合同评审', '设计出图', '客户确认', '关键物料到货', '下料组焊', '机加', '外协', '涂装', '装配', '调试', '发运'])
     expect(nodes[0]!.planDate.toISOString().slice(0, 10)).toBe(dayStr(150 - 120))
     expect(nodes.at(-1)!.planDate.toISOString().slice(0, 10)).toBe(dayStr(150))
@@ -191,7 +196,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     expect(sv.nodes[17]).toMatchObject({ name: '下料', parent: 15, preds: [17, 9] })
     expect(sv.nodes[0]!.preds).toEqual([])
 
-    expect(await s.plan.generateFromTemplate(DEP_WO, 'plan-tpl-special-vehicle', 'u-pm')).toEqual({ created: 25, replaced: 0 })
+    expect(await s.plan.generateFromTemplate(DEP_WO, 'plan-tpl-special-vehicle', 'u-pm')).toEqual({ created: 25, replaced: 0, dateConflicts: [] })
     const nodes = await nodesOf(DEP_WO)
     const id = (seq: number) => nodes[seq - 1]!.id
     expect(nodes.every((n) => n.customDeps)).toBe(true)
@@ -273,7 +278,8 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     const pm = 'u-pm'
     const a = await s.plan.createNode(DEP_WO, { name: '原材料', dept: 'PURCHASE', planDate: dayOff(20), phase: '采购' }, pm)
     const p = await s.plan.createNode(DEP_WO, { name: '下料组焊', dept: 'PRODUCTION', planDate: dayOff(40), phase: '生产制作' }, pm)
-    const b = await s.plan.createNode(DEP_WO, { name: '机加', dept: 'PRODUCTION', planDate: dayOff(50), phase: '生产制作' }, pm)
+    // The summary settles at day 38 below; start on day 39 to retain a zero-slack FS edge.
+    const b = await s.plan.createNode(DEP_WO, { name: '机加', dept: 'PRODUCTION', startDate: dayOff(39), planDate: dayOff(50), phase: '生产制作' }, pm)
     // 子节点：阶段跟上级（传了别的也不算）；上级的日期按子节点汇总（最早开始～最晚完成，可以晚于上级原来的日期）
     const c1 = await s.plan.createNode(DEP_WO, { name: '车架', dept: 'PRODUCTION', planDate: dayOff(35), parentId: p.id, phase: '乱填' }, pm)
     expect((await db.planNode.findUnique({ where: { id: c1.id } }))!.phase).toBe('生产制作')
@@ -317,6 +323,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     const childTask = await db.planTask.create({ data: { workOrderNumber: DEP_WO, planNodeId: c2.id, name: '悬挂外协', ownerId: pm, planDate: dayOff(43) } })
     view = await s.plan.getPlan(DEP_WO, await ctxOf(pm))
     expect(byName('悬挂')).toMatchObject({ source: false, delayDays: 0, canComplete: false })
+    expect(view.dateConflicts).toEqual([])
     await s.plan.publishPlan(DEP_WO, pm)
     view = await s.plan.getPlan(DEP_WO, await ctxOf(pm))
     expect(byName('悬挂')).toMatchObject({ source: true, delayDays: 5 })
@@ -370,7 +377,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     const pm = 'u-pm'
     const p = await s.plan.createNode(DEP_WO, { name: '车架', dept: 'PRODUCTION', planDate: dayOff(40) }, pm)
     const c = await s.plan.createNode(DEP_WO, { name: '下料', dept: 'PRODUCTION', planDate: dayOff(30), parentId: p.id }, pm)
-    const q = await s.plan.createNode(DEP_WO, { name: '悬挂', dept: 'PRODUCTION', planDate: dayOff(45) }, pm)
+    const q = await s.plan.createNode(DEP_WO, { name: '悬挂', dept: 'PRODUCTION', startDate: dayOff(31), planDate: dayOff(45) }, pm)
     await s.plan.publishPlan(DEP_WO, pm)
     const status = async (id: string) => (await db.planNode.findUnique({ where: { id } }))!.confirmStatus
     const openTodos = (id: string) => db.todo.count({ where: { refId: id, action: 'CONFIRM_PLAN_NODE', status: 'OPEN' } })
@@ -407,8 +414,20 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
   })
 
   it('发布：记基线、给部门负责人发确认待办（没负责人的部门报出来）；不能重复发布、不能再按模板生成', async () => {
+    // 出厂检验在发运前；新 FS 语义要求所有有前置的末级节点提供开始日。
+    const shipment = (await nodesOf(WO)).find((n) => n.name === '发运')!
+    await s.plan.updateNode(shipment.id, { seq: 12 }, 'u-pm')
     // 加一个质量部节点（质量部没有负责人）
     await s.plan.createNode(WO, { name: '出厂检验', dept: 'QUALITY', planDate: dayOff(148), seq: 11 }, 'u-pm')
+    await expect(s.plan.publishPlan(WO, 'u-pm')).rejects.toMatchObject({ statusCode: 409 })
+    expect((await db.workOrderPlan.findUniqueOrThrow({ where: { workOrderNumber: WO } })).status).toBe('DRAFT')
+    expect((await nodesOf(WO)).every((n) => n.baselineDate === null && n.confirmStatus === null)).toBe(true)
+    const draftNodes = await nodesOf(WO)
+    expect(await db.todo.count({ where: { refType: 'planNode', refId: { in: draftNodes.map((n) => n.id) }, action: 'CONFIRM_PLAN_NODE' } })).toBe(0)
+    for (const [index, n] of draftNodes.entries()) {
+      if (index > 0) await s.plan.updateNode(n.id, { startDate: new Date(+draftNodes[index - 1]!.planDate + DAY) }, 'u-pm')
+    }
+    expect((await s.plan.getPlan(WO, await ctxOf('u-pm'))).dateConflicts).toEqual([])
     const r = await s.plan.publishPlan(WO, 'u-pm')
     expect(r.nodes).toBe(12)
     expect(r.deptsWithoutHead).toEqual(['质量部'])
@@ -588,7 +607,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
   it('预计日顺延、预计交期；W9 只报源头节点（按自身延误 1 天黄、3 天红），受上游影响的不报；交期风险单独一条工单级红；完成后自动清除；看板 / 总览 / 每日汇总', async () => {
     // 交期 60 天后，主线留有余量：设计 10 天后、制造 30 天后（最后一个节点，比交期早 30 天）
     const a = await s.plan.createNode(W9WO, { name: '设计', dept: 'TECH', planDate: dayOff(10) }, 'u-pm')
-    const b = await s.plan.createNode(W9WO, { name: '制造', dept: 'PRODUCTION', planDate: dayOff(30) }, 'u-pm')
+    const b = await s.plan.createNode(W9WO, { name: '制造', dept: 'PRODUCTION', startDate: dayOff(11), planDate: dayOff(30) }, 'u-pm')
     await s.plan.publishPlan(W9WO, 'u-pm')
     const t = await s.dr.createTask({ workOrderNumber: W9WO, componentName: '总图', ownerId: 'u-des', planDate: dayOff(12), planNodeId: a.id }, 'u-pm')
     const now = new Date()

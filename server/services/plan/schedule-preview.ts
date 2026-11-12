@@ -26,7 +26,12 @@ export class SchedulePreviewRollback extends Error {
 export async function scheduleSnapshot(tx: Prisma.TransactionClient, wo: string) {
   const data = (await loadPlans({ workOrderNumbers: [wo] }, new Date(), tx)).get(wo)
   if (!data) throw new FlowError('总计划不存在，请刷新后重试')
-  const deps = await tx.planNodeDep.findMany({ where: { nodeId: { in: data.nodes.map((n) => n.id) } }, orderBy: [{ nodeId: 'asc' }, { predId: 'asc' }] })
+  const [deps, calendar] = await Promise.all([
+    tx.planNodeDep.findMany({ where: { nodeId: { in: data.nodes.map((n) => n.id) } }, orderBy: [{ nodeId: 'asc' }, { predId: 'asc' }] }),
+    tx.offDay.findMany({ select: { date: true }, orderBy: { date: 'asc' } }),
+  ])
+  // Keep the calendar serializable and ordered so any calendar edit invalidates an old preview.
+  const offDays = calendar.map((row) => dateFieldDay(row.date)).sort()
   const completion = new Map(estimateNodes(data.nodes.map((n) => ({
     id: n.id, parent: n.parentId, planDay: dateFieldDay(n.planDate),
     manualDoneDay: n.manualDoneAt && n.actualDate ? dateFieldDay(n.actualDate) : null,
@@ -38,11 +43,11 @@ export async function scheduleSnapshot(tx: Prisma.TransactionClient, wo: string)
     start: n.startDate ? dateFieldDay(n.startDate) : null, finish: dateFieldDay(n.planDate),
     done: completion.get(n.id) ?? false,
   }))
-  return { nodes, version: { nodes: data.nodes, tasks: data.tasks, deps, status: data.status } }
+  return { nodes, offDays: new Set(offDays), version: { nodes: data.nodes, tasks: data.tasks, deps, status: data.status, offDays } }
 }
 
 export function schedulePreview(before: Awaited<ReturnType<typeof scheduleSnapshot>>, after: ScheduleNode[], id: string, input: unknown): SchedulePreview {
-  const linked = linkSchedule(after, id)
+  const linked = linkSchedule(after, id, before.offDays)
   const changes = linked.nodes.flatMap((n) => {
     const old = before.nodes.find((p) => p.id === n.id)
     if (!old) throw new FlowError('计划节点已变化，请重新预览')

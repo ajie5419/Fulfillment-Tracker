@@ -6,7 +6,7 @@
  *   带 ?wo（&node= 定位节点）：该工单的总计划编制 / 发布 / 调整（PlanEditor；接收、分解在部门计划页 /dept-plan）。
  *   提醒、待办、W9 通知里的链接一直是 /plan?wo=&node=，直接落在这里；旧的 /wo/:no?tab=plan 跳过来。
  */
-import type { PlanListStatus } from '#shared/plan'
+import { PLAN_STATUS_TEXT as STATUS_TEXT, type PlanListStatus } from '#shared/plan'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,7 +45,6 @@ const rows = computed(() => {
   return [...list.filter((r) => !r.closed), ...list.filter((r) => r.closed)]
 })
 
-const STATUS_TEXT: Record<PlanListStatus, string> = { PUBLISHED: '已发布', DRAFT: '草稿', NONE: '未编制' }
 const STATUS_TONE: Record<PlanListStatus, 'done' | 'primary' | 'none'> = { PUBLISHED: 'done', DRAFT: 'primary', NONE: 'none' }
 
 const woOptions = computed(() => data.value.rows.map((r) => ({ value: r.workOrderNumber, label: `${r.workOrderNumber}　${r.projectName ?? r.customerName ?? ''}` })))
@@ -158,7 +157,8 @@ const enc = encodeURIComponent
               <span v-else class="ft-muted">0</span>
             </template>
             <template v-else-if="column.key === 'expected'">
-              <template v-if="record.expectedDelivery">
+              <span v-if="record.dateConflicts.length" class="late">日期冲突 / 待核实</span>
+              <template v-else-if="record.expectedDelivery">
                 <span :class="{ late: (record.delayDays ?? 0) > 0 }">{{ record.expectedDelivery }}</span>
                 <div v-if="(record.delayDays ?? 0) > 0" class="late small">拖期 {{ record.delayDays }} 天</div>
               </template>

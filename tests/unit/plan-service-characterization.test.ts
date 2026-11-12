@@ -23,6 +23,7 @@ const n = node()
 
 beforeEach(() => {
   resetServiceDb()
+  returns('offDay.findMany', [])
   vi.useFakeTimers(); vi.setSystemTime(now)
   returns('alert.updateMany', { count: 1 })
   returns('todo.updateMany', { count: 1 })
@@ -77,8 +78,31 @@ describe('plan service 搬移前特征', () => {
 
   it('发布：先锁计划、逐节点锁基线与发送确认、最后发布；汇总节点跳过确认', async () => {
     returns('workOrderPlan.findUniqueOrThrow', { status: 'DRAFT' })
+    returns('workOrderPlan.findMany', [{ workOrderNumber: 'WO 1', status: 'DRAFT', publishedAt: null }])
     returns('planNode.findMany', [n, node('n2', { parentId: 'n1' })])
     expect({ result: await plan.publishPlan('WO 1', 'actor'), calls: serviceCalls }).toMatchSnapshot()
+  })
+
+  it('日期冲突在发布事务内拦截，未写基线或发送确认且回滚', async () => {
+    returns('workOrderPlan.findUniqueOrThrow', { status: 'DRAFT' })
+    returns('workOrderPlan.findMany', [{ workOrderNumber: 'WO 1', status: 'DRAFT', publishedAt: null }])
+    returns('planNode.findMany', [node('n1', { startDate: d('2026-11-03'), planDate: d('2026-12-24') }), node('n2', { seq: 2, startDate: d('2026-11-04'), planDate: d('2026-11-29') })])
+    await expect(plan.publishPlan('WO 1', 'actor')).rejects.toMatchObject({ statusCode: 409 })
+    expect(method('planNode.update')).not.toHaveBeenCalled()
+    expect(method('todo.createMany')).not.toHaveBeenCalled()
+    expect(method('workOrderPlan.update')).not.toHaveBeenCalled()
+    expect(serviceCalls.at(-1)).toEqual(['transaction.rollback'])
+    expect(serviceCalls.findIndex(([kind]) => kind === '$queryRaw')).toBeLessThan(serviceCalls.findIndex(([kind]) => kind === 'offDay.findMany'))
+  })
+
+  it('草稿读取同时保留原计划日期和停工日冲突，不报执行延期', async () => {
+    returns('workOrderPlan.findMany', [{ workOrderNumber: 'WO 1', status: 'DRAFT', publishedAt: null }])
+    returns('offDay.findMany', [{ date: d('2026-11-07') }, { date: d('2026-11-08') }])
+    returns('planNode.findMany', [node('n1', { startDate: d('2026-11-01'), planDate: d('2026-11-06') }), node('n2', { seq: 2, startDate: d('2026-11-07'), planDate: d('2026-11-09') })])
+    const result = (await plan.loadPlans({ workOrderNumbers: ['WO 1'] }, d('2027-01-01'))).get('WO 1')
+    expect(result?.forecast).toMatchObject({ expectedDelivery: null, deliveryDelayDays: null, sourceNodes: 0, delayedNodes: 0 })
+    expect(result?.forecast.nodes.map(entry => entry.expectedDay)).toEqual(['2026-11-06', '2026-11-09'])
+    expect(result?.forecast.dateConflicts).toEqual([expect.objectContaining({ code: 'FS_ORDER', nodeId: 'n2', blocksPublish: true })])
   })
 
   it('已发布节点改日期：锁、校验、写日志、重新确认、汇总、清除延误预警', async () => {

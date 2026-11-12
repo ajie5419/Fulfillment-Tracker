@@ -1,4 +1,4 @@
-import { addDays, dayDiff } from '../../../shared/dates'
+import { addDays, dayDiff, nextFactoryWorkDay } from '../../../shared/dates'
 import { childrenOf, resolvePreds, topoOrder, treeOrder, waitsOn } from './graph'
 import { FlowError } from '../flow/errors'
 
@@ -15,8 +15,9 @@ export interface ScheduleNode {
 /** Only changed dependency paths propagate. Existing slack is consumed before moving
  * unfinished successors; earlier finishes never pull an agreed schedule forward.
  * A missing start is treated as a one-day milestone, not an invented duration.
+ * Only configured shutdowns delay an FS start; task duration remains calendar days.
  */
-export function linkSchedule(input: ScheduleNode[], editedId: string) {
+export function linkSchedule(input: ScheduleNode[], editedId: string, offDays: ReadonlySet<string> = new Set()) {
   const nodes = treeOrder(input.map((n) => ({ ...n })))
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const node = (id: string) => {
@@ -45,7 +46,7 @@ export function linkSchedule(input: ScheduleNode[], editedId: string) {
       start = rows.map((k) => k.start ?? k.finish).reduce((a, b) => a < b ? a : b)
       if (start === finish) start = null
     } else {
-      const earliest = addDays(deps.map((p) => node(p).finish).reduce((a, b) => a > b ? a : b), 1)
+      const earliest = nextFactoryWorkDay(deps.map((p) => node(p).finish).reduce((a, b) => a > b ? a : b), offDays)
       const previousStart = n.start ?? n.finish
       if (earliest > previousStart) {
         finish = addDays(n.finish, dayDiff(previousStart, earliest))

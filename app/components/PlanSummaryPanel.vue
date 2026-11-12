@@ -1,19 +1,20 @@
 <script setup lang="ts">
 import type { PlanData } from '../composables/usePlanData'
+import { PLAN_STATUS_TEXT, planDisplayState } from '#shared/plan'
 
 /** 总计划顶部概览（项目 / 状态 / 交期 / 拖期 / 延误节点）与草稿、无后续节点的提示（PlanEditor 拆分，只读展示）。 */
 const props = defineProps<{ data: PlanData; published: boolean }>()
+const displayState = computed(() => planDisplayState(props.data.plan?.status, props.data.nodes.length))
 const pastDraftDates = computed(() => !props.published && props.data.nodes.some(n => (n.startDate ?? n.planDate) < dayAfter(0)))
 </script>
 
 <template>
+  <PlanDateConflicts :conflicts="data.dateConflicts" />
   <a-descriptions :column="{ xs: 1, sm: 2, lg: 4 }" size="small" bordered class="summary">
     <a-descriptions-item label="项目">{{ data.workOrder.projectName ?? '—' }}<span class="muted">　{{ data.workOrder.customerName }}</span></a-descriptions-item>
     <a-descriptions-item label="工单号">{{ data.workOrder.workOrderNumber }}</a-descriptions-item>
     <a-descriptions-item label="状态">
-      <a-tag v-if="!data.plan || !data.nodes.length" color="default">未编制</a-tag>
-      <a-tag v-else-if="published" color="green">已发布</a-tag>
-      <a-tag v-else color="blue">草稿</a-tag>
+      <a-tag :color="displayState === 'NONE' ? 'default' : displayState === 'PUBLISHED' ? 'green' : 'blue'">{{ PLAN_STATUS_TEXT[displayState] }}</a-tag>
       <span v-if="data.plan?.templateName" class="muted">模板：{{ data.plan.templateName }}</span>
       <div v-if="published" class="muted">{{ data.plan?.publishedByName }} {{ timeText(data.plan!.publishedAt!) }} 发布</div>
     </a-descriptions-item>

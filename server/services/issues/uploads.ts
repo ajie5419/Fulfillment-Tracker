@@ -11,7 +11,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { basename, join, resolve, sep } from 'node:path'
 import { prisma } from '../../utils/prisma'
-import { FlowError } from '../flow/errors'
+import { FlowError, FlowHttpError } from '../flow/errors'
 import { isReleaseParty } from '../releases/releases'
 import { XLSX_MIME } from '../bom/excel'
 import { MAX_PHOTO_BYTES, MAX_ATTACHMENT_BYTES, MAX_FILES_PER_REQUEST, MAX_BOM_BYTES, formatUploadLimit } from '../../../shared/upload-policy'
@@ -96,6 +96,17 @@ function safePath(dir: string, storedName: string) {
   return full
 }
 
+/** 只有文件确实不存在才视为缺失，其他读取故障保留服务端诊断。 */
+async function readStoredFile(dir: string, file: { id: string; storedName: string }) {
+  try {
+    return await readFile(safePath(dir, file.storedName))
+  } catch (err) {
+    if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT') return null
+    console.error('[uploads] 读取文件失败', { id: file.id, storedName: file.storedName }, err)
+    throw new FlowHttpError('文件读取失败，请稍后重试', 500)
+  }
+}
+
 /**
  * 读取前查记录。canSeeWorkOrder 由接口层传入（canSee 的唯一入口在 server/utils/auth.ts）：
  * 已绑定异常的按异常所属工单判断；已绑定发放单的按发放单所属工单判断，发放单的接收人也能读；
@@ -114,11 +125,8 @@ export async function readUpload(dir: string, id: string, userId: string, canSee
   } else if (file.uploaderId !== userId) {
     return null
   }
-  try {
-    return { file, data: await readFile(safePath(dir, file.storedName)) }
-  } catch {
-    return null
-  }
+  const data = await readStoredFile(dir, file)
+  return data === null ? null : { file, data }
 }
 
 /** 读自己刚上传、还没绑定的文件（发放单附 BOM 表时先读出内容再建单）；不满足返回 null */
@@ -126,11 +134,7 @@ export async function readOwnUnbound(dir: string, id: string, uploaderId: string
   if (!ID_RE.test(id)) return null
   const file = await prisma.uploadFile.findFirst({ where: { id, uploaderId, mime, issueId: null, releaseId: null } })
   if (!file) return null
-  try {
-    return await readFile(safePath(dir, file.storedName))
-  } catch {
-    return null
-  }
+  return readStoredFile(dir, file)
 }
 
 /** 清理演示数据时删文件（尽力而为，文件不在也不报错） */

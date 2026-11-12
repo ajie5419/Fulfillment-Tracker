@@ -111,9 +111,9 @@ describe.skipIf(!DB)('部门计划二次分解', () => {
     await db.workOrderExt.createMany({ data: [WO, OTHER_WO].map((w) => ({ workOrderNumber: w, projectManagerId: 'u-pm' })) })
     // 草稿时建好总计划和工序（工序先不挂）
     await s.plan.createNode(WO, { name: '合同评审', dept: 'PROJECT', planDate: dayOff(10) }, 'u-pm')
-    await s.plan.createNode(WO, { name: '设计出图', dept: 'TECH', planDate: dayOff(20) }, 'u-pm')
-    await s.plan.createNode(WO, { name: '组焊', dept: 'PRODUCTION', planDate: dayOff(40) }, 'u-pm')
-    await s.plan.createNode(WO, { name: '发运', dept: 'PROJECT', planDate: dayOff(60) }, 'u-pm')
+    await s.plan.createNode(WO, { name: '设计出图', dept: 'TECH', startDate: dayOff(11), planDate: dayOff(20) }, 'u-pm')
+    await s.plan.createNode(WO, { name: '组焊', dept: 'PRODUCTION', startDate: dayOff(21), planDate: dayOff(40) }, 'u-pm')
+    await s.plan.createNode(WO, { name: '发运', dept: 'PROJECT', startDate: dayOff(41), planDate: dayOff(60) }, 'u-pm')
     const part = await s.steps.createPart(WO, { name: '主梁', quantity: 1 })
     const a = await s.steps.addStep(part.id, { processId: 'P-CUT', mode: 'SELF', ownerId: 'u-prodhead', dueDate: dayOff(30) }, 'u-prodhead')
     const b = await s.steps.addStep(part.id, { processId: 'P-WELD', mode: 'SELF', ownerId: 'u-prodhead', dueDate: dayOff(38) }, 'u-prodhead')
@@ -147,11 +147,30 @@ describe.skipIf(!DB)('部门计划二次分解', () => {
     const mine = r.rows.find((x) => x.workOrderNumber === WO)!
     const pending = await db.planNode.count({ where: { workOrderNumber: WO, confirmStatus: 'PENDING' } })
     expect(mine).toMatchObject({ status: 'PUBLISHED', nodeCount: 4, doneNodes: 0, unsplit: 4, pendingConfirm: pending, canEdit: true, deliveryDate: dayStr(60) })
-    expect(mine.publishedDay).toBe(s.rules.shanghaiDay(new Date()))
+    const published = await db.workOrderPlan.findUniqueOrThrow({ where: { workOrderNumber: WO } })
+    expect(published.publishedAt).not.toBeNull()
+    expect(mine.publishedDay).toBe(s.rules.shanghaiDay(published.publishedAt!))
     expect(r.rows.find((x) => x.workOrderNumber === OTHER_WO)).toMatchObject({ status: 'NONE', nodeCount: 0, unsplit: 0, expectedDelivery: null })
     expect(r.summary).toMatchObject({ total: 2, published: 1, draft: 0, none: 1, unsplit: 1 })
     expect((await list(undefined, await ctxOf('u-buyer'))).rows.find((x) => x.workOrderNumber === WO)!.canEdit).toBe(false)
     expect((await list([OTHER_WO], await ctxOf('u-pm'))).rows.map((x) => x.workOrderNumber)).toEqual([OTHER_WO])
+  })
+
+  it('项目计划发布于上海凌晨时，全量和分页列表均返回发布时间的上海日', async () => {
+    const { listPlans, listPlansPage } = await import('../../server/services/plan/list')
+    const original = await db.workOrderPlan.findUniqueOrThrow({ where: { workOrderNumber: WO } })
+    try {
+      await db.workOrderPlan.update({ where: { workOrderNumber: WO }, data: { publishedAt: new Date('2026-11-03T16:30:00Z') } })
+      const ctx = await ctxOf('u-pm')
+      const queryTime = new Date('2026-11-10T04:00:00Z')
+      const all = await listPlans(undefined, ctx, queryTime)
+      const page = await listPlansPage(undefined, ctx, queryTime)
+      for (const result of [all, page]) {
+        expect(result.rows.find((row) => row.workOrderNumber === WO)).toMatchObject({ publishedDay: '2026-11-04', deliveryDate: dayStr(60) })
+      }
+    } finally {
+      await db.workOrderPlan.update({ where: { workOrderNumber: WO }, data: { publishedAt: original.publishedAt } })
+    }
   })
 
   it('其他任务：建好给负责人发待办（截止日 = 计划完成日），晚于节点只提示；计入节点预计日', async () => {

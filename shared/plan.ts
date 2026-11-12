@@ -7,3 +7,8 @@ export type TaskKind = 'drawing' | 'purchase' | 'step' | 'assembly' | 'task'
 export const TASK_KIND_TEXT: Record<TaskKind, string> = { drawing: '设计', purchase: '采购', step: '工序', assembly: '装配', task: '其他任务' }
 
 export type PlanListStatus = 'NONE' | 'DRAFT' | 'PUBLISHED'
+export const PLAN_STATUS_TEXT: Record<PlanListStatus, string> = { NONE: '未编制', DRAFT: '草稿', PUBLISHED: '已发布' }
+
+export function planDisplayState(status: Exclude<PlanListStatus, 'NONE'> | null | undefined, nodeCount: number): PlanListStatus {
+  return nodeCount > 0 && status ? status : 'NONE'
+}

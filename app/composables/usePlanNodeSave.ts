@@ -42,7 +42,7 @@ export function usePlanNodeSave(options: {
     const linkedDates = !!editing.value && (body.planDate !== editing.value.planDate || body.startDate !== editing.value.startDate)
     const save = async (previewToken?: string) => {
       const ok = await act(
-        () => (editingId ? clientRequest(`/api/plan/nodes/${editingId}`, { method: 'PATCH', body: { ...body, ...(linkedDates ? { linkedDates, previewToken } : {}) } }) : clientRequest('/api/plan/nodes', { method: 'POST', body: { workOrderNumber: wo.value, ...body } })),
+        async () => (editingId ? await clientRequest(`/api/plan/nodes/${editingId}`, { method: 'PATCH', body: { ...body, ...(linkedDates ? { linkedDates, previewToken } : {}) } }) : await clientRequest('/api/plan/nodes', { method: 'POST', body: { workOrderNumber: wo.value, ...body } })),
         (r) => ((r && typeof r === 'object' && 'reconfirm' in r && r.reconfirm) || (!editing.value && published.value) ? '已保存，已重新请责任部门接收' : '已保存'),
       )
       if (ok) editOpen.value = false
@@ -58,7 +58,7 @@ export function usePlanNodeSave(options: {
         okText: '确认保存',
         cancelText: '返回修改',
         content: h('div', [
-          h('p', '按自然日联动：后续节点最早从前置完成的次日开始，保留工期，先消化空档。前置日期提前时，后续计划保持不动；未填开始日按单日节点处理。'),
+          h('p', '后续节点最早从前置完成后的下一个工厂工作日开始，跳过配置的停工日，保留自然日工期，先消化空档。前置日期提前时，后续计划保持不动；未填开始日按单日节点处理。'),
           h('div', { style: { maxHeight: '45vh', overflow: 'auto' } }, preview.changes.map((c) => h('p', { key: c.id }, [
             h('strong', c.name), h('br'),
             `原：${c.oldStart ?? '未设开始日'} ～ ${c.oldFinish}`, h('br'),
