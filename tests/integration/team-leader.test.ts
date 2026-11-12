@@ -85,7 +85,7 @@ describe.skipIf(!DB)('班组长（生产管理重设计第二批）', () => {
       ],
     })
     await db.qmsUser.createMany({ data: USERS.map((id) => ({ id, username: id, realName: id, departmentId: 'D', status: 'ACTIVE', updatedAt: now })) })
-    await db.notifyRole.create({ data: { role: 'DEPT_HEAD', userId: 'tl-head', department: '生产部' } })
+    await db.notifyRole.create({ data: { role: 'DEPT_HEAD', userId: 'tl-head', department: 'PRODUCTION' } })
     await s.leaders.setTeamLeader('TL-TEAM', 'tl-lead', 'tl-head')
   })
 

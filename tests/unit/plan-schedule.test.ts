@@ -1,0 +1,77 @@
+import { describe, expect, it } from 'vitest'
+import { linkSchedule, type ScheduleNode } from '../../server/services/plan/schedule'
+import { planDateConflicts } from '../../server/services/plan/date-conflicts'
+
+const n = (id: string, start: string | null, finish: string, extra: Partial<ScheduleNode> = {}): ScheduleNode => ({ id, name: id, start, finish, parent: null, preds: [], done: false, ...extra })
+const day = (d: number) => `2026-11-${String(d).padStart(2, '0')}`
+
+describe('planned date dependency cascade', () => {
+  it('preserves duration and propagates transitively, without moving unrelated branches', () => {
+    const r = linkSchedule([n('a', day(1), day(10)), n('b', day(5), day(8), { preds: ['a'] }), n('c', day(9), day(10), { preds: ['b'] }), n('other', day(2), day(3))], 'a')
+    expect(r.nodes.map((x) => [x.id, x.start, x.finish])).toEqual([
+      ['a', day(1), day(10)], ['b', day(11), day(14)], ['c', day(15), day(16)], ['other', day(2), day(3)],
+    ])
+  })
+  it('skips configured shutdowns on every dependency edge while retaining calendar-day durations', () => {
+    const offDays = new Set([day(7), day(8), day(10), day(12), day(13)])
+    const rows = [n('a', day(1), day(6)), n('b', day(5), day(7), { preds: ['a'] }), n('c', day(8), day(9), { preds: ['b'] })]
+    const result = linkSchedule(rows, 'a', offDays)
+    expect(result.nodes.map(node => [node.id, node.start, node.finish])).toEqual([
+      ['a', day(1), day(6)], ['b', day(9), day(11)], ['c', day(14), day(15)],
+    ])
+    expect(planDateConflicts(result.nodes.map(node => ({
+      id: node.id, parent: node.parent, preds: node.preds, startDay: node.start, planDay: node.finish, manualDoneDay: null, tasks: [],
+    })), offDays)).toEqual([])
+    expect(rows[1]).toMatchObject({ start: day(5), finish: day(7) })
+  })
+  it('does not exclude weekends implicitly or consume existing slack unnecessarily', () => {
+    const rows = [n('a', day(1), day(6)), n('b', day(6), day(8), { preds: ['a'] })]
+    expect(linkSchedule(rows, 'a').nodes[1]).toMatchObject({ start: day(7), finish: day(9) })
+    rows[1] = n('b', day(10), day(12), { preds: ['a'] })
+    expect(linkSchedule(rows, 'a', new Set([day(7), day(8)])).nodes[1]).toMatchObject({ start: day(10), finish: day(12) })
+  })
+  it('consumes slack, takes the latest predecessor and never pulls dates earlier', () => {
+    const rows = [n('a', day(1), day(5)), n('b', day(1), day(12)), n('c', day(10), day(11), { preds: ['a', 'b'] })]
+    expect(linkSchedule(rows, 'a').nodes[2]).toMatchObject({ start: day(13), finish: day(14) })
+    rows[1]!.finish = day(7)
+    expect(linkSchedule(rows, 'a').nodes[2]).toMatchObject({ start: day(10), finish: day(11) })
+  })
+  it('stops at completed nodes and retains missing starts as milestones', () => {
+    const r = linkSchedule([n('a', day(1), day(10)), n('b', day(5), day(6), { preds: ['a'], done: true }), n('c', day(7), day(8), { preds: ['b'] }), n('m', null, day(5), { preds: ['a'] })], 'a')
+    expect(r.skipped).toEqual(['b'])
+    expect(r.nodes[1]!.finish).toBe(day(6))
+    expect(r.nodes[2]!.start).toBe(day(7))
+    expect(r.nodes[3]).toMatchObject({ start: null, finish: day(11) })
+  })
+  it('preserves completed dates and uses the next working day for milestones across shutdowns', () => {
+    const result = linkSchedule([n('a', day(1), day(6)), n('done', day(5), day(7), { preds: ['a'], done: true }), n('milestone', null, day(5), { preds: ['a'] })], 'a', new Set([day(7), day(8)]))
+    expect(result.skipped).toEqual(['done'])
+    expect(result.nodes[1]).toMatchObject({ start: day(5), finish: day(7) })
+    expect(result.nodes[2]).toMatchObject({ start: null, finish: day(9) })
+  })
+  it('rolls child dates into summaries and cascades from the summary', () => {
+    const r = linkSchedule([n('parent', day(1), day(3)), n('a', day(2), day(12), { parent: 'parent' }), n('b', day(1), day(3), { parent: 'parent' }), n('c', day(4), day(5), { preds: ['parent'] })], 'a')
+    expect(r.nodes[0]).toMatchObject({ start: day(1), finish: day(12) })
+    expect(r.nodes[3]).toMatchObject({ start: day(13), finish: day(14) })
+  })
+  it('rolls completed summaries up before protecting completed leaves, then cascades the new range', () => {
+    const result = linkSchedule([
+      n('parent', day(2), day(3), { done: true }),
+      n('a', day(1), day(10), { parent: 'parent', done: true }),
+      n('sibling', day(2), day(3), { parent: 'parent', done: true }),
+      n('next', day(4), day(5), { preds: ['parent'] }),
+      n('completed', day(4), day(5), { preds: ['parent'], done: true }),
+    ], 'a')
+    expect(result.nodes[0]).toMatchObject({ start: day(1), finish: day(10), done: true })
+    expect(result.nodes[3]).toMatchObject({ start: day(11), finish: day(12) })
+    expect(result.nodes[4]).toMatchObject({ start: day(4), finish: day(5), done: true })
+    expect(result.skipped).toEqual(['completed'])
+  })
+  it('honors default top-level dependencies but not implicit sibling dependencies', () => {
+    const r = linkSchedule([n('a', null, day(10), { preds: null }), n('b', day(2), day(4), { preds: null })], 'a')
+    expect(r.nodes[1]).toMatchObject({ start: day(11), finish: day(13) })
+  })
+  it('rejects cycles instead of partially scheduling', () => {
+    expect(() => linkSchedule([n('a', null, day(1), { preds: ['b'] }), n('b', null, day(2), { preds: ['a'] })], 'a')).toThrow('循环')
+  })
+})

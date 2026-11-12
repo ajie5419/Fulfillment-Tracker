@@ -1,6 +1,6 @@
 import { prisma } from '../../../utils/prisma'
 import { loadNames } from '../../flow/names'
-import { DRAWING_STATUS_TEXT, OPEN_DRAWING_STATUSES, TECH_DEPT, judgeW7, w7Summary } from '../../drawings/constants'
+import { DRAWING_STATUS_TEXT, OPEN_DRAWING_STATUSES, TECH_DEPT_NAME, judgeW7, w7Summary } from '../../drawings/constants'
 import { alertKey, type Thresholds } from '../rules'
 import type { Target } from '../types'
 
@@ -15,7 +15,7 @@ export async function collectW7(now: Date, t: Thresholds, offDays: string[]): Pr
   if (!tasks.length) return []
   const [wos, heads] = await Promise.all([
     prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: [...new Set(tasks.map((x) => x.workOrderNumber))] }, isDeleted: false }, select: { workOrderNumber: true } }),
-    prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: TECH_DEPT }, select: { userId: true } }),
+    prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: 'TECH' }, select: { userId: true } }),
   ])
   const live = new Set(wos.map((w) => w.workOrderNumber))
   const headIds = [...new Set(heads.map((h) => h.userId))]
@@ -25,7 +25,7 @@ export async function collectW7(now: Date, t: Thresholds, offDays: string[]): Pr
     if (!live.has(d.workOrderNumber)) continue
     const r = judgeW7({ ...d, now, offDays }, t.W7)
     if (!r.level) continue
-    const owner = d.ownerId ? (names.user.get(d.ownerId) ?? d.ownerId) : `${TECH_DEPT}负责人`
+    const owner = d.ownerId ? (names.user.get(d.ownerId) ?? d.ownerId) : `${TECH_DEPT_NAME}负责人`
     out.push({
       rule: 'W7',
       refType: 'drawing',
@@ -33,7 +33,8 @@ export async function collectW7(now: Date, t: Thresholds, offDays: string[]): Pr
       key: alertKey('W7', 'drawing', d.id),
       workOrderNumber: d.workOrderNumber,
       ownerIds: d.ownerId ? [d.ownerId] : headIds,
-      deptNames: [TECH_DEPT],
+      deptNames: [TECH_DEPT_NAME],
+      departmentKeys: ['TECH'],
       startAt: r.trigger === 'CONFIRM_OVERDUE' ? d.customerPlanDate! : d.planDate,
       level: r.level,
       subject: `设计 ${d.componentName}（${DRAWING_STATUS_TEXT[d.status]}）`,

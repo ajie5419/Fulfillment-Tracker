@@ -2,84 +2,45 @@
  * 全站基础样式与主题变量（前端改版第一轮）。
  * 状态色与 shared/status.ts 的 STATUS_COLOR 一致（改一处要两处一起改）；Ant Design 组件的主题 token 在 app/app.vue。
  * 卡片视觉由 --card-* 定义，既有 --ft-* 映射到对应 token，主色和状态色保持独立。
- * 页面底色只加在电脑端布局（.ft-app，layouts/default.vue）上，手机端 /m 不受影响。
+ * Shared surface tokens also theme the mobile Vant components.
  */
 :root {
-  /* 清爽冷白企业风（Linear / Ember 轻盈精工卡片质感）：
-     - 90° 顶光层级：外框画布 #F3F5F8 → 工作台净白画板 #FCFCFD → 顶光微光泽白卡 #FFFFFF→#FCFDFF
-     - 1px 轻盈光学细描边（padding-box 裁切）+ 1px 顶部纯白内发光 + 克制三重衰减微投影 */
-  /* 文字与边框两色另在 shared/theme.ts 有同值来源（Ant 主题用），改一处要两处一起改。 */
-  --card-canvas-bg: #F3F5F8;
-  --card-sheet-bg: #FCFCFD;
-  --card-tray-bg: #F3F5F8;
-  --card-tray-surface: linear-gradient(180deg, #F7F8FB 0%, #F1F4F8 100%);
+  /* Neutral surfaces keep dense operational data readable across desktop and mobile. */
+  --card-canvas-bg: #FFFFFF;
+  --card-sheet-bg: #FFFFFF;
+  --card-tray-bg: #FAFAFA;
+  --card-tray-surface: #FAFAFA;
   --card-surface-bg: #FFFFFF;
-  --card-surface-sheen: linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%);
-  --card-keycap-surface: linear-gradient(180deg, #FFFFFF 0%, #F9FAFC 100%);
-  --card-border: #E2E8F0;
-  --card-border-hover: #CBD5E1;
-  --card-border-subtle: #E6ECF2;
-  /* 1px 光学方向性细描边：克制清透，顶受光极轻、底边微收而不压重 */
-  --card-hairline-top: rgba(15, 23, 42, 0.048);
-  --card-hairline: rgba(15, 23, 42, 0.065);
-  --card-hairline-bottom: rgba(15, 23, 42, 0.095);
-  --card-panel-hairline-top: rgba(15, 23, 42, 0.038);
-  --card-panel-hairline: rgba(15, 23, 42, 0.052);
-  --card-panel-hairline-bottom: rgba(15, 23, 42, 0.078);
-  --card-hairline-hover-top: rgba(15, 23, 42, 0.08);
-  --card-hairline-hover: rgba(15, 23, 42, 0.115);
-  --card-hairline-hover-bottom: rgba(15, 23, 42, 0.16);
-  /* 顶部 1px 内发光 + 内侧微高光环 + 轻盈三重衰减外投影 */
-  --card-shadow:
-    inset 0 1px 0 0 #FFFFFF,
-    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
-    inset 0 -1px 0 0 rgba(15, 23, 42, 0.016),
-    0 1px 2px 0 rgba(15, 23, 42, 0.028),
-    0 3px 8px -2px rgba(15, 23, 42, 0.032),
-    0 10px 22px -8px rgba(15, 23, 42, 0.034);
-  --card-shadow-hover:
-    inset 0 1px 0 0 #FFFFFF,
-    inset 0 0 0 1px rgba(255, 255, 255, 0.86),
-    inset 0 -1px 0 0 rgba(15, 23, 42, 0.022),
-    0 2px 4px -1px rgba(15, 23, 42, 0.04),
-    0 6px 14px -4px rgba(15, 23, 42, 0.05),
-    0 14px 28px -10px rgba(15, 23, 42, 0.052);
-  --card-tray-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.92),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.45),
-    inset 0 -1px 0 0 rgba(15, 23, 42, 0.018),
-    0 1px 2px 0 rgba(15, 23, 42, 0.022),
-    0 4px 10px -3px rgba(15, 23, 42, 0.026),
-    0 10px 20px -8px rgba(15, 23, 42, 0.026);
-  --card-panel-shadow:
-    inset 0 1px 0 0 #FFFFFF,
-    inset 0 0 0 1px rgba(255, 255, 255, 0.8),
-    0 1px 1.5px 0 rgba(15, 23, 42, 0.032),
-    0 3px 7px -2px rgba(15, 23, 42, 0.036),
-    0 7px 14px -6px rgba(15, 23, 42, 0.028);
-  --card-keycap-shadow:
-    inset 0 1px 0 0 #FFFFFF,
-    0 1px 1.5px 0 rgba(15, 23, 42, 0.036),
-    0 2px 5px -2px rgba(15, 23, 42, 0.03);
-  --card-badge-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.72),
-    0 1px 1.5px 0 rgba(15, 23, 42, 0.026);
-  --card-sheet-shadow:
-    inset 0 1px 0 0 #FFFFFF,
-    0 1px 2px 0 rgba(15, 23, 42, 0.03),
-    0 8px 22px -8px rgba(15, 23, 42, 0.04);
-  --btn-ink-surface: linear-gradient(180deg, #1E293B 0%, #0F172A 100%);
-  --btn-ink-surface-hover: linear-gradient(180deg, #334155 0%, #1E293B 100%);
-  --btn-ink-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.2),
-    inset 0 -1px 0 0 rgba(0, 0, 0, 0.22),
-    0 1px 2px 0 rgba(15, 23, 42, 0.14),
-    0 3px 8px -2px rgba(15, 23, 42, 0.1);
-  --card-radius-outer: 12px;
+  --card-surface-sheen: #FFFFFF;
+  --card-keycap-surface: #FFFFFF;
+  --card-border: #E7E7E9;
+  --card-border-hover: #CFCFD3;
+  --card-border-subtle: #EEEEF0;
+  /* Keep legacy token names so page-level cards inherit the same flat treatment. */
+  --card-hairline: var(--card-border);
+  --card-hairline-top: var(--card-border);
+  --card-hairline-bottom: var(--card-border);
+  --card-panel-hairline: var(--card-border-subtle);
+  --card-panel-hairline-top: var(--card-border-subtle);
+  --card-panel-hairline-bottom: var(--card-border-subtle);
+  --card-hairline-hover: var(--card-border-hover);
+  --card-hairline-hover-top: var(--card-border-hover);
+  --card-hairline-hover-bottom: var(--card-border-hover);
+  --card-shadow: 0 1px 2px rgba(9, 9, 11, 0.035);
+  --card-shadow-hover: 0 2px 6px rgba(9, 9, 11, 0.06);
+  --card-tray-shadow: var(--card-shadow);
+  --card-panel-shadow: none;
+  --card-keycap-shadow: 0 1px 2px rgba(9, 9, 11, 0.04);
+  --card-badge-shadow: none;
+  --card-sheet-shadow: none;
+  --btn-ink-surface: #282828;
+  --btn-ink-surface-hover: #404040;
+  --btn-ink-shadow: var(--card-keycap-shadow);
+  --card-radius-outer: 16px;
   --card-radius-inner: 10px;
-  --card-text-primary: #0F172A;
-  --card-text-secondary: #475569;
-  --card-text-muted: #64748B;
+  --card-text-primary: #282828;
+  --card-text-secondary: #626262;
+  --card-text-muted: #737373;
 
   --ft-primary: #2563EB;
   --ft-page-bg: var(--card-canvas-bg);
@@ -170,7 +131,7 @@ html, body { margin: 0; background: var(--ft-page-bg); color: var(--ft-text); fo
    表头不再铺灰底（卡片标题已经是一层表头，灰底会看成两条标题栏），只用小号灰字 + 底线；
    UiSectionCard(pad-none) 内首尾列留 20px 与卡头对齐；a-card-body 已有内边距时收敛为 12px 与分组头对齐 */
 .ft-table { font-variant-numeric: tabular-nums; }
-.ft-table .ant-table-thead > tr > th { background: transparent; color: var(--ft-text-2); font-weight: 500; font-size: 13px; border-bottom: 1px solid var(--ft-border); }
+.ft-table .ant-table-thead > tr > th { background: var(--ft-fill); color: var(--ft-text-2); font-weight: 500; font-size: 13px; border-bottom: 1px solid var(--ft-border); }
 .ft-table .ant-table-thead > tr > th::before { display: none; }
 .ft-table .ant-table-tbody > tr:hover > td { background: var(--ft-fill); }
 /* Ant 的 size=middle 内边距选择器较长，这里同样写全才能盖过 */
@@ -220,7 +181,7 @@ html, body { margin: 0; background: var(--ft-page-bg); color: var(--ft-text); fo
 :root .ant-tag:is(.ant-tag-blue, .ant-tag-processing, .ant-tag-geekblue, .ant-tag-cyan) { --tag-dot: var(--ft-primary); background: var(--ft-primary-bg); color: var(--ft-primary-text); }
 /* 卡片标题 + 说明问号 */
 .ft-title { display: inline-flex; align-items: center; gap: 6px; }
-/* Ember 式深墨黑主操作按钮：顶光微斜面 + 1px 顶部内高光 + 双重立体投影 */
+/* Ink actions remain distinct from blue links and selected controls. */
 .ft-app .ft-btn-ink.ant-btn-primary:not(:disabled) {
   background: var(--btn-ink-surface);
   background-clip: padding-box;

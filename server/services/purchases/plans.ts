@@ -4,7 +4,6 @@ import { prisma } from '../../utils/prisma'
 import { FlowError } from '../flow/errors'
 import { resolvePlanNode } from '../plan/links'
 import { createLine, lockParts, purchaseTx } from './purchases'
-import { PURCHASE_DEPT } from './constants'
 import { PURCHASE_PLAN_ISSUED, purchasePlanEditable, purchasePlanProgress, purchasePlanTransition } from '../../../shared/purchase-plans'
 import type { newPlanBody, planHeadBody, planItemBody } from '../../schemas/purchase-plans'
 import { DEFAULT_PAGE_SIZE } from '../../../shared/pagination'
@@ -80,7 +79,7 @@ export async function changePurchasePlanStatus(id: string, action: 'issue' | 'wi
       await resolvePlanNode(tx, plan.workOrderNumber, plan.planNodeId, { creating: true })
       let notified = 0
       if (items.some(i => i.convertedLineId === null)) {
-        const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PURCHASE_DEPT }, select: { userId: true } })
+        const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: 'PURCHASE' }, select: { userId: true } })
         const owners = [...new Set(heads.map(h => h.userId))]
         await tx.todo.createMany({ data: owners.map(ownerId => ({ ownerId, action: PURCHASE_PLAN_ISSUED, refType: 'purchasePlan', refId: id })) })
         notified = owners.length

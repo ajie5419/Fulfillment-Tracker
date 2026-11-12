@@ -55,7 +55,6 @@ describe.skipIf(!DB)('生产管理补全', () => {
     await db.qmsUser.deleteMany()
 
     const now = new Date()
-    const { PRODUCTION_DEPT } = await import('../../server/services/releases/constants')
     await db.qmsWorkOrder.create({ data: { workOrderNumber: WO, customerName: '测试客户', quantity: 1, deliveryDate: day('2026-12-31'), status: 'IN_PROGRESS', updatedAt: now } })
     await db.qmsSupplier.createMany({
       data: [
@@ -76,7 +75,7 @@ describe.skipIf(!DB)('生产管理补全', () => {
         { id: 'u-head', username: 'h', realName: '生产经理', departmentId: 'D-PROD', roleId: 'r', status: 'ACTIVE', updatedAt: now },
       ],
     })
-    await db.notifyRole.create({ data: { role: 'DEPT_HEAD', userId: 'u-head', department: PRODUCTION_DEPT } })
+    await db.notifyRole.create({ data: { role: 'DEPT_HEAD', userId: 'u-head', department: 'PRODUCTION' } })
   })
 
   afterAll(async () => {

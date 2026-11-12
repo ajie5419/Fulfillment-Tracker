@@ -445,8 +445,8 @@ describe.skipIf(!DB)('QMS 数据同步', () => {
   it('部门 ID → 名称：升级阶梯按名称找部门负责人；"本部门"筛选、异常默认责任部门照常', async () => {
     await db.notifyRole.createMany({
       data: [
-        { role: 'DEPT_HEAD', userId: 'u-002', department: '生产部' },
-        { role: 'DEPT_HEAD', userId: 'u-006', department: '质量部' },
+        { role: 'DEPT_HEAD', userId: 'u-002', department: 'PRODUCTION' },
+        { role: 'DEPT_HEAD', userId: 'u-006', department: 'QUALITY' },
       ],
     })
     // u-001 的部门是 dept-prod（生产部）：黄色时通知生产部负责人 u-002，不通知质量部负责人

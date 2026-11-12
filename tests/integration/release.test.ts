@@ -96,7 +96,7 @@ describe.skipIf(!DB)('发放签收与设计变更（R9）', () => {
     await db.notifyRole.createMany({
       data: [
         { role: 'OUTSOURCE_COORDINATOR', userId: 'u-out' },
-        { role: 'DEPT_HEAD', userId: 'u-head', department: '生产部' },
+        { role: 'DEPT_HEAD', userId: 'u-head', department: 'PRODUCTION' },
         { role: 'PROJECT_DEPT_HEAD', userId: 'u-pdh' },
         { role: 'LEADER', userId: 'u-lead' },
       ],

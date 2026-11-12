@@ -56,8 +56,11 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
       [...n.tasks, ...myKids.map((c): TaskFacts => ({ kind: 'task', id: c.id, excluded: false, done: c.done, doneDay: c.actualDay, planDay: null }))],
       today,
     )
-    const doneBy = n.manualDoneDay ? 'MANUAL' : auto.done ? 'AUTO' : null
-    const actualDay = n.manualDoneDay ?? auto.day
+    // Active child work owns completion; cancelled tasks no longer suppress a
+    // historical manual completion date when no effective work remains.
+    const manualDay = counted.length || myKids.length ? null : n.manualDoneDay
+    const doneBy = manualDay ? 'MANUAL' : auto.done ? 'AUTO' : null
+    const actualDay = manualDay ?? auto.day
     const myPreds = preds.get(id)!
     let expectedDay: string
     let driver: NodeEstimate['driver']

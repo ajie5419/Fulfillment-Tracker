@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { PlanData } from '../../composables/usePlanData'
+import { PLAN_STATUS_TEXT, planDisplayState } from '#shared/plan'
 definePageMeta({ layout: 'mobile' })
 const route = useRoute()
 const wo = computed(() => typeof route.query.wo === 'string' ? route.query.wo : '')
 const { data, pending, error, refresh } = await useFetch<PlanData>('/api/plan', { query: computed(() => ({ workOrderNumber: wo.value })) })
+const displayState = computed(() => planDisplayState(data.value?.plan?.status, data.value?.nodes.length ?? 0))
 </script>
 
 <template>
@@ -15,14 +17,15 @@ const { data, pending, error, refresh } = await useFetch<PlanData>('/api/plan', 
       <div class="m-section">{{ data.workOrder.workOrderNumber }} {{ data.workOrder.projectName }}</div>
       <PlanDateConflicts :conflicts="data.dateConflicts" />
       <MCard>
-        <div class="m-title">{{ data.plan?.status === 'PUBLISHED' ? '已发布' : '草稿' }}</div>
+        <div class="m-title">{{ PLAN_STATUS_TEXT[displayState] }}</div>
+        <div class="m-meta">合同生效日期 {{ data.workOrder.effectiveTime ?? '—' }}</div>
         <div class="m-meta">合同交期 {{ data.workOrder.deliveryDate ?? '—' }}</div>
-        <div class="m-meta">预计交期 {{ data.expectedDelivery ?? '待核实' }}</div>
+        <div class="m-meta">预计交期 {{ data.dateConflicts.length ? '待核实' : displayState === 'DRAFT' ? '发布后计算' : data.expectedDelivery ?? '—' }}</div>
       </MCard>
       <MCard v-for="node in data.nodes" :key="node.id" :tone="node.dateConflict ? 'risk' : 'none'">
         <div class="m-title">{{ node.code }} {{ node.name }}</div>
         <div class="m-meta">计划开始 {{ node.startDate ?? '未填写' }} · 完成 {{ node.planDate }}</div>
-        <div class="m-meta">预计开始 {{ node.expectedStartDate ?? '待核实 / 不适用' }} · 完成 {{ node.expectedDate }}（参考）</div>
+        <div v-if="displayState === 'PUBLISHED'" class="m-meta">预计开始 {{ node.expectedStartDate ?? '待核实 / 不适用' }} · 完成 {{ node.expectedDate }}（参考）</div>
         <div v-if="node.actualDate" class="m-meta">实际完成 {{ node.actualDate }}</div>
         <div v-if="node.slackDays != null" class="m-meta">余量 {{ node.slackDays }} 天</div>
       </MCard>

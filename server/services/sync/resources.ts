@@ -50,6 +50,7 @@ export const qmsWorkOrderSchema = z.object({
   divisionId: keepId,
   quantity: int.default(0),
   deliveryDate: isoDate,
+  effectiveTime: isoDate.nullable().optional(),
   status: z.string().max(20),
   version: z
     .union([z.number(), z.string()])

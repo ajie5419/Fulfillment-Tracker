@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ClientOptions } from '../utils/transport'
+import { isPurchaseQuantity, purchaseQuantityError, MAX_PURCHASE_QUANTITY, MIN_PURCHASE_QUANTITY, PURCHASE_QUANTITY_DECIMALS } from '#shared/purchase-quantity'
 /**
  * 新建 / 编辑关键物料采购行（R10）：工单、工件（可空）、物料名称、规格、数量、单位、供应商（选 QMS 供应商或手填）、
  * 需求日、承诺到货日、所属总计划节点（R14，工单总计划已发布时必选）、采购负责人（不选 = 采购部负责人）、备注；编辑时还能填延误原因、取消 / 重新启用、改到货日。
@@ -119,7 +120,7 @@ async function submit() {
   const line = props.line
   if (!form.workOrderNumber) return message.warning('请选择工单')
   if (!form.materialName.trim()) return message.warning('请填写物料名称')
-  if (!form.quantity || form.quantity <= 0) return message.warning('数量要大于 0')
+  if (!isPurchaseQuantity(form.quantity)) return message.warning(purchaseQuantityError(form.quantity))
   if (!form.needDate) return message.warning('请选择需求日')
   const supplier = matchedSupplier.value
   const body: Omit<ClientOptions<'/api/purchases', 'POST'>['body'], 'workOrderNumber'> & NonNullable<ClientOptions<`/api/purchases/${string}`, 'PATCH'>['body']> = {
@@ -189,7 +190,7 @@ async function submit() {
       <a-form-item label="规格型号"><a-input v-model:value="form.spec" :maxlength="191" /></a-form-item>
       <a-form-item label="数量" required>
         <a-space>
-          <a-input-number v-model:value="form.quantity" :min="0.001" :max="1000000000" :precision="3" :controls="false" style="width: 140px" />
+          <a-input-number v-model:value="form.quantity" :min="MIN_PURCHASE_QUANTITY" :max="MAX_PURCHASE_QUANTITY" :precision="PURCHASE_QUANTITY_DECIMALS" :controls="false" style="width: 140px" />
           <a-input v-model:value="form.unit" :maxlength="20" placeholder="单位，如 台、t" style="width: 120px" />
         </a-space>
       </a-form-item>
@@ -200,7 +201,7 @@ async function submit() {
       <a-form-item label="需求日" required><UiDatePicker v-model:value="form.needDate" /></a-form-item>
       <a-form-item label="承诺到货日">
         <UiDatePicker v-model:value="form.promisedDate" placeholder="供应商承诺的日期" />
-        <div class="muted">需求日前 7 天（可在设置里改）还没有承诺日会预警</div>
+        <div class="muted">未填写承诺到货日时，系统按预警设置在需求日前提醒</div>
       </a-form-item>
       <a-form-item label="所属总计划节点">
         <PlanNodeSelect v-model:value="form.planNodeId" :work-order-number="form.workOrderNumber" :record-date="form.promisedDate ?? form.needDate" @pick="(d) => (form.needDate ||= d)" />

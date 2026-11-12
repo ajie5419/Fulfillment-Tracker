@@ -1,5 +1,5 @@
 import { prisma } from '../../../utils/prisma'
-import { DELAY_REASON_TEXT, PAYMENT_STATUS_TEXT, PURCHASE_DEPT, currentDelayReason, judgeW6, w6Summary } from '../../purchases/constants'
+import { DELAY_REASON_TEXT, PAYMENT_STATUS_TEXT, PURCHASE_DEPT_NAME, currentDelayReason, judgeW6, w6Summary } from '../../purchases/constants'
 import { alertKey, type Thresholds } from '../rules'
 import type { Target } from '../types'
 
@@ -18,7 +18,7 @@ export async function collectW6(now: Date, t: Thresholds, offDays: string[]): Pr
   if (!lines.length) return []
   const [wos, roles] = await Promise.all([
     prisma.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: [...new Set(lines.map((l) => l.workOrderNumber))] }, isDeleted: false }, select: { workOrderNumber: true } }),
-    prisma.notifyRole.findMany({ where: { OR: [{ role: 'FINANCE' }, { role: 'DEPT_HEAD', department: PURCHASE_DEPT }] }, select: { role: true, userId: true } }),
+    prisma.notifyRole.findMany({ where: { OR: [{ role: 'FINANCE' }, { role: 'DEPT_HEAD', department: 'PURCHASE' }] }, select: { role: true, userId: true } }),
   ])
   const live = new Set(wos.map((w) => w.workOrderNumber))
   const heads = [...new Set(roles.filter((r) => r.role === 'DEPT_HEAD').map((r) => r.userId))]
@@ -39,7 +39,8 @@ export async function collectW6(now: Date, t: Thresholds, offDays: string[]): Pr
       workOrderNumber: l.workOrderNumber,
       ownerIds: l.buyerId ? [l.buyerId] : heads,
       watcherIds: blocking ? finance : [],
-      deptNames: [PURCHASE_DEPT],
+      deptNames: [PURCHASE_DEPT_NAME],
+      departmentKeys: ['PURCHASE'],
       startAt: r.trigger === 'OVERDUE' ? l.promisedDate! : l.needDate,
       level: r.level,
       subject: `关键物料 ${l.materialName}${l.spec ? `（${l.spec}）` : ''}`,

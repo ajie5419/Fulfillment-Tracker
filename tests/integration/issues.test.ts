@@ -128,8 +128,8 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     await db.notifyRole.createMany({
       data: [
         { role: 'OUTSOURCE_COORDINATOR', userId: 'u-out' },
-        { role: 'DEPT_HEAD', userId: 'u-head', department: '生产部' },
-        { role: 'DEPT_HEAD', userId: 'u-qa', department: '质量部' },
+        { role: 'DEPT_HEAD', userId: 'u-head', department: 'PRODUCTION' },
+        { role: 'DEPT_HEAD', userId: 'u-qa', department: 'QUALITY' },
         { role: 'PROJECT_DEPT_HEAD', userId: 'u-pdh' },
         { role: 'LEADER', userId: 'u-lead' },
       ],

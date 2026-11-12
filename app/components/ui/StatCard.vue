@@ -1,10 +1,5 @@
 <script setup lang="ts">
-/**
- * 统计指标小卡片（Bento KPI 胶囊式设计）：
- * 外层浅冷灰顶帽壳（4px 窄边 + 16px 圆角）承载白底微圆角线框图标与指标标题；
- * 内层纯白面板（12px 同心圆角）展示等宽大号数字、28 段垂直刻度微柱条与底部辅助说明。
- * 注意：仅用于直接落在冷白画布或 flat 分区上的独立指标卡，不套在有边框的大卡片内部。
- */
+/** Flat KPI cards keep attention on real values rather than decorative mini charts. */
 import type { RouteLocationRaw } from 'vue-router'
 import { NuxtLink } from '#components'
 
@@ -16,7 +11,7 @@ const props = withDefaults(
     value?: string | number | null
     unit?: string
     sub?: string
-    /** 可选真实占比（0~1），传入时按真实比例点亮刻度条；未传时按数值自动映射（0 为全空轨道） */
+    /** Optional real proportion; raw counts must not imply progress. */
     ratio?: number | null
     tone?: 'late' | 'risk' | 'done' | 'upstream' | 'none' | 'primary'
     accent?: boolean
@@ -47,28 +42,11 @@ const numericValue = computed<number | null>(() => {
 
 const isZero = computed(() => numericValue.value === 0)
 
+/** A progress indicator is meaningful only when the caller supplies a real ratio. */
 const filledTicks = computed(() => {
-  const num = numericValue.value
-  if (num === 0) return 0
-  if (props.ratio != null && Number.isFinite(props.ratio)) {
-    const r = Math.min(1, Math.max(0, props.ratio))
-    if (r <= 0) return 0
-    return Math.min(TICK_COUNT, Math.max(2, Math.round(r * TICK_COUNT)))
-  }
-  if (typeof props.value === 'string' && props.value.trim().endsWith('%') && num != null) {
-    const r = Math.min(1, Math.max(0, num / 100))
-    return r <= 0 ? 0 : Math.min(TICK_COUNT, Math.max(2, Math.round(r * TICK_COUNT)))
-  }
-  if (num == null || num < 0) return 0
-  return Math.min(TICK_COUNT, Math.max(3, Math.round((1 - Math.exp(-num / 10)) * TICK_COUNT)))
+  if (props.ratio == null || !Number.isFinite(props.ratio)) return 0
+  return Math.round(Math.min(1, Math.max(0, props.ratio)) * TICK_COUNT)
 })
-
-function tickWeight(index: number): string | undefined {
-  const total = filledTicks.value
-  if (index > total || total <= 0) return undefined
-  const progress = total === 1 ? 1 : (index - 1) / (total - 1)
-  return `${Math.round(58 + progress * 42)}%`
-}
 
 function onKey(e: KeyboardEvent) {
   if (!asButton.value) return
@@ -127,17 +105,15 @@ function onKey(e: KeyboardEvent) {
       <div v-if="value != null || $slots.value" class="value">
         <slot name="value"><b>{{ value }}</b><span v-if="unit" class="unit">{{ unit }}</span></slot>
       </div>
-      <div v-if="!$slots.value" class="ft-stat-ticks" aria-hidden="true">
+      <div v-if="ratio != null && Number.isFinite(ratio) && !$slots.value" class="ft-stat-ticks" aria-hidden="true">
         <i
           v-for="n in TICK_COUNT"
           :key="n"
           class="tick"
           :class="{ on: n <= filledTicks }"
-          :style="n <= filledTicks ? { '--w': tickWeight(n) } : undefined"
         />
       </div>
       <div v-if="sub || $slots.sub || $slots.default" class="sub">
-        <span v-if="sub && !$slots.sub && !isZero && (tone === 'late' || tone === 'risk' || tone === 'done' || tone === 'upstream')" class="sub-arrow" aria-hidden="true">↗</span>
         <slot name="sub">{{ sub }}</slot><slot />
       </div>
     </div>
@@ -151,13 +127,13 @@ function onKey(e: KeyboardEvent) {
   display: flex;
   flex-direction: column;
   position: relative;
-  background: var(--card-tray-surface);
+  background: var(--ft-card-bg);
   background-clip: padding-box;
   border: 1px solid var(--card-hairline);
   border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom);
   border-radius: 16px;
   box-shadow: var(--card-tray-shadow);
-  padding: 0 4px 4px;
+  padding: 18px;
   height: 100%;
   box-sizing: border-box;
   color: var(--ft-text);
@@ -169,7 +145,7 @@ function onKey(e: KeyboardEvent) {
 .ft-stat.tone-done { --stat-accent: var(--ft-done); --stat-accent-text: var(--ft-done-text); }
 .ft-stat.tone-none { --stat-accent: var(--ft-none); --stat-accent-text: var(--ft-text-2); }
 
-.ft-stat-head { display: flex; align-items: center; gap: 8px; padding: 7px 8px 6px; flex: none; min-width: 0; }
+.ft-stat-head { display: flex; align-items: center; gap: 8px; padding: 0 0 20px; flex: none; min-width: 0; }
 .ft-stat-iconbox {
   flex: none;
   display: inline-flex;
@@ -208,22 +184,18 @@ function onKey(e: KeyboardEvent) {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  background: var(--card-surface-sheen);
+  background: transparent;
   background-clip: padding-box;
-  border: 1px solid var(--card-panel-hairline);
-  border-color: var(--card-panel-hairline-top) var(--card-panel-hairline) var(--card-panel-hairline-bottom);
-  border-radius: 12px;
-  box-shadow: var(--card-panel-shadow);
-  padding: 13px 15px 11px;
+  border: none;
+  padding: 0;
   min-width: 0;
 }
 
-.ft-stat.link { cursor: pointer; transition: border-color 0.16s, box-shadow 0.16s, transform 0.16s, background 0.16s; }
+.ft-stat.link { cursor: pointer; transition: border-color 0.16s, box-shadow 0.16s, background 0.16s; }
 .ft-stat.link:hover {
   color: var(--ft-text);
   border-color: var(--card-hairline-hover-top) var(--card-hairline-hover) var(--card-hairline-hover-bottom);
   box-shadow: var(--card-shadow-hover);
-  transform: translateY(-1px);
 }
 .ft-stat.link:hover .ft-stat-label { color: var(--ft-text); }
 .ft-stat.link:hover .ft-stat-more { opacity: 1; color: var(--ft-text-2); }
@@ -233,7 +205,7 @@ function onKey(e: KeyboardEvent) {
 .ft-stat.link:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
 
 .value { line-height: 1.12; font-variant-numeric: tabular-nums; }
-.value b { font-size: 28px; font-weight: 600; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; color: var(--ft-text); }
+.value b { font-size: 26px; font-weight: 600; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; color: var(--ft-text); }
 .unit { margin-left: 6px; font-size: 13px; font-weight: 500; color: var(--ft-text-2); }
 .tone-late:not(.zero) .value b { color: var(--ft-late-text); }
 

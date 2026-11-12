@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Vue from 'vue'
 import * as workbench from '../../shared/workbench'
 import * as drawing from '../../shared/drawing'
+import * as planValidation from '../../shared/plan-validation'
 import * as purchases from '../../shared/purchases'
+import * as purchaseQuantity from '../../shared/purchase-quantity'
 import { deferred, flushVue, mountScript } from '../helpers/vue-script'
 
 const cleanups: (() => void)[] = []
@@ -47,7 +49,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 async function mount(file: string, props: Record<string, unknown> = {}) {
-  const result = await mountScript(file, props, { '#shared/drawing': drawing, '#shared/workbench': workbench, '#shared/purchases': purchases })
+  const result = await mountScript(file, props, { '#shared/plan-validation': planValidation, '#shared/drawing': drawing, '#shared/workbench': workbench, '#shared/purchases': purchases, '#shared/purchase-quantity': purchaseQuantity })
   cleanups.push(result.unmount)
   return result
 }
@@ -68,10 +70,13 @@ describe.each([
     await flushVue()
     expect(state.form[field]).toContain('B')
     expect(state.form.planNodeId).toBe('node-B')
-    if (prop === 'task') expect(state.form.partIds).toEqual(['part-B'])
-    else expect(state.form.partId).toBe('part-B')
+    if (prop === 'line') expect(state.form.partId).toBe('part-B')
     await state.submit()
     expect(send).toHaveBeenCalledWith(`/api/${endpoint}/B`, 'PATCH', expect.objectContaining({ [field]: expect.stringContaining('B') }))
+    if (prop === 'task') {
+      expect(send.mock.calls[0]?.[2]).not.toHaveProperty('cancelled')
+      expect(send.mock.calls[0]?.[2]).not.toHaveProperty('partIds')
+    }
     expect(events).toEqual([['B']])
   })
 
@@ -116,8 +121,7 @@ describe.each([
     expect(state.form.planNodeId).toBe('node-B')
     state.form.workOrderNumber = 'WO-A'
     expect(state.form.planNodeId).toBeNull()
-    if (prop === 'task') expect(state.form.partIds).toEqual([])
-    else expect(state.form.partId).toBeUndefined()
+    if (prop === 'line') expect(state.form.partId).toBeUndefined()
   })
 
   it('preserves unsaved edits when the same record is refreshed', async () => {
@@ -189,6 +193,23 @@ describe('payment material hydration', () => {
     expect(state.form.purchaseLineIds).toEqual([])
     expect(state.picked.size).toBe(0)
   })
+})
+
+it('cancels or restores a design task only after confirmation, without changing ordinary fields', async () => {
+  const confirm = vi.fn()
+  vi.stubGlobal('Modal', { confirm })
+  vi.stubGlobal('useRouter', () => ({ replace: vi.fn() }))
+  vi.stubGlobal('useMe', async () => ({ data: Vue.ref({}) }))
+  vi.stubGlobal('canDo', () => true)
+  vi.stubGlobal('useListLayout', () => Vue.ref('group'))
+  const { state } = await mount('app/pages/drawings.vue')
+  state.changeCancellation({ ...record('A'), status: 'PENDING' })
+  expect(send).not.toHaveBeenCalled()
+  await confirm.mock.calls[0]![0].onOk()
+  expect(send).toHaveBeenLastCalledWith('/api/drawings/A', 'PATCH', { cancelled: true })
+  state.changeCancellation({ ...record('A'), status: 'CANCELLED' })
+  await confirm.mock.calls[1]![0].onOk()
+  expect(send).toHaveBeenLastCalledWith('/api/drawings/A', 'PATCH', { cancelled: false })
 })
 
 describe.each(['purchases', 'drawings'])('%s reminder navigation', (page) => {
@@ -392,4 +413,38 @@ describe('mobile send selection', () => {
     expect(state.stepId).toBe('step-B')
     expect(message.success).not.toHaveBeenCalled()
   })
+})
+
+it('clears drawing filters without restoring a pending search and changes cancelled view atomically', async () => {
+  vi.useFakeTimers()
+  try {
+    const route = Vue.reactive({ query: { wo: 'WO-A', view: 'cancelled', owner: 'u1', layout: 'table' } as Record<string, string | undefined> })
+    const replace = vi.fn(async ({ query }: { query: Record<string, string | undefined> }) => {
+      await Promise.resolve()
+      route.query = query
+    })
+    vi.stubGlobal('useRoute', () => route)
+    vi.stubGlobal('useRouter', () => ({ replace }))
+    vi.stubGlobal('useMe', async () => ({ data: Vue.ref({}) }))
+    vi.stubGlobal('canDo', () => true)
+    vi.stubGlobal('useListLayout', () => Vue.ref('table'))
+    const { state } = await mount('app/pages/drawings.vue')
+    await state.changeLayout('board')
+    await flushVue()
+    expect(route.query).toMatchObject({ layout: 'board', view: 'open', wo: 'WO-A', owner: 'u1' })
+    state.keyword = 'pending search'
+    await flushVue()
+    state.clearFilters()
+    await flushVue()
+    await vi.advanceTimersByTimeAsync(350)
+    expect(state.filter).toMatchObject({ workOrderNumber: undefined, ownerId: undefined, q: '', view: 'open' })
+    expect(state.keyword).toBe('')
+    expect(state.hasFilters).toBe(false)
+    state.filter.ownerId = 'u2'
+    state.tab = 'load'
+    await flushVue()
+    expect(state.hasFilters).toBe(false)
+  } finally {
+    vi.useRealTimers()
+  }
 })

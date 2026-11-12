@@ -13,6 +13,8 @@
  * 并发：沿用 R10 采购的做法——READ COMMITTED，加锁顺序 先工件（按 ID 排序）→ 再设计任务（FOR UPDATE）→ 发放单。
  */
 import type { DrawingTask, DrawingTaskStatus, Prisma } from '@prisma/client'
+import { drawingPresentation } from '../../../shared/drawing'
+import { isPlanStartLate } from '../../../shared/plan-validation'
 import { prisma } from '../../utils/prisma'
 import { clearAlertKeys } from '../alerts/clear'
 import { alertKey, dateFieldDay, shanghaiDay } from '../alerts/rules'
@@ -23,7 +25,9 @@ import { lockParts, purchaseTx, refreshPartReady } from '../purchases/purchases'
 import { planNodeLabels, planWarning, resolvePlanNode } from '../plan/links'
 import { TYPE_TEXT } from '../releases/constants'
 import { processSummary } from '../process/constants'
-import { DRAWING_STATUS_TEXT, OPEN_DRAWING_STATUSES, TECH_DEPT, canReleaseFrom, deriveStatus, isOverdue, thisWeek } from './constants'
+import { taskRequiresProcess } from '../process/eligibility'
+import { settleProcessRequirementWork } from '../process/requirements'
+import { DRAWING_STATUS_TEXT, OPEN_DRAWING_STATUSES, TECH_DEPT_NAME, canReleaseFrom, deriveStatus, isOverdue, thisWeek } from './constants'
 
 type Tx = Prisma.TransactionClient
 type TaskWithParts = DrawingTask & { parts: { partId: string }[] }
@@ -34,6 +38,7 @@ export interface Actor {
 }
 
 export interface TaskInput {
+  startDate?: Date | null
   partIds?: string[]
   componentName: string
   ownerId?: string | null
@@ -71,13 +76,13 @@ export class DrawingTaskNotFoundError extends FlowError {
 /** 先锁关联工件（及 alsoParts，如编辑后要关联的新工件），再锁设计任务行并读最新数据 */
 export async function lockTask(tx: Tx, id: string, alsoParts: string[] = []): Promise<TaskWithParts> {
   const cur = await tx.drawingTaskPart.findMany({ where: { taskId: id }, select: { partId: true } })
-  await lockParts(tx, [...cur.map((p) => p.partId), ...alsoParts])
+  const lockedParts = new Set([...cur.map((p) => p.partId), ...alsoParts])
+  await lockParts(tx, [...lockedParts])
   const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM drawing_task WHERE id = ${id} FOR UPDATE`
   if (!rows.length) throw new DrawingTaskNotFoundError()
   const task = await tx.drawingTask.findUniqueOrThrow({ where: { id }, include: { parts: { select: { partId: true } } } })
-  // 极少见：锁之前关联工件刚被改过
-  const extra = task.parts.map((p) => p.partId).filter((p) => !cur.some((c) => c.partId === p))
-  if (extra.length) await lockParts(tx, extra)
+  // A concurrent relink must not make us acquire new part locks after the task lock.
+  if (task.parts.some(p => !lockedParts.has(p.partId))) throw new FlowError('设计任务关联工件已变化，请刷新后重试')
   return task
 }
 
@@ -92,7 +97,7 @@ const blocking = (s: DrawingTaskStatus) => OPEN_DRAWING_STATUSES.includes(s)
  * 按最新事实重算状态并写回；然后对受影响的工件重新评估"可以开工"：
  * 原来挡着某个工件（未完成、且关联着）、现在不再挡（完成 / 取消 / 不再关联）→ notify；其余只作废（还没齐时）。
  */
-export async function settleTask(tx: Tx, before: { status: DrawingTaskStatus; partIds: string[] }, taskId: string) {
+export async function settleTask(tx: Tx, before: { status: DrawingTaskStatus; partIds: string[] }, taskId: string, processRequirement?: { actorId: string; requiresProcess: boolean }) {
   const task = await tx.drawingTask.findUniqueOrThrow({ where: { id: taskId }, include: { parts: { select: { partId: true } } } })
   const status = deriveStatus({
     cancelled: task.status === 'CANCELLED',
@@ -104,8 +109,14 @@ export async function settleTask(tx: Tx, before: { status: DrawingTaskStatus; pa
   if (status !== task.status) await tx.drawingTask.update({ where: { id: taskId }, data: { status } })
   if (!blocking(status)) await clearAlertKeys(tx, [w7Key(taskId)])
   const nowParts = task.parts.map((p) => p.partId)
+  const affectedParts = uniq([...before.partIds, ...nowParts]).sort()
+  // Review documents before evaluating readiness, so re-enabling cannot briefly issue a stale ready notice.
+  if (processRequirement) {
+    const readySent = await settleProcessRequirementWork(tx, { taskIds: [taskId], partIds: affectedParts }, processRequirement.actorId, processRequirement.requiresProcess)
+    return { status, readySent }
+  }
   let readySent = 0
-  for (const partId of uniq([...before.partIds, ...nowParts]).sort()) {
+  for (const partId of affectedParts) {
     const wasBlocking = before.partIds.includes(partId) && blocking(before.status)
     const stillBlocking = nowParts.includes(partId) && blocking(status)
     if ((await refreshPartReady(tx, partId, wasBlocking && !stillBlocking)) === 'sent') readySent++
@@ -127,6 +138,10 @@ async function assertParts(tx: Tx, partIds: string[], workOrderNumber: string) {
   if (parts.length !== partIds.length || parts.some((p) => p.workOrderNumber !== workOrderNumber)) throw new FlowError('关联工件不存在或不属于该工单')
 }
 
+function assertStartDate(start: Date | null | undefined, finish: Date) {
+  if (isPlanStartLate(start ? dateFieldDay(start) : null, dateFieldDay(finish))) throw new FlowError('计划开始日不能晚于计划完成日')
+}
+
 function assertCustomerPlan(needs: boolean, customerPlanDate: Date | null | undefined) {
   if (!needs && customerPlanDate) throw new FlowError('不需要客户确认时不用填客户确认计划日')
 }
@@ -140,6 +155,7 @@ const canDraw = (task: { ownerId: string | null }, actor: Actor) => actor.isAdmi
 // ───────────── 新建 / 修改 ─────────────
 
 export async function createTask(input: NewTaskInput, actorId: string) {
+  assertStartDate(input.startDate, input.planDate)
   const partIds = uniq(input.partIds ?? [])
   const needs = !!input.needsCustomerConfirm
   assertCustomerPlan(needs, input.customerPlanDate)
@@ -156,6 +172,7 @@ export async function createTask(input: NewTaskInput, actorId: string) {
         componentName: input.componentName.trim(),
         ownerId: input.ownerId || null,
         planDate: input.planDate,
+        startDate: input.startDate ?? null,
         planNodeId: link.value ?? null,
         needsCustomerConfirm: needs,
         customerPlanDate: needs ? (input.customerPlanDate ?? null) : null,
@@ -170,10 +187,21 @@ export async function createTask(input: NewTaskInput, actorId: string) {
   })
 }
 
-export async function updateTask(id: string, input: PatchTaskInput) {
+export async function updateTask(id: string, input: PatchTaskInput, actorId: string) {
   const newParts = input.partIds ? uniq(input.partIds) : undefined
   return drawingTx(async (tx) => {
     const old = await lockTask(tx, id, newParts)
+    const targetNodeId = input.planNodeId === undefined ? old.planNodeId : input.planNodeId || null
+    let processRequirement: { actorId: string; requiresProcess: boolean } | undefined
+    if (targetNodeId !== old.planNodeId) {
+      // Policy writers lock parts, tasks, then nodes; shared node locks keep both policies stable through relinking.
+      const nodeIds = uniq([old.planNodeId, targetNodeId].filter((nodeId): nodeId is string => !!nodeId)).sort()
+      for (const nodeId of nodeIds) await tx.$queryRaw`SELECT id FROM plan_node WHERE id = ${nodeId} FOR SHARE`
+      const previousRequirement = await taskRequiresProcess(tx, old.planNodeId)
+      const nextRequirement = await taskRequiresProcess(tx, targetNodeId)
+      if (previousRequirement !== nextRequirement) processRequirement = { actorId, requiresProcess: nextRequirement }
+    }
+    assertStartDate(input.startDate === undefined ? old.startDate : input.startDate, input.planDate ?? old.planDate)
     const before = { status: old.status, partIds: old.parts.map((p) => p.partId) }
     const data: Prisma.DrawingTaskUncheckedUpdateInput = {}
     if (input.componentName !== undefined) data.componentName = input.componentName.trim()
@@ -182,13 +210,14 @@ export async function updateTask(id: string, input: PatchTaskInput) {
       data.ownerId = input.ownerId || null
     }
     if (input.planDate !== undefined) data.planDate = input.planDate
+    if (input.startDate !== undefined) data.startDate = input.startDate
     const link = await resolvePlanNode(tx, old.workOrderNumber, input.planNodeId, { creating: false, oldNodeId: old.planNodeId })
     if (link.value !== undefined) data.planNodeId = link.value
     const needs = input.needsCustomerConfirm ?? old.needsCustomerConfirm
     if (input.needsCustomerConfirm !== undefined) data.needsCustomerConfirm = needs
     if (input.customerPlanDate !== undefined) data.customerPlanDate = input.customerPlanDate
     assertCustomerPlan(needs, input.customerPlanDate)
-    if (!needs) Object.assign(data, { customerPlanDate: null, customerConfirmedDate: null, customerConfirmedBy: null })
+    if (!needs) Object.assign(data, { customerPlanDate: null, customerConfirmedDate: null, customerConfirmedBy: null, customerConfirmationNote: null })
     if (input.note !== undefined) data.note = input.note?.trim() || null
     if (input.cancelled !== undefined && input.cancelled !== (old.status === 'CANCELLED')) {
       // 先标成取消 / 设计中，settleTask 再按事实推出准确状态
@@ -209,7 +238,7 @@ export async function updateTask(id: string, input: PatchTaskInput) {
       needs !== old.needsCustomerConfirm ||
       dayOf(newCustomerPlan) !== dayOf(old.customerPlanDate)
     if (datesChanged) await clearAlertKeys(tx, [w7Key(id)])
-    const r = await settleTask(tx, before, id)
+    const r = await settleTask(tx, before, id, processRequirement)
     return { id, ...r, planWarning: planWarning('计划完成日', input.planDate ?? old.planDate, link.node) }
   })
 }
@@ -240,14 +269,14 @@ export async function undoDrawn(id: string, actor: Actor) {
     if (!canDraw(task, actor)) throw new FlowForbidden('只有设计负责人本人或管理员可以撤销设计完成')
     if (!task.drawnDate) throw new FlowError('还没有完成设计')
     if (await isReleased(tx, id)) throw new FlowError('图纸已经发放了，请先作废发放单再撤销设计完成')
-    await tx.drawingTask.update({ where: { id }, data: { drawnDate: null, drawnBy: null, customerConfirmedDate: null, customerConfirmedBy: null } })
+    await tx.drawingTask.update({ where: { id }, data: { drawnDate: null, drawnBy: null, customerConfirmedDate: null, customerConfirmedBy: null, customerConfirmationNote: null } })
     const r = await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, id)
     return { id, ...r }
   })
 }
 
 /** 录客户确认（独立节点）：能看到该工单的人都可以录。要先完成设计；确认日默认今天、不能晚于今天 */
-export async function confirmCustomer(id: string, confirmedDate: Date | null | undefined, actorId: string) {
+export async function confirmCustomer(id: string, confirmedDate: Date | null | undefined, actorId: string, confirmationNote?: string | null) {
   const now = new Date()
   const day = confirmedDate ?? todayDate(now)
   assertNotFuture(day, now, '客户确认日期')
@@ -256,8 +285,9 @@ export async function confirmCustomer(id: string, confirmedDate: Date | null | u
     if (task.status === 'CANCELLED') throw new FlowError('设计任务已取消')
     if (!task.needsCustomerConfirm) throw new FlowError('这个任务不需要客户确认')
     if (!task.drawnDate) throw new FlowError('还没有完成设计，不能录客户确认')
+    if (dateFieldDay(day) < dateFieldDay(task.drawnDate)) throw new FlowError('客户确认日期不能早于实际设计完成日期')
     if (task.customerConfirmedDate) throw new FlowError('客户已经确认过了，请刷新')
-    await tx.drawingTask.update({ where: { id }, data: { customerConfirmedDate: day, customerConfirmedBy: actorId } })
+    await tx.drawingTask.update({ where: { id }, data: { customerConfirmedDate: day, customerConfirmedBy: actorId, customerConfirmationNote: confirmationNote?.trim() || null } })
     await clearAlertKeys(tx, [w7Key(id)])
     const r = await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, id)
     return { id, ...r }
@@ -268,7 +298,7 @@ export async function undoCustomer(id: string) {
   return drawingTx(async (tx) => {
     const task = await lockTask(tx, id)
     if (!task.customerConfirmedDate) throw new FlowError('客户还没有确认')
-    await tx.drawingTask.update({ where: { id }, data: { customerConfirmedDate: null, customerConfirmedBy: null } })
+    await tx.drawingTask.update({ where: { id }, data: { customerConfirmedDate: null, customerConfirmedBy: null, customerConfirmationNote: null } })
     const r = await settleTask(tx, { status: task.status, partIds: task.parts.map((p) => p.partId) }, id)
     return { id, ...r }
   })
@@ -341,9 +371,9 @@ function viewWhere(view: TaskView, today: Date, now: Date): Prisma.DrawingTaskWh
 }
 
 async function techHeadText() {
-  const heads = await prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: TECH_DEPT }, select: { userId: true } })
+  const heads = await prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: 'TECH' }, select: { userId: true } })
   const names = (await loadNames({ user: heads.map((h) => h.userId) })).user
-  return heads.length ? `${TECH_DEPT}（${heads.map((h) => names.get(h.userId) ?? h.userId).join('、')}）` : `${TECH_DEPT}负责人（未设置）`
+  return heads.length ? `${TECH_DEPT_NAME}（${heads.map((h) => names.get(h.userId) ?? h.userId).join('、')}）` : `${TECH_DEPT_NAME}负责人（未设置）`
 }
 
 async function describeTasks(rows: TaskWithParts[], now: Date, viewer?: Actor) {
@@ -369,6 +399,12 @@ async function describeTasks(rows: TaskWithParts[], now: Date, viewer?: Actor) {
     return {
       ...t,
       statusText: DRAWING_STATUS_TEXT[t.status],
+      presentation: drawingPresentation({
+        ...t, planDate: dateFieldDay(t.planDate), drawnDate: t.drawnDate ? dateFieldDay(t.drawnDate) : null,
+        customerPlanDate: t.customerPlanDate ? dateFieldDay(t.customerPlanDate) : null,
+        customerConfirmedDate: t.customerConfirmedDate ? dateFieldDay(t.customerConfirmedDate) : null,
+        released: mine.some(r => r.status === 'ACTIVE'), alertLevel: levelOf.get(w7Key(t.id)) ?? null,
+      }, shanghaiDay(now)),
       /** 工艺模块（10-27）：料单 / 工艺状态的一句话（列表状态列下面显示） */
       processText: processSummary(t),
       partIds: links.map((p) => p.partId),
@@ -402,14 +438,16 @@ const PARTS_INCLUDE = { parts: { select: { partId: true } } } as const
 async function taskStats(scope: Prisma.DrawingTaskWhereInput[], now: Date) {
   const today = todayDate(now)
   const count = (w: Prisma.DrawingTaskWhereInput) => prisma.drawingTask.count({ where: { AND: [...scope, w] } })
-  const [pending, drawn, customerPending, overdue, dueThisWeek] = await Promise.all([
+  const [pending, drawn, customerPending, overdue, dueThisWeek, done, cancelled] = await Promise.all([
     count({ status: 'PENDING' }),
     count({ status: 'DRAWN' }),
     count({ status: 'CUSTOMER_PENDING' }),
     count(overdueWhere(today)),
     count(dueThisWeekWhere(now)),
+    count({ status: 'DONE' }),
+    count({ status: 'CANCELLED' }),
   ])
-  return { pending, drawn, customerPending, overdue, dueThisWeek }
+  return { pending, drawn, customerPending, overdue, dueThisWeek, done, cancelled }
 }
 
 /**

@@ -18,7 +18,11 @@ describe('停工日下的后向余量', () => {
     const calendar = new Set(off)
     const estimates = estimateNodes(input, today, delivery, calendar)
     expect(estimates[0]?.slackDays).toBe(slack)
-    const shifted = (days: number) => estimateNodes([{ ...input[0]!, manualDoneDay: addDays(expectedA, days) }, input[1]!], today, delivery, calendar)[1]!.expectedDay
+    // Decomposed nodes finish through their tasks; manual marks cannot override active work.
+    const shifted = (days: number) => estimateNodes([
+      { ...input[0]!, tasks: input[0]!.tasks.map(task => ({ ...task, done: true, doneDay: addDays(expectedA, days) })) },
+      input[1]!,
+    ], today, delivery, calendar)[1]!.expectedDay
     expect(shifted(slack) <= delivery).toBe(true)
     expect(shifted(slack + 1) > delivery).toBe(true)
   })

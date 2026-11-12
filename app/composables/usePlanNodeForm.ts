@@ -8,6 +8,7 @@ import type { PlanData } from './usePlanData'
 export interface PlanNodeForm {
   name: string
   dept: BusinessDeptCode
+  requiresProcess: boolean
   phase: string
   startDate: Dayjs | undefined
   planDate: Dayjs | undefined
@@ -25,7 +26,7 @@ export interface PlanNodeForm {
 export function usePlanNodeForm(data: Ref<PlanData | null>) {
   const editOpen = ref(false)
   const editing = ref<PlanNodeRow | null>(null)
-  const form = reactive<PlanNodeForm>({ name: '', dept: 'PROJECT', phase: '', startDate: undefined, planDate: undefined, seq: undefined, parentId: undefined, depMode: 'default', preds: [], note: '', reason: '' })
+  const form = reactive<PlanNodeForm>({ name: '', dept: 'PROJECT', requiresProcess: true, phase: '', startDate: undefined, planDate: undefined, seq: undefined, parentId: undefined, depMode: 'default', preds: [], note: '', reason: '' })
   /** 编辑节点；新增时 under = 加在哪个节点下面（子节点，责任部门、计划完成日先按上级填） */
   function openEdit(n: PlanNodeRow | null, under: PlanNodeRow | null = null) {
     editing.value = n
@@ -33,6 +34,7 @@ export function usePlanNodeForm(data: Ref<PlanData | null>) {
     Object.assign(form, {
       name: n?.name ?? '',
       dept: n?.dept ?? under?.dept ?? 'PROJECT',
+      requiresProcess: n?.requiresProcess ?? under?.requiresProcess ?? true,
       phase: n?.phase ?? (n ? '' : (last?.phase ?? '')),
       startDate: n?.startDate ? dayjs(n.startDate) : undefined,
       planDate: n ? dayjs(n.planDate) : under ? dayjs(under.planDate) : undefined,

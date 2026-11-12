@@ -20,14 +20,15 @@ export async function acquireLease(name: string, holder: string, leaseMs: number
   const real = new Date()
   await prisma.jobLock.createMany({ data: [{ name, lockedUntil: new Date(0) }], skipDuplicates: true })
   const r = await prisma.jobLock.updateMany({
-    where: { name, lockedUntil: { lt: real } },
+    where: { name, lockedUntil: { lte: real } },
     data: { lockedUntil: new Date(real.getTime() + leaseMs), holder },
   })
   return r.count === 1
 }
 
 export async function releaseLease(name: string, holder: string) {
-  await prisma.jobLock.updateMany({ where: { name, holder }, data: { lockedUntil: new Date(), holder: null } })
+  // A released lease is immediately available, including within the same millisecond.
+  await prisma.jobLock.updateMany({ where: { name, holder }, data: { lockedUntil: new Date(0), holder: null } })
 }
 
 /**

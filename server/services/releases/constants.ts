@@ -3,7 +3,8 @@ import { RELEASE_TYPE_TEXT as SHARED_RELEASE_TYPE_TEXT, RECEIPT_STATUS_TEXT as S
 /** 发放签收（R9）的常量与纯函数：文案、编号、按"部门 + 角色"选人、设计变更影响的工序。不碰数据库，便于单测。 */
 import type { NotifyRoleKind, ReceiptStatus, ReleaseType, StepStatus } from '@prisma/client'
 import { shanghaiDay } from '../alerts/rules'
-import { BUSINESS_DEPT_NAME } from '../../../shared/business-depts'
+import { BUSINESS_DEPT_NAME, departmentLabel, legacyBusinessDeptCode } from '../../../shared/business-depts'
+import { NOTIFY_ROLE_TEXT } from '../../../shared/notify-roles'
 import { MAX_RELEASE_ATTACHMENTS } from '../../../shared/upload-policy'
 
 export const TYPE_TEXT: Record<ReleaseType, string> = SHARED_RELEASE_TYPE_TEXT
@@ -11,20 +12,14 @@ export const STEP_STATUS_TEXT: Record<StepStatus, string> = SHARED_STEP_STATUS_T
 export const RECEIPT_STATUS_TEXT: Record<ReceiptStatus, string> = SHARED_RECEIPT_STATUS_TEXT
 
 /** 待办：接收人签收（refType = receipt，refId = 签收记录 ID） */
-export const SIGN_RELEASE = 'SIGN_RELEASE'
+export { SIGN_RELEASE } from '../../../shared/todo-actions'
 /** 待办：生产经理、外协专员确认设计变更影响（refType = release，refId = 发放单 ID） */
-export const CONFIRM_CHANGE = 'CONFIRM_CHANGE'
+export { CONFIRM_CHANGE } from '../../../shared/todo-actions'
 
 /** "生产经理" = 生产部的部门负责人（notify_role 里 DEPT_HEAD + 部门名称"生产部"，与异常默认责任部门一致） */
-export const PRODUCTION_DEPT = BUSINESS_DEPT_NAME.PRODUCTION
+export const PRODUCTION_DEPT_NAME = BUSINESS_DEPT_NAME.PRODUCTION
 
-export const ROLE_TEXT: Record<NotifyRoleKind, string> = {
-  OUTSOURCE_COORDINATOR: '外协专员',
-  DEPT_HEAD: '部门负责人',
-  PROJECT_DEPT_HEAD: '项目部负责人',
-  LEADER: '分管领导',
-  FINANCE: '财务',
-}
+export const ROLE_TEXT: Record<NotifyRoleKind, string> = NOTIFY_ROLE_TEXT
 
 /** 一次发放最多多少接收人（防误选"全部人员"时一下发几百条待办） */
 export const MAX_RECIPIENTS = 200
@@ -49,13 +44,13 @@ export interface GroupContext {
    * 在职、未删除的用户，部门已换成名称（没有部门的 deptName 为 null）；
    * businessDeptName 是经"部门对照"换算后的业务部门名称（没有对照时同 QMS 名称），选"生产部"时班组里的人也算
    */
-  users: { id: string; deptName: string | null; businessDeptName?: string | null }[]
+  users: { id: string; deptName: string | null; departmentKey?: string | null }[]
   /** 通知角色（设置页"人员与角色"）；部门负责人的 department 是业务部门名称 */
   roles: { role: NotifyRoleKind; userId: string; department: string | null }[]
 }
 
 export function groupLabel(g: RecipientGroup): string {
-  return [g.department, g.role ? ROLE_TEXT[g.role] : '全部人员'].filter(Boolean).join(' · ')
+  return [departmentLabel(g.department), g.role ? ROLE_TEXT[g.role] : '全部人员'].filter(Boolean).join(' · ')
 }
 
 /**
@@ -64,9 +59,11 @@ export function groupLabel(g: RecipientGroup): string {
  * 不在职（不在 ctx.users 里）的人跳过。
  */
 export function resolveGroup(g: RecipientGroup, ctx: GroupContext): string[] {
-  const dept = g.department?.trim() || null
+  // Existing saved recipient groups use external names; normalize only this input boundary.
+  const source = g.department?.trim() || null
+  const dept = legacyBusinessDeptCode(source) ?? source
   const active = new Map(ctx.users.map((u) => [u.id, u]))
-  const inDept = (u: GroupContext['users'][number] | undefined) => !!u && (u.deptName === dept || (!!u.businessDeptName && u.businessDeptName === dept))
+  const inDept = (u: GroupContext['users'][number] | undefined) => !!u && (u.deptName === source || u.departmentKey === dept)
   let ids: string[]
   if (!g.role) {
     ids = dept ? ctx.users.filter(inDept).map((u) => u.id) : []

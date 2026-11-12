@@ -6,8 +6,8 @@
  */
 export type BusinessDeptCode = 'TECH' | 'PROCESS' | 'PURCHASE' | 'PRODUCTION' | 'QUALITY' | 'FINANCE' | 'PROJECT'
 
-/** 业务部门显示名 */
-export const BUSINESS_DEPT_NAME: Readonly<Record<BusinessDeptCode, string>> = {
+/** Immutable historical aliases used only at external/legacy identity boundaries. */
+const LEGACY_BUSINESS_DEPT_NAME: Readonly<Record<BusinessDeptCode, string>> = {
   TECH: '技术部',
   PROCESS: '工艺部',
   PURCHASE: '采购部',
@@ -16,6 +16,21 @@ export const BUSINESS_DEPT_NAME: Readonly<Record<BusinessDeptCode, string>> = {
   FINANCE: '财务部',
   PROJECT: '项目部',
 }
+
+/** Rename departments here; keep historical aliases above unchanged for existing identities. */
+export const BUSINESS_DEPT_NAME: Readonly<Record<BusinessDeptCode, string>> = { ...LEGACY_BUSINESS_DEPT_NAME }
+
+export const isBusinessDeptCode = (value: string | null | undefined): value is BusinessDeptCode =>
+  !!value && Object.prototype.hasOwnProperty.call(BUSINESS_DEPT_NAME, value)
+
+/** Unmapped QMS departments retain their historical identity until an explicit mapping exists. */
+export function legacyBusinessDeptCode(name: string | null | undefined): BusinessDeptCode | null {
+  return (Object.keys(LEGACY_BUSINESS_DEPT_NAME) as BusinessDeptCode[]).find(code => LEGACY_BUSINESS_DEPT_NAME[code] === name) ?? null
+}
+
+/** Persisted identities are codes; unknown legacy values remain visible for manual mapping. */
+export const departmentLabel = (value: string | null | undefined): string =>
+  isBusinessDeptCode(value) ? BUSINESS_DEPT_NAME[value] : value ?? ''
 
 /** 下拉选项（项目部在前，与总计划节点的常见顺序一致） */
 export const BUSINESS_DEPT_OPTIONS: { value: BusinessDeptCode; label: string }[] = (

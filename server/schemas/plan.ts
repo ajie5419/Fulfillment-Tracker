@@ -23,6 +23,7 @@ const phase = z
 const nodeFields = {
   name: z.string().trim().min(1, '请填写节点名称').max(191, '节点名称最多 191 字'),
   dept: businessDept,
+  requiresProcess: z.boolean().optional(),
   planDate: day,
   /** 阶段（分组显示） */
   phase,
@@ -48,7 +49,7 @@ export const woQuery = z.object({ workOrderNumber: wo })
 export const woBody = z.object({ workOrderNumber: wo }).strict()
 export const generateBody = z.object({ workOrderNumber: wo, templateId: z.string().min(1, '请选择模板').max(191) }).strict()
 export const newNodeBody = z.object({ workOrderNumber: wo, ...nodeFields }).strict()
-export const patchNodeBody = z.object(nodeFields).partial().strict()
+export const patchNodeBody = z.object(nodeFields).partial().extend({ linkedDates: z.boolean().optional(), preview: z.boolean().optional(), previewToken: z.string().length(64).optional() }).strict()
 export const deleteNodeBody = z.object({ reason }).strict()
 export const rejectBody = z.object({ reason: z.string().trim().min(1, '请写退回原因').max(500, '原因最多 500 字') }).strict()
 export const completeBody = z.object({ date: day.nullish() }).strict()
@@ -62,6 +63,7 @@ export const templateBody = z
         z.object({
           name: z.string().trim().min(1, '请填写节点名称').max(191, '节点名称最多 191 字'),
           dept: businessDept,
+          requiresProcess: z.boolean().optional(),
           daysBeforeDelivery: z.number().int('天数要是整数').min(-365, '天数太小').max(2000, '天数太大'),
           phase,
           /** 工期（天）：空 = 不设开始日 */

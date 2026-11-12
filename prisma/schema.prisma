@@ -54,6 +54,7 @@ model QmsWorkOrder {
   /// QMS 乐观锁版本号：履约修改 / 取消工单时原样带回，不符 QMS 返回 409；旧 QMS 同步不输出时为空
   version         Int?
   deliveryDate    DateTime
+  effectiveTime   DateTime?
   status          String   @db.VarChar(20) // OPEN / IN_PROGRESS / COMPLETED / CANCELLED
   isDeleted       Boolean  @default(false)
   updatedAt       DateTime // QMS 的 updatedAt，不是本地写入时间
@@ -847,6 +848,8 @@ model DrawingTask {
   /// 部件名称（如"主梁总图"、"液压系统"）
   componentName         String             @db.VarChar(191)
   ownerId               String?            @db.VarChar(64)
+  /// Optional planned start; existing tasks retain an unspecified start.
+  startDate             DateTime?
   /// 计划完成日（设计）、实际设计完成日；日期字段，存当天 UTC 零点
   planDate              DateTime
   drawnDate             DateTime?
@@ -856,6 +859,8 @@ model DrawingTask {
   customerPlanDate      DateTime?
   customerConfirmedDate DateTime?
   customerConfirmedBy   String?            @db.VarChar(64)
+  /// Optional customer response or confirmation reference.
+  customerConfirmationNote String?         @db.VarChar(500)
   status                DrawingTaskStatus  @default(PENDING)
   note                  String?            @db.VarChar(500)
   /// 所属总计划节点（R14，可空；老数据不挂）
@@ -1012,6 +1017,8 @@ model PlanTemplateNode {
   seq                Int
   name               String       @db.VarChar(191)
   dept               BusinessDept
+  /// Copied to plan instances; display-name changes must not change workflow eligibility.
+  requiresProcess    Boolean      @default(true)
   /// 交期前多少天（0 = 交期当天，如"发运"）
   daysBeforeDelivery Int
   /// 阶段（如"图纸设计及文件下发""采购"；页面按阶段分组显示）
@@ -1068,6 +1075,8 @@ model PlanNode {
   seq             Int
   name            String           @db.VarChar(191)
   dept            BusinessDept
+  /// Manufacturing-document eligibility, independent of the node display name.
+  requiresProcess Boolean          @default(true)
   /// 阶段（如"图纸设计及文件下发""采购"；页面按阶段分组显示，空 = 不分组）
   phase           String?          @db.VarChar(64)
   /// 计划开始日（可选，日期字段）：甘特图画横道；有开始日时前置节点只在晚到"开始日前一天"之后才往后推（中间的空档是余量）

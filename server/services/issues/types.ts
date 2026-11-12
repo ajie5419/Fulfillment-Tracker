@@ -17,6 +17,7 @@ export interface Actor {
 export interface PermContext {
   actor: Actor
   roles: NotifyRole[]
+  /** QMS department ID to stable business identity; unknown legacy identities remain intact. */
   deptName: Map<string, string>
   pmOf: Map<string, string | null>
 }

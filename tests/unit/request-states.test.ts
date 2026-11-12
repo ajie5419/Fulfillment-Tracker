@@ -33,6 +33,7 @@ beforeEach(() => {
   vi.stubGlobal('dayAfter', () => '2026-11-01')
   vi.stubGlobal('apiError', (e: Error) => e.message)
   vi.stubGlobal('LAYOUT_OPTIONS', [])
+  vi.stubGlobal('DRAWING_LAYOUT_OPTIONS', [])
   vi.stubGlobal('RELEASE_TYPE_TEXT', {})
 })
 afterEach(() => { cleanups.splice(0).forEach(fn => fn()); vi.unstubAllGlobals() })
@@ -46,10 +47,10 @@ const stat = Vue.defineComponent({ props: ['value'], setup: (props, { slots }) =
 async function page(file: string) {
   const component = loadComponent(file, { '#shared/workbench': workbench, '#shared/drawing': drawing, '#shared/mobile-todo': mobileTodo })
   const wrapper = mount(Vue.defineComponent({ setup: () => () => Vue.h(Vue.Suspense, null, { default: () => Vue.h(component) }) }), {
-    global: { plugins: [(app: Vue.App) => Object.assign(app.config.globalProperties, { apiError: (e: unknown) => e instanceof Error ? e.message : '', canDo: () => false, LAYOUT_OPTIONS: [] })], stubs: Object.fromEntries([
+    global: { plugins: [(app: Vue.App) => Object.assign(app.config.globalProperties, { apiError: (e: unknown) => e instanceof Error ? e.message : '', canDo: () => false, LAYOUT_OPTIONS: [], DRAWING_LAYOUT_OPTIONS: [] })], stubs: Object.fromEntries([
       ...['ACard', 'AResult', 'AAlert', 'ATabs', 'ATabPane', 'AEmpty', 'VanEmpty', 'VanTabs'].map(name => [name, container]),
       ['AButton', button], ['VanButton', button], ['UiStatCard', stat],
-      ...['ASpin', 'VanLoading', 'ASelect', 'ASegmented', 'ACheckbox', 'ATable', 'UiHelpTip', 'UiRefreshButton', 'UiRing', 'VanTab', 'VanNavBar', 'DrawingEditModal', 'ReleaseCreateModal', 'ReleaseDrawer', 'KittingNodeModal', 'AModal', 'AInputSearch', 'ATag', 'ASpace', 'KittingNodeCard', 'KittingShortageTable', 'WoLink', 'PlanNodeCell', 'VanTag', 'MCard', 'UiStatusIcon', 'UiWoGroupHead', 'UiStatusTag', 'UiDatePicker', 'AFormItem', 'AForm', 'AProgress', 'NuxtLink', 'AMenuItem', 'AMenu', 'ADropdown'].map(name => [name, true]),
+      ...['ASpin', 'VanLoading', 'ASelect', 'ASegmented', 'ACheckbox', 'ATable', 'UiHelpTip', 'UiRefreshButton', 'UiRing', 'VanTab', 'VanNavBar', 'DrawingEditModal', 'DrawingKanbanBoard', 'ReleaseCreateModal', 'ReleaseDrawer', 'KittingNodeModal', 'AModal', 'AInputSearch', 'ATag', 'ASpace', 'KittingNodeCard', 'KittingShortageTable', 'WoLink', 'PlanNodeCell', 'VanTag', 'MCard', 'UiStatusIcon', 'UiWoGroupHead', 'UiStatusTag', 'UiDatePicker', 'AFormItem', 'AForm', 'AProgress', 'NuxtLink', 'AMenuItem', 'AMenu', 'ADropdown'].map(name => [name, true]),
     ]) },
   })
   cleanups.push(() => wrapper.unmount())

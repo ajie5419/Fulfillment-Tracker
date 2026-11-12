@@ -1,7 +1,7 @@
 import type { IssueCategory } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
-import { deptIdsResolvingTo, loadDeptIndex, representativeDeptId, resolveDeptName } from '../auth/departments'
-import { DEFAULT_DEPT_NAME } from './constants'
+import { deptIdsResolvingTo, loadDeptIndex, representativeDeptId, resolveDeptIdentity } from '../auth/departments'
+import { DEFAULT_DEPT } from './constants'
 import type { Db } from './types'
 
 // ───────────── 责任部门与负责人 ─────────────
@@ -18,8 +18,8 @@ export async function deptHeadOf(db: Db, deptName: string | null | undefined) {
  * 责任部门：名称正好是该业务部门的 QMS 部门；没有时取设置页"部门对照"里对到它的部门（departments.representativeDeptId）
  */
 export async function defaultResponsible(db: Db, category: IssueCategory) {
-  const name = DEFAULT_DEPT_NAME[category]
-  return { deptId: representativeDeptId(name, await loadDeptIndex()), userId: await deptHeadOf(db, name) }
+  const department = DEFAULT_DEPT[category]
+  return { deptId: representativeDeptId(department, await loadDeptIndex()), userId: await deptHeadOf(db, department) }
 }
 
 /**
@@ -32,7 +32,7 @@ export async function myDepartmentIds(userId: string): Promise<string[]> {
     prisma.qmsUser.findUnique({ where: { id: userId }, select: { departmentId: true } }),
     loadDeptIndex(),
   ])
-  const own = resolveDeptName(user?.departmentId, index)
+  const own = resolveDeptIdentity(user?.departmentId, index)
   const names = [...new Set([...roles.map((r) => r.department), own].filter((x): x is string => !!x))]
   const ids = names.flatMap((n) => deptIdsResolvingTo(n, index))
   return [...new Set([...ids, ...(user?.departmentId ? [user.departmentId] : [])])]

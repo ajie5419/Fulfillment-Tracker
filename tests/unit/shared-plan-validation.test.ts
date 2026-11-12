@@ -44,7 +44,7 @@ describe('计划校验搬移前现状：真实服务私有校验 / 编辑器 com
     const action = old ? '改计划日期' : '加节点'
     for (const reason of [undefined, null, '', '  ', '原因']) {
       expect(validation.isPlanAdjustmentReasonMissing(required, reason)).toBe(required && !reason?.trim())
-      // updateNode 只在完成日变化时调用 needReason；开始日、部门等变化不要求原因。
+      // This matrix isolates finish-date changes; start-only edits are tested below.
       const check = () => { if (!old || (plan !== undefined && plan !== old.planDate)) server().needReason(published, reason, action) }
       if (required && !reason?.trim()) expect(check).toThrow(`总计划已发布，${action}要写调整原因`)
       else expect(check).not.toThrow()
@@ -54,5 +54,13 @@ describe('计划校验搬移前现状：真实服务私有校验 / 编辑器 com
   it('删除已发布节点也要求原因，草稿删除不要求；保持原中文提示', () => {
     expect(() => server().needReason(true, ' ', '删节点')).toThrow('总计划已发布，删节点要写调整原因')
     expect(() => server().needReason(false, null, '删节点')).not.toThrow()
+  })
+
+  it('requires a published reason for setting, moving or clearing the start date', () => {
+    expect(validation.planAdjustmentNeedsReason(true, '2026-12-31', '2026-12-31', null, '2026-12-01')).toBe(true)
+    expect(validation.planAdjustmentNeedsReason(true, '2026-12-31', undefined, '2026-12-01', '2026-12-02')).toBe(true)
+    expect(validation.planAdjustmentNeedsReason(true, '2026-12-31', undefined, '2026-12-01', null)).toBe(true)
+    expect(validation.planAdjustmentNeedsReason(true, '2026-12-31', undefined, '2026-12-01', undefined)).toBe(false)
+    expect(validation.planAdjustmentNeedsReason(false, '2026-12-31', undefined, null, '2026-12-01')).toBe(false)
   })
 })

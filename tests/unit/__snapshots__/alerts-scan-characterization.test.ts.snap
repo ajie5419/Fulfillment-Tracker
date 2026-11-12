@@ -281,6 +281,9 @@ exports[`alerts scan 搬移前特征 > W4 固定查询、命中集合、级别�
   ],
   "result": [
     {
+      "departmentKeys": [
+        "TECH",
+      ],
       "deptNames": [
         "技术部",
       ],
@@ -524,7 +527,7 @@ exports[`alerts scan 搬移前特征 > W6 固定查询、命中集合、级别�
               "role": "FINANCE",
             },
             {
-              "department": "采购部",
+              "department": "PURCHASE",
               "role": "DEPT_HEAD",
             },
           ],
@@ -541,6 +544,9 @@ exports[`alerts scan 搬移前特征 > W6 固定查询、命中集合、级别�
   ],
   "result": [
     {
+      "departmentKeys": [
+        "PURCHASE",
+      ],
       "deptNames": [
         "采购部",
       ],
@@ -604,7 +610,7 @@ exports[`alerts scan 搬移前特征 > W7 固定查询、命中集合、级别�
           "userId": true,
         },
         "where": {
-          "department": "技术部",
+          "department": "TECH",
           "role": "DEPT_HEAD",
         },
       },
@@ -619,6 +625,9 @@ exports[`alerts scan 搬移前特征 > W7 固定查询、命中集合、级别�
   ],
   "result": [
     {
+      "departmentKeys": [
+        "TECH",
+      ],
       "deptNames": [
         "技术部",
       ],
@@ -684,7 +693,7 @@ exports[`alerts scan 搬移前特征 > W8 固定查询、命中集合、级别�
           "userId": true,
         },
         "where": {
-          "department": "生产部",
+          "department": "PRODUCTION",
           "role": "DEPT_HEAD",
         },
       },
@@ -699,6 +708,9 @@ exports[`alerts scan 搬移前特征 > W8 固定查询、命中集合、级别�
   ],
   "result": [
     {
+      "departmentKeys": [
+        "PRODUCTION",
+      ],
       "deptNames": [
         "生产部",
       ],
@@ -814,6 +826,7 @@ exports[`alerts scan 搬移前特征 > W9 固定查询、命中集合、级别�
   ],
   "result": [
     {
+      "departmentKeys": [],
       "deptNames": [],
       "key": "W9:plan:WO",
       "level": "RED",
@@ -829,6 +842,9 @@ exports[`alerts scan 搬移前特征 > W9 固定查询、命中集合、级别�
       "workOrderNumber": "WO",
     },
     {
+      "departmentKeys": [
+        "TECH",
+      ],
       "deptNames": [
         "技术部",
       ],
@@ -846,6 +862,9 @@ exports[`alerts scan 搬移前特征 > W9 固定查询、命中集合、级别�
       "workOrderNumber": "WO",
     },
     {
+      "departmentKeys": [
+        "TECH",
+      ],
       "deptNames": [
         "技术部",
       ],
@@ -863,6 +882,9 @@ exports[`alerts scan 搬移前特征 > W9 固定查询、命中集合、级别�
       "workOrderNumber": "WO",
     },
     {
+      "departmentKeys": [
+        "TECH",
+      ],
       "deptNames": [
         "技术部",
       ],
@@ -916,6 +938,9 @@ exports[`alerts scan 搬移前特征 > W10 固定查询、命中集合、级别�
   ],
   "result": [
     {
+      "departmentKeys": [
+        "PRODUCTION",
+      ],
       "deptNames": [
         "生产部",
       ],
@@ -952,6 +977,7 @@ exports[`alerts scan 搬移前特征 > W11 固定查询、命中集合、级别�
   ],
   "result": [
     {
+      "departmentKeys": undefined,
       "deptNames": [
         "生产部",
       ],

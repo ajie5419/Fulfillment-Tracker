@@ -1,6 +1,6 @@
 import { prisma } from '../../utils/prisma'
 import { FlowError } from '../flow/errors'
-import { loadDeptIndex, resolveDeptName } from '../auth/departments'
+import { loadDeptIndex, resolveDeptIdentity } from '../auth/departments'
 import { departmentNames } from '../flow/names'
 import { MAX_RECIPIENTS, type RecipientGroup, groupLabel, resolveGroup } from './constants'
 import { uniq } from './calculation'
@@ -29,7 +29,7 @@ export async function resolveRecipients(userIds: string[], groups: RecipientGrou
       users: users.map((u) => ({
         id: u.id,
         deptName: (u.departmentId && depts.get(u.departmentId)) || null,
-        businessDeptName: resolveDeptName(u.departmentId, index),
+        departmentKey: resolveDeptIdentity(u.departmentId, index),
       })),
       roles,
     }

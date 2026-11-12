@@ -20,7 +20,6 @@ import { loadNames } from '../flow/names'
 import { PURCHASE_STATUS_TEXT, num, todayDate } from '../purchases/constants'
 import { planNodeLabels, planWarning, resolvePlanNode } from '../plan/links'
 import {
-  KITTING_DEPT,
   type KitCount,
   countKit,
   isIncomplete,
@@ -100,7 +99,7 @@ export interface EditorContext {
 export async function editorContext(actor: Actor, db: Db = prisma): Promise<EditorContext> {
   // 生产经理身份单独查：管理员同时是生产经理时，"我负责的"还要带上没指定负责人的节点
   const [head, managed] = await Promise.all([
-    db.notifyRole.findFirst({ where: { role: 'DEPT_HEAD', department: KITTING_DEPT, userId: actor.userId }, select: { id: true } }),
+    db.notifyRole.findFirst({ where: { role: 'DEPT_HEAD', department: 'PRODUCTION', userId: actor.userId }, select: { id: true } }),
     // 管理员什么都能改，不用再查自己管哪些工单
     actor.isAdmin ? [] : db.workOrderExt.findMany({ where: { projectManagerId: actor.userId }, select: { workOrderNumber: true } }),
   ])
@@ -392,7 +391,7 @@ export async function loadKits(nodes: NodeWithLinks[], now: Date): Promise<Map<s
 // ───────────── 查询 ─────────────
 
 async function productionHeadText() {
-  const heads = await prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: KITTING_DEPT }, select: { userId: true } })
+  const heads = await prisma.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: 'PRODUCTION' }, select: { userId: true } })
   const names = (await loadNames({ user: heads.map((h) => h.userId) })).user
   return heads.length ? `生产经理（${heads.map((h) => names.get(h.userId) ?? h.userId).join('、')}）` : '生产经理（未设置）'
 }

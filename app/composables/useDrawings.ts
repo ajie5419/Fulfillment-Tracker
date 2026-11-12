@@ -9,54 +9,11 @@ export const DRAWING_STATUS_TYPE = { PENDING: 'primary', DRAWN: 'success', CUSTO
 
 export type DrawingStatusKey = keyof typeof DRAWING_STATUS_TEXT
 
-/** 设计任务（GET /api/drawings 的 rows、GET /api/drawings/:id） */
-export interface DrawingRow {
-  id: string
-  workOrderNumber: string
-  componentName: string
-  ownerId: string | null
-  ownerName: string | null
-  ownerText: string
-  planDate: string
-  drawnDate: string | null
-  drawnByName: string | null
-  needsCustomerConfirm: boolean
-  customerPlanDate: string | null
-  customerConfirmedDate: string | null
-  customerConfirmedByName: string | null
-  status: DrawingStatusKey
-  statusText: string
-  /** 工艺模块：料单 / 工艺状态 */
-  materialStatus: 'NOT_STARTED' | 'DRAFTING' | 'REVISING' | 'ISSUED'
-  processStatus: 'NONE' | 'DRAFTING' | 'REVISING' | 'ISSUED'
-  /** 料单未开始 · 工艺无 */
-  processText: string
-  note: string | null
-  partIds: string[]
-  parts: { id: string; name: string }[]
-  /** 所属总计划节点（R14） */
-  planNodeId: string | null
-  /** 所属总计划节点的序号、名称（列表"总计划节点"列） */
-  planNode: { id: string; seq: number; name: string } | null
-  overdue: boolean
-  releases: { id: string; releaseNo: string; typeText: string; status: 'ACTIVE' | 'VOID'; version: string | null }[]
-  alertLevel: 'REMIND' | 'YELLOW' | 'RED' | null
-  permissions: { markDrawn: boolean; undoDrawn: boolean; confirm: boolean; release: boolean }
-}
-
-export interface DrawingStats {
-  pending: number
-  drawn: number
-  customerPending: number
-  overdue: number
-  dueThisWeek: number
-}
-
-export interface DrawingResult {
-  id: string
-  status: DrawingStatusKey
-  readySent: number
-}
+/** Derive JSON fields from the endpoint, including dates and confirmation details. */
+export type DrawingList = ClientResponse<'/api/drawings', 'GET'>
+export type DrawingRow = DrawingList['rows'][number]
+export type DrawingStats = DrawingList['stats']
+export type DrawingResult = ClientResponse<'/api/drawings/:id/drawn', 'POST'>
 
 /** 端点契约来自原有 schema 与响应，调用者不能指定返回类型。 */
 export function drawingSend<P extends `/api/drawings${string}`, M extends ClientMethod<P> & ('POST' | 'PATCH')>(url: P, method: M, ...args: ClientBodyArgs<P, M>): Promise<ClientResponse<P, M>>

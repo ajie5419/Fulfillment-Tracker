@@ -142,7 +142,7 @@ describe('issue list completeness', () => {
     if (role === 'reporter') target.reporterId = actor.userId
     if (role === 'department head') {
       target.responsibleDeptId = 'team'
-      roles = [{ userId: actor.userId, role: 'DEPT_HEAD', department: '技术部' } as NotifyRole]
+      roles = [{ userId: actor.userId, role: 'DEPT_HEAD', department: 'TECH' } as NotifyRole]
     }
     if (role === 'project manager') managers.WO = actor.userId
     if (role === 'project department head') roles = [{ userId: actor.userId, role: 'PROJECT_DEPT_HEAD' } as NotifyRole]

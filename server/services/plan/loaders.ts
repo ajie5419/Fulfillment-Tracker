@@ -18,7 +18,7 @@ export async function loadPlanSources(filter: { workOrderNumbers?: string[]; pub
   const [workOrders, drawings, purchases, steps, assemblies, others, deps, offDays] = await Promise.all([
     db.qmsWorkOrder.findMany({ where: { workOrderNumber: { in: wos } }, select: { workOrderNumber: true, deliveryDate: true } }),
     nodeIds.length ? db.drawingTask.findMany({ where: linked, orderBy: { planDate: 'asc' }, select: {
-      id: true, planNodeId: true, componentName: true, status: true, planDate: true, drawnDate: true,
+      id: true, planNodeId: true, componentName: true, ownerId: true, status: true, planDate: true, drawnDate: true,
       needsCustomerConfirm: true, customerPlanDate: true, customerConfirmedDate: true, materialStatus: true, processStatus: true,
     } }) : [],
     nodeIds.length ? db.purchaseLine.findMany({ where: linked, orderBy: { needDate: 'asc' }, select: {
@@ -33,7 +33,7 @@ export async function loadPlanSources(filter: { workOrderNumbers?: string[]; pub
   const today = shanghaiDay(now)
   const [kits, names] = await Promise.all([
     loadKitCounts(assemblies as NodeWithLinks[], db),
-    loadNames({ process: steps.map((s) => s.processId), user: others.map((t) => t.ownerId) }),
+    loadNames({ process: steps.map((s) => s.processId), user: [...others.map((t) => t.ownerId), ...drawings.map((d) => d.ownerId)] }),
   ])
   return { plans, wos, nodes, workOrders, drawings, purchases, steps, assemblies, others, deps, today, kits, names, offDays: new Set(offDays.map((row) => row.date.toISOString().slice(0, 10))) }
 }

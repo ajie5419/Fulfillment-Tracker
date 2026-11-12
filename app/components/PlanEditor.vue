@@ -35,7 +35,7 @@ const { templateId, generate, publish } = usePlanGeneration({ wo, data, template
 const { editOpen, editing, form, openEdit, predOptions, phaseOptions, parentOptions, formParent, defaultPredText, isSummary } = usePlanNodeForm(data)
 const startLate = computed(() => isPlanStartLate(form.startDate?.isValid() ? form.startDate.format('YYYY-MM-DD') : undefined, form.planDate?.isValid() ? form.planDate.format('YYYY-MM-DD') : undefined))
 /** 发布后：加节点、改计划日都要写原因 */
-const needReason = computed(() => planAdjustmentNeedsReason(published.value, editing.value?.planDate ?? null, form.planDate?.format('YYYY-MM-DD')))
+const needReason = computed(() => planAdjustmentNeedsReason(published.value, editing.value?.planDate ?? null, form.planDate?.format('YYYY-MM-DD'), editing.value?.startDate, form.startDate?.format('YYYY-MM-DD') ?? null))
 const { saveNode } = usePlanNodeSave({ wo, published, editing, form, editOpen, startLate, needReason, act })
 
 // ───── 删除 ─────

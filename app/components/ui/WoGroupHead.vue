@@ -6,7 +6,7 @@
 const props = withDefaults(
   defineProps<{
     no: string
-    nodes?: { id: string; seq: number; name: string }[]
+    nodes?: { id: string; seq: number; name: string; code?: string }[]
     done: number
     total: number
     /** 完成度的说法：到货、设计完成、已签收、已付 */
@@ -25,7 +25,7 @@ const pct = computed(() => (props.total ? Math.round((props.done / props.total) 
     <span class="wo"><WoLink :no="no" /></span>
     <span v-if="nodes.length" class="nodes">
       总计划节点
-      <template v-for="(n, i) in nodes.slice(0, 2)" :key="n.id"><template v-if="i">、</template><WoLink :no="no" :node="n.id" :text="`${n.seq}. ${n.name}`" /></template>
+      <template v-for="(n, i) in nodes.slice(0, 2)" :key="n.id"><template v-if="i">、</template><WoLink :no="no" :node="n.id" :text="`${n.code ?? n.seq} ${n.name}`" /></template>
       <template v-if="nodes.length > 2"> 等 {{ nodes.length }} 个</template>
     </span>
     <span class="prog" :title="`${label} ${done}/${total}`">

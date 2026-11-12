@@ -12,6 +12,7 @@ import { prisma } from '../../utils/prisma'
 import { FlowError } from '../flow/errors'
 import { clearAlertKeys } from '../alerts/clear'
 import { lateWarning, w9SplitKey } from './constants'
+import { outlineCodes, treeOrder } from './graph'
 
 type Db = Pick<Prisma.TransactionClient, 'planNode' | 'workOrderPlan' | 'alert'>
 
@@ -63,12 +64,21 @@ export function planWarning(what: string, recordDate: Date | null | undefined, n
 }
 
 /**
- * 列表"总计划节点"列（前端改版第一轮）：一批节点 ID → 序号、名称（设计任务、采购行、装配节点列表共用；一次查询）。
+ * Resolve labels from complete work-order trees so filtered lists retain the
+ * same outline codes as the plan editor. Shared by design, purchase and assembly lists.
  * 节点已删的不在结果里（外键置空，正常不会出现）。
  */
-export async function planNodeLabels(ids: (string | null | undefined)[]): Promise<Map<string, { id: string; seq: number; name: string }>> {
+export async function planNodeLabels(ids: (string | null | undefined)[]): Promise<Map<string, { id: string; seq: number; name: string; code: string }>> {
   const uniq = [...new Set(ids.filter((x): x is string => !!x))]
   if (!uniq.length) return new Map()
-  const nodes = await prisma.planNode.findMany({ where: { id: { in: uniq } }, select: { id: true, seq: true, name: true } })
-  return new Map(nodes.map((n) => [n.id, n]))
+  // Number against the full work-order tree, never a filtered task subset.
+  const selected = await prisma.planNode.findMany({ where: { id: { in: uniq } }, select: { workOrderNumber: true } })
+  const nodes = await prisma.planNode.findMany({ where: { workOrderNumber: { in: [...new Set(selected.map((n) => n.workOrderNumber))] } }, orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }], select: { id: true, seq: true, name: true, workOrderNumber: true, parentId: true, phase: true } })
+  const result = new Map<string, { id: string; seq: number; name: string; code: string }>()
+  for (const wo of new Set(nodes.map((n) => n.workOrderNumber))) {
+    const ordered = treeOrder(nodes.filter((n) => n.workOrderNumber === wo).map((n) => ({ ...n, parent: n.parentId })))
+    const codes = outlineCodes(ordered)
+    for (const n of ordered) if (uniq.includes(n.id)) result.set(n.id, { id: n.id, seq: n.seq, name: n.name, code: codes.get(n.id) ?? String(n.seq) })
+  }
+  return result
 }

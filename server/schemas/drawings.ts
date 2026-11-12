@@ -1,5 +1,6 @@
 /** 设计任务（R11）接口的 zod 片段。日期一律用 schemas/flow.ts 的 day（拒绝 2026-02-30 这类不存在的日期） */
 import { z } from 'zod'
+import { MAX_CUSTOMER_CONFIRMATION_NOTE_LENGTH } from '../../shared/drawing'
 import { day } from './flow'
 
 const id = z.string().min(1).max(191)
@@ -11,6 +12,7 @@ const taskFields = {
   /** 设计负责人；空 = 技术部负责人 */
   ownerId: z.string().max(64).nullish(),
   planDate: day,
+  startDate: day.nullish(),
   /** 所属总计划节点（R14）；工单已发布总计划时新建必填 */
   planNodeId: z.string().max(191).nullish(),
   needsCustomerConfirm: z.boolean(),
@@ -39,6 +41,7 @@ export const patchTaskBody = z
 
 /** 标记设计完成 / 录客户确认：日期默认今天 */
 export const dateBody = z.object({ date: day.nullish() }).strict()
+export const confirmBody = dateBody.extend({ note: z.string().trim().max(MAX_CUSTOMER_CONFIRMATION_NOTE_LENGTH).nullish() })
 
 export const listQuery = z.object({
   workOrderNumber: z.string().max(64).optional(),

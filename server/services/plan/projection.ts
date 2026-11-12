@@ -6,7 +6,6 @@ import { shanghaiDay } from '../alerts/rules'
 import { BUSINESS_DEPT_NAME } from '../auth/departments'
 import { type RoleContext, canOperate, isDeptHead } from '../auth/permissions'
 import { DRAWING_STATUS_TEXT, drawingLink } from '../drawings/constants'
-import { processSummary } from '../process/constants'
 import { MODE_TEXT, type NameMaps } from '../flow/names'
 import { kittingLink } from '../kitting/constants'
 import { PURCHASE_STATUS_TEXT, purchaseLink } from '../purchases/constants'
@@ -24,9 +23,9 @@ export function projectPlanTasks({ drawings, purchases, steps, assemblies, other
       id: d.id,
       nodeId: d.planNodeId!,
       name: d.componentName,
+      ...(d.ownerId ? { owner: { id: d.ownerId, name: names.user.get(d.ownerId) ?? d.ownerId } } : {}),
       dateLabel: d.drawnDate && d.needsCustomerConfirm && !d.customerConfirmedDate && d.customerPlanDate ? '客户确认计划日' : '计划完成日',
-      // 工艺模块（10-27）：设计任务后面带上料单、工艺状态，工单详情里一眼看到工艺跟上没有
-      statusText: d.status === 'CANCELLED' ? DRAWING_STATUS_TEXT[d.status] : `${DRAWING_STATUS_TEXT[d.status]} · ${processSummary(d)}`,
+      statusText: DRAWING_STATUS_TEXT[d.status],
       link: drawingLink(d.id),
       facts: drawingFacts(d),
     })),
@@ -112,6 +111,7 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
       projectName: wo.projectName,
       customerName: wo.customerName,
       deliveryDate: data.deliveryDay,
+      effectiveTime: wo.effectiveTime ? day(wo.effectiveTime) : null,
       projectManagerId: ext?.projectManagerId ?? null,
       projectManagerName: user(ext?.projectManagerId),
     },
@@ -122,7 +122,7 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
     delayedNodes: data.forecast.delayedNodes,
     sourceNodes: data.forecast.sourceNodes,
     /** W9 工单级（预计交期晚于合同交期）的活动预警级别 */
-    planAlertLevel: planAlert?.level ?? null,
+    planAlertLevel: published ? planAlert?.level ?? null : null,
     unlinked,
     network,
     /** 没有后续节点接着的节点（最后一个除外）：它们晚了不影响预计交期，多半是漏连了前置关系 */
@@ -149,6 +149,7 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
         code: codeOf.get(n.id)!,
         name: n.name,
         dept: n.dept,
+        requiresProcess: n.requiresProcess,
         deptText: BUSINESS_DEPT_NAME[n.dept],
         note: n.note,
         /** 上级节点（子节点）；子节点数 */
@@ -190,8 +191,8 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
         doneCount: e.doneCount,
         overdueCount: e.overdueCount,
         lateCount: e.lateCount,
-        alertLevel: levelOf.get(w9Key(n.id)) ?? null,
-        confirmAlertLevel: levelOf.get(w9ConfirmKey(n.id)) ?? null,
+        alertLevel: published ? levelOf.get(w9Key(n.id)) ?? null : null,
+        confirmAlertLevel: published ? levelOf.get(w9ConfirmKey(n.id)) ?? null : null,
         tasks: tasks.map((t) => {
           const te = e.tasks.find((x) => x.kind === t.kind && x.id === t.id)!
           return {
@@ -223,7 +224,8 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
         /** 能在这个节点下分解（加其他任务；4 类记录另看 canCreate） */
         canSplit,
         canConfirm: published && n.confirmStatus !== null && (canOperate(ctx, 'planConfirm', { dept: n.dept }) || mine.has(n.id)),
-        canComplete: canOperate(ctx, 'planNodeDone', { workOrderNumber, dept: n.dept }),
+        // Cancelled records remain visible but no longer own node completion.
+        canComplete: !e.taskCount && !e.children.length && canOperate(ctx, 'planNodeDone', { workOrderNumber, dept: n.dept }),
       }
     }),
     changeLogs: logs.map((l) => ({

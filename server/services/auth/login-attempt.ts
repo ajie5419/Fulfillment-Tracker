@@ -4,8 +4,9 @@
  */
 import type { PrismaClient } from '@prisma/client'
 import { codeChallengeS256, createCodeVerifier, randomToken, sha256Hex } from './pkce'
+import { AUTH_COOKIES } from './cookie-names'
 
-export const LOGIN_STATE_COOKIE = 'ft_login_state'
+export const LOGIN_STATE_COOKIE = AUTH_COOKIES.loginState
 export const LOGIN_TTL_MS = 10 * 60 * 1000
 
 type Db = Pick<PrismaClient, 'loginAttempt'>

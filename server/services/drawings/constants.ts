@@ -7,7 +7,7 @@ import { DAY_MS, type RuleThreshold, dateFieldDay, dayDiff, overdueDaysExcluding
 import { BUSINESS_DEPT_NAME } from '../../../shared/business-depts'
 
 /** 默认责任部门：设计任务没指定设计负责人时派给这个部门的负责人（notify_role DEPT_HEAD + 部门名称）；W7 黄色起通知它的负责人 */
-export const TECH_DEPT = BUSINESS_DEPT_NAME.TECH
+export const TECH_DEPT_NAME = BUSINESS_DEPT_NAME.TECH
 
 export const DRAWING_STATUS_TEXT: Record<DrawingTaskStatus, string> = SHARED_DRAWING_STATUS_TEXT
 

@@ -18,6 +18,7 @@ import { extname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { parse } from 'vue/compiler-sfc'
+import { inspectArchitecture } from './architecture-rules.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const BASELINE = 'scripts/quality-baseline.json'
@@ -130,6 +131,7 @@ export function analyzeProject(root = ROOT) {
   const findings = { explicitAny: [], doubleAssertions: [], nonNullAssertions: [] }
   const dictionaries = new Map()
   const oversizedFiles = []
+  const architectureViolations = []
   const resolutionCache = ts.createModuleResolutionCache(root, (file) => file)
   const compilerOptions = { moduleResolution: ts.ModuleResolutionKind.Bundler, allowJs: true, resolveJsonModule: true }
 
@@ -192,6 +194,7 @@ export function analyzeProject(root = ROOT) {
     const lines = lineCount(content)
     if (lines > LINE_LIMIT) oversizedFiles.push({ file, lines })
     if (!CODE.test(file)) continue
+    architectureViolations.push(...inspectArchitecture(file, content))
     if (extname(file) !== '.vue') {
       scanScript(file, content)
       continue
@@ -211,7 +214,7 @@ export function analyzeProject(root = ROOT) {
     runtimeCycleGroups: runtimeCycles.length,
     oversizedFiles: oversizedFiles.length,
   }
-  return { version: VERSION, lineLimit: LINE_LIMIT, counts, runtimeCycles, oversizedFiles, findings, duplicateDictionaries }
+  return { version: VERSION, lineLimit: LINE_LIMIT, counts, runtimeCycles, oversizedFiles, findings, duplicateDictionaries, architectureViolations }
 }
 
 function validateBaseline(baseline) {
@@ -227,7 +230,7 @@ function validateBaseline(baseline) {
 
 export function compareBaseline(current, baseline) {
   validateBaseline(baseline)
-  const violations = []
+  const violations = [...(current.architectureViolations ?? [])]
   for (const [key, label] of Object.entries(LABELS)) {
     if (current.counts[key] <= baseline.counts[key]) continue
     violations.push(`${label}: ${current.counts[key]} > ${baseline.counts[key]}`)
@@ -249,7 +252,8 @@ function main() {
   const current = analyzeProject()
   const path = resolve(ROOT, BASELINE)
   if (args.includes('--write-baseline')) {
-    const { findings, duplicateDictionaries, ...baseline } = current
+    if (current.architectureViolations.length) throw new Error(`架构规则违规不能写入基线：\n${current.architectureViolations.join('\n')}`)
+    const { findings, duplicateDictionaries, architectureViolations, ...baseline } = current
     writeFileSync(path, `${JSON.stringify(baseline, null, 2)}\n`)
     console.log(`已写入 ${BASELINE}（整改后计数下降时随 PR 提交）`)
   }

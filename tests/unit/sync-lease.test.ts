@@ -44,6 +44,7 @@ beforeEach(() => {
     const row = locks.get(where.name)
     if (!row || (where.holder !== undefined && row.holder !== where.holder)) return { count: 0 }
     if (where.lockedUntil?.lt && !(row.lockedUntil < where.lockedUntil.lt)) return { count: 0 }
+    if (where.lockedUntil?.lte && !(row.lockedUntil <= where.lockedUntil.lte)) return { count: 0 }
     if (where.lockedUntil?.gt && !(row.lockedUntil > where.lockedUntil.gt)) return { count: 0 }
     Object.assign(row, data)
     return { count: 1 }
@@ -82,6 +83,22 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('sync lease ownership', () => {
+  it('runs consecutive jobs without advancing the clock after release', async () => {
+    const now = Date.now()
+    expect(await withLease('scan-rules', LEASE_MS, async () => 'first')).toEqual({ skipped: false, value: 'first' })
+    expect(await withLease('scan-rules', LEASE_MS, async () => 'second')).toEqual({ skipped: false, value: 'second' })
+    expect(Date.now()).toBe(now)
+    expect(locks.get('scan-rules')?.holder).toBeNull()
+  })
+
+  it('allows a replacement to acquire at the exact expiry boundary', async () => {
+    expect(await acquireLease('sync-qms', 'old', LEASE_MS)).toBe(true)
+    vi.setSystemTime(Date.now() + LEASE_MS)
+    expect(await acquireLease('sync-qms', 'new', LEASE_MS)).toBe(true)
+    await releaseLease('sync-qms', 'old')
+    expect(locks.get('sync-qms')?.holder).toBe('new')
+  })
+
   it('skips a competing run without fetching or releasing the current owner', async () => {
     await acquireLease('sync-qms', 'owner', LEASE_MS)
     const fetchImpl = vi.fn()

@@ -1,15 +1,11 @@
 /**
- * 业务部门（权限方案 R13 第一节）：用户的 QMS 部门 → 7 个业务部门之一，全仓只在这里换算。
- *
- *   1. 本部门在 dept_mapping 里有对照 → 对照的业务部门；
- *   2. 没有时沿 parentId 向上找最近有对照的上级（班组、科室挂在大部门下面的情况）；
- *   3. 都没有时退回 QMS 部门名称本身（部门名正好叫"生产部"等的，和没有对照表之前一样生效）。
- *
- * 部门负责人（notify_role.department）、异常默认责任部门、预警升级里的"责任部门负责人"都用这里换算出的名称比对。
- * 显示给人看的"所在部门"仍用 QMS 原名称（flow/names.ts 的 userDepartmentNames）。
+ * Resolve QMS departments to stable business identities in one place.
+ * The nearest explicit mapping wins; historical aliases apply only when unmapped.
+ * Unknown external names remain intact to preserve legacy scope and notifications.
+ * Permissions and notifications compare identities; display labels are separate.
  */
 import type { BusinessDept } from '@prisma/client'
-import { BUSINESS_DEPT_NAME as SHARED_BUSINESS_DEPT_NAME, type BusinessDeptCode } from '../../../shared/business-depts'
+import { BUSINESS_DEPT_NAME as SHARED_BUSINESS_DEPT_NAME, departmentLabel, isBusinessDeptCode, legacyBusinessDeptCode, type BusinessDeptCode } from '../../../shared/business-depts'
 import { prisma } from '../../utils/prisma'
 
 export type { BusinessDept }
@@ -24,12 +20,6 @@ void _sameCodes
 
 export const BUSINESS_DEPTS = Object.keys(BUSINESS_DEPT_NAME) as BusinessDept[]
 export const BUSINESS_DEPT_NAMES = Object.values(BUSINESS_DEPT_NAME)
-
-/** 名称 → 业务部门（不是 7 个之一的返回 null，算"其他"） */
-export function businessDeptOfName(name: string | null | undefined): BusinessDept | null {
-  if (!name) return null
-  return BUSINESS_DEPTS.find((d) => BUSINESS_DEPT_NAME[d] === name) ?? null
-}
 
 /** 向上找上级时最多走几层（防止数据成环或层级异常时死循环） */
 export const MAX_DEPT_DEPTH = 10
@@ -48,42 +38,50 @@ export interface DeptIndex {
 }
 
 /**
- * 部门 ID → 用于比对的部门名称（纯函数）：有对照（本部门或最近的上级）时是业务部门名，否则是 QMS 部门名称本身。
- * 部门不在 depts 里（未同步）且没有对照时返回 null。
+ * Resolve a department label for display only. Identity comparisons must use
+ * resolveDeptIdentity so renaming a business department cannot alter access.
  */
 export function resolveDeptName(deptId: string | null | undefined, index: DeptIndex): string | null {
+  const identity = resolveDeptIdentity(deptId, index)
+  return identity ? departmentLabel(identity) : null
+}
+
+/** Resolve stable business codes; preserve unmapped external department names for legacy access. */
+export function resolveDeptIdentity(deptId: string | null | undefined, index: DeptIndex): string | null {
   if (!deptId) return null
   const seen = new Set<string>()
   let cur: string | null = deptId
   for (let depth = 0; cur && depth <= MAX_DEPT_DEPTH && !seen.has(cur); depth++) {
     seen.add(cur)
     const mapped = index.mapping.get(cur)
-    if (mapped) return BUSINESS_DEPT_NAME[mapped]
+    if (mapped) return mapped
     cur = index.depts.get(cur)?.parentId ?? null
   }
-  return index.depts.get(deptId)?.name ?? null
+  const name = index.depts.get(deptId)?.name
+  return legacyBusinessDeptCode(name) ?? name ?? null
 }
 
-/** 部门 ID → 业务部门（纯函数）：换算出的名称是 7 个之一时返回，否则 null（"其他"） */
+/** Return a recognized business code, or null for unmapped external departments. */
 export function resolveBusinessDept(deptId: string | null | undefined, index: DeptIndex): BusinessDept | null {
-  return businessDeptOfName(resolveDeptName(deptId, index))
+  const identity = resolveDeptIdentity(deptId, index)
+  return isBusinessDeptCode(identity) ? identity : null
 }
 
-/** 换算后名称等于 name 的全部 QMS 部门 ID（"本部门"筛选、按业务部门找默认责任部门用） */
-export function deptIdsResolvingTo(name: string, index: DeptIndex): string[] {
-  return [...index.depts.keys()].filter((id) => resolveDeptName(id, index) === name)
+/** Find all QMS department IDs sharing a stable or preserved legacy identity. */
+export function deptIdsResolvingTo(identity: string, index: DeptIndex): string[] {
+  return [...index.depts.keys()].filter((id) => resolveDeptIdentity(id, index) === identity)
 }
 
 /**
- * 业务部门名称 → 作为"责任部门"记在异常上的 QMS 部门 ID（纯函数）：
- * 先找名称正好相同、且换算结果也是它的部门（与没有对照表之前一致）；再找直接对照到它的部门（取上级最少、ID 最小的）。
- * 已删除的部门不选。都没有时 null。
+ * Select an active QMS department ID for an issue's responsible department.
+ * Prefer matching historical aliases to preserve existing assignments, then
+ * explicit mappings ordered by shallowest hierarchy and smallest ID.
  */
-export function representativeDeptId(name: string, index: DeptIndex): string | null {
+export function representativeDeptId(identity: string, index: DeptIndex): string | null {
   const alive = [...index.depts.entries()].filter(([, d]) => !d.isDeleted)
-  const sameName = alive.filter(([id, d]) => d.name === name && resolveDeptName(id, index) === name).map(([id]) => id).sort()
+  const sameName = alive.filter(([id, d]) => (legacyBusinessDeptCode(d.name) ?? d.name) === identity && resolveDeptIdentity(id, index) === identity).map(([id]) => id).sort()
   if (sameName.length) return sameName[0]!
-  const biz = businessDeptOfName(name)
+  const biz = isBusinessDeptCode(identity) ? identity : null
   if (!biz) return null
   const depth = (id: string) => {
     let n = 0
@@ -107,7 +105,7 @@ export async function loadDeptIndex(): Promise<DeptIndex> {
   }
 }
 
-/** 部门 ID → 用于比对的部门名称（批量） */
+/** Batch display-label lookup; authorization must use resolveDeptIdentities. */
 export async function resolveDeptNames(deptIds: (string | null | undefined)[], index?: DeptIndex): Promise<Map<string, string>> {
   const ids = [...new Set(deptIds.filter((x): x is string => !!x))]
   if (!ids.length) return new Map()
@@ -120,7 +118,7 @@ export async function resolveDeptNames(deptIds: (string | null | undefined)[], i
   return out
 }
 
-/** 用户 → 用于比对的部门名称（批量）。没有部门或部门找不到的用户不在结果里 */
+/** Batch display labels by user; omit users without a resolvable department. */
 export async function userDeptNames(userIds: (string | null | undefined)[], index?: DeptIndex): Promise<Map<string, string>> {
   const ids = [...new Set(userIds.filter((x): x is string => !!x))]
   if (!ids.length) return new Map()
@@ -138,5 +136,29 @@ export async function userDeptNames(userIds: (string | null | undefined)[], inde
 
 /** 一个用户的业务部门（没有对上的为 null，算"其他"） */
 export async function userBusinessDept(userId: string): Promise<BusinessDept | null> {
-  return businessDeptOfName((await userDeptNames([userId])).get(userId))
+  const identity = (await userDeptIdentities([userId])).get(userId)
+  return isBusinessDeptCode(identity) ? identity : null
+}
+
+export async function resolveDeptIdentities(deptIds: (string | null | undefined)[], index?: DeptIndex): Promise<Map<string, string>> {
+  const ids = [...new Set(deptIds.filter((id): id is string => !!id))]
+  if (!ids.length) return new Map()
+  const idx = index ?? await loadDeptIndex()
+  return new Map(ids.flatMap(id => {
+    const identity = resolveDeptIdentity(id, idx)
+    return identity ? [[id, identity] as const] : []
+  }))
+}
+
+export async function userDeptIdentities(userIds: (string | null | undefined)[], index?: DeptIndex): Promise<Map<string, string>> {
+  const ids = [...new Set(userIds.filter((id): id is string => !!id))]
+  if (!ids.length) return new Map()
+  const [users, idx] = await Promise.all([
+    prisma.qmsUser.findMany({ where: { id: { in: ids } }, select: { id: true, departmentId: true } }),
+    index ?? loadDeptIndex(),
+  ])
+  return new Map(users.flatMap(user => {
+    const identity = resolveDeptIdentity(user.departmentId, idx)
+    return identity ? [[user.id, identity] as const] : []
+  }))
 }

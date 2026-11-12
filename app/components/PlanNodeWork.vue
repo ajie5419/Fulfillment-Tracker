@@ -9,9 +9,10 @@
  */
 import dayjs, { type Dayjs } from 'dayjs'
 import { factoryDay } from '#shared/mobile-todo'
+import { isPlanStartLate } from '#shared/plan-validation'
 import type { CanCreate, PlanNodeRow, PlanTask } from '#shared/plan-view'
 
-const props = withDefaults(defineProps<{ node: PlanNodeRow; wo: string; canCreate: CanCreate; viewOnly?: boolean }>(), { viewOnly: false })
+const props = withDefaults(defineProps<{ node: PlanNodeRow; wo: string; canCreate: CanCreate; viewOnly?: boolean; hideAddButton?: boolean }>(), { viewOnly: false, hideAddButton: false })
 const emit = defineEmits<{ changed: [] }>()
 
 const get = clientRequest
@@ -31,6 +32,7 @@ async function act<T>(fn: () => Promise<T>, ok?: string | ((r: T) => string)) {
 
 // ───── 能做哪些分解（按节点责任部门）─────
 type SplitKey = 'drawing' | 'purchase' | 'assembly' | 'steps'
+const taskKind = ref<SplitKey | 'task'>('task')
 const splitItems = computed<{ key: SplitKey; label: string }[]>(() => {
   if (props.viewOnly) return []
   const c = props.canCreate
@@ -43,6 +45,19 @@ const splitItems = computed<{ key: SplitKey; label: string }[]>(() => {
   return items
 })
 const canAddTask = computed(() => !props.viewOnly && props.node.canSplit)
+const splitOptions = computed(() => [
+  ...splitItems.value.map((it) => ({ value: it.key, label: it.label.replace(/^＋ /, '').replace(/^新建/, '') })),
+  ...(canAddTask.value ? [{ value: 'task' as const, label: '其他任务' }] : []),
+])
+const directTask = computed(() => taskKind.value === 'drawing' || taskKind.value === 'task')
+const savingTask = ref(false)
+const taskStart = ref<string | null>()
+const taskFinish = computed({ get: () => taskForm.planDate?.format('YYYY-MM-DD'), set: (value: string | null | undefined) => { taskForm.planDate = value ? dayjs(value) : undefined } })
+function openSplit() {
+  openTask(null)
+  taskKind.value = splitOptions.value[0]?.value ?? 'task'
+  taskStart.value = props.node.startDate
+}
 const presetNode = computed(() => ({ id: props.node.id, planDate: props.node.planDate }))
 const recordOpen = ref<'drawing' | 'purchase' | 'assembly' | null>(null)
 function onSplit(key: SplitKey) {
@@ -55,11 +70,15 @@ function recordSaved() {
 }
 
 // ───── 其他任务：新建 / 修改 / 删除 ─────
+// Parent refs are resolved during async setup; expose actions before suspending.
+const hasSplitAction = computed(() => canAddTask.value || splitItems.value.length > 0)
+defineExpose({ openSplit, hasSplitAction })
 const { data: master } = await useMaster()
 const taskOpen = ref(false)
 const taskEditing = ref<PlanTask | null>(null)
 const taskForm = reactive<{ name: string; ownerId: string | undefined; planDate: Dayjs | undefined; note: string }>({ name: '', ownerId: undefined, planDate: undefined, note: '' })
 function openTask(t: PlanTask | null) {
+  taskKind.value = 'task'
   taskEditing.value = t
   Object.assign(taskForm, { name: t?.name ?? '', ownerId: t?.ownerId ?? undefined, planDate: dayjs(t?.planDate ?? props.node.planDate), note: t?.note ?? '' })
   taskOpen.value = true
@@ -72,15 +91,25 @@ const ownerOptions = computed(() =>
 )
 const taskLate = computed(() => !!taskForm.planDate && taskForm.planDate.format('YYYY-MM-DD') > props.node.planDate)
 async function saveTask() {
+  if (savingTask.value) return
+  if (!directTask.value && taskKind.value !== 'task' && taskKind.value !== 'drawing') {
+    taskOpen.value = false
+    return onSplit(taskKind.value)
+  }
   if (!taskForm.name.trim()) return message.warning('请填写任务名称')
   if (!taskForm.ownerId) return message.warning('请选择责任人')
   if (!taskForm.planDate) return message.warning('请选择计划完成日')
+  if (taskKind.value === 'drawing' && isPlanStartLate(taskStart.value, taskForm.planDate.format('YYYY-MM-DD'))) return message.warning('计划开始日不能晚于计划完成日')
   const body = { name: taskForm.name, ownerId: taskForm.ownerId, planDate: taskForm.planDate.format('YYYY-MM-DD'), note: taskForm.note || null }
   const t = taskEditing.value
+  savingTask.value = true
   const ok = await act(
-    () => (t ? send(`/api/plan/tasks/${t.id}`, { method: 'PATCH', body }) : send(`/api/plan/nodes/${props.node.id}/tasks`, { method: 'POST', body })),
-    t ? '已保存' : '已新增，责任人会收到待办',
+    () => taskKind.value === 'drawing'
+      ? send('/api/drawings', { method: 'POST', body: { workOrderNumber: props.wo, planNodeId: props.node.id, componentName: body.name, ownerId: body.ownerId, startDate: taskStart.value ?? null, planDate: body.planDate, note: body.note, partIds: [], needsCustomerConfirm: false } })
+      : (t ? send(`/api/plan/tasks/${t.id}`, { method: 'PATCH', body }) : send(`/api/plan/nodes/${props.node.id}/tasks`, { method: 'POST', body })),
+    t ? '已保存' : '已分解并指派责任人',
   )
+  savingTask.value = false
   if (ok?.planWarning) message.warning(ok.planWarning)
   if (ok) taskOpen.value = false
 }
@@ -149,76 +178,80 @@ const stepSelection = computed(() => ({
   getCheckboxProps: (r: StepOpt) => ({ disabled: r.planNodeId === props.node.id }),
 }))
 
-const taskColumns = [
-  { title: '分解的任务', key: 'name' },
-  { title: '类型', dataIndex: 'kindText', width: 84 },
-  { title: '责任人', key: 'owner', width: 90 },
-  { title: '计划完成', key: 'date', width: 150 },
-  { title: '状态', key: 'status', width: 150 },
-  { title: '', key: 'ops', width: 150 },
-]
 </script>
 
 <template>
-  <div class="work">
-    <a-table v-if="node.tasks.length" class="ft-table" :columns="taskColumns" :data-source="node.tasks" :row-key="(t: PlanTask) => `${t.kind}:${t.id}`" size="small" :pagination="false">
-      <template #bodyCell="{ column: c, record: t }">
-        <template v-if="c.key === 'name'">
+  <div v-if="node.tasks.length || !hideAddButton" class="work">
+    <div v-if="node.tasks.length" class="task-list">
+      <div v-for="t in node.tasks" :key="`${t.kind}:${t.id}`" class="task-row">
+        <div class="task-main">
+          <span class="kind-tag">{{ t.kindText }}</span>
           <template v-if="t.kind === 'task'">
-            {{ t.name }}
-            <div v-if="t.note" class="muted">{{ t.note }}</div>
+            <span class="task-name">{{ t.name }}</span>
+            <span v-if="t.note" class="muted task-note">{{ t.note }}</span>
           </template>
-          <NuxtLink v-else :to="t.link">{{ t.name }}</NuxtLink>
-        </template>
-        <template v-else-if="c.key === 'owner'">{{ t.ownerName ?? '—' }}</template>
-        <template v-else-if="c.key === 'date'">
-          <span :class="{ late: t.lateForNode && !t.done }">{{ t.planDate ?? '未填' }}</span>
-          <span v-if="t.lateForNode && !t.done && !t.excluded" class="late small"> 晚于节点</span>
-          <div v-if="t.kind !== 'task'" class="muted">{{ t.dateLabel }}</div>
-        </template>
-        <template v-else-if="c.key === 'status'">
-          <span v-if="t.excluded" class="muted">{{ t.statusText }}（不计）</span>
-          <template v-else-if="t.done">
-            <UiStatusTag tone="done">{{ t.statusText }}</UiStatusTag>
-            <div class="muted">{{ t.doneDate }}</div>
-          </template>
-          <template v-else>
-            <UiStatusTag v-if="t.overdue" tone="late">逾期</UiStatusTag>
-            <span v-else>{{ t.kind === 'task' ? '未完成' : t.statusText }}</span>
-            <div v-if="t.expectedDate && t.expectedDate !== t.planDate" class="muted">预计 {{ t.expectedDate }}</div>
-          </template>
-        </template>
-        <template v-else-if="c.key === 'ops'">
-          <a-space v-if="t.kind === 'task'" :size="0" wrap>
-            <a-button v-if="t.canDone && !t.done" type="link" size="small" @click="openTaskDone(t as PlanTask)">完成</a-button>
-            <a-button v-if="t.canDone && t.done" type="link" size="small" @click="undoTask(t as PlanTask)">撤销完成</a-button>
-            <template v-if="!viewOnly && t.canEdit">
-              <a-button type="link" size="small" @click="openTask(t as PlanTask)">修改</a-button>
-              <a-button type="link" size="small" danger @click="deleteTask(t as PlanTask)">删除</a-button>
-            </template>
-          </a-space>
-        </template>
-      </template>
-    </a-table>
-    <div v-else class="empty muted">{{ viewOnly ? '还没有分解：由责任部门在“部门计划”里接收后分解' : '还没有分解任务' }}</div>
+          <NuxtLink v-else :to="t.link" class="task-name task-link">{{ t.name }}</NuxtLink>
+        </div>
 
-    <div v-if="canAddTask || splitItems.length" class="adds">
-      <a-button v-if="canAddTask" class="add" @click="openTask(null)">＋ 新增任务（名称 / 责任人 / 日期）</a-button>
-      <a-button v-for="it in splitItems" :key="it.key" class="add" @click="onSplit(it.key)">{{ it.label }}</a-button>
-      <UiHelpTip v-if="node.dept === 'TECH' || node.dept === 'PURCHASE'" label="已有记录怎么关联">已经建好的设计任务、采购行：在“设计任务”“采购到货”里编辑它，把“所属总计划节点”选成这个节点即可。</UiHelpTip>
+        <div class="task-meta">
+          <span class="task-owner" title="责任人">{{ t.ownerName ?? '—' }}</span>
+          <span class="task-date" :class="{ late: t.lateForNode && !t.done }" title="计划完成日">
+            {{ t.planDate ?? '未填' }}
+            <span v-if="t.lateForNode && !t.done && !t.excluded" class="late small">晚于节点</span>
+          </span>
+          <span class="task-status">
+            <span v-if="t.excluded" class="muted">{{ t.statusText }}（不计）</span>
+            <template v-else-if="t.done">
+              <UiStatusTag tone="done">{{ t.statusText }}{{ t.doneDate ? ` · ${t.doneDate.slice(5)}` : '' }}</UiStatusTag>
+            </template>
+            <template v-else>
+              <UiStatusTag v-if="t.overdue" tone="late">逾期{{ t.expectedDate && t.expectedDate !== t.planDate ? ` · 预计 ${t.expectedDate.slice(5)}` : '' }}</UiStatusTag>
+              <span v-else class="status-pill">{{ t.kind === 'task' ? '未完成' : t.statusText }}</span>
+            </template>
+          </span>
+          <div v-if="t.kind === 'task' && (t.canDone || (!viewOnly && t.canEdit))" class="task-ops">
+            <a-button v-if="t.canDone && !t.done" size="small" @click="openTaskDone(t as PlanTask)">完成</a-button>
+            <a-button v-if="t.canDone && t.done" size="small" @click="undoTask(t as PlanTask)">撤销</a-button>
+            <template v-if="!viewOnly && t.canEdit">
+              <a-button size="small" @click="openTask(t as PlanTask)">修改</a-button>
+              <a-button size="small" class="op-del" @click="deleteTask(t as PlanTask)">删除</a-button>
+            </template>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <a-modal v-model:open="taskOpen" :title="taskEditing ? `修改任务：${taskEditing.name}` : `分解：${node.code} ${node.name}`" @ok="saveTask">
+    <div v-else-if="!hideAddButton" class="empty-bar">
+      <span class="muted">{{ viewOnly ? '还没有分解任务' : '暂未分解任务' }}</span>
+      <a-button v-if="hasSplitAction" size="small" class="add-btn" @click="openSplit">＋ 分解任务</a-button>
+    </div>
+
+    <div v-if="node.tasks.length && !hideAddButton && hasSplitAction" class="work-foot">
+      <a-button size="small" class="add-btn" @click="openSplit">＋ 追加任务</a-button>
+    </div>
+  </div>
+
+    <a-modal v-model:open="taskOpen" :title="taskEditing ? `修改任务：${taskEditing.name}` : `分解任务：${node.code} ${node.name}`" :ok-text="directTask ? '保存并指派' : '继续填写'" :confirm-loading="savingTask" :closable="!savingTask" :mask-closable="!savingTask" :cancel-button-props="{ disabled: savingTask }" @ok="saveTask">
       <a-form layout="vertical">
+        <a-form-item v-if="!taskEditing" label="任务类型">
+          <a-select v-model:value="taskKind" :options="splitOptions" :disabled="savingTask" />
+          <div class="muted" v-if="taskKind === 'drawing'">保存后显示在本节点、设计任务和责任人的工作台；图纸关联、客户确认要求可在设计任务中补充。</div>
+          <div class="muted" v-else-if="taskKind === 'task'">用于会议、资料整理等辅助工作，不进入设计、采购等专项流程。</div>
+        </a-form-item>
+        <template v-if="directTask">
         <a-form-item label="任务名称" required><a-input v-model:value="taskForm.name" :maxlength="191" placeholder="如：坡口加工、BOM 编制" /></a-form-item>
         <a-form-item label="责任人（会收到待办）" required>
           <a-select v-model:value="taskForm.ownerId" show-search option-filter-prop="label" :options="ownerOptions" placeholder="选择责任人" />
         </a-form-item>
+        <a-form-item v-if="taskKind === 'drawing'" label="计划开始日">
+          <UiDatePicker v-model:value="taskStart" />
+        </a-form-item>
         <a-form-item label="计划完成日" required>
-          <a-date-picker v-model:value="taskForm.planDate" :allow-clear="false" style="width: 100%" />
+          <UiDatePicker v-model:value="taskFinish" :allow-clear="false" />
           <div v-if="taskLate" class="late small">晚于节点计划日 {{ node.planDate }}，可以保存，项目计划里会标红</div>
         </a-form-item>
         <a-form-item label="备注"><a-input v-model:value="taskForm.note" :maxlength="500" /></a-form-item>
+        </template>
       </a-form>
     </a-modal>
 
@@ -251,16 +284,35 @@ const taskColumns = [
       <PurchaseEditModal :open="recordOpen === 'purchase'" :line="null" :work-order-number="wo" :preset-node="presetNode" @close="recordOpen = null" @done="recordSaved" />
       <KittingNodeModal :open="recordOpen === 'assembly'" :node="null" :work-order-number="wo" :preset-node="presetNode" @close="recordOpen = null" @done="recordSaved" />
     </template>
-  </div>
 </template>
 
 <style scoped>
-.work { display: flex; flex-direction: column; gap: 8px; }
+.work { border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); overflow: hidden; background: var(--ft-fill); }
+.task-list { display: flex; flex-direction: column; }
+.task-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 7px 12px; border-top: 1px solid var(--card-border-subtle); font-size: 13px; font-variant-numeric: tabular-nums; }
+.task-row:first-child { border-top: 0; }
+.task-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.kind-tag { flex: none; padding: 0 6px; height: 20px; line-height: 20px; border-radius: 4px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); color: var(--ft-text-2); font-size: 11px; }
+.task-name { font-weight: 500; color: var(--ft-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-link { color: var(--ft-primary); }
+.task-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-meta { flex: none; display: flex; align-items: center; gap: 16px; white-space: nowrap; }
+.task-owner { min-width: 68px; color: var(--ft-text-2); }
+.task-date { min-width: 82px; color: var(--ft-text-2); }
+.task-status { display: inline-flex; align-items: center; }
+.status-pill { display: inline-block; padding: 0 8px; height: 22px; line-height: 22px; border-radius: 999px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); color: var(--ft-text-2); font-size: 12px; white-space: nowrap; }
+.task-ops { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.op-del { color: var(--ft-text-2); }
+.op-del:hover, .op-del:focus-visible { color: var(--ft-late-text) !important; border-color: var(--ft-late) !important; background: var(--ft-late-bg) !important; }
+.work-foot { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--card-border-subtle); }
+.empty-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; }
 .muted { color: var(--ft-text-2); font-size: 12px; }
 .small { font-size: 12px; }
 .late { color: var(--ft-late-text); }
 .ok { color: var(--ft-done-text); }
-.empty { padding: 4px 0; }
-.adds { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.add { border-style: dashed; }
+.add-btn { border-style: dashed; background: var(--ft-card-bg); }
+@media (max-width: 760px) {
+  .task-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .task-meta { flex-wrap: wrap; gap: 8px 12px; }
+}
 </style>

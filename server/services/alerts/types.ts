@@ -14,6 +14,8 @@ export interface Target {
   watcherIds?: string[]
   /** 黄色起要通知的"责任部门"名称；不给时取责任人所在部门（W4 的责任部门是异常上明确写的） */
   deptNames?: string[]
+  /** Stable department identities for routing, independent of display names. */
+  departmentKeys?: string[]
   /** 计时起点（W3 为承诺返回日） */
   startAt: Date
   /** 按当前时长/日期算出的级别，没到阈值为 null */

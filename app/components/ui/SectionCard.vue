@@ -91,7 +91,7 @@ withDefaults(
   box-shadow: var(--card-keycap-shadow);
   color: var(--ft-text-2);
 }
-.title { margin: 0; font-size: 15px; font-weight: 600; color: var(--ft-text); line-height: 22px; }
+.title { margin: 0; font-size: 16px; font-weight: 600; color: var(--ft-text); line-height: 22px; }
 .sub { margin-top: 2px; font-size: 12px; color: var(--ft-text-2); }
 .extra { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 

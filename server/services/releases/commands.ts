@@ -8,7 +8,7 @@ import { assertReleasable, DrawingTaskNotFoundError, lockTask, settleTask } from
 import { lockMaterialChangeParts, markRevisingByChange, markRevisingByVoid } from '../process/process'
 import { lockParts, refreshPartReady } from '../purchases/purchases'
 import { XLSX_MIME, applyTechBom, type TechBomResult } from '../bom/excel'
-import { CONFIRM_CHANGE, MAX_ATTACHMENTS, PRODUCTION_DEPT, RECEIPT_STATUS_TEXT, SIGN_RELEASE, TYPE_TEXT, partIdsOf, releaseLink, splitAffectedSteps } from './constants'
+import { CONFIRM_CHANGE, MAX_ATTACHMENTS, RECEIPT_STATUS_TEXT, SIGN_RELEASE, TYPE_TEXT, partIdsOf, releaseLink, splitAffectedSteps } from './constants'
 import type { Actor, NewReleaseInput, ChangeImpact } from './types'
 import { uniq } from './calculation'
 import { resolveRecipients } from './recipients'
@@ -63,7 +63,7 @@ async function applyChangeImpact(tx: Tx, release: Release, partIds: string[]): P
   let confirmers: string[] = []
   if (started.length) {
     const roles = await tx.notifyRole.findMany({
-      where: { OR: [{ role: 'OUTSOURCE_COORDINATOR' }, { role: 'DEPT_HEAD', department: PRODUCTION_DEPT }] },
+      where: { OR: [{ role: 'OUTSOURCE_COORDINATOR' }, { role: 'DEPT_HEAD', department: 'PRODUCTION' }] },
       select: { userId: true },
     })
     confirmers = uniq(roles.map((r) => r.userId))
@@ -94,7 +94,7 @@ export const unroutedPartsLink = (workOrderNumber: string) => `/parts?wo=${encod
 async function notifyUnrouted(tx: Prisma.TransactionClient, release: Pick<Release, 'id' | 'releaseNo' | 'workOrderNumber'>, partIds: string[]) {
   const unrouted = await tx.part.count({ where: { id: { in: partIds }, steps: { none: {} } } })
   if (!unrouted) return { unrouted: 0, notified: false }
-  const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: PRODUCTION_DEPT }, select: { userId: true } })
+  const heads = await tx.notifyRole.findMany({ where: { role: 'DEPT_HEAD', department: 'PRODUCTION' }, select: { userId: true } })
   // 只算在职、未停用的负责人：设置里的角色不会随 QMS 停用账号自动删掉
   const candidates = uniq(heads.map((h) => h.userId))
   const users = candidates.length

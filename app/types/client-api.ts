@@ -20,7 +20,7 @@ export interface ClientApi {
   '/api/dev/scan': { POST: Endpoint<typeof import('../../server/api/dev/scan.post').default, import('../../server/api/dev/scan.post').RequestBody, never> }
   '/api/dev/seed': { POST: Endpoint<typeof import('../../server/api/dev/seed.post').default, never, never> }
   '/api/dev/sync': { POST: Endpoint<typeof import('../../server/api/dev/sync.post').default, never, never> }
-  '/api/drawings/:id/confirm': { POST: Endpoint<typeof import('../../server/api/drawings/[id]/confirm.post').default, z.input<typeof import('../../server/schemas/drawings').dateBody>, never> }
+  '/api/drawings/:id/confirm': { POST: Endpoint<typeof import('../../server/api/drawings/[id]/confirm.post').default, z.input<typeof import('../../server/schemas/drawings').confirmBody>, never> }
   '/api/drawings/:id/drawn': { POST: Endpoint<typeof import('../../server/api/drawings/[id]/drawn.post').default, z.input<typeof import('../../server/schemas/drawings').dateBody>, never> }
   '/api/drawings/:id/undo-confirm': { POST: Endpoint<typeof import('../../server/api/drawings/[id]/undo-confirm.post').default, never, never> }
   '/api/drawings/:id/undo-drawn': { POST: Endpoint<typeof import('../../server/api/drawings/[id]/undo-drawn.post').default, never, never> }
@@ -87,6 +87,7 @@ export interface ClientApi {
   '/api/releases/:id/confirm-change': { POST: Endpoint<typeof import('../../server/api/releases/[id]/confirm-change.post').default, z.input<typeof import('../../server/schemas/releases').confirmBody>, never> }
   '/api/releases/:id/void': { POST: Endpoint<typeof import('../../server/api/releases/[id]/void.post').default, never, never> }
   '/api/releases/:id': { GET: Endpoint<typeof import('../../server/api/releases/[id].get').default, never, never> }
+  '/api/releases/recipients-preview': { POST: Endpoint<typeof import('../../server/api/releases/recipients-preview.post').default, z.input<typeof import('../../server/schemas/releases').recipientPreviewBody>, never> }
   '/api/releases': { GET: Endpoint<typeof import('../../server/api/releases/index.get').default, never, import('../../server/api/releases/index.get').RequestQuery>; POST: Endpoint<typeof import('../../server/api/releases/index.post').default, z.input<typeof import('../../server/schemas/releases').newReleaseBody>, never> }
   '/api/releases/stats': { GET: Endpoint<typeof import('../../server/api/releases/stats.get').default, never, import('../../server/api/releases/stats.get').RequestQuery> }
   '/api/settings/dept-mappings/:id': { PUT: Endpoint<typeof import('../../server/api/settings/dept-mappings/[id].put').default, import('../../server/api/settings/dept-mappings/[id].put').RequestBody, never> }

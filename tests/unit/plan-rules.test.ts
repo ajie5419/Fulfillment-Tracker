@@ -136,15 +136,36 @@ describe('节点预计日与顺延 estimateNodes', () => {
     const est = estimateNodes([node('A', '2026-10-25', [task({ planDay: '2026-10-27' })]), node('B', '2026-10-20')], TODAY)
     expect(est[1]).toMatchObject({ expectedDay: '2026-10-28', expectedStartDay: null, delayDays: 8, driver: 'prev' })
   })
-  it('完成的节点（手动优先于自动）：预计 = 实际，后续按实际顺延', () => {
+  it('有任务时忽略历史手动完成：预计 = 自动完成日，后续按实际顺延', () => {
     const est = estimateNodes(
       [node('A', '2026-10-10', [task({ done: true, doneDay: '2026-10-08' })], '2026-10-12'), node('B', '2026-10-30')],
       TODAY,
     )
-    expect(est[0]).toMatchObject({ done: true, doneBy: 'MANUAL', actualDay: '2026-10-12', expectedDay: '2026-10-12', delayDays: 2, driver: 'actual' })
-    expect(est[1]).toMatchObject({ expectedDay: '2026-11-01', delayDays: 2, driver: 'prev' })
+    expect(est[0]).toMatchObject({ done: true, doneBy: 'AUTO', actualDay: '2026-10-08', expectedDay: '2026-10-08', delayDays: -2, driver: 'actual' })
+    expect(est[1]).toMatchObject({ expectedDay: '2026-10-30', delayDays: 0 })
     const auto = estimateNodes([node('A', '2026-10-10', [task({ done: true, doneDay: '2026-10-08' })])], TODAY)[0]
     expect(auto).toMatchObject({ done: true, doneBy: 'AUTO', actualDay: '2026-10-08', delayDays: -2 })
+  })
+  it('新增或撤销有效任务的完成恢复执行中，空节点仍可手动完成', () => {
+    for (const tasks of [[task()], [task({ done: true }), task()], [task({ excluded: true }), task()]]) {
+      expect(estimateNodes([node('A', '2026-10-25', tasks, '2026-10-12')], TODAY)[0]).toMatchObject({ done: false, doneBy: null, actualDay: null })
+    }
+    expect(estimateNodes([node('A', '2026-10-25', [], '2026-10-12')], TODAY)[0]).toMatchObject({ done: true, doneBy: 'MANUAL' })
+    const parent = node('P', '2026-10-25', [], '2026-10-12')
+    const child = { ...node('C', '2026-10-25'), parent: 'P' }
+    expect(estimateNodes([parent, child], TODAY)[0]).toMatchObject({ done: false })
+    expect(estimateNodes([parent, { ...child, manualDoneDay: '2026-10-15' }], TODAY)[0]).toMatchObject({ done: true, doneBy: 'AUTO', actualDay: '2026-10-15' })
+  })
+  it.each(['drawing', 'purchase'] as const)('仅取消的 %s 不自动完成，有历史手动完成时恢复原完成日', (kind) => {
+    const cancelled = [task({ kind, excluded: true, doneDay: '2026-10-18' })]
+    expect(estimateNodes([node('A', '2026-10-25', cancelled)], TODAY)[0]).toMatchObject({ done: false, doneBy: null, actualDay: null, taskCount: 0 })
+    expect(estimateNodes([node('A', '2026-10-25', cancelled, '2026-10-12')], TODAY)[0]).toMatchObject({ done: true, doneBy: 'MANUAL', actualDay: '2026-10-12', expectedDay: '2026-10-12', taskCount: 0 })
+    const active = task({ kind, id: 'active', done: true, doneDay: '2026-10-15' })
+    expect(estimateNodes([node('A', '2026-10-25', [...cancelled, active], '2026-10-12')], TODAY)[0]).toMatchObject({ done: true, doneBy: 'AUTO', actualDay: '2026-10-15', taskCount: 1, doneCount: 1 })
+    const parent = node('P', '2026-10-25', cancelled, '2026-10-12')
+    const child = { ...node('C', '2026-10-25'), parent: 'P' }
+    expect(estimateNodes([parent, child], TODAY)[0]).toMatchObject({ done: false, doneBy: null, actualDay: null })
+    expect(estimateNodes([parent, { ...child, manualDoneDay: '2026-10-15' }], TODAY)[0]).toMatchObject({ done: true, doneBy: 'AUTO', actualDay: '2026-10-15' })
   })
 })
 

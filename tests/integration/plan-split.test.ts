@@ -103,8 +103,8 @@ describe.skipIf(!DB)('部门计划二次分解', () => {
     })
     await db.notifyRole.createMany({
       data: [
-        { role: 'DEPT_HEAD', userId: 'u-techhead', department: '技术部' },
-        { role: 'DEPT_HEAD', userId: 'u-prodhead', department: '生产部' },
+        { role: 'DEPT_HEAD', userId: 'u-techhead', department: 'TECH' },
+        { role: 'DEPT_HEAD', userId: 'u-prodhead', department: 'PRODUCTION' },
         { role: 'PROJECT_DEPT_HEAD', userId: 'u-pdh' },
       ],
     })

@@ -10,7 +10,7 @@ import { CONFIRM_TONE } from '~/utils/plan-status'
  */
 import dayjs from 'dayjs'
 import { factoryDay } from '#shared/mobile-todo'
-import type { DeptPlanNode, DeptPlanView } from '#shared/plan-view'
+import type { CanCreate, DeptPlanNode, DeptPlanView } from '#shared/plan-view'
 
 useHead({ title: '部门计划' })
 const route = useRoute()
@@ -110,6 +110,19 @@ const undoDone = (n: DeptPlanNode) => act(() => send(`/api/plan/nodes/${n.id}/un
 
 const md = (d: string | null) => (d ? d.slice(5) : '')
 const planText = (n: DeptPlanNode) => (n.startDate && n.startDate !== n.planDate ? `${md(n.startDate)} ~ ${md(n.planDate)}` : md(n.planDate))
+
+const workRefs = reactive<Record<string, { openSplit: () => void } | null>>({})
+function setWorkRef(id: string, el: unknown) {
+  workRefs[id] = el as { openSplit: () => void } | null
+}
+function canSplitNode(n: DeptPlanNode, c: CanCreate): boolean {
+  if (n.doneBy === 'MANUAL') return false
+  if (n.canSplit) return true
+  if (n.dept === 'TECH' && c.drawing) return true
+  if (n.dept === 'PURCHASE' && c.purchase) return true
+  if (n.dept === 'PRODUCTION' && (c.route || c.kitting)) return true
+  return false
+}
 </script>
 
 <template>
@@ -130,7 +143,7 @@ const planText = (n: DeptPlanNode) => (n.startDate && n.startDate !== n.planDate
       <UiSectionCard padding="none">
         <template #title>
           <span class="ft-title">部门计划<template v-if="data.deptText"> · {{ data.deptText }}</template>
-            <UiHelpTip label="部门计划说明">项目部发布项目计划后，各部门在这里接收本部门负责的节点：接收后分解任务、指定责任人、给计划完成日（晚于节点日会标红）；做不到就退回并写原因，项目经理会收到提醒。汇总行（有子节点的节点）不用接收，按子节点算。</UiHelpTip>
+            <UiHelpTip label="部门计划说明">项目部发布项目计划后，各部门在这里接收本部门负责的节点：接收后分解任务、指定责任人、给计划完成日（晚于节点日会标红）；做不到就退回并写原因，项目经理会收到提醒。已有设计任务或采购行可在对应页面编辑“所属总计划节点”关联过来。</UiHelpTip>
           </span>
         </template>
         <template #extra>
@@ -152,46 +165,62 @@ const planText = (n: DeptPlanNode) => (n.startDate && n.startDate !== n.planDate
                 · 交期 {{ g.workOrder.deliveryDate ?? '—' }}
                 <template v-if="(g.deliveryDelayDays ?? 0) > 0"> · <span class="late">预计 {{ g.expectedDelivery }}，拖期 {{ g.deliveryDelayDays }} 天</span></template>
                 <template v-if="g.workOrder.projectManagerName"> · 项目经理 {{ g.workOrder.projectManagerName }}</template>
-                <template v-if="g.publishedDay"> · {{ g.publishedByName ?? '' }} {{ g.publishedDay }} 发布</template>
               </span>
             </div>
 
             <div v-for="n in g.shown" :id="`node-${n.id}`" :key="n.id" class="node" :class="{ focus: n.id === data.focusNodeId }">
-              <div class="node-head">
-                <div class="node-main">
-                  <div class="node-title">
-                    <span class="code">{{ n.code }}</span>{{ n.name }}
-                    <span v-if="n.parentName" class="ft-muted small">（{{ n.parentName }} 下）</span>
-                  </div>
-                  <div class="ft-muted small meta">
-                    计划 {{ planText(n) }}
-                    <template v-if="n.preds.length"> · 前置 {{ n.preds.map((p) => `${p.code} ${p.name}`).join('、') }}</template>
-                    <template v-if="!n.done && n.delayDays > 0">
-                      · <span class="late">预计 {{ md(n.expectedDate) }}，晚 {{ n.delayDays }} 天<template v-if="n.upstream && n.pushedBy">（受 {{ n.pushedBy.code }} {{ n.pushedBy.name }} 影响）</template></span>
-                    </template>
-                    <template v-if="n.done"> · 实际完成 {{ n.actualDate }}</template>
-                    <template v-if="n.affects.length"> · 晚了影响 {{ n.affects.length }} 个节点</template>
-                  </div>
-                  <div v-if="n.note" class="ft-muted small">{{ n.note }}</div>
-                  <div v-if="n.confirmStatus === 'REJECTED' && n.rejectReason" class="late small">{{ n.confirmedByName }} 退回：{{ n.rejectReason }}（等项目经理调整）</div>
-                </div>
-                <div class="node-side">
-                  <UiStatusTag v-if="n.done" tone="done">已完成</UiStatusTag>
-                  <UiStatusTag v-else-if="n.confirmStatus" :tone="CONFIRM_TONE[n.confirmStatus]">{{ n.confirmText }}<template v-if="n.confirmStatus === 'CONFIRMED' && n.confirmedByName"> · {{ n.confirmedByName }} {{ md(n.confirmedDay) }}</template></UiStatusTag>
-                  <a-tag v-if="n.confirmAlertLevel && n.confirmStatus === 'PENDING'" color="orange">超时</a-tag>
-                  <template v-if="n.tab === 'pending' && n.canConfirm">
-                    <a-button v-if="n.confirmStatus === 'PENDING'" @click="askReject(n)">退回（写原因）</a-button>
-                    <a-button type="primary" @click="accept(n)">{{ n.confirmStatus === 'REJECTED' ? '改为接收' : '接收并分解' }}</a-button>
-                  </template>
-                  <span v-else-if="n.tab === 'pending'" class="ft-muted small">等部门负责人接收</span>
-                  <template v-if="n.tab !== 'pending' && n.canComplete">
-                    <a-button v-if="!n.done" size="small" @click="openDone(n)">标节点完成</a-button>
-                    <a-button v-else-if="n.doneBy === 'MANUAL'" size="small" @click="undoDone(n)">撤销完成</a-button>
-                  </template>
-                </div>
+              <div class="node-code-col">
+                <span class="code-badge">{{ n.code }}</span>
               </div>
-              <div v-if="n.tab !== 'pending' || justAccepted.includes(n.id)" class="ft-well work">
-                <PlanNodeWork :node="n" :wo="g.workOrder.workOrderNumber" :can-create="g.canCreate" :view-only="n.done" @changed="refresh()" />
+              <div class="node-body">
+                <div class="node-head">
+                  <div class="node-main">
+                    <div class="node-title">
+                      <span>{{ n.name }}</span>
+                      <span v-if="n.parentName" class="parent-tag">{{ n.parentName }}</span>
+                      <span class="ft-muted small meta">
+                        <span>计划 {{ planText(n) }}</span>
+                        <template v-if="n.preds.length"><span class="sep">·</span><span>前置 {{ n.preds.map((p) => `${p.code} ${p.name}`).join('、') }}</span></template>
+                        <template v-if="!n.done && n.delayDays > 0">
+                          <span class="sep">·</span><span class="late">预计 {{ md(n.expectedDate) }}，晚 {{ n.delayDays }} 天<template v-if="n.upstream && n.pushedBy">（受 {{ n.pushedBy.code }} {{ n.pushedBy.name }} 影响）</template><template v-if="n.affects.length"> · 影响 {{ n.affects.length }} 个节点</template></span>
+                        </template>
+                        <template v-if="n.done"><span class="sep">·</span><span>实际完成 {{ n.actualDate }}</span></template>
+                        <template v-if="(n.tab !== 'pending' || justAccepted.includes(n.id)) && !n.tasks.length && !n.done">
+                          <span class="sep">·</span><span class="unsplit-hint">待分解任务</span>
+                        </template>
+                      </span>
+                    </div>
+                    <div v-if="n.note" class="ft-muted small">{{ n.note }}</div>
+                    <div v-if="n.confirmStatus === 'REJECTED' && n.rejectReason" class="late small">{{ n.confirmedByName }} 退回：{{ n.rejectReason }}（等项目经理调整）</div>
+                  </div>
+                  <div class="node-side">
+                    <UiStatusTag v-if="n.done" tone="done">已完成</UiStatusTag>
+                    <UiStatusTag v-else-if="n.confirmStatus && (tab !== 'active' || n.confirmStatus !== 'CONFIRMED')" :tone="CONFIRM_TONE[n.confirmStatus]">{{ n.confirmText }}</UiStatusTag>
+                    <a-tag v-if="n.confirmAlertLevel && n.confirmStatus === 'PENDING'" color="orange">超时</a-tag>
+                    <template v-if="n.tab === 'pending' && n.canConfirm">
+                      <a-button v-if="n.confirmStatus === 'PENDING'" @click="askReject(n)">退回（写原因）</a-button>
+                      <a-button type="primary" @click="accept(n)">{{ n.confirmStatus === 'REJECTED' ? '改为接收' : '接收并分解' }}</a-button>
+                    </template>
+                    <span v-else-if="n.tab === 'pending'" class="ft-muted small">等部门负责人接收</span>
+                    <template v-if="n.tab !== 'pending' || justAccepted.includes(n.id)">
+                      <a-button v-if="canSplitNode(n, g.canCreate)" size="small" class="split-btn" @click="workRefs[n.id]?.openSplit()">{{ n.tasks.length ? '＋ 追加任务' : '＋ 分解任务' }}</a-button>
+                      <template v-if="n.canComplete">
+                        <a-button v-if="!n.done" size="small" @click="openDone(n)">标节点完成</a-button>
+                        <a-button v-else-if="n.doneBy === 'MANUAL'" size="small" @click="undoDone(n)">撤销完成</a-button>
+                      </template>
+                    </template>
+                  </div>
+                </div>
+                <PlanNodeWork
+                  v-if="n.tab !== 'pending' || justAccepted.includes(n.id)"
+                  :ref="(el) => setWorkRef(n.id, el)"
+                  :node="n"
+                  :wo="g.workOrder.workOrderNumber"
+                  :can-create="g.canCreate"
+                  :view-only="n.doneBy === 'MANUAL'"
+                  hide-add-button
+                  @changed="refresh()"
+                />
               </div>
             </div>
           </div>
@@ -214,23 +243,31 @@ const planText = (n: DeptPlanNode) => (n.startDate && n.startDate !== n.planDate
 
 <style scoped>
 .small { font-size: 12px; }
-.late { color: var(--ft-late-text); }
+.late { color: var(--ft-late-text); font-weight: 500; }
 .empty { padding: 40px 0; }
 .group { border-top: 1px solid var(--ft-border); }
 .group:first-child { border-top: 0; }
-.group-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; padding: 12px 20px; background: var(--ft-fill); }
+.group-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 20px; background: var(--ft-fill); border-bottom: 1px solid var(--ft-border); }
 .wo { font-weight: 600; }
 .proj { font-weight: 600; color: var(--ft-text); }
-.node { padding: 14px 20px; border-top: 1px solid var(--ft-border); display: flex; flex-direction: column; gap: 10px; }
+.node { padding: 12px 20px; border-top: 1px solid var(--card-border-subtle); display: flex; align-items: flex-start; gap: 12px; }
+.group > .node:first-of-type { border-top: 0; }
 .node.focus { background: var(--ft-risk-bg); }
-.node-head { display: flex; align-items: flex-start; gap: 16px; }
-.node-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.node-title { font-weight: 600; color: var(--ft-text); }
-.code { display: inline-block; min-width: 40px; margin-right: 6px; color: var(--ft-text-2); font-weight: 500; font-variant-numeric: tabular-nums; }
-.meta { line-height: 1.6; }
-.node-side { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-.work { padding: 12px; }
+.node-code-col { flex: 0 0 42px; padding-top: 1px; }
+.code-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; height: 22px; padding: 0 6px; border-radius: 6px; background: var(--ft-fill); border: 1px solid var(--ft-border); color: var(--ft-text-2); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.node-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.node-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 24px; }
+.node-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.node-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 10px; font-size: 14px; font-weight: 600; color: var(--ft-text); line-height: 1.4; }
+.parent-tag { font-size: 12px; font-weight: 400; color: var(--ft-text-2); padding: 0 7px; height: 19px; line-height: 19px; border-radius: 999px; background: var(--ft-fill); border: 1px solid var(--ft-border); }
+.meta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-weight: 400; line-height: 1.5; }
+.sep { color: var(--ft-border-hover); }
+.unsplit-hint { color: var(--ft-primary-text); font-weight: 500; }
+.node-side { flex: none; display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.split-btn { border-style: dashed; }
 @media (max-width: 760px) {
+  .node { flex-direction: column; gap: 8px; }
+  .node-code-col { flex: none; }
   .node-head { flex-direction: column; }
   .node-side { justify-content: flex-start; }
 }

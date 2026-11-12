@@ -14,7 +14,7 @@ import { prisma } from '../../utils/prisma'
 import { FlowError, FlowHttpError } from '../flow/errors'
 import { isReleaseParty } from '../releases/releases'
 import { XLSX_MIME } from '../bom/excel'
-import { MAX_PHOTO_BYTES, MAX_ATTACHMENT_BYTES, MAX_FILES_PER_REQUEST, MAX_BOM_BYTES } from '../../../shared/upload-policy'
+import { MAX_PHOTO_BYTES, MAX_ATTACHMENT_BYTES, MAX_FILES_PER_REQUEST, MAX_BOM_BYTES, formatUploadLimit } from '../../../shared/upload-policy'
 
 export { XLSX_MIME }
 
@@ -61,7 +61,11 @@ const TYPE_DENIED: Record<UploadKind, string> = {
   attachment: '附件只能是 PDF，或 JPG、PNG、WebP 格式的图片',
   bom: 'BOM 只能是 .xlsx 文件（.xls 请先用 Excel 另存为 .xlsx）',
 }
-const TOO_LARGE: Record<UploadKind, string> = { photo: '照片不能超过 8MB', attachment: '附件不能超过 20MB', bom: 'BOM 表不能超过 5MB' }
+const TOO_LARGE: Record<UploadKind, string> = {
+  photo: `照片不能超过 ${formatUploadLimit(MAX_PHOTO_BYTES)}`,
+  attachment: `附件不能超过 ${formatUploadLimit(MAX_ATTACHMENT_BYTES)}`,
+  bom: `BOM 表不能超过 ${formatUploadLimit(MAX_BOM_BYTES)}`,
+}
 
 const ID_RE = /^[a-f0-9]{32}$/
 

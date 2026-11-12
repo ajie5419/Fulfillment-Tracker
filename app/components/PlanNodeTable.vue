@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { CONFIRM_TONE } from '~/utils/plan-status'
 import type { PlanNodeRow } from '#shared/plan-view'
 import type { PlanData } from '../composables/usePlanData'
 import { isPhaseRow, type TableRow } from '../composables/usePlanPhaseGroups'
@@ -21,31 +20,22 @@ const props = defineProps<{
 const expanded = defineModel<string[]>('expanded', { required: true })
 const emit = defineEmits<{ toggleCollapse: [id: string]; edit: [node: PlanNodeRow]; addChild: [node: PlanNodeRow]; remove: [node: PlanNodeRow]; changed: [] }>()
 
-const DRIVER_TEXT: Record<string, string> = { self: '', task: '挂靠任务拖后', prev: '前置节点顺延', today: '计划日已过仍未完成', actual: '' }
 
 const isCollapsed = (id: string) => props.collapsed.includes(id)
 /** 缩进层级：有阶段时 节点 = 2 级、子节点 = 3 级；没阶段时 节点 = 1 级、子节点 = 2 级 */
 const levelOf = (n: PlanNodeRow) => (n.parentId ? 3 : 2) - (props.hasPhase ? 0 : 1)
-/** 汇总行的"部门执行"：子节点接收情况 */
-function childSummary(n: PlanNodeRow) {
-  const kids = (props.data.nodes ?? []).filter((x) => x.parentId === n.id)
-  return { total: kids.length, accepted: kids.filter((x) => x.confirmStatus === 'CONFIRMED').length, pending: kids.filter((x) => x.confirmStatus === 'PENDING').length }
-}
 const affectsText = (n: PlanNodeRow) => n.affects.map((p) => `${p.code} ${p.name}`).join('、')
 const predsText = (n: PlanNodeRow) => n.preds.map((p) => p.code).join(' ')
 const predsTitle = (n: PlanNodeRow) =>
   [...n.preds.map((p) => `${p.code} ${p.name}`), ...(n.customDeps ? [] : ['（默认：上一个节点）'])].join('\n')
-/** 受谁影响：子节点晚了 / 前置节点晚了 */
-const pushedText = (n: PlanNodeRow) => (!n.pushedBy ? '受上游影响' : n.pushedBy.child ? `受子节点影响（${n.pushedBy.code} ${n.pushedBy.name}）` : `受 ${n.pushedBy.code} 影响`)
 
 const columns = [
-  { title: '编号 / 节点', key: 'name', width: 280 },
-  { title: '责任部门', dataIndex: 'deptText', width: 80 },
-  { title: '前置', key: 'preds', width: 72 },
-  { title: '计划', key: 'plan', width: 112 },
-  { title: '预计 / 完成', key: 'expected', width: 140 },
-  { title: '部门执行', key: 'exec', width: 180 },
-  { title: '', key: 'ops', width: 148, fixed: 'right' as const },
+  { title: '编号 / 节点', key: 'name', width: 300 },
+  { title: '责任部门', dataIndex: 'deptText', width: 92 },
+  { title: '前置', key: 'preds', width: 104 },
+  { title: '计划开始日期', key: 'start', width: 132 },
+  { title: '计划完成日期', key: 'plan', width: 132 },
+  { title: '', key: 'ops', width: 176, align: 'right' as const, fixed: 'right' as const },
 ]
 const rowClass = (n: TableRow) =>
   isPhaseRow(n) ? 'phase-row' : [n.id === props.focusNode ? 'focus-row' : '', !n.done && n.delayDays > 0 ? 'late-row' : '', n.parentId ? 'child-row' : '', n.childCount ? 'summary-row' : ''].join(' ')
@@ -55,6 +45,7 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
 <template>
   <a-table
     v-model:expanded-row-keys="expanded"
+    class="ft-table plan-node-table"
     :columns="columns"
     :data-source="tableRows"
     :loading="loading"
@@ -62,137 +53,108 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
     size="small"
     :pagination="false"
     :row-class-name="(r: TableRow) => rowClass(r)"
-    :row-expandable="(r: TableRow) => !isPhaseRow(r)"
-    :scroll="{ x: 1100 }"
+    :row-expandable="(r: TableRow) => !isPhaseRow(r) && r.tasks.length > 0"
+    :show-expand-column="false"
+    :scroll="{ x: 936 }"
   >
     <template #emptyText><a-empty :description="data.canEdit ? '还没有节点：选模板“按模板生成”，或“新增节点”' : '还没有编制总计划'" /></template>
     <template #bodyCell="{ column, record }">
       <template v-if="isPhaseRow(record as TableRow)">
         <template v-if="column.key === 'name'">
-          <button type="button" class="fold" :aria-expanded="!isCollapsed(record.id)" :aria-label="`${isCollapsed(record.id) ? '展开' : '收起'}阶段 ${record.phase}`" @click="emit('toggleCollapse', record.id)">
-            {{ isCollapsed(record.id) ? '▸' : '▾' }}
-          </button>
           <span class="phase-line">
-            <span class="code">{{ record.code }}</span><span class="phase-name">{{ record.phase }}</span>
+            <button type="button" class="fold" :aria-expanded="!isCollapsed(record.id)" :aria-label="`${isCollapsed(record.id) ? '展开' : '收起'}阶段 ${record.phase}`" @click="emit('toggleCollapse', record.id)">
+              <span class="chevron" :class="{ open: !isCollapsed(record.id) }" aria-hidden="true" />
+            </button>
+            <span class="phase-code">{{ record.code }}</span>
+            <span class="phase-name">{{ record.phase }}</span>
             <span class="muted">{{ record.count }} 个节点</span>
           </span>
         </template>
-        <template v-else-if="column.key === 'plan'">{{ record.start === record.end ? record.end : `${record.start.slice(5)} ~ ${record.end.slice(5)}` }}</template>
-        <template v-else-if="column.key === 'expected'">
-          <span v-if="record.expected" :class="{ late: record.late }">{{ record.expected }}</span>
-          <UiStatusTag v-else tone="done">已完成</UiStatusTag>
-        </template>
-        <template v-else-if="column.key === 'exec'">
-          <span v-if="published" class="muted">已接收 {{ record.accepted }}/{{ record.leaves }}<template v-if="record.pending"> · <span class="warn">{{ record.pending }} 个待接收</span></template></span>
-        </template>
+        <template v-else-if="column.key === 'start'">{{ record.start }}</template>
+        <template v-else-if="column.key === 'plan'">{{ record.end }}</template>
       </template>
       <template v-else-if="column.key === 'name'">
-        <span class="node-name" :class="`lv${levelOf(record as PlanNodeRow)}`">
+        <div class="node-name" :class="`lv${levelOf(record as PlanNodeRow)}`">
           <button v-if="record.childCount" type="button" class="fold" :aria-expanded="!isCollapsed(record.id)" :aria-label="`${isCollapsed(record.id) ? '展开' : '收起'}子节点`" @click="emit('toggleCollapse', record.id)">
-            {{ isCollapsed(record.id) ? '▸' : '▾' }}
+            <span class="chevron" :class="{ open: !isCollapsed(record.id) }" aria-hidden="true" />
+          </button>
+          <button v-else-if="record.tasks.length" type="button" class="fold" :aria-expanded="expanded.includes(record.id)" :aria-label="`${expanded.includes(record.id) ? '收起' : '展开'}节点 ${record.name} 的部门记录`" @click="expanded = expanded.includes(record.id) ? expanded.filter(id => id !== record.id) : [...expanded, record.id]">
+            <span class="chevron" :class="{ open: expanded.includes(record.id) }" aria-hidden="true" />
           </button>
           <span class="code">{{ record.code }}</span>
-          <span :class="{ 'summary-name': record.childCount }">{{ record.name }}</span>
-          <span v-if="record.childCount" class="muted small">　汇总 · {{ record.childCount }} 个子节点</span>
-          <a-tag v-if="record.alertLevel" :color="levelColor(record.alertLevel)">W9 {{ record.alertLevel === 'RED' ? '红' : '黄' }}</a-tag>
-        </span>
+          <span class="node-main">
+            <span :class="{ 'summary-name': record.childCount }">{{ record.name }}</span>
+            <span v-if="record.childCount" class="muted">{{ record.childCount }} 个子节点</span>
+            <a-tag v-if="record.alertLevel" :color="levelColor(record.alertLevel)">W9 {{ record.alertLevel === 'RED' ? '红' : '黄' }}</a-tag>
+          </span>
+        </div>
         <div v-if="record.note" class="muted node-note" :class="`lv${levelOf(record as PlanNodeRow)}`">{{ record.note }}</div>
       </template>
       <template v-else-if="column.key === 'preds'">
-        <span v-if="record.childCount" class="muted" title="汇总行：日期由子节点算，看子节点的前置">按子节点</span>
+        <span v-if="record.childCount" class="muted" title="汇总行：日期由子节点算，看子节点的前置">—</span>
         <span v-else-if="!record.preds.length" class="muted">{{ record.customDeps ? '无' : '—' }}</span>
-        <span v-else :class="{ muted: !record.customDeps }" :title="predsTitle(record as PlanNodeRow)">
+        <span v-else class="preds-text" :class="{ muted: !record.customDeps }" :title="predsTitle(record as PlanNodeRow)">
           {{ predsText(record as PlanNodeRow) }}
         </span>
       </template>
+      <template v-else-if="column.key === 'start'">{{ record.startDate ?? '—' }}</template>
       <template v-else-if="column.key === 'plan'">
         {{ record.planDate }}
-        <div v-if="record.startDate" class="muted">开始 {{ record.startDate }}</div>
-        <div v-if="record.childCount" class="muted small">子节点汇总</div>
         <div v-if="record.baselineDate && record.baselineDate !== record.planDate" class="muted">基线 <span class="changed">{{ record.baselineDate }}</span></div>
         <div v-else-if="published && !record.baselineDate" class="muted">发布后新增</div>
       </template>
-      <template v-else-if="column.key === 'expected'">
-        <template v-if="record.done">
-          <UiStatusTag tone="done">完成 {{ record.actualDate?.slice(5) }}</UiStatusTag>
-          <div class="muted" :class="{ late: record.actualDate > record.planDate }">{{ record.doneBy === 'MANUAL' ? `${record.manualDoneByName ?? ''} 手动标记` : record.childCount ? '子节点全部完成' : '任务全部完成' }}</div>
-        </template>
-        <template v-else>
-          <span :class="{ late: record.delayDays > 0 }">{{ record.expectedDate }}</span>
-          <div v-if="record.delayDays > 0" class="late small">晚 {{ record.delayDays }} 天<template v-if="record.source && DRIVER_TEXT[record.driver] && record.driver !== 'prev'">（{{ DRIVER_TEXT[record.driver] }}）</template></div>
-          <div v-if="record.source && record.upstream" class="late small">其中自身晚 {{ record.selfDelayDays }} 天</div>
-          <div v-if="record.source && record.affects.length" class="late small" :title="affectsText(record as PlanNodeRow)">影响后续 {{ record.affects.length }} 个节点</div>
-          <a-tag v-if="record.upstream && !record.source" color="default" class="small" :title="record.pushedBy ? `被 #${record.pushedBy.code} ${record.pushedBy.name} 推后` : ''">{{ pushedText(record as PlanNodeRow) }}</a-tag>
-          <div v-if="record.slackDays != null">
-            <UiStatusTag v-if="record.critical" tone="primary">关键</UiStatusTag>
-            <span v-else class="muted">余量 {{ record.slackDays }} 天</span>
-          </div>
-        </template>
-      </template>
-      <template v-else-if="column.key === 'exec'">
-        <template v-if="record.childCount">
-          <span v-if="published" class="muted">子节点已接收 {{ childSummary(record as PlanNodeRow).accepted }}/{{ childSummary(record as PlanNodeRow).total }}</span>
-          <span v-else class="muted">按子节点</span>
-        </template>
-        <span v-else-if="!record.confirmStatus" class="muted">{{ published ? '—' : '发布后由部门接收' }}</span>
-        <template v-else>
-          <UiStatusTag :tone="CONFIRM_TONE[record.confirmStatus as keyof typeof CONFIRM_TONE]">{{ record.confirmText }}<template v-if="record.confirmStatus === 'CONFIRMED' && record.confirmedByName"> · {{ record.confirmedByName }}</template></UiStatusTag>
-          <a-tag v-if="record.confirmAlertLevel" :color="levelColor(record.confirmAlertLevel)">超时</a-tag>
-          <div v-if="record.confirmStatus === 'REJECTED' && record.rejectReason" class="late small">{{ record.confirmedByName }}：{{ record.rejectReason }}</div>
-          <div v-if="record.taskCount" class="small">
-            {{ record.taskCount }} 项任务 · {{ record.doneCount }}/{{ record.taskCount }} 完成
-            <span v-if="record.overdueCount" class="late">· 逾期 {{ record.overdueCount }}</span>
-            <span v-if="record.lateCount" class="late">· 晚于节点 {{ record.lateCount }}</span>
-          </div>
-          <div v-else-if="record.confirmStatus === 'CONFIRMED' && !record.done" class="small">
-            <UiStatusTag :tone="record.splitAlertLevel ? 'risk' : 'none'">未分解</UiStatusTag>
-          </div>
-        </template>
-      </template>
       <template v-else-if="column.key === 'ops'">
-        <a-space wrap size="small">
-          <template v-if="data.canEdit">
-            <a-button size="small" @click="emit('edit', record as PlanNodeRow)">调整</a-button>
-            <a-button v-if="!record.parentId" size="small" @click="emit('addChild', record as PlanNodeRow)">加子节点</a-button>
-            <a-button size="small" danger @click="emit('remove', record as PlanNodeRow)">删除</a-button>
-          </template>
-        </a-space>
+        <div v-if="data.canEdit" class="row-ops">
+          <a-button size="small" @click="emit('edit', record as PlanNodeRow)">调整</a-button>
+          <a-button v-if="!record.parentId" size="small" @click="emit('addChild', record as PlanNodeRow)">加子节点</a-button>
+          <a-button size="small" class="op-del" @click="emit('remove', record as PlanNodeRow)">删除</a-button>
+        </div>
       </template>
     </template>
     <template #expandedRowRender="{ record }">
-      <div v-if="data?.network" class="affects small">
-        <template v-if="record.affects.length">晚了会影响 {{ record.affects.length }} 个节点：<span class="muted">{{ affectsText(record as PlanNodeRow) }}</span></template>
-        <span v-else class="muted">晚了不影响其他节点</span>
-      </div>
       <div v-if="record.childCount" class="muted">汇总行：任务挂在下面的子节点上</div>
-      <PlanNodeWork v-else :node="record as PlanNodeRow" :wo="wo" :can-create="data!.canCreate" view-only @changed="emit('changed')" />
+      <PlanNodeWork v-else-if="record.tasks.length" :node="record as PlanNodeRow" :wo="wo" :can-create="data!.canCreate" view-only @changed="emit('changed')" />
     </template>
   </a-table>
 </template>
 
 <style scoped>
-.muted { color: var(--ft-text-2); font-size: 12px; }
+.plan-node-table { border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); overflow: hidden; background: var(--ft-card-bg); }
+.muted { color: var(--ft-text-2); font-size: 12px; font-weight: 400; }
 .small { font-size: 12px; }
 .late { color: var(--ft-late); }
 .warn { color: var(--ft-upstream); }
 .changed { text-decoration: line-through; color: var(--ft-text-3); }
 :deep(.late-row) td:first-child { box-shadow: inset 3px 0 0 var(--ft-late); }
 :deep(.focus-row) td { background: var(--ft-risk-bg) !important; }
-:deep(.phase-row) td { background: var(--ft-fill) !important; }
-.phase-name { font-weight: 600; color: var(--ft-text); margin-right: 8px; }
-.phase-line { display: inline-flex; align-items: baseline; white-space: nowrap; }
-/* 大纲分级：阶段行 1 级（灰底粗体），节点 2 级，子节点 3 级（再缩进、虚线分隔）；折叠按钮占固定宽度，编号对齐 */
-.fold { width: 18px; height: 18px; padding: 0; margin-right: 4px; border: 0; background: none; color: var(--ft-text-2); cursor: pointer; font-size: 14px; line-height: 18px; border-radius: 4px; }
+:deep(.phase-row) td { background: var(--ft-fill) !important; font-weight: 600; }
+.phase-code { color: var(--ft-text-2); font-variant-numeric: tabular-nums; }
+.phase-name { font-weight: 600; color: var(--ft-text); margin-right: 4px; }
+.phase-line { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 28px; }
+/* 大纲分级：阶段行 1 级（灰底粗体），节点 2 级，子节点 3 级（贯通树形引导线 + 缩进）；折叠按钮收入左侧缩进槽，编号严格对齐 */
+.fold { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 18px; width: 18px; height: 22px; padding: 0; border: 0; background: transparent; color: var(--ft-text-2); cursor: pointer; border-radius: 4px; }
+.fold:hover { background: var(--ft-fill); color: var(--ft-primary); }
+.chevron { width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 0.15s; }
+.chevron.open { transform: rotate(45deg); }
 .fold:focus-visible { outline: 2px solid var(--ft-primary); }
-.code { display: inline-block; min-width: 40px; margin-right: 6px; color: var(--ft-text-2); font-variant-numeric: tabular-nums; }
-:deep(.phase-row) td { font-weight: 600; }
-.node-name { display: inline-flex; align-items: center; flex-wrap: wrap; }
-.lv1 { padding-left: 0; }
-.lv2 { padding-left: 22px; }
-.lv3 { padding-left: 52px; }
-.node-name:not(:has(.fold)) .code { margin-left: 22px; }
-.node-note { margin-left: 62px; }
-.summary-name { font-weight: 600; }
+.code { flex: 0 0 auto; min-width: 28px; color: var(--ft-text-2); font-variant-numeric: tabular-nums; }
+.node-name { display: flex; align-items: center; gap: 6px; min-height: 28px; }
+.node-name > .fold { margin-left: -24px; }
+.node-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lv1, .lv2 { padding-left: 24px; }
+.lv3, :deep(.child-row) .lv2 { padding-left: 48px; }
+/* 子节点连续树形线：沿上级节点编号正下方垂直贯通，末尾子节点平齐收尾（与甘特图左侧大纲完全一致） */
+:deep(.child-row) td:first-child { position: relative; --tree-x: 44px; }
+:deep(.child-row) td:first-child::before { content: ""; position: absolute; left: var(--tree-x); top: 0; bottom: 0; border-left: 1px solid var(--ft-border-hover); pointer-events: none; }
+:deep(.child-row:not(:has(+ .child-row))) td:first-child::before { bottom: 50%; }
+:deep(.child-row) td:first-child::after { content: ""; position: absolute; left: var(--tree-x); top: 50%; width: 10px; border-top: 1px solid var(--ft-border-hover); pointer-events: none; }
 :deep(.child-row) td { border-top: 1px dashed var(--ft-border); }
+.node-note { margin-left: 58px; }
+.node-note.lv3 { margin-left: 82px; }
+.summary-name { font-weight: 600; }
+.preds-text { font-variant-numeric: tabular-nums; word-spacing: 4px; }
+.row-ops { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+.op-del { color: var(--ft-text-2); }
+.op-del:hover, .op-del:focus-visible { color: var(--ft-late-text) !important; border-color: var(--ft-late) !important; background: var(--ft-late-bg) !important; }
 .affects { margin: 0 0 8px; line-height: 1.6; }
 </style>

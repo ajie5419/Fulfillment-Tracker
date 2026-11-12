@@ -89,6 +89,65 @@ exports[`plan service 搬移前特征 > complete 命令的完整副作用顺序 
       },
     ],
     [
+      "workOrderPlan.findMany",
+      {
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "planNode.findMany",
+      {
+        "orderBy": [
+          {
+            "seq": "asc",
+          },
+          {
+            "createdAt": "asc",
+          },
+          {
+            "id": "asc",
+          },
+        ],
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "qmsWorkOrder.findMany",
+      {
+        "select": {
+          "deliveryDate": true,
+          "workOrderNumber": true,
+        },
+        "where": {
+          "workOrderNumber": {
+            "in": [
+              "WO 1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "offDay.findMany",
+      {
+        "select": {
+          "date": true,
+        },
+      },
+    ],
+    [
       "planNode.update",
       {
         "data": {
@@ -322,6 +381,7 @@ exports[`plan service 搬移前特征 > create 命令的完整副作用顺序 1`
           "parentId": null,
           "phase": null,
           "planDate": 2026-11-04T00:00:00.000Z,
+          "requiresProcess": true,
           "seq": 2,
           "startDate": null,
           "workOrderNumber": "WO 1",
@@ -448,7 +508,7 @@ exports[`plan service 搬移前特征 > create 命令的完整副作用顺序 1`
         "where": {
           "OR": [
             {
-              "department": "技术部",
+              "department": "TECH",
               "role": "DEPT_HEAD",
             },
           ],
@@ -554,6 +614,9 @@ exports[`plan service 搬移前特征 > delete 命令的完整副作用顺序 1`
   "calls": [
     [
       "transaction.begin",
+      {
+        "isolationLevel": "ReadCommitted",
+      },
     ],
     [
       "planNode.findUnique",
@@ -608,6 +671,64 @@ exports[`plan service 搬移前特征 > delete 命令的完整副作用顺序 1`
       {
         "where": {
           "parentId": "n1",
+        },
+      },
+    ],
+    [
+      "drawingTask.findMany",
+      {
+        "select": {
+          "id": true,
+          "parts": {
+            "select": {
+              "partId": true,
+            },
+          },
+          "planNodeId": true,
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT id FROM plan_node WHERE id IN (",
+        ") ORDER BY id FOR UPDATE",
+      ],
+      e {
+        "strings": [
+          "",
+          "",
+        ],
+        "values": [
+          "n1",
+        ],
+      },
+    ],
+    [
+      "drawingTask.findMany",
+      {
+        "select": {
+          "id": true,
+          "parts": {
+            "select": {
+              "partId": true,
+            },
+          },
+          "planNodeId": true,
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+            ],
+          },
         },
       },
     ],
@@ -1035,6 +1156,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
           "id": true,
           "materialStatus": true,
           "needsCustomerConfirm": true,
+          "ownerId": true,
           "planDate": true,
           "planNodeId": true,
           "processStatus": true,
@@ -1319,6 +1441,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
           "id": true,
           "materialStatus": true,
           "needsCustomerConfirm": true,
+          "ownerId": true,
           "planDate": true,
           "planNodeId": true,
           "processStatus": true,
@@ -1640,6 +1763,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
           "phase": "设计",
           "planDate": 2026-11-02T00:00:00.000Z,
           "rejectReason": null,
+          "requiresProcess": true,
           "seq": 1,
           "startDate": null,
           "workOrderNumber": "WO 1",
@@ -1662,6 +1786,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
           "phase": "设计",
           "planDate": 2026-11-03T00:00:00.000Z,
           "rejectReason": null,
+          "requiresProcess": true,
           "seq": 2,
           "startDate": null,
           "workOrderNumber": "WO 1",
@@ -1685,7 +1810,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
           "link": "/drawings?id=drawing",
           "name": "图纸",
           "nodeId": "n1",
-          "statusText": "设计完成 · 料单未开始 · 工艺无",
+          "statusText": "设计完成",
         },
         {
           "dateLabel": "承诺到货日",
@@ -1838,6 +1963,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
           "seq": 2,
         },
         "rejectReason": null,
+        "requiresProcess": true,
         "selfDelayDays": 0,
         "selfExpectedDate": "2026-11-02",
         "seq": 1,
@@ -1866,7 +1992,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
             "ownerId": null,
             "ownerName": null,
             "planDate": "2026-11-04",
-            "statusText": "设计完成 · 料单未开始 · 工艺无",
+            "statusText": "设计完成",
           },
         ],
         "unsplit": false,
@@ -1918,6 +2044,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
         "preds": [],
         "pushedBy": null,
         "rejectReason": null,
+        "requiresProcess": true,
         "selfDelayDays": 2,
         "selfExpectedDate": "2026-11-05",
         "seq": 2,
@@ -2037,6 +2164,7 @@ exports[`plan service 搬移前特征 > 五种任务、层级排序、预测与�
     "workOrder": {
       "customerName": "客户",
       "deliveryDate": "2026-11-03",
+      "effectiveTime": null,
       "projectManagerId": "owner",
       "projectManagerName": "负责人",
       "projectName": "项目",
@@ -2175,6 +2303,7 @@ exports[`plan service 搬移前特征 > 发布：先锁计划、逐节点锁基�
           "id": true,
           "materialStatus": true,
           "needsCustomerConfirm": true,
+          "ownerId": true,
           "planDate": true,
           "planNodeId": true,
           "processStatus": true,
@@ -2407,7 +2536,7 @@ exports[`plan service 搬移前特征 > 发布：先锁计划、逐节点锁基�
         "where": {
           "OR": [
             {
-              "department": "技术部",
+              "department": "TECH",
               "role": "DEPT_HEAD",
             },
           ],
@@ -2457,6 +2586,9 @@ exports[`plan service 搬移前特征 > 已发布节点改日期：锁、校验�
   "calls": [
     [
       "transaction.begin",
+      {
+        "isolationLevel": "ReadCommitted",
+      },
     ],
     [
       "planNode.findUnique",
@@ -2611,7 +2743,7 @@ exports[`plan service 搬移前特征 > 已发布节点改日期：锁、校验�
         "where": {
           "OR": [
             {
-              "department": "技术部",
+              "department": "TECH",
               "role": "DEPT_HEAD",
             },
           ],
@@ -2756,6 +2888,7 @@ exports[`plan service 搬移前特征 > 已发布节点改日期：锁、校验�
           "id": true,
           "materialStatus": true,
           "needsCustomerConfirm": true,
+          "ownerId": true,
           "planDate": true,
           "planNodeId": true,
           "processStatus": true,
@@ -2906,6 +3039,9 @@ exports[`plan service 搬移前特征 > 模板生成：取消旧任务、逐节�
   "calls": [
     [
       "transaction.begin",
+      {
+        "isolationLevel": "ReadCommitted",
+      },
     ],
     [
       "qmsWorkOrder.findFirst",
@@ -2965,6 +3101,76 @@ exports[`plan service 搬移前特征 > 模板生成：取消旧任务、逐节�
       },
     ],
     [
+      "planNode.findMany",
+      {
+        "select": {
+          "id": true,
+          "requiresProcess": true,
+        },
+        "where": {
+          "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "drawingTask.findMany",
+      {
+        "select": {
+          "id": true,
+          "parts": {
+            "select": {
+              "partId": true,
+            },
+          },
+          "planNodeId": true,
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
+      "$queryRaw",
+      [
+        "SELECT id FROM plan_node WHERE id IN (",
+        ") ORDER BY id FOR UPDATE",
+      ],
+      e {
+        "strings": [
+          "",
+          "",
+        ],
+        "values": [
+          "n1",
+        ],
+      },
+    ],
+    [
+      "drawingTask.findMany",
+      {
+        "select": {
+          "id": true,
+          "parts": {
+            "select": {
+              "partId": true,
+            },
+          },
+          "planNodeId": true,
+        },
+        "where": {
+          "planNodeId": {
+            "in": [
+              "n1",
+            ],
+          },
+        },
+      },
+    ],
+    [
       "planTask.findMany",
       {
         "select": {
@@ -2992,6 +3198,7 @@ exports[`plan service 搬移前特征 > 模板生成：取消旧任务、逐节�
           "name": "A",
           "phase": "设计",
           "planDate": 2026-11-01T00:00:00.000Z,
+          "requiresProcess": true,
           "seq": 1,
           "startDate": 2026-10-31T00:00:00.000Z,
           "workOrderNumber": "WO 1",
@@ -3007,6 +3214,7 @@ exports[`plan service 搬移前特征 > 模板生成：取消旧任务、逐节�
           "name": "B",
           "phase": null,
           "planDate": 2026-11-02T00:00:00.000Z,
+          "requiresProcess": false,
           "seq": 2,
           "startDate": null,
           "workOrderNumber": "WO 1",
@@ -3166,6 +3374,7 @@ exports[`plan service 搬移前特征 > 模板生成：取消旧任务、逐节�
           "id": true,
           "materialStatus": true,
           "needsCustomerConfirm": true,
+          "ownerId": true,
           "planDate": true,
           "planNodeId": true,
           "processStatus": true,

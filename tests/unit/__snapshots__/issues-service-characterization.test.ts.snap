@@ -1237,7 +1237,7 @@ exports[`issues service 搬移前特征 > 图片绑定数量不足，回滚且�
         "userId": true,
       },
       "where": {
-        "department": "项目部",
+        "department": "PROJECT",
         "role": "DEPT_HEAD",
       },
     },
@@ -1336,7 +1336,7 @@ exports[`issues service 搬移前特征 > 手工上报：先读默认责任，�
           "userId": true,
         },
         "where": {
-          "department": "质量部",
+          "department": "QUALITY",
           "role": "DEPT_HEAD",
         },
       },
@@ -1522,7 +1522,7 @@ exports[`issues service 搬移前特征 > 系统异常沿用调用方事务：�
           "userId": true,
         },
         "where": {
-          "department": "质量部",
+          "department": "QUALITY",
           "role": "DEPT_HEAD",
         },
       },

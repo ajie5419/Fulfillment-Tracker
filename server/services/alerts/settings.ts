@@ -1,12 +1,14 @@
 /** 设置页（仅管理员）：阈值、停工日、人员与角色（通知对象）、工单项目经理、部门对照（R13）。 */
 import type { BusinessDept, NotifyRoleKind } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
-import { BUSINESS_DEPTS, BUSINESS_DEPT_NAME, BUSINESS_DEPT_NAMES, MAX_DEPT_DEPTH } from '../auth/departments'
+import { BUSINESS_DEPTS, BUSINESS_DEPT_NAME, BUSINESS_DEPT_NAMES, MAX_DEPT_DEPTH, resolveBusinessDept } from '../auth/departments'
 import { FlowError } from '../flow/errors'
 import { loadNames } from '../flow/names'
 import { type RuleThreshold, type ScanRule, dateFieldDay } from './rules'
 import { SCAN_RULES, loadThresholds } from './scan'
 import { ACTIVE_WO_WHERE } from '../workorder/active'
+import { departmentLabel, isBusinessDeptCode } from '../../../shared/business-depts'
+import { alertReminderUnit, alertThresholdError } from '../../../shared/alert-policy'
 
 export async function getSettings() {
   const [thresholds, offDays, roles, workOrders, exts, depts] = await Promise.all([
@@ -30,10 +32,10 @@ export async function getSettings() {
     offDays: offDays.map((d) => dateFieldDay(d.date)),
     // 部门负责人的部门只能选 7 个业务部门（用户的 QMS 部门经"部门对照"换成业务部门后对应）；
     // 已配置但不在这 7 个里的旧值也列出（标为旧值），免得看不到、删不掉
-    departments: BUSINESS_DEPT_NAMES,
-    legacyDepartments: [...new Set(roles.map((r) => r.department).filter((x): x is string => !!x && !BUSINESS_DEPT_NAMES.includes(x)))].sort(),
+    departments: BUSINESS_DEPTS,
+    legacyDepartments: [...new Set(roles.map((r) => r.department).filter((x): x is string => !!x && !isBusinessDeptCode(x)))].sort(),
     /** 还没有负责人的业务部门（预警升级、异常默认责任人会找不到人） */
-    deptsWithoutHead: BUSINESS_DEPT_NAMES.filter((n) => !roles.some((r) => r.role === 'DEPT_HEAD' && r.department === n)),
+    deptsWithoutHead: BUSINESS_DEPTS.filter((code) => !roles.some((r) => r.role === 'DEPT_HEAD' && r.department === code)).map(departmentLabel),
     businessDepts: BUSINESS_DEPTS.map((value) => ({ value, label: BUSINESS_DEPT_NAME[value] })),
     qmsDepartments: deptRows(depts, mapping),
     roles: roles.map((r) => ({ ...r, userName: names.user.get(r.userId) ?? r.userId })),
@@ -45,14 +47,9 @@ export async function getSettings() {
 }
 
 export async function saveThreshold(rule: ScanRule, t: RuleThreshold) {
-  // W8 的黄 / 红是"需求日前几天"：越早越轻，所以黄色天数不能小于红色
-  if (rule === 'W8') {
-    if (t.yellowDays < t.redDays) throw new FlowError('W8 黄色的提前天数不能小于红色')
-  } else if (t.redDays < t.yellowDays) throw new FlowError('红色阈值不能小于黄色阈值')
-  const noRemind = rule === 'W2' || rule === 'W4' || rule === 'W8' || rule === 'W11'
-  if (!noRemind && t.remindHours == null) throw new FlowError('W1、W3、W5、W6、W7、W9、W10 必须设置提醒阈值')
-  // W11 黄线只在状态监控中关注，红线生成预警；没有提醒一级。
-  const data = { remindHours: noRemind ? null : t.remindHours, yellowDays: t.yellowDays, redDays: t.redDays }
+  const error = alertThresholdError(rule, t)
+  if (error) throw new FlowError(error)
+  const data = { remindHours: alertReminderUnit(rule) === null ? null : t.remindHours, yellowDays: t.yellowDays, redDays: t.redDays }
   return prisma.threshold.upsert({ where: { rule }, update: data, create: { rule, ...data } })
 }
 
@@ -69,7 +66,7 @@ export async function removeOffDay(date: Date) {
 export async function addNotifyRole(input: { role: NotifyRoleKind; userId: string; department?: string | null }) {
   const department = input.role === 'DEPT_HEAD' ? input.department?.trim() || null : null
   if (input.role === 'DEPT_HEAD' && !department) throw new FlowError('部门负责人要选择部门')
-  if (department && !BUSINESS_DEPT_NAMES.includes(department)) throw new FlowError(`部门只能选：${BUSINESS_DEPT_NAMES.join('、')}`)
+  if (department && !isBusinessDeptCode(department)) throw new FlowError(`部门只能选：${BUSINESS_DEPT_NAMES.join('、')}`)
   const user = await prisma.qmsUser.findFirst({ where: { id: input.userId, isDeleted: false }, select: { id: true } })
   if (!user) throw new FlowError('用户不存在')
   const exists = await prisma.notifyRole.findFirst({ where: { role: input.role, userId: input.userId, department } })
@@ -106,6 +103,7 @@ interface DeptRow {
  */
 export function deptRows(depts: DeptRow[], mapping: Map<string, BusinessDept>) {
   const byId = new Map(depts.map((d) => [d.id, d]))
+  const index = { depts: byId, mapping }
   const children = new Map<string, DeptRow[]>()
   const roots: DeptRow[] = []
   for (const d of depts) {
@@ -114,18 +112,18 @@ export function deptRows(depts: DeptRow[], mapping: Map<string, BusinessDept>) {
   }
   const out: { id: string; name: string; parentName: string | null; level: number; businessDept: BusinessDept | null; effective: string | null }[] = []
   const seen = new Set<string>()
-  const walk = (d: DeptRow, level: number, inherited: BusinessDept | null) => {
+  const walk = (d: DeptRow, level: number) => {
     if (seen.has(d.id) || level > MAX_DEPT_DEPTH) return
     seen.add(d.id)
     const own = mapping.get(d.id) ?? null
-    const eff = own ?? inherited
-    const effective = eff ? BUSINESS_DEPT_NAME[eff] : BUSINESS_DEPT_NAMES.includes(d.name) ? d.name : null
+    const identity = resolveBusinessDept(d.id, index)
+    const effective = identity ? BUSINESS_DEPT_NAME[identity] : null
     out.push({ id: d.id, name: d.name, parentName: byId.get(d.parentId)?.name ?? null, level, businessDept: own, effective })
-    for (const c of children.get(d.id) ?? []) walk(c, level + 1, eff)
+    for (const c of children.get(d.id) ?? []) walk(c, level + 1)
   }
-  for (const r of roots) walk(r, 0, null)
+  for (const r of roots) walk(r, 0)
   // 成环的部门（数据异常）不在任何根下面，单独列在最后
-  for (const d of depts) if (!seen.has(d.id)) walk(d, 0, null)
+  for (const d of depts) if (!seen.has(d.id)) walk(d, 0)
   return out
 }
 

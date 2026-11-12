@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { paginationFields, safePageOffset } from './pagination'
 import { MAX_PAYMENT_LINES } from '../services/purchases/constants'
 import { day, source } from './flow'
+import { isPurchaseQuantity, purchaseQuantityError } from '../../shared/purchase-quantity'
 
 /** 可空文本：去首尾空格，空串当 null；没传（undefined）保持 undefined，修改接口据此区分"不改"和"清空" */
 const optText = (max: number, label: string) =>
@@ -23,9 +24,7 @@ const lineFields = {
   spec: optText(191, '规格型号'),
   quantity: z
     .number({ message: '请填写数量' })
-    .positive('数量要大于 0')
-    .max(1e9, '数量太大')
-    .refine((n) => decimals(n, 3), '数量最多 3 位小数'),
+    .refine(isPurchaseQuantity, (n) => ({ message: purchaseQuantityError(n) ?? '请填写有效数量' })),
   unit: optText(20, '单位'),
   /** 选 QMS 供应商时填 ID；手填时只填 supplierName */
   supplierId: z.string().max(64).nullish(),

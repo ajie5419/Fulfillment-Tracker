@@ -2,10 +2,14 @@
  * README 与现有集成测试约定使用 fulfillment_test 专用 MySQL 库。
  * 数据库名只允许字母、数字、下划线，且 test 必须是独立的下划线分段
  * （如 fulfillment_test、fulfillment_test_1）；用户名、主机名、查询参数中的 test 不算。
- * 缺失地址继续跳过；配置错误在测试文件加载时抛错，早于所有迁移、连接和清表。
+ * Local runs may skip an absent URL; REQUIRE_TEST_DATABASE=1 makes absence an error.
+ * Invalid configuration fails before migrations, connections, or destructive cleanup.
  */
 export function getTestDatabaseUrl(value: string | undefined): string | undefined {
-  if (!value) return undefined
+  if (!value) {
+    if (process.env.REQUIRE_TEST_DATABASE === '1') throw new Error('拒绝执行集成测试：缺少 TEST_DATABASE_URL，必需的数据库测试不能跳过。')
+    return undefined
+  }
 
   let url: URL
   try {

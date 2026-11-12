@@ -8,12 +8,14 @@ import { MATERIAL_STATUS_TEXT as SHARED_MATERIAL_STATUS_TEXT, PROCESS_STATUS_TEX
  * 设计变更涉及已下发的料单时，系统自动改成"修改中"（releases.ts createRelease → process.ts markRevisingByChange）。
  */
 import type { MaterialListStatus, ProcessDocKind, ProcessDocStatus } from '@prisma/client'
-import { BUSINESS_DEPT_NAME } from '../../../shared/business-depts'
 import type { ProcessAction } from '../../../shared/process'
 export type { ProcessAction } from '../../../shared/process'
 
-/** 料单、工艺的负责部门：设计变更自动改"修改中"时提醒它的负责人 */
-export const PROCESS_DEPT = BUSINESS_DEPT_NAME.PROCESS
+const REMINDER_TITLE_LIMIT = 190
+export function processRevisionTitle(release: { releaseNo: string; workOrderNumber: string }, names: string[]) {
+  const title = `【料单要改】设计变更 ${release.releaseNo} 涉及已下发的料单，已改为"修改中"：${names.join('、')}（${release.workOrderNumber}）`
+  return title.length > REMINDER_TITLE_LIMIT ? `${title.slice(0, REMINDER_TITLE_LIMIT - 1)}…` : title
+}
 
 export const MATERIAL_STATUS_TEXT: Record<MaterialListStatus, string> = SHARED_MATERIAL_STATUS_TEXT
 

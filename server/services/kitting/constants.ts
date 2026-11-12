@@ -9,10 +9,10 @@
 import type { AlertLevel, PartStatus, PurchaseStatus, StepStatus } from '@prisma/client'
 import { type RuleThreshold, dateFieldDay, dayDiff, shanghaiDay } from '../alerts/rules'
 import { lineProgress } from '../purchases/constants'
-import { PRODUCTION_DEPT } from '../releases/constants'
+import { PRODUCTION_DEPT_NAME } from '../releases/constants'
 
 /** 默认负责人：节点没指定负责人时是生产经理（生产部负责人）；W8 黄色起通知它的负责人 */
-export const KITTING_DEPT = PRODUCTION_DEPT
+export const KITTING_DEPT_NAME = PRODUCTION_DEPT_NAME
 
 export const kittingLink = (id: string) => `/kitting?id=${encodeURIComponent(id)}`
 /** 手机端：带 id 时页面顶部单独展示这个节点（被升级通知的人也能看到，按能否看到该工单判权限） */

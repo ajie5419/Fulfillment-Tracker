@@ -2,7 +2,7 @@ import type { ClientBodyArgs, ClientResponse } from '../utils/transport'
 import { ISSUE_STATUS_TEXT as SHARED_ISSUE_STATUS_TEXT, ISSUE_SOURCE_TEXT as SHARED_ISSUE_SOURCE_TEXT, ISSUE_CATEGORY_TEXT as SHARED_ISSUE_CATEGORY_TEXT } from '#shared/issues'
 /** 异常页面共用：文案、颜色、操作按钮、上传照片。 */
 import { BOARD_COLOR as SHARED_BOARD_COLOR, BOARD_TEXT as SHARED_BOARD_TEXT } from '#shared/status'
-import { MAX_PHOTO_BYTES as SHARED_MAX_PHOTO_BYTES, MAX_ISSUE_PHOTOS } from '#shared/upload-policy'
+import { MAX_PHOTO_BYTES as SHARED_MAX_PHOTO_BYTES, MAX_ISSUE_PHOTOS, MAX_FILES_PER_REQUEST } from '#shared/upload-policy'
 
 export const ISSUE_STATUS_TEXT = SHARED_ISSUE_STATUS_TEXT
 export const ISSUE_STATUS_COLOR = { OPEN: 'orange', ACCEPTED: 'blue', RESOLVED: 'purple', CLOSED: 'default' } as const
@@ -41,14 +41,17 @@ export function issueAction(id: string, action: IssueAction, body: unknown) {
   return sendClientRequest(`/api/issues/${encodeURIComponent(id)}/${action}`, { method: 'POST', body })
 }
 
-/** 上传照片（multipart，字段 file），返回 upload_file id */
+/** Batch photos independently of the issue's total photo limit. */
 export async function uploadPhotos(files: File[]): Promise<string[]> {
-  if (!files.length) return []
-  const form = new FormData()
-  for (const f of files) form.append('file', f, f.name || 'photo')
   const send = clientRequest
-  const saved = await send('/api/uploads', { method: 'POST', body: form })
-  return saved.map((s) => s.id)
+  const ids: string[] = []
+  for (let i = 0; i < files.length; i += MAX_FILES_PER_REQUEST) {
+    const form = new FormData()
+    for (const f of files.slice(i, i + MAX_FILES_PER_REQUEST)) form.append('file', f, f.name || 'photo')
+    const saved = await send('/api/uploads', { method: 'POST', body: form })
+    ids.push(...saved.map((s) => s.id))
+  }
+  return ids
 }
 
 /** 照片大小上限（与服务端一致），选择时先拦一道 */

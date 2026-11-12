@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "nuxt dev",
+    "demo": "node scripts/demo.mjs",
     "build": "nuxt build",
     "start": "node .output/server/index.mjs",
     "postinstall": "nuxt prepare && prisma generate",

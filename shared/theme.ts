@@ -1,5 +1,8 @@
-/** Ant 主题用的文字/边框色：与 app/assets/base.css 的 --ft-text / --ft-border 同值，改一处要两处一起改（与 STATUS_COLOR 同模式） */
+/** Keep Ant surfaces aligned with the shared CSS tokens, including portal controls. */
 export const THEME_COLOR = {
-  textBase: '#0F172A',
-  border: '#E2E8F0',
+  textBase: '#282828',
+  border: '#E7E7E9',
+  surface: '#FFFFFF',
+  fill: '#FAFAFA',
+  textSecondary: '#626262',
 } as const

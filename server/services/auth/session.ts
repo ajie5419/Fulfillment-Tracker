@@ -4,8 +4,9 @@
  */
 import type { PrismaClient, Session } from '@prisma/client'
 import { randomToken, sha256Hex } from './pkce'
+import { AUTH_COOKIES } from './cookie-names'
 
-export const SESSION_COOKIE = 'ft_session'
+export const SESSION_COOKIE = AUTH_COOKIES.session
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
 type Db = Pick<PrismaClient, 'session' | 'qmsUser'>

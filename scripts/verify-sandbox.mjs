@@ -3,9 +3,14 @@ import https from 'node:https'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { createRequire } from 'node:module'
 import { PrismaClient } from '@prisma/client'
 
 process.chdir(resolve(import.meta.dirname, '..'))
+const require = createRequire(import.meta.resolve('nuxt'))
+const { createJiti } = require('jiti')
+const { authCookieNames } = await createJiti(import.meta.url).import(resolve('server/services/auth/cookie-names.ts'))
+const sandboxCookies = authCookieNames(true)
 const env = Object.fromEntries(readFileSync('.env.sandbox', 'utf8').trim().split('\n').map(line => { const split = line.indexOf('='); return [line.slice(0, split), line.slice(split + 1)] }))
 const base = new URL(env.NUXT_QMS_CALLBACK_URL).origin
 const target = new URL(env.DATABASE_URL)
@@ -20,7 +25,7 @@ function request(path, { method = 'GET', body, authenticated = true } = {}) {
   assert.equal(url.origin, base)
   return new Promise((accept, reject) => {
     const headers = { 'Content-Type': 'application/json', Origin: base }
-    if (authenticated) headers.Cookie = [...cookies].filter(([name]) => name !== 'ft_login_state' || url.pathname.startsWith('/auth/')).map(([name, value]) => `${name}=${value}`).join('; ')
+    if (authenticated) headers.Cookie = [...cookies].filter(([name]) => name !== sandboxCookies.loginState || url.pathname.startsWith('/auth/')).map(([name, value]) => `${name}=${value}`).join('; ')
     const req = https.request(url, { method, ca, headers }, res => {
       for (const entry of res.headers['set-cookie'] ?? []) {
         assert(!/;\s*Domain=/i.test(entry), 'Cookie must be host-only')
@@ -56,7 +61,7 @@ try {
   assert.equal((await request(callback, { authenticated: false })).status, 400)
   const accepted = await request(callback)
   assert.equal(accepted.status, 302)
-  assert(cookies.get('ft_session'))
+  assert(cookies.get(sandboxCookies.session))
   assert.equal((await request(callback)).status, 400)
   console.log('PASS: real login, PKCE exchange, CSRF rejection, one-time callback, secure host-only cookies')
   const me = payload(await request('/api/me'))
@@ -94,7 +99,7 @@ try {
     assert.equal(await db.qmsUser.count(), 1)
     assert.equal((await db.qmsWorkOrder.findUnique({ where: { workOrderNumber: 'SANDBOX-ONLY-001' } })).status, 'IN_PROGRESS')
     assert.equal((await db.qmsUser.findUnique({ where: { id: 'sandbox-pm' } })).realName, '【独立测试】项目经理')
-    const session = await db.session.findUnique({ where: { id: createHash('sha256').update(cookies.get('ft_session')).digest('hex') } })
+    const session = await db.session.findUnique({ where: { id: createHash('sha256').update(cookies.get(sandboxCookies.session)).digest('hex') } })
     assert.equal(session.qmsUserId, 'sandbox-pm')
     console.log('PASS: exact database identity, orders=1, users=1, session identity matches fixture; order unchanged')
   } finally { await db.$disconnect() }

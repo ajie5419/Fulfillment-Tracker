@@ -17,6 +17,8 @@ import { matchIncomingInspections } from '../purchases/incoming'
 import type { QmsBomItem } from '../bom/client'
 import { CONFIRM_PLAN_NODE, PLAN_NODE_ALERT_REFS, PLAN_REF, PLAN_TASK_REF, planLink } from '../plan/constants'
 import { deptHeads } from '../plan/plan'
+import { DEMO_CUSTOMERS } from './work-orders'
+import { ensureDemoIdentity, DEPARTMENTS, DEPT_MAPPINGS, USERS, NOTIFY_ROLES } from './demo-identity'
 
 const P = 'DEMO-'
 const DAY = 86_400_000
@@ -40,34 +42,6 @@ const WORK_ORDER_NUMBERS = [`${P}WO-001`, `${P}WO-002`, `${P}WO-003`]
 /** 项目经理 u-003 负责的演示工单 */
 const PM_WORK_ORDERS = [`${P}WO-001`, `${P}WO-002`]
 
-// 异常分类的默认责任部门按名称匹配这些部门（方案 6.4）
-const DEPARTMENTS = [
-  { id: `${P}DEPT-TECH`, name: '技术部' },
-  { id: `${P}DEPT-PROC`, name: '工艺部' },
-  { id: `${P}DEPT-PUR`, name: '采购部' },
-  { id: `${P}DEPT-FIN`, name: '财务部' },
-  { id: `${P}DEPT-QA`, name: '质量部' },
-  { id: `${P}DEPT-PROD`, name: '生产部' },
-  { id: `${P}DEPT-PROJ`, name: '项目部' },
-  { id: `${P}DEPT-LEAD`, name: '公司领导' },
-  // R13：班组、科室挂在大部门下面（部门对照只对到大部门，下级自动继承）；行政部不对应任何业务部门（算"其他"）
-  { id: `${P}DEPT-WELD`, name: '组焊班', parentId: `${P}DEPT-PROD` },
-  { id: `${P}DEPT-QC`, name: '检验科', parentId: `${P}DEPT-QA` },
-  { id: `${P}DEPT-ADMIN`, name: '行政部' },
-  // 生产管理重设计第二批：班组长演示。装配班不对应业务部门（算"其他"），只凭"班组长"身份登记本班组自制工序
-  { id: `${P}DEPT-ASSY`, name: '装配班' },
-]
-
-/** R13 部门对照：大部门对到业务部门（演示各部门视角；班组、科室不单独对照，沿上级继承） */
-const DEPT_MAPPINGS = [
-  { qmsDepartmentId: `${P}DEPT-TECH`, businessDept: 'TECH' },
-  { qmsDepartmentId: `${P}DEPT-PROC`, businessDept: 'PROCESS' },
-  { qmsDepartmentId: `${P}DEPT-PUR`, businessDept: 'PURCHASE' },
-  { qmsDepartmentId: `${P}DEPT-FIN`, businessDept: 'FINANCE' },
-  { qmsDepartmentId: `${P}DEPT-QA`, businessDept: 'QUALITY' },
-  { qmsDepartmentId: `${P}DEPT-PROD`, businessDept: 'PRODUCTION' },
-  { qmsDepartmentId: `${P}DEPT-PROJ`, businessDept: 'PROJECT' },
-] as const
 
 const SUPPLIERS = [
   { id: `${P}SUP-01`, name: '厂内组焊队', outsourcingMode: 'IN_PLANT', kind: 'TEAM' }, // 厂内外协班组
@@ -93,44 +67,6 @@ const PROCESSES = [
   { id: `${P}PRC-ASSY`, name: '装配' },
 ]
 
-// 模拟身份桥按这些 ID 登录（授权页可选 u-001 ~ u-006），所以 ID 不带前缀。QMS 用户的部门存部门 ID
-const USERS = [
-  { id: 'u-001', username: `${P}u-001`, realName: '测试外协专员', departmentId: `${P}DEPT-PROD`, roleId: `${P}ROLE-OUTSOURCE`, roleName: '外协专员' },
-  { id: 'u-002', username: `${P}u-002`, realName: '测试生产经理', departmentId: `${P}DEPT-PROD`, roleId: `${P}ROLE-PM`, roleName: '生产经理' },
-  { id: 'u-003', username: `${P}u-003`, realName: '测试项目经理', departmentId: `${P}DEPT-PROJ`, roleId: `${P}ROLE-PROJ`, roleName: '项目经理' },
-  { id: 'u-004', username: `${P}u-004`, realName: '测试项目部负责人', departmentId: `${P}DEPT-PROJ`, roleId: `${P}ROLE-PROJ-HEAD`, roleName: '部门负责人' },
-  { id: 'u-005', username: `${P}u-005`, realName: '测试分管领导', departmentId: `${P}DEPT-LEAD`, roleId: `${P}ROLE-LEADER`, roleName: '领导' },
-  { id: 'u-006', username: `${P}u-006`, realName: '测试质量负责人', departmentId: `${P}DEPT-QA`, roleId: `${P}ROLE-QA-HEAD`, roleName: '部门负责人' },
-  // R9 发放签收的发放人
-  { id: 'u-008', username: `${P}u-008`, realName: '测试设计员', departmentId: `${P}DEPT-TECH`, roleId: `${P}ROLE-DESIGN`, roleName: '设计人员' },
-  // R10：采购部负责人兼采购员；财务
-  { id: 'u-009', username: `${P}u-009`, realName: '测试采购员', departmentId: `${P}DEPT-PUR`, roleId: `${P}ROLE-BUYER`, roleName: '采购员' },
-  { id: 'u-010', username: `${P}u-010`, realName: '测试财务', departmentId: `${P}DEPT-FIN`, roleId: `${P}ROLE-FIN`, roleName: '财务' },
-  // R11：技术部负责人（设计任务没指定设计负责人时的责任人；W7 黄色起收到）
-  { id: 'u-011', username: `${P}u-011`, realName: '测试技术负责人', departmentId: `${P}DEPT-TECH`, roleId: `${P}ROLE-TECH-HEAD`, roleName: '部门负责人' },
-  // R13 各部门视角：组焊班（经部门对照算生产部）、检验科（算质量部）、行政部（其他部门，只看"每日"）
-  { id: 'u-012', username: `${P}u-012`, realName: '测试焊工', departmentId: `${P}DEPT-WELD`, roleId: `${P}ROLE-WORKER`, roleName: '操作工' },
-  { id: 'u-013', username: `${P}u-013`, realName: '测试检验员', departmentId: `${P}DEPT-QC`, roleId: `${P}ROLE-QC`, roleName: '检验员' },
-  { id: 'u-014', username: `${P}u-014`, realName: '测试行政', departmentId: `${P}DEPT-ADMIN`, roleId: `${P}ROLE-ADMIN`, roleName: '行政' },
-  // 工艺部（10-24）：分解料单、编制下发工艺文件、定工艺路线
-  { id: 'u-015', username: `${P}u-015`, realName: '测试工艺员', departmentId: `${P}DEPT-PROC`, roleId: `${P}ROLE-PROCESS`, roleName: '工艺员' },
-  // 生产管理重设计第二批：班组长（装配一班），没有别的角色——只能登记本班组自制工序的开工、完工、报工，其余只读
-  { id: 'u-016', username: `${P}u-016`, realName: '测试班组长', departmentId: `${P}DEPT-ASSY`, roleId: `${P}ROLE-TEAM-LEADER`, roleName: '班组长' },
-]
-
-// 预警升级阶梯的通知对象（方案 6.2）
-const NOTIFY_ROLES = [
-  { id: `${P}ROLE-1`, role: 'OUTSOURCE_COORDINATOR', userId: 'u-001', department: null },
-  { id: `${P}ROLE-2`, role: 'DEPT_HEAD', userId: 'u-002', department: '生产部' },
-  { id: `${P}ROLE-3`, role: 'PROJECT_DEPT_HEAD', userId: 'u-004', department: null },
-  { id: `${P}ROLE-4`, role: 'LEADER', userId: 'u-005', department: null },
-  { id: `${P}ROLE-5`, role: 'DEPT_HEAD', userId: 'u-006', department: '质量部' },
-  { id: `${P}ROLE-6`, role: 'DEPT_HEAD', userId: 'u-009', department: '采购部' },
-  { id: `${P}ROLE-7`, role: 'FINANCE', userId: 'u-010', department: null },
-  { id: `${P}ROLE-8`, role: 'DEPT_HEAD', userId: 'u-011', department: '技术部' },
-  // 工艺模块（10-27）：设计变更涉及已下发的料单时提醒工艺部负责人
-  { id: `${P}ROLE-9`, role: 'DEPT_HEAD', userId: 'u-015', department: '工艺部' },
-] as const
 
 const PART_ID = `${P}PART-001`
 const STEPS = [
@@ -282,7 +218,7 @@ const PLAN_NODES = (day: (offset: number) => Date) => [
   { id: `${P}PN-04`, seq: 4, name: '组焊涂装', dept: 'PRODUCTION', planDate: day(14), confirm: 'PENDING' },
   { id: `${P}PN-05`, seq: 5, name: '机加', dept: 'PRODUCTION', planDate: day(18), confirm: 'REJECTED', by: 'u-002', reason: '外协机加厂排产已满，最早只能比计划晚一周' },
   { id: `${P}PN-06`, seq: 6, name: '装配', dept: 'PRODUCTION', planDate: day(25), baseline: day(23), confirm: 'PENDING' },
-  { id: `${P}PN-07`, seq: 7, name: '调试', dept: 'TECH', planDate: day(31), confirm: 'PENDING' },
+  { id: `${P}PN-07`, seq: 7, name: '调试', dept: 'TECH', requiresProcess: false, planDate: day(31), confirm: 'PENDING' },
   { id: `${P}PN-08`, seq: 8, name: '发运', dept: 'PROJECT', planDate: day(35), confirm: 'PENDING' },
 ] as const
 /** 部门记录挂哪个节点 */
@@ -310,6 +246,7 @@ async function seedDemoPlan(day: (offset: number) => Date, now: Date) {
           seq: n.seq,
           name: n.name,
           dept: n.dept,
+          requiresProcess: 'requiresProcess' in n ? n.requiresProcess : true,
           planDate: n.planDate,
           baselineDate: 'baseline' in n ? n.baseline : n.planDate,
           ...(done ? { actualDate: done, manualDoneBy: 'u-003', manualDoneAt: done } : {}),
@@ -363,7 +300,9 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
   const day = dayFn(now)
   await prisma.$transaction(async (tx) => {
     for (const wo of workOrders(day)) {
-      await tx.qmsWorkOrder.upsert({ where: { workOrderNumber: wo.workOrderNumber }, update: {}, create: { ...wo, status: 'IN_PROGRESS', updatedAt: now } })
+      await tx.qmsWorkOrder.upsert({ where: { workOrderNumber: wo.workOrderNumber }, update: {}, create: { ...wo, customerNameId: DEMO_CUSTOMERS.find(c => c.name === wo.customerName)?.id, version: 1, status: 'IN_PROGRESS', updatedAt: now } })
+      // Older demo fixtures predate editable work orders; preserve progress while adding metadata.
+      await tx.qmsWorkOrder.updateMany({ where: { workOrderNumber: wo.workOrderNumber, version: null }, data: { version: 1, customerNameId: DEMO_CUSTOMERS.find(c => c.name === wo.customerName)?.id } })
     }
     for (const s of SUPPLIERS) {
       await tx.qmsSupplier.upsert({ where: { id: s.id }, update: {}, create: { ...s, category: '外协', updatedAt: now } })
@@ -371,20 +310,7 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
     for (const p of PROCESSES) {
       await tx.qmsProcess.upsert({ where: { id: p.id }, update: {}, create: { ...p, supplierSource: 'Supplier', updatedAt: now } })
     }
-    for (const d of DEPARTMENTS) {
-      await tx.qmsDepartment.upsert({ where: { id: d.id }, update: {}, create: { parentId: '0', ...d, status: 1, updatedAt: now } })
-    }
-    // 部门对照：管理员在设置页改过的不覆盖
-    for (const m of DEPT_MAPPINGS) {
-      await tx.deptMapping.upsert({ where: { qmsDepartmentId: m.qmsDepartmentId }, update: {}, create: m })
-    }
-    for (const u of opts.skipUsers ? [] : USERS) {
-      // 已有同 ID 的真实用户（同步来的）时不覆盖
-      await tx.qmsUser.upsert({ where: { id: u.id }, update: {}, create: { ...u, status: 'ACTIVE', updatedAt: now } })
-    }
-    for (const r of NOTIFY_ROLES) {
-      await tx.notifyRole.upsert({ where: { id: r.id }, update: {}, create: r })
-    }
+    await ensureDemoIdentity(tx, now, opts.skipUsers)
     // 班组长：班组长用户存在时才写（连着 QMS、没写演示用户时跳过）；设置页改过的不覆盖
     for (const l of TEAM_LEADERS) {
       if (!(await tx.qmsUser.findUnique({ where: { id: l.userId }, select: { id: true } }))) continue
@@ -524,7 +450,7 @@ async function seedDemoReleases() {
         version: 'A',
         description: '主梁结构件总图及零件图（纸质 12 张），已随件发到车间',
         userIds: ids.filter((id) => id === 'u-003'),
-        groups: ids.some((id) => id !== 'u-003') ? [{ department: '生产部', role: null }] : [],
+        groups: ids.some((id) => id !== 'u-003') ? [{ department: 'PRODUCTION', role: null }] : [],
       },
       issuer,
     ).catch(() => null) // 演示用户不全（连着 QMS）时跳过，不影响其余演示数据
@@ -549,8 +475,9 @@ async function seedDemoReleases() {
  * 只删 DEMO 数据，以及引用了它们的工件、步骤、事件、待办、待确认记录、异常（含处理日志、上传的照片）、预警和提醒；
  * 通知对象、工单项目经理一并清掉，阈值恢复默认（删掉后按默认值，下次写入演示数据时再补上）。停工日不动。
  * uploadDir 给了时顺带删掉照片文件。
+ * preserveUsers keeps the full demo identity configuration, including departments and recipients.
  */
-export async function resetDemo(uploadDir?: string) {
+export async function resetDemo(uploadDir?: string, opts: { preserveUsers?: boolean } = {}) {
   const result = await prisma.$transaction(async (tx) => {
     const parts = await tx.part.findMany({ where: { OR: [{ id: { startsWith: P } }, { workOrderNumber: { startsWith: P } }] }, select: { id: true } })
     const partIds = parts.map((p) => p.id)
@@ -634,7 +561,7 @@ export async function resetDemo(uploadDir?: string) {
     const planNodes = await tx.planNode.deleteMany({ where: { id: { in: planNodeIds } } })
     await tx.workOrderPlan.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
     const alerts = await tx.alert.deleteMany({ where: { id: { in: alertIds } } })
-    await tx.notifyRole.deleteMany({ where: { OR: [{ id: { startsWith: P } }, { userId: { in: demoUsers } }] } })
+    if (!opts.preserveUsers) await tx.notifyRole.deleteMany({ where: { OR: [{ id: { startsWith: P } }, { userId: { in: demoUsers } }] } })
     await tx.workOrderExt.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
     await tx.threshold.deleteMany()
     const unmatched = await tx.unmatchedInspection.deleteMany({ where: { qmsInspectionId: { in: insIds } } })
@@ -646,11 +573,15 @@ export async function resetDemo(uploadDir?: string) {
     })
     await tx.qmsInspection.deleteMany({ where: { id: { in: insIds } } })
     await tx.qmsWorkOrder.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
+    await tx.workOrderLocalSave.deleteMany({ where: { workOrderNumber: { startsWith: P } } })
     await tx.qmsSupplier.deleteMany({ where: { id: { startsWith: P } } })
     await tx.qmsProcess.deleteMany({ where: { id: { startsWith: P } } })
-    await tx.qmsUser.deleteMany({ where: { username: { startsWith: P } } })
-    await tx.deptMapping.deleteMany({ where: { qmsDepartmentId: { startsWith: P } } })
-    await tx.qmsDepartment.deleteMany({ where: { id: { startsWith: P } } })
+    // Login alone is insufficient: department and recipient mappings drive permissions and plan delivery.
+    if (!opts.preserveUsers) {
+      await tx.qmsUser.deleteMany({ where: { username: { startsWith: P } } })
+      await tx.deptMapping.deleteMany({ where: { qmsDepartmentId: { startsWith: P } } })
+      await tx.qmsDepartment.deleteMany({ where: { id: { startsWith: P } } })
+    }
     return {
       storedNames: uploads.map((u) => u.storedName),
       issues: issues.count,

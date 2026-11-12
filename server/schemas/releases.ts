@@ -28,5 +28,7 @@ export const newReleaseBody = z
   })
   .strict()
 
+export const recipientPreviewBody = newReleaseBody.pick({ workOrderNumber: true, type: true, userIds: true, groups: true })
+
 export const rejectBody = z.object({ reason: z.string().trim().min(1, '请填写拒收原因').max(500, '原因最多 500 字') }).strict()
 export const confirmBody = z.object({ note: z.string().trim().max(500, '最多 500 字').nullish() }).strict()

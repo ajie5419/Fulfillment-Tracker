@@ -33,6 +33,7 @@ export interface PlanNodeRow {
   code: string
   name: string
   dept: string
+  requiresProcess: boolean
   deptText: string
   note: string | null
   /** 上级节点（子节点，只有一层）；子节点数 */
@@ -86,7 +87,7 @@ export interface PlanNodeRow {
 }
 export interface PlanView {
   dateConflicts: import('./plan-schedule').PlanDateConflict[]
-  workOrder: { workOrderNumber: string; projectName: string | null; customerName: string | null; deliveryDate: string | null; projectManagerName: string | null }
+  workOrder: { workOrderNumber: string; projectName: string | null; customerName: string | null; deliveryDate: string | null; effectiveTime: string | null; projectManagerName: string | null }
   plan: { status: 'DRAFT' | 'PUBLISHED'; templateName: string | null; publishedAt: string | null; publishedByName: string | null } | null
   expectedDelivery: string | null
   deliveryDelayDays: number | null
@@ -104,7 +105,7 @@ export interface PlanView {
   canEdit: boolean
   canCreate: { drawing: boolean; purchase: boolean; route: boolean; kitting: boolean }
   nodes: PlanNodeRow[]
-  changeLogs: { id: string; nodeName: string; kind: 'DATE' | 'ADD' | 'DELETE'; oldDate: string | null; newDate: string | null; reason: string; actorName: string | null; createdAt: string }[]
+  changeLogs: { id: string; nodeName: string; kind: keyof typeof import('./plan-validation').PLAN_CHANGE_KIND; oldDate: string | null; newDate: string | null; reason: string; actorName: string | null; createdAt: string }[]
 }
 
 export type CanCreate = PlanView['canCreate']

@@ -197,7 +197,7 @@ exports[`releases service 搬移前特征 > CHANGE 新建的锁、编号、数�
               "role": "OUTSOURCE_COORDINATOR",
             },
             {
-              "department": "生产部",
+              "department": "PRODUCTION",
               "role": "DEPT_HEAD",
             },
           ],
@@ -635,7 +635,7 @@ exports[`releases service 搬移前特征 > DRAWING 新建的锁、编号、数�
           "userId": true,
         },
         "where": {
-          "department": "生产部",
+          "department": "PRODUCTION",
           "role": "DEPT_HEAD",
         },
       },

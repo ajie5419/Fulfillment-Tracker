@@ -9,3 +9,7 @@ export const MAX_FILES_PER_REQUEST = 3
 /** 业务记录允许绑定的总数，独立于单次上传数量。 */
 export const MAX_ISSUE_PHOTOS = 3
 export const MAX_RELEASE_ATTACHMENTS = 5
+
+/** Keep visible limits tied to the same bytes used by validators. */
+export const formatUploadLimit = (bytes: number) => `${bytes / (1024 * 1024)}MB`
+export const MULTIPART_OVERHEAD_BYTES = 64 * 1024

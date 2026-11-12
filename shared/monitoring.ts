@@ -39,5 +39,6 @@ export interface MonitoredEntity {
   ownerIds: string[]
   owners: { id: string; name: string | null }[]
   deptNames: string[]
+  departmentKeys?: string[]
   link: string
 }

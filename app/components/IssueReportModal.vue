@@ -6,6 +6,7 @@
  */
 import type { UploadFile } from 'ant-design-vue'
 import type { Dayjs } from 'dayjs'
+import { formatUploadLimit } from '#shared/upload-policy'
 
 const props = defineProps<{ open: boolean; workOrderNumber?: string; partId?: string }>()
 const emit = defineEmits<{ close: []; done: [issue: { id: string; issueNo: string }] }>()
@@ -71,7 +72,7 @@ function beforeUpload(file: File) {
     return false
   }
   if (file.size > MAX_PHOTO_BYTES) {
-    message.error('每张照片不能超过 8MB')
+    message.error(`每张照片不能超过 ${formatUploadLimit(MAX_PHOTO_BYTES)}`)
     return false
   }
   if (photos.value.length >= MAX_PHOTOS) {
@@ -160,7 +161,7 @@ function close() {
       <a-form-item label="一句话描述" required>
         <a-textarea v-model:value="form.description" :rows="2" :maxlength="500" show-count placeholder="发生了什么？如：涂装件返回有流挂，需返修" />
       </a-form-item>
-      <a-form-item :label="`照片（最多 ${MAX_PHOTOS} 张，每张不超过 8MB）`">
+      <a-form-item :label="`照片（最多 ${MAX_PHOTOS} 张，每张不超过 ${formatUploadLimit(MAX_PHOTO_BYTES)}）`">
         <a-upload
           :file-list="photos"
           list-type="picture-card"

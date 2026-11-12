@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getTestDatabaseUrl } from '../helpers/test-database'
+afterEach(() => vi.unstubAllEnvs())
 
 describe('集成测试数据库守卫', () => {
   it.each([
@@ -30,7 +31,13 @@ describe('集成测试数据库守卫', () => {
   })
 
   it.each([undefined, ''])('缺失地址时返回 undefined，允许跳过：%s', (url) => {
+    vi.stubEnv('REQUIRE_TEST_DATABASE', '')
     expect(getTestDatabaseUrl(url)).toBeUndefined()
+  })
+
+  it('required database jobs reject missing configuration before any suite can skip', () => {
+    vi.stubEnv('REQUIRE_TEST_DATABASE', '1')
+    expect(() => getTestDatabaseUrl(undefined)).toThrow('必需的数据库测试不能跳过')
   })
 
   it('拒绝原因不泄露连接串或密码', () => {

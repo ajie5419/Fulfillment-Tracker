@@ -1,5 +1,6 @@
 import { prisma } from '../../../utils/prisma'
-import { resolveDeptNames } from '../../auth/departments'
+import { resolveDeptIdentities } from '../../auth/departments'
+import { departmentLabel } from '../../../../shared/business-depts'
 import { CATEGORY_TEXT } from '../../issues/constants'
 import { alertKey, type Thresholds, dateFieldDay, durationText, judgeW4 } from '../rules'
 import type { Target } from '../types'
@@ -14,7 +15,7 @@ export async function collectW4(now: Date, t: Thresholds, offDays: string[]): Pr
   const [pdh, deptName] = await Promise.all([
     prisma.notifyRole.findMany({ where: { role: 'PROJECT_DEPT_HEAD' }, select: { userId: true } }),
     // 责任部门（QMS 部门 ID）换成业务部门名称后与部门负责人对应（dept_mapping，没对照时用部门名称本身）
-    resolveDeptNames(issues.map((i) => i.responsibleDeptId)),
+    resolveDeptIdentities(issues.map((i) => i.responsibleDeptId)),
   ])
   const fallback = [...new Set(pdh.map((p) => p.userId))]
   return issues.map((i) => {
@@ -33,7 +34,8 @@ export async function collectW4(now: Date, t: Thresholds, offDays: string[]): Pr
       key: alertKey('W4', 'issue', i.id),
       workOrderNumber: i.workOrderNumber,
       ownerIds: i.responsibleUserId ? [i.responsibleUserId] : fallback,
-      deptNames: dept ? [dept] : undefined,
+      deptNames: dept ? [departmentLabel(dept)] : undefined,
+      departmentKeys: dept ? [dept] : undefined,
       startAt: i.status === 'OPEN' && !r.overdueDays ? i.createdAt : (i.dueDate ?? i.createdAt),
       level: r.level,
       subject: `异常 ${i.issueNo}（${CATEGORY_TEXT[i.category]}）`,

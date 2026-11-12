@@ -182,7 +182,7 @@ onBeforeUnmount(() => {
   <a-layout class="ft-app">
     <a-layout class="frame" has-sider>
     <div v-if="broken && !collapsed" class="sider-mask" aria-hidden="true" @click="collapsed = true" />
-    <a-layout-sider v-model:collapsed="collapsed" :trigger="null" :width="212" breakpoint="lg" :collapsed-width="0" class="sider" @breakpoint="onBreakpoint">
+    <a-layout-sider v-model:collapsed="collapsed" :trigger="null" :width="240" breakpoint="lg" :collapsed-width="0" class="sider" @breakpoint="onBreakpoint">
       <div class="sider-inner" :inert="collapsed || undefined">
         <div class="brand-bar">
           <NuxtLink to="/" class="brand">
@@ -285,59 +285,59 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Ember 式抽屉壳层：左侧浅冷灰融底导航 + 底部白卡名片，右侧 16px 圆角纯白独立工作台画板 */
+/* A continuous white workspace gives tables more room beside the neutral navigation. */
 .ft-app { height: 100vh; height: 100dvh; padding: 0; overflow: hidden; background: var(--ft-page-bg); }
 .frame { position: relative; height: 100%; background: var(--ft-page-bg); overflow: hidden; }
-.sider { height: 100%; background: transparent !important; border-right: none; }
+.sider { height: 100%; background: transparent !important; border-right: 1px solid var(--ft-border); }
 .sider-mask { position: absolute; inset: 0; z-index: 15; background: color-mix(in srgb, var(--ft-text) 22%, transparent); }
-.sider-inner { height: 100%; display: flex; flex-direction: column; background: var(--ft-page-bg); overflow: hidden; }
+.sider-inner { height: 100%; display: flex; flex-direction: column; background: var(--ft-fill); overflow: hidden; }
 
-.brand-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 12px 8px 14px; }
+.brand-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 64px; box-sizing: border-box; padding: 0 16px; border-bottom: 1px solid var(--ft-border); }
 .brand { display: inline-flex; align-items: center; gap: 9px; min-width: 0; color: var(--ft-text); white-space: nowrap; }
 .brand:hover { color: var(--ft-text); }
 .brand-mark { flex: none; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 8px; background: var(--card-keycap-surface); background-clip: padding-box; border: 1px solid var(--card-hairline); border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom); box-shadow: var(--card-keycap-shadow); }
 .logo { display: block; width: 20px; height: 17px; object-fit: contain; }
-.brand-title { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: var(--ft-text); }
+.brand-title { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; color: var(--ft-text); }
 .brand-dot { color: var(--ft-primary); margin-left: 1px; }
 
 .icon-btn { flex: none; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--ft-text-3); cursor: pointer; transition: background-color 0.15s, color 0.15s, border-color 0.15s; }
 .icon-btn:hover { color: var(--ft-text); background: color-mix(in srgb, var(--ft-text) 5%, transparent); }
 .icon-btn:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 1px; }
 
-.sider-scroll { flex: 1; overflow-y: auto; padding: 4px 10px 10px 12px; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--ft-text) 15%, transparent) transparent; }
+.sider-scroll { flex: 1; overflow-y: auto; padding: 12px; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--ft-text) 15%, transparent) transparent; }
 .sider-scroll::-webkit-scrollbar { width: 5px; }
 .sider-scroll::-webkit-scrollbar-track { background: transparent; }
 .sider-scroll::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--ft-text) 14%, transparent); border-radius: 999px; }
 .sider-scroll:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--ft-text) 24%, transparent); }
 .group + .group { margin-top: 6px; }
 .group-title { padding: 10px 10px 4px; font-size: 11px; font-weight: 500; letter-spacing: 0.01em; color: var(--ft-text-3); }
-.item { display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 10px; margin: 1px 0; border-radius: 9px; color: var(--ft-text-2); font-size: 13.5px; white-space: nowrap; overflow: hidden; transition: background-color 0.12s, color 0.12s; }
+.item { display: flex; align-items: center; gap: 9px; height: 36px; padding: 0 10px; margin: 3px 0; border-radius: 8px; color: var(--ft-text-2); font-size: 14px; white-space: nowrap; overflow: hidden; transition: background-color 0.12s, color 0.12s; }
 .item-ico { flex: none; display: inline-flex; align-items: center; color: var(--ft-text-3); transition: color 0.12s; }
 .item-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* Ember 式纯白细描边数字小方牌 */
+/* Compact badges keep unread counts separate from navigation labels. */
 .badge { flex: none; box-sizing: border-box; min-width: 20px; height: 19px; padding: 0 5px; border-radius: 6px; background: var(--card-keycap-surface); background-clip: padding-box; border: 1px solid var(--card-hairline); border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom); box-shadow: var(--card-keycap-shadow); color: var(--ft-text-2); font-size: 11px; line-height: 17px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
 .item:hover { color: var(--ft-text); background: color-mix(in srgb, var(--ft-text) 4.5%, transparent); }
 .item:hover .item-ico { color: var(--ft-text-2); }
-/* 选中项：柔和浅灰圆角条 + 深墨字 + 品牌色图标，克制不刺眼 */
-.item.active { color: var(--ft-text); background: color-mix(in srgb, var(--ft-text) 5.5%, var(--ft-card-bg)); font-weight: 600; }
+/* A shared accent identifies the active route without changing business status colors. */
+.item.active { color: var(--ft-primary-text); background: var(--ft-primary-bg); font-weight: 600; }
 .item.active .item-ico { color: var(--ft-primary); }
 .item.active .badge { border-color: var(--card-hairline-hover); color: var(--ft-text); }
 .item:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: -2px; }
 
-/* 侧栏底部个人名片白卡：恢复纵向高度与字号，仅收窄左右宽度（左右各留 24px），居中且避开右侧滚动条 */
-.user-card { flex: none; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: calc(100% - 48px); margin: 4px auto 10px; padding: 7px 8px; background: var(--card-surface-sheen); background-clip: padding-box; border: 1px solid var(--card-hairline); border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom); border-radius: 11px; box-shadow: var(--ft-card-shadow); min-width: 0; }
+/* Anchor identity and logout below the independently scrolling navigation. */
+.user-card { flex: none; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; margin: 0; padding: 16px; background: var(--card-surface-sheen); background-clip: padding-box; border: 1px solid var(--card-hairline); border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom); border-radius: 0; border-width: 1px 0 0; box-shadow: none; min-width: 0; }
 .avatar { flex: none; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--ft-primary-bg); color: var(--ft-primary-text); border: 1px solid color-mix(in srgb, var(--ft-primary) 18%, transparent); font-size: 12.5px; font-weight: 600; }
 .user-meta { flex: 1; min-width: 0; line-height: 1.26; }
 .user-name { font-size: 13px; font-weight: 600; color: var(--ft-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .user-dept { margin-top: 1px; font-size: 11.5px; color: var(--ft-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .logout-btn { width: 26px; height: 26px; }
 
-/* 右侧独立圆角白瓷工作台画板（与内部纯白高光卡片拉开微亮度层级，保留顶部 1px 内高光） */
-.main { min-width: 0; height: calc(100% - 16px); margin: 8px 8px 8px 0; display: flex; flex-direction: column; background: var(--card-sheet-bg); background-clip: padding-box; border: 1px solid var(--card-hairline); border-color: var(--card-hairline-top) var(--card-hairline) var(--card-hairline-bottom); border-radius: 16px; box-shadow: var(--card-sheet-shadow); overflow: hidden; }
-.main.main-full { margin-left: 8px; }
-.header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 50px; line-height: 1.4; margin: 0; padding: 0 22px; background: transparent; border-bottom: 1px solid var(--card-border-subtle); }
+/* Keep the workspace flush with the header and viewport. */
+.main { min-width: 0; height: 100%; margin: 0; display: flex; flex-direction: column; background: var(--card-sheet-bg); border: none; border-radius: 0; box-shadow: none; overflow: hidden; }
+.main.main-full { margin-left: 0; }
+.header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 64px; line-height: 1.4; margin: 0; padding: 0 28px; background: transparent; border-bottom: 1px solid var(--card-border-subtle); }
 .left { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.page-name { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 500; color: var(--ft-text); white-space: nowrap; }
+.page-name { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: var(--ft-text); white-space: nowrap; }
 .page-ico { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: var(--card-keycap-surface); background-clip: padding-box; border: 1px solid var(--card-hairline); box-shadow: var(--card-keycap-shadow); color: var(--ft-text-2); }
 .header-right { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; height: 32px; }
 .search { display: flex; align-items: center; width: 290px; max-width: 42vw; height: 32px; }
@@ -346,7 +346,7 @@ onBeforeUnmount(() => {
 .top-action:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 1px; }
 .bell-dot { position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--ft-late); box-shadow: 0 0 0 1.5px var(--ft-card-bg); }
 
-.content { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 26px 30px; }
+.content { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 28px 32px; scrollbar-gutter: stable; }
 @media (max-width: 991px) {
   .sider { position: absolute !important; inset: 0 auto 0 0; z-index: 20; height: 100%; box-shadow: var(--card-shadow-hover); border-right: 1px solid var(--ft-border); }
 }

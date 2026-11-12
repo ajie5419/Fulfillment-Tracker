@@ -4,7 +4,8 @@ import { MONITORING_STEP_STATUSES, MONITORING_PART_STATUSES, MONITORING_STATUS_T
 import { prisma } from '../../utils/prisma'
 import { loadThresholds } from '../alerts/config'
 import type { RuleThreshold } from '../alerts/rules'
-import { userDeptNames } from '../auth/departments'
+import { userDeptIdentities } from '../auth/departments'
+import { departmentLabel } from '../../../shared/business-depts'
 import { loadNames } from '../flow/names'
 import { resolveStepResponsibles } from '../flow/responsible'
 import { ACTIVE_WO_WHERE } from '../workorder/active'
@@ -32,18 +33,20 @@ export async function loadMonitoredEntities(now: Date, threshold: RuleThreshold,
   const ownerOf = new Map(steps.map((s, i) => [s.id, responsibles[i] ?? null]))
   const [names, depts] = await Promise.all([
     loadNames({ process: steps.map((s) => s.processId), user: responsibles }),
-    userDeptNames(responsibles),
+    userDeptIdentities(responsibles),
   ])
   const out: MonitoredEntity[] = []
   for (const part of parts) {
     const add = (entityType: MonitoringEntityType, id: string, name: string, status: MonitoringStatus, clock: { since: Date; source: StatusSinceSource }, ownerId: string | null) => {
       const days = residenceDays(clock.since, now)
+      const departmentKey = ownerId ? depts.get(ownerId) : undefined
       out.push({
         entityType, id, partId: part.id, name, drawingNo: part.drawingNo, workOrderNumber: part.workOrderNumber,
         status, statusText: MONITORING_STATUS_TEXT[status], since: clock.since, sinceSource: clock.source,
         days, level: stagnationLevel(days, threshold), ownerIds: ownerId ? [ownerId] : [],
         owners: ownerId ? [{ id: ownerId, name: names.user.get(ownerId) ?? null }] : [],
-        deptNames: ownerId && depts.has(ownerId) ? [depts.get(ownerId)!] : [],
+        deptNames: departmentKey ? [departmentLabel(departmentKey)] : [],
+        departmentKeys: departmentKey ? [departmentKey] : [],
         link: monitoringDetailLink(part.workOrderNumber, part.id, entityType === 'step' ? id : undefined),
       })
     }

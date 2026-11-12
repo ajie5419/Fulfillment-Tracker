@@ -1,3 +1,4 @@
+import { requiresProcessForNode } from '../../../shared/process'
 /**
  * 生产调度 / 车间看板（生产管理重设计第一批，10-26）：跨工单列出"该干什么"的工序，页面上直接开工、完工、发出、登记返厂。
  *
@@ -38,12 +39,12 @@ export async function loadPrereqs(partIds: string[]): Promise<Map<string, Prereq
   if (!partIds.length) return new Map()
   const [lines, drawings] = await Promise.all([
     prisma.purchaseLine.findMany({ where: { partId: { in: partIds } }, select: { partId: true, status: true } }),
-    prisma.drawingTaskPart.findMany({ where: { partId: { in: partIds } }, select: { partId: true, task: { select: { status: true, materialStatus: true } } } }),
+    prisma.drawingTaskPart.findMany({ where: { partId: { in: partIds } }, select: { partId: true, task: { select: { status: true, materialStatus: true, planNode: { select: { requiresProcess: true } } } } } }),
   ])
   return new Map(
     partIds.map((id) => [
       id,
-      prereqState({ purchases: lines.filter((l) => l.partId === id).map((l) => l.status), drawings: drawings.filter((d) => d.partId === id).map((d) => d.task) }),
+      prereqState({ purchases: lines.filter((l) => l.partId === id).map((l) => l.status), drawings: drawings.filter((d) => d.partId === id).map((d) => ({ ...d.task, requiresProcess: requiresProcessForNode(d.task.planNode) })) }),
     ]),
   )
 }

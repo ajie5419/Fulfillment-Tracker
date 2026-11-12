@@ -1,28 +1,24 @@
 <script setup lang="ts">
 import type { PlanData } from '../composables/usePlanData'
+import { PLAN_STATUS_TEXT, planDisplayState } from '#shared/plan'
 
 /** 总计划顶部概览（项目 / 状态 / 交期 / 拖期 / 延误节点）与草稿、无后续节点的提示（PlanEditor 拆分，只读展示）。 */
-defineProps<{ data: PlanData; published: boolean }>()
+const props = defineProps<{ data: PlanData; published: boolean }>()
+const displayState = computed(() => planDisplayState(props.data.plan?.status, props.data.nodes.length))
+const pastDraftDates = computed(() => !props.published && props.data.nodes.some(n => (n.startDate ?? n.planDate) < dayAfter(0)))
 </script>
 
 <template>
   <PlanDateConflicts :conflicts="data.dateConflicts" />
   <a-descriptions :column="{ xs: 1, sm: 2, lg: 4 }" size="small" bordered class="summary">
     <a-descriptions-item label="项目">{{ data.workOrder.projectName ?? '—' }}<span class="muted">　{{ data.workOrder.customerName }}</span></a-descriptions-item>
-    <a-descriptions-item label="项目经理">{{ data.workOrder.projectManagerName ?? '未设置' }}</a-descriptions-item>
+    <a-descriptions-item label="工单号">{{ data.workOrder.workOrderNumber }}</a-descriptions-item>
     <a-descriptions-item label="状态">
-      <a-tag v-if="!data.plan || !data.nodes.length" color="default">未编制</a-tag>
-      <a-tag v-else-if="published" color="green">已发布</a-tag>
-      <a-tag v-else color="blue">草稿</a-tag>
+      <a-tag :color="displayState === 'NONE' ? 'default' : displayState === 'PUBLISHED' ? 'green' : 'blue'">{{ PLAN_STATUS_TEXT[displayState] }}</a-tag>
       <span v-if="data.plan?.templateName" class="muted">模板：{{ data.plan.templateName }}</span>
       <div v-if="published" class="muted">{{ data.plan?.publishedByName }} {{ timeText(data.plan!.publishedAt!) }} 发布</div>
     </a-descriptions-item>
-    <a-descriptions-item label="未挂节点的部门记录">
-      <span v-if="!data.unlinked.total" class="muted">0</span>
-      <span v-else :class="{ warn: published }" :title="`设计 ${data.unlinked.drawing}，采购 ${data.unlinked.purchase}，工序 ${data.unlinked.step}，装配 ${data.unlinked.assembly}`">
-        {{ data.unlinked.total }} 条（设计 {{ data.unlinked.drawing }} / 采购 {{ data.unlinked.purchase }} / 工序 {{ data.unlinked.step }} / 装配 {{ data.unlinked.assembly }}）
-      </span>
-    </a-descriptions-item>
+    <a-descriptions-item label="合同生效日期">{{ data.workOrder.effectiveTime ?? '—' }}</a-descriptions-item>
     <a-descriptions-item label="合同交期">{{ data.workOrder.deliveryDate ?? '—' }}</a-descriptions-item>
     <a-descriptions-item label="预计交期">
       <span :class="{ late: (data.deliveryDelayDays ?? 0) > 0 }">{{ data.expectedDelivery ?? '—' }}</span>
@@ -40,6 +36,13 @@ defineProps<{ data: PlanData; published: boolean }>()
     </a-descriptions-item>
   </a-descriptions>
 
+  <a-alert
+    v-if="pastDraftDates"
+    type="info"
+    show-icon
+    class="tip"
+    message="部分计划日期早于今天，请在发布前核对。草稿尚未下发，不计执行延期。"
+  />
   <a-alert
     v-if="!published && data.nodes.length"
     type="info"
@@ -59,7 +62,6 @@ defineProps<{ data: PlanData; published: boolean }>()
 <style scoped>
 .muted { color: var(--ft-text-2); font-size: 12px; }
 .late { color: var(--ft-late); }
-.warn { color: var(--ft-upstream); }
 .ok { color: var(--ft-done-text); }
 .summary { margin-bottom: 12px; }
 .tip { margin-bottom: 12px; }

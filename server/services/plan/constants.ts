@@ -13,7 +13,7 @@ export * from './forecast'
 export * from './warnings'
 
 /** 待办："确认总计划节点"（refType = planNode，refId = 节点 ID），发给节点责任部门负责人 */
-export const CONFIRM_PLAN_NODE = 'CONFIRM_PLAN_NODE'
+export { CONFIRM_PLAN_NODE } from '../../../shared/todo-actions'
 
 export const PLAN_REF = 'planNode'
 
@@ -39,7 +39,7 @@ export const w9PlanKey = (workOrderNumber: string) => alertKey('W9', 'plan', wor
 
 
 /** 待办："完成部门任务"（refType = planTask，refId = 其他任务 ID），发给任务负责人，截止日 = 计划完成日 */
-export const DO_PLAN_TASK = 'DO_PLAN_TASK'
+export { DO_PLAN_TASK } from '../../../shared/todo-actions'
 
 export const PLAN_TASK_REF = 'planTask'
 
