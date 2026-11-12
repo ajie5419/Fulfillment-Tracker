@@ -1,0 +1,55 @@
+groups:
+  - name: fulfillment-production
+    rules:
+      - alert: ServiceUnavailable
+        expr: probe_success == 0 or up == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "服务或监测组件连续两分钟不可用"}
+      - alert: ApplicationErrors
+        expr: sum(increase(ft_error_events_total[5m])) > 0
+        labels: {severity: warning}
+        annotations: {summary: "履约应用出现错误，请按事件与请求编号排查"}
+      - alert: ApplicationRestarts
+        expr: changes(ft_process_start_time_seconds[10m]) > 0
+        labels: {severity: warning}
+        annotations: {summary: "履约进程发生重启"}
+      - alert: ContainerOOM
+        expr: sum(increase(container_oom_events_total[5m])) > 0
+        labels: {severity: critical}
+        annotations: {summary: "容器发生 OOM 终止"}
+      - alert: ContainerRestart
+        expr: changes(container_start_time_seconds{container_label_com_docker_compose_service!=""}[10m]) > 0
+        labels: {severity: warning}
+        annotations: {summary: "Compose 容器发生重启"}
+      - alert: DiskSpaceLow
+        expr: node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes < 0.15
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "主机文件系统可用空间不足 15%"}
+      - alert: DiskInodesLow
+        expr: node_filesystem_files_free{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_files < 0.1
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "主机文件系统 inode 不足 10%"}
+      - alert: ScheduledTaskMissing
+        expr: (time() - ft_task_last_start_seconds{task="sync-qms"} > 660) or (time() - ft_task_last_start_seconds{task="scan-rules"} > 1860)
+        labels: {severity: critical}
+        annotations: {summary: "定时任务超过两个周期未启动"}
+      - alert: ScheduledTaskStalled
+        expr: ft_task_running > 0 and time() - ft_task_last_finish_seconds > 1800
+        labels: {severity: critical}
+        annotations: {summary: "后台任务长时间未结束"}
+      - alert: ApplicationHeartbeatMissing
+        expr: time() - ft_observability_heartbeat_seconds > 90
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: "应用事件循环心跳停止"}
+      - alert: LogShippingFailures
+        expr: sum(increase(loki_write_dropped_entries_total[5m])) > 0 or sum(increase(loki_write_batch_retries_total[5m])) > 0
+        labels: {severity: warning}
+        annotations: {summary: "日志发送发生重试或丢弃"}
+      - alert: EmailDeliveryFailed
+        expr: sum(increase(alertmanager_notifications_failed_total[10m])) > 0
+        labels: {severity: critical}
+        annotations: {summary: "告警邮件发送失败，需由外部监测或运维检查"}

@@ -1,3 +1,5 @@
+import { withRequestContext } from '../../observability/request'
+import { logEvent } from '../../observability/logger'
 import { timingSafeEqual } from 'node:crypto'
 import { IdentityBridgeError, exchangeCode, revokeCredential, verifyIdentity } from '../../services/auth/identity-bridge'
 import { LOGIN_STATE_COOKIE, consumeLogin } from '../../services/auth/login-attempt'
@@ -11,7 +13,7 @@ function sameString(a: string, b: string) {
 }
 
 /** 身份桥回调：校验 state → 换凭证 → 核查身份 → 建 30 天会话 → 回到原页面。 */
-export default defineEventHandler(async (event) => {
+export default defineEventHandler(event => withRequestContext(event, async () => {
   const { code, state, error } = getQuery(event)
   const cookieState = getCookie(event, LOGIN_STATE_COOKIE)
 
@@ -34,7 +36,7 @@ export default defineEventHandler(async (event) => {
     identity = await verifyIdentity(cfg, credential)
   } catch (err) {
     if (err instanceof IdentityBridgeError) {
-      console.error(`[auth] identity bridge ${err.stage} failed`, err.status ?? '', err.message)
+      logEvent('error', 'auth.bridge.failed', { module: err.stage, statusCode: err.status }, err)
       // 身份核查 401 = 账号停用或已删除（QMS 不返回 active:false）
       if (err.stage === 'identity' && err.status === 401) {
         throw createError({ statusCode: 403, statusMessage: '该 QMS 账号不可用或已停用' })
@@ -58,4 +60,4 @@ export default defineEventHandler(async (event) => {
     throw err
   }
   return sendRedirect(event, safeRedirectPath(pending.redirect), 302)
-})
+}))

@@ -1,3 +1,4 @@
+import { readApiBody } from '../helpers/api-response'
 /**
  * 可见范围与照片上传（R5）走真实接口：构建产物 + 真实 MySQL + 模拟身份桥。
  * 证明 canSee 收紧后项目经理看不到别人的工单（列表不含、详情 403），以及上传的魔数校验、大小限制、读取权限。
@@ -208,8 +209,8 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       const session = await login(user)
       const response = await get('/api/panorama', session)
       expect(response.status).toBe(200)
-      const panorama = await response.json()
-      const board = await (await get('/api/board?closed=1', session)).json()
+      const panorama = await readApiBody(response)
+      const board = await readApiBody((await get('/api/board?closed=1', session)))
       const inProgress = board.rows.filter((r: { status: string }) => r.status === 'IN_PROGRESS')
       expect(panorama.counts).toEqual({
         inProgress: inProgress.length,
@@ -233,12 +234,12 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     const leader = await login('h-lead')
     const response = await get('/api/monitoring/status', leader)
     expect(response.status).toBe(200)
-    const summary = await response.json()
+    const summary = await readApiBody(response)
     expect(summary.threshold).toMatchObject({ yellowDays: 7, redDays: 14, remindHours: null })
     expect(summary.steps.map((r: { status: string }) => r.status)).toEqual(['PENDING', 'OUT', 'IN_PROGRESS', 'BLOCKED'])
     const listResponse = await get('/api/monitoring/entities?entityType=part&status=ACTIVE&pageSize=100', leader)
     expect(listResponse.status).toBe(200)
-    const list = await listResponse.json()
+    const list = await readApiBody(listResponse)
     expect(list.total).toBe(summary.parts[0].count)
     expect(list.rows.find((r: { id: string }) => r.id === otherPartId)).toMatchObject({ entityType: 'part', workOrderNumber: OTHER, status: 'ACTIVE', sinceSource: 'statusSince', link: expect.stringContaining(`part=${otherPartId}`) })
     expect((await get('/api/monitoring/entities?page=0', leader)).status).toBe(400)
@@ -247,10 +248,10 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
 
   it('停滞红线 HTTP 下钻含两类在制对象，total 与 redCount 一致，拒绝非法级别且保留权限', async () => {
     const leader = await login('h-lead')
-    const summary = await (await get('/api/monitoring/status', leader)).json()
+    const summary = await readApiBody((await get('/api/monitoring/status', leader)))
     const response = await get('/api/monitoring/entities?level=RED&pageSize=100', leader)
     expect(response.status).toBe(200)
-    const list = await response.json()
+    const list = await readApiBody(response)
     expect(list.total).toBe(summary.redCount)
     expect(list.rows.every((r: { level: string }) => r.level === 'RED')).toBe(true)
     expect((await get('/api/monitoring/entities?level=BLUE', leader)).status).toBe(400)
@@ -266,7 +267,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     })
     try {
       expect((await save(8, 16)).status).toBe(200)
-      expect((await (await get('/api/monitoring/status', admin)).json()).threshold).toEqual({ remindHours: null, yellowDays: 8, redDays: 16 })
+      expect((await readApiBody((await get('/api/monitoring/status', admin)))).threshold).toEqual({ remindHours: null, yellowDays: 8, redDays: 16 })
       expect((await save(16, 8)).status).toBe(400)
       expect((await save(0, 8)).status).toBe(400)
       expect((await save(7, 366)).status).toBe(400)
@@ -278,8 +279,8 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
 
   it('项目经理只看到自己负责的工单：列表不含，详情 403；领导看全部', async () => {
     const pm = await login('h-pm')
-    expect(await (await get('/api/me', pm)).json()).toMatchObject({ id: 'h-pm', limited: true })
-    const wos = (await (await get('/api/work-orders', pm)).json()) as { workOrderNumber: string }[]
+    expect(await readApiBody((await get('/api/me', pm)))).toMatchObject({ id: 'h-pm', limited: true })
+    const wos = (await readApiBody((await get('/api/work-orders', pm)))) as { workOrderNumber: string }[]
     expect(wos.map((w) => w.workOrderNumber)).toContain(MINE)
     expect(wos.map((w) => w.workOrderNumber)).not.toContain(OTHER)
 
@@ -288,9 +289,9 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await get(`/api/parts/${otherPartId}/events`, pm)).status).toBe(403)
     expect((await get(`/api/issues/${otherIssueId}`, pm)).status).toBe(403)
     expect((await get(`/api/transit?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
-    const issues = (await (await get('/api/issues?dept=0', pm)).json()) as { id: string }[]
+    const issues = (await readApiBody((await get('/api/issues?dept=0', pm)))) as { id: string }[]
     expect(issues.some((i) => i.id === otherIssueId)).toBe(false)
-    const board = (await (await get('/api/board', pm)).json()) as { rows: { workOrderNumber: string }[] }
+    const board = (await readApiBody((await get('/api/board', pm)))) as { rows: { workOrderNumber: string }[] }
     expect(board.rows.map((r) => r.workOrderNumber)).not.toContain(OTHER)
     // 写操作同样拦住
     const write = await fetch(`${base}/api/issues/${otherIssueId}/note`, {
@@ -308,7 +309,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
 
     const lead = await login('h-lead')
     expect((await get(`/api/issues/${otherIssueId}`, lead)).status).toBe(200)
-    const leadWos = (await (await get('/api/work-orders', lead)).json()) as { workOrderNumber: string }[]
+    const leadWos = (await readApiBody((await get('/api/work-orders', lead)))) as { workOrderNumber: string }[]
     expect(leadWos.map((w) => w.workOrderNumber)).toEqual(expect.arrayContaining([MINE, OTHER]))
     // 没有角色、也不是项目经理（一线）：看全部
     const worker = await login('h-worker')
@@ -327,7 +328,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     // 文本冒充 JPG：拒绝
     const fake = await upload(worker, [{ data: new TextEncoder().encode('<script>alert(1)</script>'), name: 'a.jpg', type: 'image/jpeg' }])
     expect(fake.status).toBe(400)
-    expect((await fake.json()).message).toContain('只能上传')
+    expect((await readApiBody(fake)).message).toContain('只能上传')
     // 超过 3 × 8MB 的请求体：413
     const big = await upload(worker, [{ data: new Uint8Array(25 * 1024 * 1024), name: 'big.jpg', type: 'image/jpeg' }])
     expect(big.status).toBe(413)
@@ -346,7 +347,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     // 正常上传：扩展名、类型都按内容判断
     const ok = await upload(worker, [{ data: jpg, name: '../../evil.png', type: 'text/html' }])
     expect(ok.status).toBe(200)
-    const [saved] = (await ok.json()) as { id: string; mime: string; url: string }[]
+    const [saved] = (await readApiBody(ok)) as { id: string; mime: string; url: string }[]
     expect(saved).toMatchObject({ mime: 'image/jpeg', url: `/api/files/${saved!.id}` })
 
     const mineRead = await get(saved!.url, worker)
@@ -391,22 +392,22 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await upload('')).status).toBe(400)
     const up = await upload('attachment')
     expect(up.status).toBe(200)
-    const [att] = (await up.json()) as { id: string; mime: string; url: string }[]
+    const [att] = (await readApiBody(up)) as { id: string; mime: string; url: string }[]
     expect(att!.mime).toBe('application/pdf')
 
     // R13：建发放单只限技术部、管理员 —— 项目经理甲在自己的工单上也不行，一线也不行
     const denied = await post(pm, '/api/releases', { type: 'CHANGE', workOrderNumber: MINE, description: 'x', userIds: ['h-worker'] })
     expect(denied.status).toBe(403)
-    expect(((await denied.json()) as { message: string }).message).toBe('只有技术部、管理员可以发放图纸和设计变更；工艺部可以发放工艺文件')
+    expect(((await readApiBody(denied)) as { message: string }).message).toBe('只有技术部、管理员可以发放图纸和设计变更；工艺部可以发放工艺文件')
     expect((await post(worker, '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-pm'] })).status).toBe(403)
     // 技术员（技术科经部门对照算技术部）在甲的工单上发给乙（乙看不到甲的工单）和一线
     const created = await post(tech, '/api/releases', { type: 'CHANGE', workOrderNumber: MINE, description: '孔位变更', userIds: ['h-pm2', 'h-worker'], attachmentIds: [att!.id] })
     expect(created.status).toBe(200)
-    const { id } = (await created.json()) as { id: string }
+    const { id } = (await readApiBody(created)) as { id: string }
     // 乙是接收人：能看详情和附件（虽然不是他的工单）
     const detail = await get(`/api/releases/${id}`, pm2)
     expect(detail.status).toBe(200)
-    const d = (await detail.json()) as { myReceipt: { id: string }; permissions: { sign: boolean; void: boolean } }
+    const d = (await readApiBody(detail)) as { myReceipt: { id: string }; permissions: { sign: boolean; void: boolean } }
     expect(d.permissions).toMatchObject({ sign: true, void: false })
     const file = await get(att!.url, pm2)
     expect(file.status).toBe(200)
@@ -417,23 +418,23 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await post(pm2, `/api/receipts/${d.myReceipt.id}/reject`, { reason: '' })).status).toBe(400)
     expect((await post(pm2, `/api/receipts/${d.myReceipt.id}/sign`, {})).status).toBe(200)
     // 乙的"待签收"清空
-    expect(((await (await get('/api/receipts?tab=pending', pm2)).json()) as unknown[]).length).toBe(0)
+    expect(((await readApiBody((await get('/api/receipts?tab=pending', pm2)))) as unknown[]).length).toBe(0)
 
     // 别人工单上的发放单：甲（不是接收人）看不到，列表也没有，附件 404
     const lead = await login('h-lead')
     expect((await post(lead, '/api/releases', { type: 'DRAWING', workOrderNumber: OTHER, description: 'x', userIds: ['h-worker'] })).status).toBe(403)
     const other = await post(tech, '/api/releases', { type: 'DRAWING', workOrderNumber: OTHER, description: '别的工单', userIds: ['h-worker'] })
     expect(other.status).toBe(200)
-    const otherId = ((await other.json()) as { id: string }).id
+    const otherId = ((await readApiBody(other)) as { id: string }).id
     expect((await get(`/api/releases/${otherId}`, pm)).status).toBe(403)
-    const list = (await (await get('/api/releases', pm)).json()) as { id: string }[]
+    const list = (await readApiBody((await get('/api/releases', pm)))) as { id: string }[]
     expect(list.some((r) => r.id === otherId)).toBe(false)
     expect(list.some((r) => r.id === id)).toBe(true)
     expect((await post(pm, `/api/releases/${otherId}/void`, {})).status).toBe(403)
     // 作废仍限发放人或管理员：技术员能作废自己发的
     expect((await post(tech, `/api/releases/${otherId}/void`, {})).status).toBe(200)
     // 签收待办不能转交
-    const todos = (await (await get('/api/todos', worker)).json()) as { id: string; action: string }[]
+    const todos = (await readApiBody((await get('/api/todos', worker)))) as { id: string; action: string }[]
     const signTodo = todos.find((t) => t.action === 'SIGN_RELEASE')!
     expect((await post(worker, `/api/todos/${signTodo.id}/transfer`, { toUserId: 'h-lead' })).status).toBe(400)
   })
@@ -489,15 +490,15 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(pm, 'POST', '/api/purchases', { workOrderNumber: OTHER, materialName: 'x', quantity: 1, needDate: later })).status).toBe(403)
     const mine = await send(pm, 'POST', '/api/purchases', { workOrderNumber: MINE, materialName: '回转支承', quantity: 1, needDate: later })
     expect(mine.status).toBe(200)
-    const mineId = ((await mine.json()) as { id: string }).id
+    const mineId = ((await readApiBody(mine)) as { id: string }).id
     // R13：采购行只限采购部、该工单项目经理、管理员 —— 领导、一线不行；采购员（采购一组随上级供应部算采购部）能在任何工单上登记
     expect((await send(lead, 'POST', '/api/purchases', { workOrderNumber: OTHER, materialName: '钢板', quantity: 2, needDate: later })).status).toBe(403)
     const workerDenied = await send(worker, 'POST', '/api/purchases', { workOrderNumber: MINE, materialName: 'x', quantity: 1, needDate: later })
     expect(workerDenied.status).toBe(403)
-    expect(((await workerDenied.json()) as { message: string }).message).toContain('只有采购部、该工单项目经理或管理员')
+    expect(((await readApiBody(workerDenied)) as { message: string }).message).toContain('只有采购部、该工单项目经理或管理员')
     const otherRes = await send(buyer, 'POST', '/api/purchases', { workOrderNumber: OTHER, materialName: '钢板', quantity: 2, needDate: later })
     expect(otherRes.status).toBe(200)
-    const otherId = ((await otherRes.json()) as { id: string }).id
+    const otherId = ((await readApiBody(otherRes)) as { id: string }).id
     // 一线能看（看全部）但改不了、标不了到货
     expect((await get(`/api/purchases/${otherId}`, worker)).status).toBe(200)
     expect((await send(worker, 'PATCH', `/api/purchases/${otherId}`, { note: 'x' })).status).toBe(403)
@@ -507,7 +508,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(pm, 'POST', '/api/purchases', { workOrderNumber: MINE, materialName: 'x', quantity: 1, needDate: '2026/1/1' })).status).toBe(400)
 
     // 列表只含自己的；别人的详情 / 修改 / 确认到货 403
-    const list = (await (await get('/api/purchases?view=all', pm)).json()) as { rows: { id: string }[] }
+    const list = (await readApiBody((await get('/api/purchases?view=all', pm)))) as { rows: { id: string }[] }
     expect(list.rows.map((r) => r.id)).toContain(mineId)
     expect(list.rows.map((r) => r.id)).not.toContain(otherId)
     expect((await get(`/api/purchases?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
@@ -517,7 +518,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(pm, 'DELETE', `/api/purchases/${otherId}`)).status).toBe(403)
     const arrived = await send(pm, 'POST', `/api/purchases/${mineId}/arrive`, { source: 'MOBILE', arrivedDate: today })
     expect(arrived.status).toBe(200)
-    expect(((await (await get(`/api/purchases/${mineId}`, pm)).json()) as { status: string }).status).toBe('ARRIVED')
+    expect(((await readApiBody((await get(`/api/purchases/${mineId}`, pm)))) as { status: string }).status).toBe('ARRIVED')
 
     // 模板下载是 xlsx；导入：别人的工单行报错、整批不导；自己的工单成功
     const tpl = await get('/api/purchases/template', pm)
@@ -538,9 +539,9 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     }
     const denied = await upload(pm, await book(OTHER))
     expect(denied.status).toBe(200)
-    expect(await denied.json()).toMatchObject({ imported: 0, errors: [{ row: 2, messages: [`无权查看工单 ${OTHER}`] }] })
+    expect(await readApiBody(denied)).toMatchObject({ imported: 0, errors: [{ row: 2, messages: [`无权查看工单 ${OTHER}`] }] })
     const ok = await upload(pm, await book(MINE))
-    expect(await ok.json()).toMatchObject({ imported: 1, errors: [] })
+    expect(await readApiBody(ok)).toMatchObject({ imported: 1, errors: [] })
     // 一线整个导入都不允许
     expect((await upload(worker, await book(MINE))).status).toBe(403)
     expect((await upload(pm, new TextEncoder().encode('a,b,c'), 'p.csv')).status).toBe(400)
@@ -549,34 +550,34 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(pm, 'POST', '/api/payments', { purchaseLineIds: [otherId], amount: 1, requestDate: today, blocksDelivery: false })).status).toBe(403)
     const pay = await send(pm, 'POST', '/api/payments', { purchaseLineIds: [mineId], amount: 1200.5, requestDate: today, blocksDelivery: true })
     expect(pay.status).toBe(200)
-    const payId = ((await pay.json()) as { id: string }).id
+    const payId = ((await readApiBody(pay)) as { id: string }).id
     expect((await send(lead, 'POST', '/api/payments', { purchaseLineIds: [otherId], amount: 9, requestDate: today, blocksDelivery: false })).status).toBe(403)
     expect((await send(worker, 'POST', '/api/payments', { purchaseLineIds: [otherId], amount: 9, requestDate: today, blocksDelivery: false })).status).toBe(403)
     const otherPay = await send(buyer, 'POST', '/api/payments', { purchaseLineIds: [otherId], amount: 9, requestDate: today, blocksDelivery: false })
     expect(otherPay.status).toBe(200)
-    const otherPayId = ((await otherPay.json()) as { id: string }).id
+    const otherPayId = ((await readApiBody(otherPay)) as { id: string }).id
 
     // R13 付款金额：财务、采购部、领导、该工单项目经理能看；一线的接口里金额是 null（采购行关联的付款也是）
     type PayRow = { id: string; amount: number | null }
-    const amounts = async (s: Record<string, string>) => new Map(((await (await get('/api/payments?status=ALL', s)).json()) as PayRow[]).map((p) => [p.id, p.amount]))
+    const amounts = async (s: Record<string, string>) => new Map(((await readApiBody((await get('/api/payments?status=ALL', s)))) as PayRow[]).map((p) => [p.id, p.amount]))
     expect((await amounts(worker)).get(payId)).toBeNull()
     expect((await amounts(worker)).get(otherPayId)).toBeNull()
     expect((await amounts(pm)).get(payId)).toBe(1200.5)
     expect((await amounts(lead)).get(otherPayId)).toBe(9)
     expect((await amounts(buyer)).get(payId)).toBe(1200.5)
     expect((await amounts(fin)).get(otherPayId)).toBe(9)
-    const workerLine = (await (await get(`/api/purchases/${mineId}`, worker)).json()) as { payments: PayRow[] }
+    const workerLine = (await readApiBody((await get(`/api/purchases/${mineId}`, worker)))) as { payments: PayRow[] }
     expect(workerLine.payments.map((p) => p.amount)).toEqual([null])
-    const workerLines = (await (await get('/api/purchases?view=all', worker)).json()) as { rows: { id: string; payments: PayRow[] }[] }
+    const workerLines = (await readApiBody((await get('/api/purchases?view=all', worker)))) as { rows: { id: string; payments: PayRow[] }[] }
     expect(workerLines.rows.find((r) => r.id === mineId)!.payments.map((p) => p.amount)).toEqual([null])
-    const pmLine = (await (await get(`/api/purchases/${mineId}`, pm)).json()) as { payments: PayRow[] }
+    const pmLine = (await readApiBody((await get(`/api/purchases/${mineId}`, pm)))) as { payments: PayRow[] }
     expect(pmLine.payments.map((p) => p.amount)).toEqual([1200.5])
-    const pmPays = (await (await get('/api/payments?status=ALL', pm)).json()) as { id: string; permissions: { setStatus: boolean } }[]
+    const pmPays = (await readApiBody((await get('/api/payments?status=ALL', pm)))) as { id: string; permissions: { setStatus: boolean } }[]
     expect(pmPays.map((p) => p.id)).toEqual([payId])
     expect(pmPays[0]!.permissions.setStatus).toBe(false)
     expect((await send(pm, 'POST', `/api/payments/${payId}/status`, { status: 'PAID' })).status).toBe(403)
     expect((await send(pm, 'POST', `/api/payments/${otherPayId}/status`, { status: 'PAID' })).status).toBe(403)
-    const finPays = (await (await get('/api/payments', fin)).json()) as { id: string; permissions: { setStatus: boolean } }[]
+    const finPays = (await readApiBody((await get('/api/payments', fin)))) as { id: string; permissions: { setStatus: boolean } }[]
     expect(finPays.map((p) => p.id)).toEqual(expect.arrayContaining([payId, otherPayId]))
     expect((await send(fin, 'POST', `/api/payments/${payId}/status`, { status: 'PAID', note: '已电汇' })).status).toBe(200)
     expect((await send(fin, 'POST', `/api/payments/${payId}/status`, { status: 'DONE' })).status).toBe(400)
@@ -597,22 +598,22 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(tech, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: 'x', planDate: '2026/1/1' })).status).toBe(400)
     const pmDenied = await send(pm, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: 'x', planDate: later })
     expect(pmDenied.status).toBe(403)
-    expect(((await pmDenied.json()) as { message: string }).message).toBe('只有技术部或管理员可以编辑设计任务')
+    expect(((await readApiBody(pmDenied)) as { message: string }).message).toBe('只有技术部或管理员可以编辑设计任务')
     expect((await send(lead, 'POST', '/api/drawings', { workOrderNumber: OTHER, componentName: 'x', planDate: later })).status).toBe(403)
     // 技术员在甲的工单上建（负责人是一线 h-worker）
     const mine = await send(tech, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: '主梁总图', ownerId: 'h-worker', planDate: later })
     expect(mine.status).toBe(200)
-    const mineId = ((await mine.json()) as { id: string }).id
+    const mineId = ((await readApiBody(mine)) as { id: string }).id
     // 技术员在别人的工单上建一个，设计负责人是甲（甲看不到这个工单）
     const other = await send(tech, 'POST', '/api/drawings', { workOrderNumber: OTHER, componentName: '别人的图', ownerId: 'h-pm', planDate: later })
-    const otherId = ((await other.json()) as { id: string }).id
+    const otherId = ((await readApiBody(other)) as { id: string }).id
 
     // 列表只含可见工单；"我的设计任务"含负责人是自己的（不受范围限制）
-    const list = (await (await get('/api/drawings?view=all', pm)).json()) as { rows: { id: string }[] }
+    const list = (await readApiBody((await get('/api/drawings?view=all', pm)))) as { rows: { id: string }[] }
     expect(list.rows.map((r) => r.id)).toContain(mineId)
     expect(list.rows.map((r) => r.id)).not.toContain(otherId)
     expect((await get(`/api/drawings?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
-    const myList = (await (await get('/api/drawings?mine=1&view=all', pm)).json()) as { rows: { id: string; permissions: { markDrawn: boolean } }[] }
+    const myList = (await readApiBody((await get('/api/drawings?mine=1&view=all', pm)))) as { rows: { id: string; permissions: { markDrawn: boolean } }[] }
     expect(myList.rows.map((r) => r.id)).toEqual([otherId])
     expect(myList.rows[0]!.permissions.markDrawn).toBe(true)
     expect((await get(`/api/drawings/${otherId}`, pm)).status).toBe(200)
@@ -624,7 +625,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(lead, 'POST', `/api/drawings/${mineId}/drawn`, {})).status).toBe(403)
     const drawn = await send(worker, 'POST', `/api/drawings/${mineId}/drawn`, {})
     expect(drawn.status).toBe(200)
-    expect(await drawn.json()).toMatchObject({ status: 'DRAWN' })
+    expect(await readApiBody(drawn)).toMatchObject({ status: 'DRAWN' })
     expect((await send(pm, 'POST', `/api/drawings/${otherId}/drawn`, {})).status).toBe(200)
     // R13：编辑只限技术部、管理员（能看到工单的项目经理、设计负责人本人都不行）
     expect((await send(pm, 'PATCH', `/api/drawings/${mineId}`, { note: 'x' })).status).toBe(403)
@@ -634,7 +635,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     // 一键发放：发放单记下 drawingTaskId，任务完成；别人工单的任务甲不能发
     const rel = await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: '主梁总图发放', userIds: ['h-worker'], drawingTaskId: mineId })
     expect(rel.status).toBe(200)
-    expect(await rel.json()).toMatchObject({ drawing: { status: 'DONE' } })
+    expect(await readApiBody(rel)).toMatchObject({ drawing: { status: 'DONE' } })
     expect((await send(pm, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: OTHER, description: 'x', userIds: ['h-worker'], drawingTaskId: otherId })).status).toBe(403)
     expect((await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-worker'], drawingTaskId: otherId })).status).toBe(400)
     const load = await get('/api/drawings/load', pm)
@@ -654,7 +655,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(pm, 'POST', '/api/kitting', { workOrderNumber: MINE, name: 'x', needDate: '2026/1/1' })).status).toBe(400)
     const mine = await send(pm, 'POST', '/api/kitting', { workOrderNumber: MINE, name: '主梁总装', needDate: later })
     expect(mine.status).toBe(200)
-    const mineId = ((await mine.json()) as { id: string }).id
+    const mineId = ((await readApiBody(mine)) as { id: string }).id
     // 看得到工单、但不是生产经理 / 项目经理 / 管理员：不能建
     expect((await send(worker, 'POST', '/api/kitting', { workOrderNumber: MINE, name: 'x', needDate: later })).status).toBe(403)
     expect((await send(lead, 'POST', '/api/kitting', { workOrderNumber: MINE, name: 'x', needDate: later })).status).toBe(403)
@@ -664,20 +665,20 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     await db.notifyRole.create({ data: { role: 'DEPT_HEAD', userId: 'h-worker', department: 'PRODUCTION' } })
     const other = await send(worker, 'POST', '/api/kitting', { workOrderNumber: OTHER, name: '别人的节点', needDate: later, ownerId: 'h-pm' })
     expect(other.status).toBe(200)
-    const otherId = ((await other.json()) as { id: string }).id
+    const otherId = ((await readApiBody(other)) as { id: string }).id
 
     // 列表只含可见工单；能看到就能看（领导看全部，但不能改）
-    const list = (await (await get('/api/kitting', pm)).json()) as { rows: { id: string; canEdit: boolean }[] }
+    const list = (await readApiBody((await get('/api/kitting', pm)))) as { rows: { id: string; canEdit: boolean }[] }
     expect(list.rows.map((r) => r.id)).toEqual([mineId])
     expect(list.rows[0]!.canEdit).toBe(true)
     expect((await get(`/api/kitting?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
     expect((await get(`/api/kitting/options?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
-    const leadList = (await (await get('/api/kitting?incomplete=0', lead)).json()) as { rows: { id: string; canEdit: boolean }[]; canCreate: boolean }
+    const leadList = (await readApiBody((await get('/api/kitting?incomplete=0', lead)))) as { rows: { id: string; canEdit: boolean }[]; canCreate: boolean }
     expect(leadList.rows.map((r) => r.id)).toEqual(expect.arrayContaining([mineId, otherId]))
     expect(leadList.rows.every((r) => !r.canEdit)).toBe(true)
     expect(leadList.canCreate).toBe(false)
     // 负责人本人：手机"我负责的"和提醒跳转能看，但改不了
-    const myList = (await (await get('/api/kitting?mine=1', pm)).json()) as { rows: { id: string }[] }
+    const myList = (await readApiBody((await get('/api/kitting?mine=1', pm)))) as { rows: { id: string }[] }
     expect(myList.rows.map((r) => r.id)).toEqual([otherId])
     expect((await get(`/api/kitting/${otherId}`, pm)).status).toBe(200)
     expect((await send(pm, 'PATCH', `/api/kitting/${otherId}`, { name: 'x' })).status).toBe(403)
@@ -695,7 +696,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     const send = (sess: Record<string, string>, method: string, path: string, body?: object) =>
       fetch(`${base}${path}`, { method, headers: { cookie: cookieHeader(sess), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
     const me = async (s: Record<string, string>) =>
-      (await (await get('/api/me', s)).json()) as { businessDept: string | null; menu: string[]; pmOf: string[]; can: Record<string, boolean> }
+      (await readApiBody((await get('/api/me', s)))) as { businessDept: string | null; menu: string[]; pmOf: string[]; can: Record<string, boolean> }
     const tech = await login('h-tech')
     const buyer = await login('h-buyer')
     const prod = await login('h-prod')
@@ -728,7 +729,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       expect(releaseResponse.status).toBe(200)
       expect((await send(proc, 'POST', `/api/process/${t.id}/action`, body)).status).toBe(200)
       expect((await send(proc, 'POST', `/api/process/no-such-task/action`, body)).status).toBe(400)
-      const list = (await (await get(`/api/process?workOrderNumber=${encodeURIComponent(MINE)}&view=all`, tech)).json()) as { rows: { id: string; materialStatus: string; actions: { material: string[] } }[] }
+      const list = (await readApiBody((await get(`/api/process?workOrderNumber=${encodeURIComponent(MINE)}&view=all`, tech)))) as { rows: { id: string; materialStatus: string; actions: { material: string[] } }[] }
       expect(list.rows.find((r) => r.id === t.id)).toMatchObject({ materialStatus: 'DRAFTING', actions: { material: [] } })
       expect((await get(`/api/process/${t.id}/logs`, tech)).status).toBe(200)
       await db.release.deleteMany({ where: { drawingTaskId: t.id } })
@@ -755,11 +756,11 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       expect((await preview(prod)).status).toBe(403)
       const pv = await preview(tech)
       expect(pv.status).toBe(200)
-      expect(await pv.json()).toMatchObject({ rows: 2, errors: [], blocking: 0, lines: [{ drawingNo: 'HTTP-BOM-1', status: 'new' }, { drawingNo: 'HTTP-BOM-2', status: 'new' }] })
+      expect(await readApiBody(pv)).toMatchObject({ rows: 2, errors: [], blocking: 0, lines: [{ drawingNo: 'HTTP-BOM-1', status: 'new' }, { drawingNo: 'HTTP-BOM-2', status: 'new' }] })
 
-      const procBom = ((await (await upBom(proc, xlsx)).json()) as { id: string }[])[0]!.id
+      const procBom = ((await readApiBody((await upBom(proc, xlsx)))) as { id: string }[])[0]!.id
       expect((await send(proc, 'POST', '/api/releases', { type: 'PROCESS', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], bomFileId: procBom })).status).toBe(400)
-      const [bf] = (await (await upBom(tech, xlsx)).json()) as { id: string; mime: string }[]
+      const [bf] = (await readApiBody((await upBom(tech, xlsx)))) as { id: string; mime: string }[]
       expect(bf!.mime).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
       // 别人上传的 BOM 不能用
       expect((await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], bomFileId: procBom })).status).toBe(400)
@@ -767,10 +768,10 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       expect((await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], attachmentIds: [bf!.id] })).status).toBe(400)
       const rel = await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: '车架图纸第一批', userIds: ['h-prod', 'h-proc'], bomFileId: bf!.id })
       expect(rel.status).toBe(200)
-      const relBody = (await rel.json()) as { id: string; bom: { created: number } }
+      const relBody = (await readApiBody(rel)) as { id: string; bom: { created: number } }
       expect(relBody.bom).toMatchObject({ created: 2, matched: 0 })
       // 工艺部签收时看到这批工件和 BOM 表，能下载
-      const det = (await (await get(`/api/releases/${relBody.id}`, proc)).json()) as { bomFile: { url: string }; parts: { drawingNo: string; quantity: number }[] }
+      const det = (await readApiBody((await get(`/api/releases/${relBody.id}`, proc)))) as { bomFile: { url: string }; parts: { drawingNo: string; quantity: number }[] }
       expect(det.parts.map((p) => [p.drawingNo, p.quantity]).sort()).toEqual([['HTTP-BOM-1', 1], ['HTTP-BOM-2', 2]])
       const dl = await get(det.bomFile.url, proc)
       expect(dl.status).toBe(200)
@@ -782,32 +783,32 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       wb2.addWorksheet('明细').addRows([['工单号：OTHER-WO-1'], ['代号', '名称', '张数'], ['HTTP-BOM-9', '接口吊耳', 2]])
       const wrong = new Uint8Array(await wb2.xlsx.writeBuffer())
       const pv2 = await fetch(`${base}/api/bom/excel`, { method: 'POST', headers: { cookie: cookieHeader(tech) }, body: form(wrong, 'w.xlsx', { workOrderNumber: MINE }) })
-      expect(await pv2.json()).toMatchObject({ sheetWorkOrder: 'OTHER-WO-1', workOrderMismatch: true, lines: [{ drawingNo: 'HTTP-BOM-9', quantity: 1, status: 'new' }] })
-      const [wf] = (await (await upBom(tech, wrong)).json()) as { id: string }[]
+      expect(await readApiBody(pv2)).toMatchObject({ sheetWorkOrder: 'OTHER-WO-1', workOrderMismatch: true, lines: [{ drawingNo: 'HTTP-BOM-9', quantity: 1, status: 'new' }] })
+      const [wf] = (await readApiBody((await upBom(tech, wrong)))) as { id: string }[]
       const bad = await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: 'x', userIds: ['h-prod'], bomFileId: wf!.id })
       expect(bad.status).toBe(400)
-      expect(((await bad.json()) as { message: string }).message).toContain('工单号是 OTHER-WO-1')
+      expect(((await readApiBody(bad)) as { message: string }).message).toContain('工单号是 OTHER-WO-1')
       // 没有 Excel：粘贴明细（10-24 zhao 技术部只有纸质明细表）→ 预览行号对上粘贴内容 → save 存成 BOM 表 → 发放建工件
       const paste = (sess: Record<string, string>, text: string, save = false) => send(sess, 'POST', '/api/bom/text', { workOrderNumber: MINE, text, save })
       expect((await paste(proc, 'HTTP-BOM-5 接口销轴 4')).status).toBe(403)
       const pt = await paste(tech, 'HTTP-BOM-5 接口销轴 4\n\nHTTP-BOM-6 接口连接板 x')
       expect(pt.status).toBe(200)
-      expect(await pt.json()).toMatchObject({ rows: 2, errors: [{ row: 3, messages: [expect.stringContaining('数量"x"')] }] })
+      expect(await readApiBody(pt)).toMatchObject({ rows: 2, errors: [{ row: 3, messages: [expect.stringContaining('数量"x"')] }] })
       expect((await paste(tech, 'HTTP-BOM-5 接口销轴 4\n\nHTTP-BOM-6 接口连接板 x', true)).status).toBe(400) // 有错不存
       const ok = await paste(tech, '代号\t名称\t数量\nHTTP-BOM-5\t接口销轴\t4\nHTTP-BOM-1\t接口主梁\t1', true)
       expect(ok.status).toBe(200)
-      const okBody = (await ok.json()) as { fileId: string; lines: { drawingNo: string; status: string }[] }
+      const okBody = (await readApiBody(ok)) as { fileId: string; lines: { drawingNo: string; status: string }[] }
       expect(okBody.lines.map((l) => [l.drawingNo, l.status])).toEqual([['HTTP-BOM-5', 'new'], ['HTTP-BOM-1', 'exists']])
       const rel2 = await send(tech, 'POST', '/api/releases', { type: 'DRAWING', workOrderNumber: MINE, description: '车架图纸第二批', userIds: ['h-prod'], bomFileId: okBody.fileId })
       expect(rel2.status).toBe(200)
-      expect(((await rel2.json()) as { bom: unknown }).bom).toMatchObject({ created: 1, matched: 1 })
+      expect(((await readApiBody(rel2)) as { bom: unknown }).bom).toMatchObject({ created: 1, matched: 1 })
     }
     expect(await me(qa)).toMatchObject({ businessDept: 'QUALITY', menu: ['deptPlan', 'production'], can: { route: false, mobileSend: false } })
     expect(await me(pm)).toMatchObject({ menu: ['tech', 'process', 'purchase', 'production'], pmOf: [MINE], can: { overview: false } })
     expect(await me(lead)).toMatchObject({ menu: ['overview', 'deptPlan', 'tech', 'process', 'purchase', 'production'], can: { overview: true, seeAmount: true } })
 
     // 主数据用户：department 仍是 QMS 原名称（给人看），businessDept 是换算出的编码（选人下拉按它排序）
-    const master = (await (await get('/api/master', pm)).json()) as { users: { id: string; department: string; businessDept: string | null }[] }
+    const master = (await readApiBody((await get('/api/master', pm)))) as { users: { id: string; department: string; businessDept: string | null }[] }
     const mu = (id: string) => master.users.find((u) => u.id === id)
     expect(mu('h-tech')).toMatchObject({ department: '技术科', businessDept: 'TECH' })
     expect(mu('h-buyer')).toMatchObject({ department: '采购一组', businessDept: 'PURCHASE' })
@@ -821,11 +822,11 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(prodPart.status).toBe(200)
     const qaDenied = await send(qa, 'POST', '/api/parts', { workOrderNumber: MINE, name: 'x', quantity: 1 })
     expect(qaDenied.status).toBe(403)
-    expect(((await qaDenied.json()) as { message: string }).message).toBe('只有生产部、工艺部、外协专员、该工单项目经理或管理员可以修改工件和工序')
+    expect(((await readApiBody(qaDenied)) as { message: string }).message).toBe('只有生产部、工艺部、外协专员、该工单项目经理或管理员可以修改工件和工序')
     expect((await send(tech, 'POST', '/api/parts', { workOrderNumber: MINE, name: 'x', quantity: 1 })).status).toBe(403)
     const pmPart = await send(pm, 'POST', '/api/parts', { workOrderNumber: MINE, name: 'R13 项目经理建的', quantity: 1 })
     expect(pmPart.status).toBe(200)
-    const partId = ((await pmPart.json()) as { id: string }).id
+    const partId = ((await readApiBody(pmPart)) as { id: string }).id
     expect((await send(qa, 'PATCH', `/api/parts/${partId}`, { name: 'x' })).status).toBe(403)
 
     // 工序：项目经理在自己的工单上加；责任人是质检员
@@ -840,7 +841,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     // 开工 / 完工：项目经理、技术员不行；工序责任人本人可以；生产部可以
     const startDenied = await send(pm, 'POST', `/api/steps/${stepId}/start`, {})
     expect(startDenied.status).toBe(403)
-    expect(((await startDenied.json()) as { message: string }).message).toBe('只有生产部、外协专员、该工序责任人、本班组班组长（自制工序的开工、完工、报工）或管理员可以登记开工、完工、发出、返厂')
+    expect(((await readApiBody(startDenied)) as { message: string }).message).toBe('只有生产部、外协专员、该工序责任人、本班组班组长（自制工序的开工、完工、报工）或管理员可以登记开工、完工、发出、返厂')
     expect((await send(tech, 'POST', `/api/steps/${stepId}/start`, {})).status).toBe(403)
     expect((await send(qa, 'POST', `/api/steps/${stepId}/start`, {})).status).toBe(200)
     expect((await send(prod, 'POST', `/api/steps/${stepId}/finish`, {})).status).toBe(200)
@@ -850,7 +851,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await get('/api/overview', pm)).status).toBe(403)
     const ov = await get('/api/overview', lead)
     expect(ov.status).toBe(200)
-    const overview = (await ov.json()) as { summary: Record<string, number>; stages: { key: string; count: number }[]; byDept: unknown[]; redWorkOrders: unknown[] }
+    const overview = (await readApiBody(ov)) as { summary: Record<string, number>; stages: { key: string; count: number }[]; byDept: unknown[]; redWorkOrders: unknown[] }
     expect(Object.keys(overview.summary).sort()).toEqual(['closedIssues', 'green', 'newIssues', 'overdueIssues', 'red', 'yellow'])
     expect(overview.stages.map((x) => x.key)).toEqual(['drawing', 'shortage', 'outsource', 'kitting', 'issue'])
     expect((await get('/api/overview', admin)).status).toBe(200)
@@ -862,7 +863,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await me(await login('h-prod'))).businessDept).toBe('QUALITY')
     expect((await send(admin, 'PUT', '/api/settings/dept-mappings/T-DEPT-PROD', { businessDept: null })).status).toBe(200)
     expect((await me(await login('h-prod'))).businessDept).toBe('PRODUCTION')
-    const settings = (await (await get('/api/settings', admin)).json()) as {
+    const settings = (await readApiBody((await get('/api/settings', admin)))) as {
       departments: string[]
       deptsWithoutHead: string[]
       qmsDepartments: { id: string; parentName: string | null; level: number; businessDept: string | null; effective: string | null }[]
@@ -888,11 +889,11 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(pm, 'POST', '/api/plan/templates', tpl)).status).toBe(403)
     const created = await send(admin, 'POST', '/api/plan/templates', tpl)
     expect(created.status).toBe(200)
-    const tplId = ((await created.json()) as { id: string }).id
+    const tplId = ((await readApiBody(created)) as { id: string }).id
     expect((await send(pm, 'PUT', `/api/plan/templates/${tplId}`, tpl)).status).toBe(403)
     expect((await send(pm, 'DELETE', `/api/plan/templates/${tplId}`)).status).toBe(403)
     expect((await send(admin, 'DELETE', `/api/plan/templates/${tplId}`)).status).toBe(200)
-    const me = (await (await get('/api/me', admin)).json()) as { can: Record<string, boolean> }
+    const me = (await readApiBody((await get('/api/me', admin)))) as { can: Record<string, boolean> }
     expect(me.can).toMatchObject({ plan: true, planTemplate: true })
 
     // 生成：采购员 403；项目经理别人的工单 403（看不到），自己的工单 200
@@ -917,7 +918,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       }
     }
     expect((await send(pm, 'POST', '/api/plan/publish', { workOrderNumber: MINE })).status).toBe(200)
-    const view = (await (await get(`/api/plan?workOrderNumber=${MINE}`, pm)).json()) as { canEdit: boolean; nodes: { id: string; name: string; dept: string }[] }
+    const view = (await readApiBody((await get(`/api/plan?workOrderNumber=${MINE}`, pm)))) as { canEdit: boolean; nodes: { id: string; name: string; dept: string }[] }
     expect(view.canEdit).toBe(true)
     const design = view.nodes.find((n) => n.name === '设计出图')!
     const cut = view.nodes.find((n) => n.name === '下料组焊')!
@@ -926,7 +927,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     // 发布后改日期：没原因 400；采购员改不了 403
     const noReason = await send(pm, 'PATCH', `/api/plan/nodes/${design.id}`, { planDate: later(20) })
     expect(noReason.status).toBe(400)
-    expect(((await noReason.json()) as { message: string }).message).toContain('调整原因')
+    expect(((await readApiBody(noReason)) as { message: string }).message).toContain('调整原因')
     expect((await send(buyer, 'PATCH', `/api/plan/nodes/${design.id}`, { planDate: later(20), reason: 'x' })).status).toBe(403)
     expect((await send(pm, 'PATCH', `/api/plan/nodes/${design.id}`, { planDate: later(20), reason: '客户提前要图' })).status).toBe(200)
     expect((await send(buyer, 'DELETE', `/api/plan/nodes/${design.id}`, { reason: 'x' })).status).toBe(403)
@@ -950,11 +951,11 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     // 已发布：新建设计任务必须选节点（400）；选了别的工单的节点 400；选对了 200
     const noNode = await send(tech, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: 'R14 图', planDate: later(15) })
     expect(noNode.status).toBe(400)
-    expect(((await noNode.json()) as { message: string }).message).toContain('请选择所属总计划节点')
+    expect(((await readApiBody(noNode)) as { message: string }).message).toContain('请选择所属总计划节点')
     const ok = await send(tech, 'POST', '/api/drawings', { workOrderNumber: MINE, componentName: 'R14 图', planDate: later(25), planNodeId: design.id })
     expect(ok.status).toBe(200)
-    expect(((await ok.json()) as { planWarning: string | null }).planWarning).toContain('晚于总计划节点')
-    const opts = (await (await get(`/api/plan/options?workOrderNumber=${MINE}`, tech)).json()) as { published: boolean; nodes: unknown[] }
+    expect(((await readApiBody(ok)) as { planWarning: string | null }).planWarning).toContain('晚于总计划节点')
+    const opts = (await readApiBody((await get(`/api/plan/options?workOrderNumber=${MINE}`, tech)))) as { published: boolean; nodes: unknown[] }
     expect(opts.published).toBe(true)
     expect(opts.nodes).toHaveLength(11)
     expect((await get(`/api/plan/options?workOrderNumber=${OTHER}`, pm)).status).toBe(403)
@@ -964,10 +965,10 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(tech, 'POST', `/api/plan/nodes/${design.id}/tasks`, { name: '', ownerId: 'h-buyer', planDate: later(10) })).status).toBe(400)
     const made = await send(tech, 'POST', `/api/plan/nodes/${design.id}/tasks`, { name: '工艺文件', ownerId: 'h-buyer', planDate: later(10) })
     expect(made.status).toBe(200)
-    const taskId = ((await made.json()) as { id: string }).id
+    const taskId = ((await readApiBody(made)) as { id: string }).id
     expect((await send(buyer, 'PATCH', `/api/plan/tasks/${taskId}`, { name: '改名' })).status).toBe(403)
     expect((await send(pm, 'PATCH', `/api/plan/tasks/${taskId}`, { name: '工艺文件编制' })).status).toBe(200)
-    const buyerTodos = (await (await get('/api/todos', buyer)).json()) as { action: string; planTask: { id: string } | null }[]
+    const buyerTodos = (await readApiBody((await get('/api/todos', buyer)))) as { action: string; planTask: { id: string } | null }[]
     expect(buyerTodos.find((t) => t.action === 'DO_PLAN_TASK')?.planTask?.id).toBe(taskId)
     expect((await send(buyer, 'POST', `/api/plan/tasks/${taskId}/complete`, {})).status).toBe(200)
     expect((await send(buyer, 'POST', `/api/plan/tasks/${taskId}/undo-complete`, {})).status).toBe(200)
@@ -976,7 +977,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await get(`/api/plan/nodes/${cut.id}/steps`, pm)).status).toBe(200)
     expect((await get(`/api/plan/nodes/${cut.id}/steps`, buyer)).status).toBe(403)
     // 项目计划一览：只列看得到的工单
-    const listed = (await (await get('/api/plan/list', pm)).json()) as { rows: { workOrderNumber: string }[] }
+    const listed = (await readApiBody((await get('/api/plan/list', pm)))) as { rows: { workOrderNumber: string }[] }
     expect(listed.rows.map((x) => x.workOrderNumber)).toContain(MINE)
     expect(listed.rows.map((x) => x.workOrderNumber)).not.toContain(OTHER)
     expect((await send(pm, 'POST', `/api/plan/nodes/${cut.id}/steps`, { stepIds: [] })).status).toBe(400)
@@ -994,7 +995,9 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(res.status).toBe(200)
     const text = await res.text()
     expect(text).not.toContain('"amount"')
-    const d = JSON.parse(text) as {
+    const envelope = JSON.parse(text)
+    expect(envelope.code).toBe(0)
+    const d = envelope.data as {
       today: string
       published: boolean
       workOrder: { workOrderNumber: string; deliveryDate: string; projectManagerName: string | null }
@@ -1033,21 +1036,21 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await get(`/api/work-orders/${OTHER}/detail`, pm)).status).toBe(403)
     expect((await get('/api/work-orders/NO-SUCH-WO/detail', pm)).status).toBe(403)
     // 看全部的人：别人的工单 200（没有总计划：节点为空）；不存在 404
-    const other = (await (await get(`/api/work-orders/${OTHER}/detail`, lead)).json()) as { plan: unknown; nodes: unknown[]; published: boolean }
+    const other = (await readApiBody((await get(`/api/work-orders/${OTHER}/detail`, lead)))) as { plan: unknown; nodes: unknown[]; published: boolean }
     expect(other).toMatchObject({ plan: null, nodes: [], published: false })
     expect((await get('/api/work-orders/NO-SUCH-WO/detail', admin)).status).toBe(404)
     // 未登录 401
     expect((await fetch(`${base}/api/work-orders/${MINE}/detail`)).status).toBe(401)
 
     // 项目总览（看板）加的字段：节点摘要、是否有总计划
-    const board = (await (await get('/api/board', pm)).json()) as { rows: { workOrderNumber: string; hasPlan: boolean; planNodes: unknown[] }[]; sourceByDept: unknown[] }
+    const board = (await readApiBody((await get('/api/board', pm)))) as { rows: { workOrderNumber: string; hasPlan: boolean; planNodes: unknown[] }[]; sourceByDept: unknown[] }
     expect(board.rows.find((r) => r.workOrderNumber === MINE)).toMatchObject({ hasPlan: true })
     expect(board.rows.find((r) => r.workOrderNumber === MINE)!.planNodes).toHaveLength(11)
     expect(Array.isArray(board.sourceByDept)).toBe(true)
     // 设计 / 采购列表的"总计划节点"列
-    const drawings = (await (await get(`/api/drawings?workOrderNumber=${MINE}&view=all`, tech)).json()) as { rows: { componentName: string; planNode: { id: string; seq: number; name: string } | null }[] }
+    const drawings = (await readApiBody((await get(`/api/drawings?workOrderNumber=${MINE}&view=all`, tech)))) as { rows: { componentName: string; planNode: { id: string; seq: number; name: string } | null }[] }
     expect(drawings.rows.find((r) => r.componentName === 'R14 图')!.planNode).toMatchObject({ id: design.id, name: '设计出图' })
-    const lines = (await (await get(`/api/purchases?workOrderNumber=${MINE}&view=all`, admin)).json()) as { rows: { materialName: string; planNode: unknown }[] }
+    const lines = (await readApiBody((await get(`/api/purchases?workOrderNumber=${MINE}&view=all`, admin)))) as { rows: { materialName: string; planNode: unknown }[] }
     expect(lines.rows.find((r) => r.materialName === '详情未挂物料')!.planNode).toBeNull()
   })
 
@@ -1059,7 +1062,7 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     const json = async <T>(path: string, s: Record<string, string>) => {
       const r = await get(path, s)
       expect(r.status, path).toBe(200)
-      return (await r.json()) as T
+      return (await readApiBody(r)) as T
     }
 
     // ── 未读提醒数（菜单角标）：只数本人的；标已读后减少；未登录 401 ──
@@ -1134,15 +1137,15 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await get(`/api/comments?refType=part&refId=${otherPartId}`, pm)).status).toBe(403)
     expect((await post(pm, { refType: 'part', refId: otherPartId, body: '偷看' })).status).toBe(403)
     expect((await post(lead, { refType: 'part', refId: otherPartId, body: '请抓紧', mentionIds: ['h-worker'] })).status).toBe(200)
-    const list = (await (await get(`/api/comments?refType=part&refId=${otherPartId}`, lead)).json()) as { body: string }[]
+    const list = (await readApiBody((await get(`/api/comments?refType=part&refId=${otherPartId}`, lead)))) as { body: string }[]
     expect(list.map((c) => c.body)).toEqual(['请抓紧'])
     expect((await get(`/api/parts/${otherPartId}/timeline`, pm)).status).toBe(403)
     expect((await get(`/api/parts/${otherPartId}/timeline`, lead)).status).toBe(200)
     expect((await get(`/api/workshop?wo=${OTHER}`, pm)).status).toBe(403)
     expect((await get('/api/workshop', pm)).status).toBe(200)
-    const hits = (await (await get(`/api/search?q=${encodeURIComponent('别人的工件')}`, pm)).json()) as unknown[]
+    const hits = (await readApiBody((await get(`/api/search?q=${encodeURIComponent('别人的工件')}`, pm)))) as unknown[]
     expect(hits).toEqual([])
-    const leadHits = (await (await get(`/api/search?q=${encodeURIComponent('别人的工件')}`, lead)).json()) as { type: string }[]
+    const leadHits = (await readApiBody((await get(`/api/search?q=${encodeURIComponent('别人的工件')}`, lead)))) as { type: string }[]
     expect(leadHits.map((h) => h.type)).toEqual(['part'])
     await db.comment.deleteMany({ where: { refId: otherPartId } })
     await db.reminder.deleteMany({ where: { kind: 'COMMENT' } })
@@ -1185,10 +1188,10 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     // 生产部设班组长；同步不碰（见 sync.test.ts）
     expect((await send(prod, 'PUT', '/api/team-leaders/H-TEAM-A', { userId: 'h-leader' })).status).toBe(200)
     expect((await send(prod, 'PUT', '/api/team-leaders/H-OUT', { userId: 'h-leader' })).status).toBe(400) // 外协厂不是班组
-    const list = (await (await get('/api/team-leaders', leader)).json()) as { teamId: string; leaderId: string | null }[]
+    const list = (await readApiBody((await get('/api/team-leaders', leader)))) as { teamId: string; leaderId: string | null }[]
     expect(list.find((t) => t.teamId === 'H-TEAM-A')).toMatchObject({ leaderId: 'h-leader' })
 
-    const me = (await (await get('/api/me', leader)).json()) as { menu: string[]; can: Record<string, boolean>; leadTeams: { id: string }[] }
+    const me = (await readApiBody((await get('/api/me', leader)))) as { menu: string[]; can: Record<string, boolean>; leadTeams: { id: string }[] }
     expect(me.leadTeams.map((t) => t.id)).toEqual(['H-TEAM-A'])
     expect(me.menu).toContain('production')
     expect(me.can).toMatchObject({ stepAction: false, route: false, teamLeader: false })
@@ -1203,9 +1206,9 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(leader, 'PATCH', `/api/steps/${other.id}`, { ownerId: 'h-leader' })).status).toBe(403)
 
     // "我的"：本班组的自制工序（没指定负责人也算）；别的班组的不在
-    const mine = (await (await get(`/api/production?wo=${MINE}&mine=1`, leader)).json()) as { rows: { stepId: string; leaderId: string | null }[] }
+    const mine = (await readApiBody((await get(`/api/production?wo=${MINE}&mine=1`, leader)))) as { rows: { stepId: string; leaderId: string | null }[] }
     expect(mine.rows.map((r) => r.stepId)).toEqual([own.id])
-    const all = (await (await get(`/api/production?wo=${MINE}`, leader)).json()) as { rows: { stepId: string; leaderId: string | null }[] }
+    const all = (await readApiBody((await get(`/api/production?wo=${MINE}`, leader)))) as { rows: { stepId: string; leaderId: string | null }[] }
     expect(all.rows.find((r) => r.stepId === other.id)).toMatchObject({ leaderId: null })
 
     // 清除班组长后又变回只读
@@ -1227,11 +1230,11 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect((await send(buyer, 'POST', '/api/purchase-plans', body)).status).toBe(403)
     const created = await send(tech, 'POST', '/api/purchase-plans', body)
     expect(created.status).toBe(200)
-    const p = await created.json() as { id: string }
+    const p = await readApiBody(created) as { id: string }
     try {
       const added = await send(tech, 'POST', `/api/purchase-plans/${p.id}/items`, { materialName: 'HTTP电机', quantity: 1, needDate: '2026-12-01' })
       expect(added.status).toBe(200)
-      const item = await added.json() as { id: string }
+      const item = await readApiBody(added) as { id: string }
       expect((await send(buyer, 'POST', `/api/purchase-plans/${p.id}/issue`)).status).toBe(403)
       expect((await send(tech, 'POST', `/api/purchase-plans/${p.id}/issue`)).status).toBe(200)
       expect((await send(tech, 'POST', `/api/purchase-plans/${p.id}/convert`, {})).status).toBe(403)
@@ -1239,10 +1242,10 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       expect((await send(pm, 'POST', `/api/purchase-plans/${p.id}/convert`, {})).status).toBe(403)
       const converted = await send(buyer, 'POST', `/api/purchase-plans/${p.id}/convert`, { itemIds: [item.id] })
       expect(converted.status).toBe(200)
-      expect(await converted.json()).toMatchObject({ succeeded: 1, failed: 0 })
-      const detail = await (await get(`/api/purchase-plans/${p.id}`, tech)).json() as { progress: object }
+      expect(await readApiBody(converted)).toMatchObject({ succeeded: 1, failed: 0 })
+      const detail = await readApiBody((await get(`/api/purchase-plans/${p.id}`, tech))) as { progress: object }
       expect(detail.progress).toMatchObject({ total: 1, converted: 1, arrived: 0 })
-      const list = await (await get('/api/purchase-plans', pm)).json() as { rows: { id: string }[] }
+      const list = await readApiBody((await get('/api/purchase-plans', pm))) as { rows: { id: string }[] }
       expect(list.rows.some(row => row.id === p.id)).toBe(false)
     } finally {
       await db.todo.deleteMany({ where: { refType: 'purchasePlan', refId: p.id } })

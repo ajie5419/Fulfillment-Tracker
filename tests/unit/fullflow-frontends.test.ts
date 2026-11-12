@@ -26,8 +26,8 @@ it.each([null, 'initial'])('issue drawer uses the authenticated request fetch fo
   vi.stubGlobal('useIssueOptions', async () => ({ data: Vue.ref({}) }))
   vi.stubGlobal('NOTE_REQUIRED', [])
   const requests: string[] = []
-  vi.stubGlobal('$fetch', () => { throw new Error('unscoped SSR fetch must not be used') })
-  vi.stubGlobal('useRequestFetch', () => async (url: string) => { requests.push(url); return { id: url.split('/').at(-1) } })
+  vi.stubGlobal('apiFetch', () => { throw new Error('unscoped SSR fetch must not be used') })
+  vi.stubGlobal('useApiRequestFetch', () => async (url: string) => { requests.push(url); return { id: url.split('/').at(-1) } })
   vi.stubGlobal('useAsyncData', (key: Vue.ComputedRef<string>, handler: () => Promise<unknown>) => {
     const data = Vue.ref(), pending = Vue.ref(false), error = Vue.ref(null)
     let seq = 0
@@ -76,13 +76,13 @@ it('drawings keeps filtered rows identical in grouped/table layouts and isolates
   const pending = Vue.ref(false)
   const data = Vue.ref({ rows: [{ id: 'a', workOrderNumber: 'WO' }, { id: 'b', workOrderNumber: 'WO' }, { id: 'c', workOrderNumber: 'WO2' }], total: 3, stats: { drawn: 1, customerPending: 0 } })
   let requestQuery: any
-  vi.stubGlobal('useRequestFetch', () => (_url: string, opts: any) => { requestQuery = opts.query; return Promise.resolve(data.value) })
+  vi.stubGlobal('useApiRequestFetch', () => (_url: string, opts: any) => { requestQuery = opts.query; return Promise.resolve(data.value) })
   vi.stubGlobal('useAsyncData', (key: any, handler: any) => {
     options = { key }
     Vue.watch(key, () => handler(null, { signal: new AbortController().signal }), { immediate: true })
     return { data, pending, error: Vue.ref(null), refresh: vi.fn() }
   })
-  vi.stubGlobal('useFetch', (_url: string, opts: any) => ({ data: Vue.ref(opts.default()), pending: Vue.ref(false), refresh: vi.fn() }))
+  vi.stubGlobal('useApiFetch', (_url: string, opts: any) => ({ data: Vue.ref(opts.default()), pending: Vue.ref(false), refresh: vi.fn() }))
   const view = await mountScript('app/pages/drawings.vue', {}, { '#shared/workbench': workbench, '#shared/drawing': drawing })
   const ids = () => view.state.tables.flatMap((g: any) => g.rows.map((r: any) => r.id))
   expect(ids()).toEqual(['a', 'b', 'c'])
@@ -108,17 +108,17 @@ it('drawings keeps filtered rows identical in grouped/table layouts and isolates
 
 it('mobile issue deep-link detail fetch forwards the SSR request', () => {
   const source = readFileSync('app/pages/m/issues.vue', 'utf8')
-  expect(source).toContain('const requestFetch = useRequestFetch()')
+  expect(source).toContain('const requestFetch = useApiRequestFetch()')
   const fetcher = source.slice(source.indexOf('await useAsyncData<Detail'), source.indexOf('watch([tab, selected]'))
   expect(fetcher).toContain('clientRequest(`/api/issues/${encodeURIComponent(selected.value)}`, undefined, requestFetch)')
-  expect(fetcher).not.toContain('$fetch')
+  expect(fetcher).not.toContain('apiFetch')
 })
 
 it.each(['PlanNodeSelect', 'PartTemplateModal', 'BomImportModal', 'SendStepModal', 'RouteBatchModal', 'WorkOrderEditModal', 'PaymentCreateModal'])('%s scopes initial watcher reads to the authenticated request', name => {
   const source = readFileSync(`app/components/${name}.vue`, 'utf8')
-  expect(source).toContain('useRequestFetch()')
+  expect(source).toContain('useApiRequestFetch()')
   const initial = source.slice(0, source.indexOf('{ immediate: true }'))
-  expect(initial).not.toMatch(/(?:await\s+\$fetch|const (?:get|read) = \$fetch)/)
+  expect(initial).not.toMatch(/(?:await\s+\apiFetch|const (?:get|read) = \apiFetch)/)
 })
 
 it.each(['/settings', '/drawings', '/templates', '/wo/WO-001', '/'])('route %s has a title independent of menu permissions', async path => {
@@ -143,7 +143,7 @@ it.each(['/settings', '/drawings', '/templates', '/wo/WO-001', '/'])('route %s h
 
 it('release drawer forwards the scoped request through its detail helper', () => {
   const source = readFileSync('app/components/ReleaseDrawer.vue', 'utf8')
-  expect(source).toContain('const requestFetch = useRequestFetch()')
+  expect(source).toContain('const requestFetch = useApiRequestFetch()')
   expect(source).toContain('fetchRelease(id, requestFetch)')
   const helper = readFileSync('app/composables/useReleases.ts', 'utf8')
   expect(helper).toContain('fetchRelease(id: string, request?: ClientFetch)')

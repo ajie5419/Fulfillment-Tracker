@@ -1,3 +1,4 @@
+import { recordProcessLog } from '../audit/record'
 import { Prisma } from '@prisma/client'
 import { FlowError } from '../flow/errors'
 import { lockParts, refreshPartReady } from '../purchases/purchases'
@@ -43,7 +44,7 @@ async function requireDocumentReview(tx: Tx, taskIds: string[], actorId: string,
       await tx.drawingTask.update({ where: { id: task.id }, data: kind === 'MATERIAL'
         ? { materialStatus: 'REVISING', materialAt: now, materialBy: actorId }
         : { processStatus: 'REVISING', processAt: now, processBy: actorId } })
-      await tx.processDocLog.create({ data: {
+      await recordProcessLog(tx, { data: {
         taskId: task.id, kind, fromStatus: 'ISSUED', toStatus: 'REVISING',
         note: '重新启用工艺处理，原已下发文档需复核', actorId, createdAt: now,
       } })

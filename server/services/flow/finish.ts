@@ -1,3 +1,4 @@
+import { recordFlowEvent } from '../audit/record'
 /**
  * 完工（自制、厂内外协），含部分完工和报废。单独成文件：报废要生成异常，异常模块又依赖 flow.ts，放在这里避免循环引用。
  */
@@ -50,7 +51,7 @@ export function finishStep(input: FinishInput): Promise<FinishResult> {
     // 报废：先记报废事件（不计数量），再按完工收尾
     const scrapQty = remaining - qty
     const note = input.note?.trim() || null
-    const scrap = await tx.flowEvent.create({ data: { stepId: step.id, type: 'SCRAP', qty: scrapQty, note, ...base } })
+    const scrap = await recordFlowEvent(tx, { data: { stepId: step.id, type: 'SCRAP', qty: scrapQty, note, ...base } })
     const result = await applyReturn(tx, step, { ...base, type: 'FINISH', qty, forceDone: true })
     const issue = await createScrapIssue(tx, step, { eventId: scrap.id, scrapQty, doneQty: qty, note, actorId: input.actorId })
     return { ...result, issueNo: issue.issueNo }

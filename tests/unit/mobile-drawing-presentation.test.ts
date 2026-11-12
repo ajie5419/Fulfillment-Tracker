@@ -42,7 +42,7 @@ it.each([
   vi.stubGlobal('useRouter', () => ({ replace: vi.fn() }))
   vi.stubGlobal('useRequestState', useRequestState)
   vi.stubGlobal('fetchDrawing', async () => row)
-  vi.stubGlobal('useFetch', async () => ({ data: Vue.ref({ rows: focused ? [] : [row], total: 1, stats: null }), pending: Vue.ref(false), error: Vue.ref(null), refresh: vi.fn() }))
+  vi.stubGlobal('useApiFetch', async () => ({ data: Vue.ref({ rows: focused ? [] : [row], total: 1, stats: null }), pending: Vue.ref(false), error: Vue.ref(null), refresh: vi.fn() }))
   const component = loadComponent('app/pages/m/drawings.vue', { '#shared/mobile-todo': mobileTodo })
   const wrapper = mount(Vue.defineComponent({ setup: () => () => Vue.h(Vue.Suspense, null, { default: () => Vue.h(component) }) }), {
     global: {

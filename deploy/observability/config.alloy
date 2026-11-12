@@ -1,0 +1,58 @@
+// Read log files without exposing the privileged Docker API socket.
+local.file_match "docker" {
+  path_targets = [{"__path__" = "/var/log/docker/*/*-json.log"}]
+}
+
+loki.source.file "docker" {
+  targets    = local.file_match.docker.targets
+  forward_to = [loki.process.fulfillment.receiver]
+}
+
+loki.process "fulfillment" {
+  stage.json {
+    expressions = {source = "attrs.\"com.ft.log-source\""}
+  }
+  stage.labels {
+    values = {source = ""}
+  }
+  stage.match {
+    selector = "{source!=\"fulfillment\"}"
+    action   = "drop"
+  }
+  stage.docker {}
+  stage.json {
+    expressions = {service = "service", environment = "environment", level = "level"}
+  }
+  stage.labels {
+    values = {service = "", environment = "", level = ""}
+  }
+  // Framework startup failures may precede JSON logging. Keep an error marker, never raw stderr secrets.
+  stage.match {
+    selector = "{service!=\"fulfillment-tracker\",stream=\"stderr\"}"
+    stage.static_labels {
+      values = {service = "fulfillment-tracker", environment = "production", level = "error"}
+    }
+    stage.template {
+      source = "sanitized"
+      template = "{\"service\":\"fulfillment-tracker\",\"environment\":\"production\",\"level\":\"error\",\"event\":\"runtime.unstructured\"}"
+    }
+    stage.output {
+      source = "sanitized"
+    }
+  }
+  stage.match {
+    selector = "{service!=\"fulfillment-tracker\"}"
+    action   = "drop"
+  }
+  // Request IDs and entity IDs stay in the JSON body, never indexed labels.
+  stage.label_keep {
+    values = ["service", "environment", "level"]
+  }
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

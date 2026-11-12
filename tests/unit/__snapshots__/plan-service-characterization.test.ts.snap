@@ -438,6 +438,23 @@ exports[`plan service 搬移前特征 > create 命令的完整副作用顺序 1`
       },
     ],
     [
+      "auditLog.create",
+      {
+        "data": {
+          "action": "plan.change",
+          "actorId": "actor",
+          "entityId": "n1",
+          "entityType": "PlanNode",
+          "metadata": {
+            "kind": "ADD",
+            "newDate": "2026-11-02T00:00:00.000Z",
+            "oldDate": null,
+          },
+          "requestId": null,
+        },
+      },
+    ],
+    [
       "planNode.update",
       {
         "data": {
@@ -743,6 +760,23 @@ exports[`plan service 搬移前特征 > delete 命令的完整副作用顺序 1`
           "oldDate": 2026-11-02T00:00:00.000Z,
           "reason": "删除",
           "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "auditLog.create",
+      {
+        "data": {
+          "action": "plan.change",
+          "actorId": "actor",
+          "entityId": "n1",
+          "entityType": "PlanNode",
+          "metadata": {
+            "kind": "DELETE",
+            "newDate": null,
+            "oldDate": "2026-11-02T00:00:00.000Z",
+          },
+          "requestId": null,
         },
       },
     ],
@@ -2669,6 +2703,23 @@ exports[`plan service 搬移前特征 > 已发布节点改日期：锁、校验�
           "oldDate": 2026-11-02T00:00:00.000Z,
           "reason": "调整",
           "workOrderNumber": "WO 1",
+        },
+      },
+    ],
+    [
+      "auditLog.create",
+      {
+        "data": {
+          "action": "plan.change",
+          "actorId": "actor",
+          "entityId": "n1",
+          "entityType": "PlanNode",
+          "metadata": {
+            "kind": "DATE",
+            "newDate": "2026-11-04T00:00:00.000Z",
+            "oldDate": "2026-11-02T00:00:00.000Z",
+          },
+          "requestId": null,
         },
       },
     ],

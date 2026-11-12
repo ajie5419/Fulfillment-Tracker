@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest'
 import { inspectArchitecture } from '../../scripts/architecture-rules.mjs'
 
 describe('architectural regression barriers', () => {
+  it('requires JSON boundaries and limits raw downloads to the declared routes', () => {
+    expect(inspectArchitecture('server/api/example.get.ts', 'export default defineEventHandler(() => [])')).toEqual([expect.stringContaining('api-response-contract')])
+    expect(inspectArchitecture('server/api/example.get.ts', 'export default defineFileHandler(() => [])')).toHaveLength(1)
+    expect(inspectArchitecture('server/api/example.get.ts', 'export default defineApiHandler(() => [])')).toEqual([])
+    expect(inspectArchitecture('server/api/files/[id].get.ts', 'export default defineFileHandler(() => bytes)')).toEqual([])
+  })
+  it('rejects bypassing the decoder but leaves logout and transport boundaries available', () => {
+    for (const code of ["$fetch('/api/me')", "useFetch('/api/me')", 'useRequestFetch()', "fetch('/api/me')"]) {
+      expect(inspectArchitecture('app/pages/example.vue', `<script setup>${code}</script>`)).toEqual([expect.stringContaining('api-response-contract')])
+    }
+    expect(inspectArchitecture('app/page.ts', "apiFetch('/api/me'); useApiFetch('/api/me'); $fetch('/auth/logout', { method: 'POST' })")).toEqual([])
+    expect(inspectArchitecture('app/composables/useApiFetch.ts', 'useFetch(request)')).toEqual([])
+  })
   it('rejects runtime server dependencies but permits type-only contracts', () => {
     for (const code of ["import { run } from '../../server/service'", "export { run } from '../../server/service'", "const x = import('../../server/service')", "import {} from '../../server/service'", "export {} from '../../server/service'"]) {
       expect(inspectArchitecture('app/client.ts', code)).toEqual([expect.stringContaining('client-server-boundary')])

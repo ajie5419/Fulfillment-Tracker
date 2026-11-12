@@ -4,7 +4,7 @@ import { PLAN_STATUS_TEXT, planDisplayState } from '#shared/plan'
 definePageMeta({ layout: 'mobile' })
 const route = useRoute()
 const wo = computed(() => typeof route.query.wo === 'string' ? route.query.wo : '')
-const { data, pending, error, refresh } = await useFetch<PlanData>('/api/plan', { query: computed(() => ({ workOrderNumber: wo.value })) })
+const { data, pending, error, refresh } = await useApiFetch<PlanData>('/api/plan', { query: computed(() => ({ workOrderNumber: wo.value })) })
 const displayState = computed(() => planDisplayState(data.value?.plan?.status, data.value?.nodes.length ?? 0))
 </script>
 

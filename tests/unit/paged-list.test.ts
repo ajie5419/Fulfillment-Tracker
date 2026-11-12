@@ -4,7 +4,7 @@ import { invalidatePagedList, usePagedList as originalUsePagedList } from '../..
 
 // Request binding is supplied by the domain; the adapter still owns only page state.
 function usePagedList<T extends { id: string }>(url: string, options: Omit<Parameters<typeof originalUsePagedList<T>>[1], 'read'>) {
-  return originalUsePagedList<T>(url, { ...options, read: (path, opts) => useRequestFetch()<import('../../shared/pagination').PageResult<T>, string>(path, opts) })
+  return originalUsePagedList<T>(url, { ...options, read: (path, opts) => useApiRequestFetch()<import('../../shared/pagination').PageResult<T>, string>(path, opts) })
 }
 
 type Row = { id: string }
@@ -25,7 +25,7 @@ beforeEach(() => {
     if (!states.has(key)) states.set(key, ref(init()))
     return states.get(key)
   })
-  vi.stubGlobal('useRequestFetch', () => (_url: string, { query }: { query: Record<string, unknown> }) => new Promise((resolve, reject) => {
+  vi.stubGlobal('useApiRequestFetch', () => (_url: string, { query }: { query: Record<string, unknown> }) => new Promise((resolve, reject) => {
     reads.push({ query, resolve: (rows, total = 100, page = query.page as number) => resolve({ rows, total, page, pageSize: query.pageSize }), reject: () => reject(new Error('offline')) })
   }))
   /** The Nuxt seam only supplies keyed request refs. Tests exercise our adapter's

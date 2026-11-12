@@ -1,3 +1,4 @@
+import { logEvent } from '../../observability/logger'
 /** 持久化本地保存意图。记录行锁串行同幂等标识，pendingWorkOrder 唯一键串行同工单的新意图。 */
 import { randomUUID } from 'node:crypto'
 import type { Prisma, PrismaClient, WorkOrderLocalSave } from '@prisma/client'
@@ -142,6 +143,7 @@ async function executeSave(operationId: string, qms: QmsWorkOrderApi, db: Recove
         await tx.workOrderLocalSave.update({ where: { operationId }, data: { status: DONE, pendingWorkOrder: null, lastError: null, completedAt: new Date() } })
         return { result: view(confirmed) }
       } catch (error) {
+        logEvent('error', 'workorder.recovery.failed', { entityId: operationId }, error)
         // 只有已确认远端成功才保留 PENDING；远端失败（含网络错误）保留 FAILED 审计行并释放唯一槽。
         await tx.workOrderLocalSave.update({ where: { operationId }, data: { lastError: errorText(error), ...(!confirmed ? {
           status: FAILED, pendingWorkOrder: null, completedAt: new Date(), remoteError: json({ message: errorText(error),
@@ -155,7 +157,10 @@ async function executeSave(operationId: string, qms: QmsWorkOrderApi, db: Recove
     return outcome.result
   } catch (error) {
     // 远端成功后即使恢复状态写入也遇到数据库故障，原 PENDING 仍已持久化；不得鼓励用户再次创建。
-    if (confirmed) return pending(confirmed, operationId)
+    if (confirmed) {
+      logEvent('error', 'workorder.recovery.pending', { entityId: operationId }, error)
+      return pending(confirmed, operationId)
+    }
     throw error
   }
 }

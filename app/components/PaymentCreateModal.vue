@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const requestFetch = useRequestFetch()
+const requestFetch = useApiRequestFetch()
 import { MAX_PAYMENT_LINES } from '#shared/purchases'
 /**
  * 新建付款申请（R10）：关联同一工单的采购行、金额、申请日、是否卡交期、说明。不审批，财务标记已付 / 暂缓。

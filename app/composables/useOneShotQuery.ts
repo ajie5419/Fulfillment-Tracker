@@ -1,7 +1,7 @@
 import type { Ref } from 'vue'
 import type { LocationQueryRaw } from 'vue-router'
 
-/** 定位要等的接口：useFetch 返回的 pending、error */
+/** 定位要等的接口：useApiFetch 返回的 pending、error */
 export interface FetchState {
   pending: Ref<boolean>
   error: Ref<unknown>

@@ -63,7 +63,7 @@ watch(
   },
 )
 
-const { data: parts, error: partsError, refresh: refreshParts } = await useFetch('/api/parts', {
+const { data: parts, error: partsError, refresh: refreshParts } = await useApiFetch('/api/parts', {
   query: computed(() => ({ workOrderNumber: form.workOrderNumber })),
   default: () => [],
   immediate: false,

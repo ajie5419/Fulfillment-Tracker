@@ -13,8 +13,8 @@ interface TemplateRow { id: string; name: string; description: string | null; cr
 // 绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"）
 const send = clientRequest
 
-// useFetch 在服务端渲染时会带上登录 Cookie（直接 $fetch 不会）
-const { data: templates, pending, refresh } = await useFetch<TemplateRow[]>('/api/templates', { key: 'route-templates', default: () => [] })
+// useApiFetch 在服务端渲染时会带上登录 Cookie（直接 apiFetch 不会）
+const { data: templates, pending, refresh } = await useApiFetch<TemplateRow[]>('/api/templates', { key: 'route-templates', default: () => [] })
 const admin = computed(() => !!me.value?.isAdmin)
 
 const processOptions = computed(() => master.value.processes.map((p) => ({ value: p.id, label: p.name })))

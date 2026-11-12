@@ -64,7 +64,7 @@ describe('全盘统计双端组件', () => {
     const row = { workOrderNumber: 'WO-01', projectName: '项目', projectManagerId: 'pm', projectManagerName: '张经理', productLine: null, status: 'IN_PROGRESS', color: 'RED', openIssues: 2 }
     vi.stubGlobal('useRoute', () => route)
     vi.stubGlobal('useRouter', () => ({ replace }))
-    vi.stubGlobal('useFetch', async (url: string, options: any) => {
+    vi.stubGlobal('useApiFetch', async (url: string, options: any) => {
       expect(url).toBe('/api/board')
       expect(options.query).toEqual({ closed: '1' })
       return { data: Vue.ref(opts.empty ? { rows: [] } : { rows: [row] }), pending: Vue.ref(!!opts.pending), error: Vue.ref(opts.error ? new Error('网络超时') : null), refresh }
@@ -170,7 +170,7 @@ describe('驾驶舱红色清单 BoardCockpit.vue 呈现与 also 胶囊', () => {
     ]
 
     const fetchedPages: number[] = []
-    vi.stubGlobal('$fetch', async (url: string, opts: any) => {
+    vi.stubGlobal('apiFetch', async (url: string, opts: any) => {
       if (url === '/api/monitoring/entities') {
         const page = opts.query.page
         fetchedPages.push(page)
@@ -224,7 +224,7 @@ describe('驾驶舱红色清单 BoardCockpit.vue 呈现与 also 胶囊', () => {
       throw new Error(`Unexpected url: ${url}`)
     })
 
-    vi.stubGlobal('useFetch', async (url: string) => {
+    vi.stubGlobal('useApiFetch', async (url: string) => {
       if (url === '/api/overview') return { data: Vue.ref(mockOverview), pending: Vue.ref(false), error: Vue.ref(null), refresh: vi.fn() }
       if (url === '/api/monitoring/status') return { data: Vue.ref(mockMonitoringStatus), pending: Vue.ref(false), error: Vue.ref(null), refresh: vi.fn() }
       if (url === '/api/releases/stats') return { data: Vue.ref(mockReleasesStats), pending: Vue.ref(false), error: Vue.ref(null), refresh: vi.fn() }

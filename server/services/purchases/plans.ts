@@ -1,3 +1,4 @@
+import { logEvent } from '../../observability/logger'
 import type { Prisma } from '@prisma/client'
 import type { z } from 'zod'
 import { prisma } from '../../utils/prisma'
@@ -120,7 +121,7 @@ export async function convertPurchasePlan(id: string, itemIds: string[] | undefi
       results.push({ itemId, lineId: line.id })
     } catch (err) {
       // 单行事务失败已回滚，其他行继续；不向客户端透传数据库内部错误。
-      if (!(err instanceof FlowError)) console.error('[purchase-plans] 转入采购行失败', { planId: id, itemId }, err)
+      if (!(err instanceof FlowError)) logEvent('error', 'purchase.convert.failed', { entityId: itemId }, err)
       results.push({ itemId, error: err instanceof FlowError ? err.message : '转入失败，请刷新后重试' })
     }
   }

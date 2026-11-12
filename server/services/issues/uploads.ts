@@ -1,3 +1,4 @@
+import { logEvent } from '../../observability/logger'
 /**
  * 异常照片、发放单附件的上传与读取。
  *
@@ -83,7 +84,7 @@ export async function saveUpload(dir: string, data: Buffer, uploaderId: string, 
   try {
     return await prisma.uploadFile.create({ data: { id, storedName, mime: type.mime, size: data.length, uploaderId } })
   } catch (err) {
-    await rm(join(root, storedName), { force: true })
+    await rm(join(root, storedName), { force: true }).catch(error => logEvent('error', 'upload.cleanup.failed', { entityId: id }, error))
     throw err
   }
 }
@@ -102,7 +103,7 @@ async function readStoredFile(dir: string, file: { id: string; storedName: strin
     return await readFile(safePath(dir, file.storedName))
   } catch (err) {
     if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT') return null
-    console.error('[uploads] 读取文件失败', { id: file.id, storedName: file.storedName }, err)
+    logEvent('error', 'upload.read.failed', { entityId: file.id }, err)
     throw new FlowHttpError('文件读取失败，请稍后重试', 500)
   }
 }
@@ -139,5 +140,5 @@ export async function readOwnUnbound(dir: string, id: string, uploaderId: string
 
 /** 清理演示数据时删文件（尽力而为，文件不在也不报错） */
 export async function removeUploadFiles(dir: string, storedNames: string[]) {
-  for (const name of storedNames) await rm(safePath(dir, name), { force: true }).catch(() => {})
+  for (const name of storedNames) await rm(safePath(dir, name), { force: true }).catch(error => logEvent('error', 'upload.cleanup.failed', {}, error))
 }

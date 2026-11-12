@@ -1,6 +1,7 @@
 /** 设置页（仅管理员）：阈值、停工日、人员与角色（通知对象）、工单项目经理、部门对照（R13）。 */
 import type { BusinessDept, NotifyRoleKind } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
+import { recordAudit } from '../audit/record'
 import { BUSINESS_DEPTS, BUSINESS_DEPT_NAME, BUSINESS_DEPT_NAMES, MAX_DEPT_DEPTH, resolveBusinessDept } from '../auth/departments'
 import { FlowError } from '../flow/errors'
 import { loadNames } from '../flow/names'
@@ -50,16 +51,26 @@ export async function saveThreshold(rule: ScanRule, t: RuleThreshold) {
   const error = alertThresholdError(rule, t)
   if (error) throw new FlowError(error)
   const data = { remindHours: alertReminderUnit(rule) === null ? null : t.remindHours, yellowDays: t.yellowDays, redDays: t.redDays }
-  return prisma.threshold.upsert({ where: { rule }, update: data, create: { rule, ...data } })
+  return prisma.$transaction(async tx => {
+    const result = await tx.threshold.upsert({ where: { rule }, update: data, create: { rule, ...data } })
+    await recordAudit(tx, { action: 'settings.threshold', entityType: 'Threshold', entityId: rule, metadata: data })
+    return result
+  })
 }
 
 export async function addOffDay(date: Date) {
-  await prisma.offDay.upsert({ where: { date }, update: {}, create: { date } })
+  await prisma.$transaction(async tx => {
+    await tx.offDay.upsert({ where: { date }, update: {}, create: { date } })
+    await recordAudit(tx, { action: 'settings.offday.add', entityType: 'OffDay', entityId: date.toISOString() })
+  })
   return { ok: true }
 }
 
 export async function removeOffDay(date: Date) {
-  await prisma.offDay.deleteMany({ where: { date } })
+  await prisma.$transaction(async tx => {
+    const result = await tx.offDay.deleteMany({ where: { date } })
+    if (result.count) await recordAudit(tx, { action: 'settings.offday.remove', entityType: 'OffDay', entityId: date.toISOString() })
+  })
   return { ok: true }
 }
 
@@ -71,11 +82,19 @@ export async function addNotifyRole(input: { role: NotifyRoleKind; userId: strin
   if (!user) throw new FlowError('用户不存在')
   const exists = await prisma.notifyRole.findFirst({ where: { role: input.role, userId: input.userId, department } })
   if (exists) return exists
-  return prisma.notifyRole.create({ data: { role: input.role, userId: input.userId, department } })
+  return prisma.$transaction(async tx => {
+    const result = await tx.notifyRole.create({ data: { role: input.role, userId: input.userId, department } })
+    await recordAudit(tx, { action: 'settings.role.add', entityType: 'NotifyRole', entityId: result.id, metadata: { role: input.role, userId: input.userId, department } })
+    return result
+  })
 }
 
 export async function removeNotifyRole(id: string) {
-  await prisma.notifyRole.deleteMany({ where: { id } })
+  await prisma.$transaction(async tx => {
+    const existing = await tx.notifyRole.findUnique({ where: { id } })
+    const result = await tx.notifyRole.deleteMany({ where: { id } })
+    if (result.count && existing) await recordAudit(tx, { action: 'settings.role.remove', entityType: 'NotifyRole', entityId: id, metadata: { role: existing.role, userId: existing.userId, department: existing.department } })
+  })
   return { ok: true }
 }
 
@@ -86,7 +105,11 @@ export async function setProjectManager(workOrderNumber: string, projectManagerI
     const user = await prisma.qmsUser.findFirst({ where: { id: projectManagerId, isDeleted: false }, select: { id: true } })
     if (!user) throw new FlowError('用户不存在')
   }
-  return prisma.workOrderExt.upsert({ where: { workOrderNumber }, update: { projectManagerId }, create: { workOrderNumber, projectManagerId } })
+  return prisma.$transaction(async tx => {
+    const result = await tx.workOrderExt.upsert({ where: { workOrderNumber }, update: { projectManagerId }, create: { workOrderNumber, projectManagerId } })
+    await recordAudit(tx, { action: 'settings.project-manager', entityType: 'WorkOrder', entityId: workOrderNumber, metadata: { projectManagerId } })
+    return result
+  })
 }
 
 // ───────────── 部门对照（R13）─────────────
@@ -132,9 +155,15 @@ export async function setDeptMapping(qmsDepartmentId: string, businessDept: Busi
   const dept = await prisma.qmsDepartment.findUnique({ where: { id: qmsDepartmentId }, select: { id: true } })
   if (!dept) throw new FlowError('部门不存在，请先同步 QMS')
   if (!businessDept) {
-    await prisma.deptMapping.deleteMany({ where: { qmsDepartmentId } })
+    await prisma.$transaction(async tx => {
+      await tx.deptMapping.deleteMany({ where: { qmsDepartmentId } })
+      await recordAudit(tx, { action: 'settings.department', entityType: 'DeptMapping', entityId: qmsDepartmentId, metadata: { businessDept: null } })
+    })
     return { ok: true, businessDept: null }
   }
-  await prisma.deptMapping.upsert({ where: { qmsDepartmentId }, update: { businessDept }, create: { qmsDepartmentId, businessDept } })
+  await prisma.$transaction(async tx => {
+    await tx.deptMapping.upsert({ where: { qmsDepartmentId }, update: { businessDept }, create: { qmsDepartmentId, businessDept } })
+    await recordAudit(tx, { action: 'settings.department', entityType: 'DeptMapping', entityId: qmsDepartmentId, metadata: { businessDept } })
+  })
   return { ok: true, businessDept }
 }

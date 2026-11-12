@@ -1,3 +1,4 @@
+import { logEvent } from '../../observability/logger'
 /**
  * sync-qms：按游标依次增量拉取 7 类资源，写入 QMS 只读副本（技术选型第 4 节，验收 A8 幂等与中断）。
  *
@@ -122,6 +123,7 @@ export async function syncResource(resource: SyncResource, opts: SyncOptions): P
     await syncTransaction(opts, (tx) => tx.syncCursor.update({ where: { resource }, data: { lastError: null, failCount: 0, alertedAt: null } }))
   } catch (err) {
     if (err instanceof LeaseLostError) throw err
+    logEvent('error', 'sync.resource.failed', { module: resource }, err)
     const error = errorText(err)
     await syncTransaction(opts, (tx) => tx.syncCursor.update({ where: { resource }, data: { lastError: error, failCount: { increment: 1 } } }))
     return { ...result, status: 'failed', error }

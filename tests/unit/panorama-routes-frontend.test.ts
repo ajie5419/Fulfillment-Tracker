@@ -61,7 +61,7 @@ describe('全景旧路由及手机总览导航', () => {
     vi.stubGlobal('useRouter', () => ({ replace }))
     vi.stubGlobal('useMe', async () => ({ data: Vue.ref({ can: { overview: canOverview } }) }))
     vi.stubGlobal('navigateTo', vi.fn())
-    vi.stubGlobal('useFetch', async (url: string) => ({ data: Vue.ref(url === '/api/work-orders' ? [] : { rows: [], summary: {}, sourceByDept: [], syncErrors: [], syncConfigured: false }), refresh: vi.fn(), pending: Vue.ref(false), error: Vue.ref(null) }))
+    vi.stubGlobal('useApiFetch', async (url: string) => ({ data: Vue.ref(url === '/api/work-orders' ? [] : { rows: [], summary: {}, sourceByDept: [], syncErrors: [], syncConfigured: false }), refresh: vi.fn(), pending: Vue.ref(false), error: Vue.ref(null) }))
     const segmented = Vue.defineComponent({ props: ['options'], emits: ['change'], setup: (props, { emit }) => () => Vue.h('div', props.options.map((option: any) => Vue.h('button', { onClick: () => emit('change', option.value) }, option.label))) })
     const component = loadComponent('app/pages/board.vue', { '#shared/status': await import('../../shared/status'), '#shared/board-cockpit': await import('../../shared/board-cockpit') })
     const wrapper = render(component, { ASegmented: segmented, BoardPanorama: Vue.defineComponent({ setup: () => () => Vue.h('p', '统计区域') }), BoardCockpit: Vue.defineComponent({ setup: () => () => Vue.h('p', '管理区域') }), UiRefreshButton: container, AButton: container, AResult: container, AEmpty: container, ASwitch: container, ASelect: container, UiStatCard: container, UiColumnChart: container, UiSectionCard: container, WorkOrderCreate: container, UiHelpTip: container })
@@ -85,8 +85,8 @@ describe('全景旧路由及手机总览导航', () => {
     let requestQuery: Vue.ComputedRef<any> | undefined
     vi.stubGlobal('useRoute', () => route)
     vi.stubGlobal('useRouter', () => ({ replace }))
-    vi.stubGlobal('useRequestFetch', () => vi.fn())
-    vi.stubGlobal('useFetch', async (url: string, options: any) => {
+    vi.stubGlobal('useApiRequestFetch', () => vi.fn())
+    vi.stubGlobal('useApiFetch', async (url: string, options: any) => {
       expect(url).toBe('/api/issues')
       requestQuery = options.query
       return { data: Vue.ref([]), pending: Vue.ref(false), error: Vue.ref(null), refresh: vi.fn() }

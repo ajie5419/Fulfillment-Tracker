@@ -18,8 +18,8 @@ beforeEach(() => {
   for (const name of ['ref', 'reactive', 'computed', 'watch', 'onMounted', 'onBeforeUnmount', 'nextTick'] as const) {
     vi.stubGlobal(name, Vue[name])
   }
-  vi.stubGlobal('useRequestFetch', () => fetchApi)
-  vi.stubGlobal('$fetch', fetchApi)
+  vi.stubGlobal('useApiRequestFetch', () => fetchApi)
+  vi.stubGlobal('apiFetch', fetchApi)
   vi.stubGlobal('message', message)
   vi.stubGlobal('apiError', (e: unknown) => {
     if (typeof e === 'string') return e
@@ -31,7 +31,7 @@ beforeEach(() => {
     }
     return '操作失败'
   })
-  vi.stubGlobal('useFetch', async (url: string) => {
+  vi.stubGlobal('useApiFetch', async (url: string) => {
     if (url === '/api/work-orders/divisions') {
       return { data: Vue.ref([{ id: 'd-1', name: '事业部1', parentName: null }]), error: Vue.ref(null), refresh: vi.fn() }
     }

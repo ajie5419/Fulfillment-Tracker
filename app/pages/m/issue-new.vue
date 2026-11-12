@@ -19,7 +19,7 @@ const supplierId = ref('')
 const dueDate = ref('')
 const photos = ref<{ file?: File; content?: string }[]>([])
 
-const { data: parts, refresh: refreshParts } = await useFetch('/api/parts', {
+const { data: parts, refresh: refreshParts } = await useApiFetch('/api/parts', {
   query: computed(() => ({ workOrderNumber: workOrderNumber.value })),
   default: () => [],
   immediate: !!workOrderNumber.value,

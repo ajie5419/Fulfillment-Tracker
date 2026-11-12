@@ -7,7 +7,7 @@ const route = useRoute()
 const router = useRouter()
 const tab = ref<'pending' | 'done'>(route.query.tab === 'done' ? 'done' : 'pending')
 watch(tab, (t) => router.replace({ query: { ...route.query, tab: t } }))
-const { data: rows, pending, error, refresh } = await useFetch('/api/receipts', { query: computed(() => ({ tab: tab.value })), default: () => [] })
+const { data: rows, pending, error, refresh } = await useApiFetch('/api/receipts', { query: computed(() => ({ tab: tab.value })), default: () => [] })
 </script>
 
 <template>

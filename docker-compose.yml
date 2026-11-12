@@ -6,6 +6,16 @@ services:
     image: fulfillment-tracker:latest
     container_name: fulfillment
     restart: unless-stopped
+    labels:
+      com.ft.log-source: fulfillment
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+        mode: non-blocking
+        max-buffer-size: "4m"
+        labels: com.ft.log-source
     env_file: .env
     environment:
       NUXT_QMS_API_BASE: http://qms-backend:3000

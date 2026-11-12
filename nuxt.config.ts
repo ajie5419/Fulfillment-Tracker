@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
@@ -6,7 +8,8 @@ export default defineNuxtConfig({
   modules: ['@ant-design-vue/nuxt', '@vant/nuxt'],
   antd: { extractStyle: true }, // 服务端渲染时内联首屏样式，避免先闪一下无样式页面
   css: ['~/assets/base.css'],
-  typescript: { strict: true, typeCheck: false },
+  // Archived generated declarations must not shadow the current Nuxt/H3 globals.
+  typescript: { strict: true, typeCheck: false, tsConfig: { exclude: ['../logs/**'] } },
 
   // 全部可被同名 NUXT_* 环境变量覆盖，见 .env.example
   runtimeConfig: {
@@ -28,6 +31,7 @@ export default defineNuxtConfig({
   //   sync-qms 每 5 分钟（server/tasks/sync-qms.ts）：按游标增量同步 QMS 6 类资源 → 返厂匹配 → QMS 不合格转异常
   //   scan-rules 每 15 分钟（server/tasks/scan-rules.ts）：QMS 不合格转异常（兜底）、W1–W4 扫描、每日汇总
   nitro: {
+    errorHandler: fileURLToPath(new URL('./server/api-error.ts', import.meta.url)),
     experimental: { tasks: true },
     scheduledTasks: process.env.NUXT_SANDBOX === '1' ? {} : { '*/5 * * * *': ['sync-qms'], '*/15 * * * *': ['scan-rules'] },
   },

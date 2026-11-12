@@ -1,3 +1,5 @@
+import { logEvent } from '../../server/observability/logger'
+vi.mock('../../server/observability/logger', () => ({ logEvent: vi.fn() }))
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -22,7 +24,7 @@ beforeEach(async () => {
   returns('uploadFile.findFirst', file)
   vi.mocked(readFile).mockReset().mockImplementation((await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).readFile)
   vi.mocked(isReleaseParty).mockReset().mockResolvedValue(false)
-  vi.spyOn(console, 'error').mockImplementation(() => {})
+  vi.mocked(logEvent).mockClear()
 })
 afterEach(() => vi.restoreAllMocks())
 
@@ -33,7 +35,7 @@ describe.each([
   it('文件在磁盘上确实不存在时仍返回 null，不记录故障', async () => {
     await expect(read()).resolves.toBeNull()
     expect(readFile).toHaveBeenCalledWith(join(dir, file.storedName))
-    expect(console.error).not.toHaveBeenCalled()
+    expect(logEvent).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -44,28 +46,28 @@ describe.each([
     const result = read()
     await expect(result).rejects.toBeInstanceOf(FlowHttpError)
     await expect(result).rejects.toMatchObject({ message: '文件读取失败，请稍后重试', statusCode: 500 })
-    expect(console.error).toHaveBeenCalledExactlyOnceWith('[uploads] 读取文件失败', { id: file.id, storedName: file.storedName }, failure)
+    expect(logEvent).toHaveBeenCalledExactlyOnceWith('error', 'upload.read.failed', { entityId: file.id }, failure)
   })
 
   it('成功时保持原有返回结构', async () => {
     const data = Buffer.from('file contents')
     vi.mocked(readFile).mockResolvedValueOnce(data)
     await expect(read()).resolves.toEqual(name === 'readUpload' ? { file, data } : data)
-    expect(console.error).not.toHaveBeenCalled()
+    expect(logEvent).not.toHaveBeenCalled()
   })
 
   it('无效 ID 不查询记录、不读取磁盘', async () => {
     await expect(read('../../etc/passwd')).resolves.toBeNull()
     expect(method(query)).not.toHaveBeenCalled()
     expect(readFile).not.toHaveBeenCalled()
-    expect(console.error).not.toHaveBeenCalled()
+    expect(logEvent).not.toHaveBeenCalled()
   })
 
   it('查不到可读记录时不读取磁盘，也不记录读取故障', async () => {
     returns(query, null)
     await expect(read()).resolves.toBeNull()
     expect(readFile).not.toHaveBeenCalled()
-    expect(console.error).not.toHaveBeenCalled()
+    expect(logEvent).not.toHaveBeenCalled()
     if (name === 'readOwnUnbound') {
       expect(method(query)).toHaveBeenCalledWith({ where: { id: file.id, uploaderId: 'owner', mime: file.mime, issueId: null, releaseId: null } })
     }
@@ -86,7 +88,7 @@ describe('readUpload 先检查权限，保持存在性隐藏', () => {
     vi.mocked(readFile).mockRejectedValueOnce(Object.assign(new Error('permission denied'), { code: 'EACCES' }))
     await expect(readUpload(dir, file.id, 'owner', () => false)).resolves.toBeNull()
     expect(readFile).not.toHaveBeenCalled()
-    expect(console.error).not.toHaveBeenCalled()
+    expect(logEvent).not.toHaveBeenCalled()
   })
 
   it('发放单接收人仍可读取可见范围外的附件', async () => {

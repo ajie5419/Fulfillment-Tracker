@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const requestFetch = useRequestFetch()
+const requestFetch = useApiRequestFetch()
 /**
  * 批量编排（生产管理重设计第一批，zhao 10-26 同意放第一批）：工序编排页勾选多个工件后——
  *   template：一次套用模板（只给还没有工序的工件套，已有工序链的跳过）；
@@ -53,14 +53,14 @@ async function submit() {
   try {
     if (props.mode === 'template') {
       if (!form.templateId) return message.warning('请选择模板')
-      const r = await $fetch('/api/parts/batch-template', { method: 'POST', body: { partIds: props.partIds, templateId: form.templateId, startDate: form.startDate || null } })
+      const r = await apiFetch('/api/parts/batch-template', { method: 'POST', body: { partIds: props.partIds, templateId: form.templateId, startDate: form.startDate || null } })
       message.success(`已给 ${r.applied} 个工件套用"${r.template || '模板'}"${r.skipped ? `；${r.skipped} 个已有工序链，跳过` : ''}`)
     } else {
       const set = Object.fromEntries(
         (['ownerId', 'supplierId', 'planStartDate', 'dueDate', 'planNodeId'] as const).filter((k) => form[k]).map((k) => [k, form[k]]),
       )
       if (!Object.keys(set).length) return message.warning('请至少填一项要设置的内容')
-      const r = await $fetch('/api/parts/batch-steps', { method: 'POST', body: { partIds: props.partIds, processId: form.processId ?? null, set } })
+      const r = await apiFetch('/api/parts/batch-steps', { method: 'POST', body: { partIds: props.partIds, processId: form.processId ?? null, set } })
       message.success(`已改 ${r.updated} 道工序${r.skipped ? `；${r.skipped} 道方式不合（班组只设到自制工序，外协厂只设到外协工序），没设班组 / 外协厂` : ''}`)
       if (r.planWarning) message.warning(r.planWarning)
     }

@@ -1,3 +1,5 @@
+import { logEvent } from '../../server/observability/logger'
+vi.mock('../../server/observability/logger', () => ({ logEvent: vi.fn() }))
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { method, resetServiceDb, returns, serviceCalls } from '../helpers/service-db'
 
@@ -23,7 +25,7 @@ beforeEach(() => {
   returns('$queryRaw', [])
   returns('purchasePlanItem.update', {})
   returns('purchasePlanItem.count', 1)
-  vi.spyOn(console, 'error').mockImplementation(() => {})
+  vi.mocked(logEvent).mockClear()
 })
 afterEach(() => vi.restoreAllMocks())
 
@@ -40,7 +42,7 @@ describe('采购计划逐行转入诊断', () => {
       failed: 1,
     })
     expect(createLine).toHaveBeenCalledTimes(2)
-    expect(console.error).toHaveBeenCalledExactlyOnceWith('[purchase-plans] 转入采购行失败', { planId, itemId: item.id }, failure)
+    expect(logEvent).toHaveBeenCalledExactlyOnceWith('error', 'purchase.convert.failed', { entityId: item.id }, failure)
     expect(serviceCalls.filter(call => String(call[0]).startsWith('transaction.')).map(call => call[0])).toEqual([
       'transaction.begin', 'transaction.rollback', 'transaction.begin', 'transaction.commit',
     ])
@@ -54,6 +56,6 @@ describe('采购计划逐行转入诊断', () => {
       succeeded: 1,
       failed: 1,
     })
-    expect(console.error).not.toHaveBeenCalled()
+    expect(logEvent).not.toHaveBeenCalled()
   })
 })

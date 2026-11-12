@@ -61,7 +61,7 @@ beforeEach(() => {
   vi.stubGlobal('apiError', (e: unknown) => (e instanceof Error ? e.message : String(e)))
   vi.stubGlobal('message', Object.fromEntries(['success', 'error', 'warning'].map((k) => [k, (text: string) => toasts.push([k, text])])))
   vi.stubGlobal('Modal', { confirm: (opts: Record<string, any>) => modals.push(opts) })
-  vi.stubGlobal('$fetch', async (url: string, opts: { method?: string; body?: unknown } = {}) => {
+  vi.stubGlobal('apiFetch', async (url: string, opts: { method?: string; body?: unknown } = {}) => {
     calls.push({ url, method: opts.method ?? 'GET', body: opts.body })
     if (failUrl === url) throw new Error('boom')
     if (url === '/api/parts/p1') return { quantity: 10, steps: [{ id: 's1', returnedQty: 4 }] }

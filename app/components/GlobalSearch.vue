@@ -26,7 +26,7 @@ function onSearch(v: string) {
   loading.value = true
   timer = setTimeout(async () => {
     try {
-      const r = await $fetch('/api/search', { query: { q: v.trim() } })
+      const r = await apiFetch('/api/search', { query: { q: v.trim() } })
       if (my === seq) hits.value = r
     } catch {
       if (my === seq) hits.value = []

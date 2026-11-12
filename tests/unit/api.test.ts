@@ -9,6 +9,7 @@ import { defineFlowHandler, parseBody, parseQuery, routeId } from '../../server/
 import { FlowError, FlowForbidden, FlowHttpError } from '../../server/services/flow/errors'
 import { QmsRejected, QmsUnavailable } from '../../server/services/sync/write-client'
 import { clientErrorCode, clientErrorMessage, ClientRequestError } from '../../app/utils/transport'
+import { apiFailure } from '../../server/api-error'
 
 // H3 是 Nuxt 的依赖：使用项目实际安装的解析器，不连接 HTTP 服务或数据库。
 const require = createRequire(import.meta.url)
@@ -44,10 +45,9 @@ describe('业务错误映射与兼容', () => {
   ] as const)('%s → HTTP %s + data.code，message 与 statusMessage 仍然存在', async (code, statusCode, statusMessage) => {
     const error = await mapped(new FlowError('中文业务提示', code))
     expect(error).toMatchObject({ statusCode, statusMessage, message: '中文业务提示', data: { code } })
-    // 使用实际 H3 序列化形状，验证 ofetch 的 error.data.data.code 和旧文案逻辑。
-    const response = error.toJSON()
-    expect(response).toMatchObject({ statusCode, statusMessage, message: '中文业务提示', data: { code } })
-    const client = new ClientRequestError({ data: response })
+    const response = apiFailure(error)
+    expect(response).toEqual({ code, message: '中文业务提示', data: null })
+    const client = new ClientRequestError({ status: statusCode, data: response })
     expect(client).toMatchObject({ code, statusCode, message: '中文业务提示' })
     expect(clientErrorCode({ data: response })).toBe(code)
     expect(clientErrorMessage({ data: response })).toBe('中文业务提示')

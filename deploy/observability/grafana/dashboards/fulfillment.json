@@ -1,0 +1,97 @@
+{
+  "uid": "fulfillment-logs",
+  "title": "履约系统运行日志",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "请求量",
+      "type": "timeseries",
+      "datasource": {
+        "type": "loki",
+        "uid": "fulfillment-loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate({service=\"fulfillment-tracker\"} | json | event=\"request.completed\" [5m]))"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "HTTP 5xx",
+      "type": "timeseries",
+      "datasource": {
+        "type": "loki",
+        "uid": "fulfillment-loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate({service=\"fulfillment-tracker\"} | json | event=\"request.completed\" | statusCode >= 500 [5m]))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "请求耗时 P95（毫秒）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "loki",
+        "uid": "fulfillment-loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, {service=\"fulfillment-tracker\"} | json | event=\"request.completed\" | unwrap durationMs | __error__=\"\" [5m]) by (route)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "错误与警告（Explore 可按 requestId 查询）",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "fulfillment-loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service=\"fulfillment-tracker\",level=~\"error|warn|fatal\"}"
+        }
+      ]
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { readApiBody } from '../helpers/api-response'
 /**
  * 登录走通（R1 验收，A1 登录部分）：真实构建产物 + 真实 MySQL + 模拟身份桥。
  * 运行：pnpm build && TEST_DATABASE_URL=mysql://… pnpm test:integration
@@ -134,14 +135,14 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
     const session = cookiesFrom(res)
     const me = await get('/api/me', session)
     expect(me.status).toBe(200)
-    expect(await me.json()).toMatchObject({ id: 'u-001', name: '测试外协专员' })
+    expect(await readApiBody(me)).toMatchObject({ id: 'u-001', name: '测试外协专员' })
 
     const page = await get('/m', session)
     expect(page.status).toBe(200)
     expect(await page.text()).toContain('我的提醒')
 
     const reminders = await get('/api/reminders', session)
-    expect(await reminders.json()).toEqual({ items: [], unread: 0, digest: null, pinned: [] })
+    expect(await readApiBody(reminders)).toEqual({ items: [], unread: 0, digest: null, pinned: [] })
   })
 
   it('同一个回调重放会被拒绝（授权码和登录状态一次性）', async () => {
@@ -242,7 +243,7 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
 
   it('设置页接口只给管理员（NUXT_ADMIN_USER_IDS）：非管理员 403', async () => {
     const other = cookiesFrom((await login('/', 'u-003')).res)
-    expect(await (await get('/api/me', other)).json()).toMatchObject({ id: 'u-003', isAdmin: false })
+    expect(await readApiBody((await get('/api/me', other)))).toMatchObject({ id: 'u-003', isAdmin: false })
     expect((await get('/api/settings', other)).status).toBe(403)
     const write = (path: string, method: string, body: unknown) =>
       fetch(`${base}${path}`, { method, headers: { cookie: cookieHeader(other), 'content-type': 'application/json' }, body: JSON.stringify(body) })
@@ -252,9 +253,9 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
     expect((await write('/api/settings/work-orders/X', 'PUT', { projectManagerId: 'u-003' })).status).toBe(403)
 
     const admin = cookiesFrom((await login('/')).res)
-    expect(await (await get('/api/me', admin)).json()).toMatchObject({ id: 'u-001', isAdmin: true })
+    expect(await readApiBody((await get('/api/me', admin)))).toMatchObject({ id: 'u-001', isAdmin: true })
     const settings = await get('/api/settings', admin)
     expect(settings.status).toBe(200)
-    expect((await settings.json()).thresholds.map((t: { rule: string }) => t.rule)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11'])
+    expect((await readApiBody(settings)).thresholds.map((t: { rule: string }) => t.rule)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11'])
   })
 })

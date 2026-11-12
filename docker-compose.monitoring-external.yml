@@ -1,0 +1,24 @@
+# Run on a DIFFERENT host; this instance must survive failure of the application host.
+services:
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    command: [--config.file=/etc/prometheus/external.yaml, --storage.tsdb.retention.time=7d]
+    volumes:
+      - ./deploy/observability/prometheus:/etc/prometheus:ro
+      - ./deploy/observability/generated/external-targets.json:/etc/prometheus/external-targets.json:ro
+      - external-prometheus:/prometheus
+    restart: unless-stopped
+  blackbox:
+    image: prom/blackbox-exporter:v0.29.1
+    command: [--config.file=/etc/blackbox/config.yaml]
+    volumes: [./deploy/observability/blackbox.yaml:/etc/blackbox/config.yaml:ro]
+    restart: unless-stopped
+  alertmanager:
+    image: prom/alertmanager:v0.35.0
+    command: [--config.file=/etc/alertmanager/alertmanager.yaml]
+    user: "0:0"
+    volumes: [./deploy/observability/generated:/etc/alertmanager:ro, external-alertmanager:/alertmanager]
+    restart: unless-stopped
+volumes:
+  external-prometheus:
+  external-alertmanager:

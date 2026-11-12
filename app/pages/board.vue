@@ -35,7 +35,7 @@ const showClosed = computed({
 })
 const closedQuery = computed(() => (showClosed.value ? { closed: '1' } : {}))
 // 不含已完工时与全站工单下拉同一个缓存 key（'work-orders'），新建后一起刷新；含已完工时另用一个 key，不把已完工的混进别处的下拉
-const { data: workOrders, refresh: refreshWorkOrders } = await useFetch('/api/work-orders', {
+const { data: workOrders, refresh: refreshWorkOrders } = await useApiFetch('/api/work-orders', {
   key: computed(() => (showClosed.value ? 'work-orders:closed' : 'work-orders')),
   query: closedQuery,
   default: () => [],
@@ -46,7 +46,7 @@ const woOptions = computed(() =>
 function openWo(no: unknown) {
   if (typeof no === 'string' && no) navigateTo(`/wo/${encodeURIComponent(no)}`)
 }
-const { data, pending, error, refresh } = await useFetch('/api/board', {
+const { data, pending, error, refresh } = await useApiFetch('/api/board', {
   query: closedQuery,
   default: () => ({ lastSyncAt: null, syncOldest: null, syncErrors: [], syncConfigured: false, summary: { red: 0, yellow: 0, green: 0 }, sourceByDept: [], rows: [] }),
 })

@@ -36,11 +36,11 @@ const filter = reactive({
   overdue: route.query.overdue === '1' ? '1' : undefined,
 })
 
-const { data: alerts, pending: alertsPending, error: alertsError, refresh: refreshAlerts } = await useFetch('/api/alerts', {
+const { data: alerts, pending: alertsPending, error: alertsError, refresh: refreshAlerts } = await useApiFetch('/api/alerts', {
   query: computed(() => ({ rule: filter.rule, level: filter.level, workOrderNumber: filter.workOrderNumber })),
   default: () => [],
 })
-const { data: issues, pending: issuesPending, error: issuesError, refresh: refreshIssues } = await useFetch('/api/issues', {
+const { data: issues, pending: issuesPending, error: issuesError, refresh: refreshIssues } = await useApiFetch('/api/issues', {
   query: computed(() => ({
     status: filter.status || undefined,
     category: filter.category,

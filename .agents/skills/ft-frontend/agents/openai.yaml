@@ -1,0 +1,6 @@
+interface:
+  display_name: "履约系统前端开发与 UI 规范"
+  short_description: "开发、优化或审查履约系统电脑端与手机端页面，遵循 Statsnap 视觉、去 AI 味布局、公共组件复用与状态防坑规范"
+  default_prompt: "使用 $ft-frontend，按履约前端设计规范、去 AI 味布局纪律和组件复用要求完成前端任务。"
+policy:
+  allow_implicit_invocation: true

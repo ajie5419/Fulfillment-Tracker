@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const requestFetch = useRequestFetch()
+const requestFetch = useApiRequestFetch()
 /**
  * 新建 / 编辑工单（履约新建工单 10-27：工单由履约维护，保存时实际写入 QMS 工单库）。项目总览"新建工单"、工单详情"编辑工单"共用。
  *   工单号（新建必填，编辑只读）、客户（QMS 客户字典现取，必选）、项目名称、事业部（本地已同步的 QMS 部门，可空）、数量（≥1）、交期、
@@ -99,7 +99,7 @@ async function loadCustomers() {
     customersLoading.value = false
   }
 }
-const { data: divisions, error: divisionsError, refresh: refreshDivisions } = await useFetch<{ id: string; name: string; parentName: string | null }[]>('/api/work-orders/divisions', {
+const { data: divisions, error: divisionsError, refresh: refreshDivisions } = await useApiFetch<{ id: string; name: string; parentName: string | null }[]>('/api/work-orders/divisions', {
   default: () => [],
   immediate: false,
   watch: false,
@@ -209,7 +209,7 @@ async function submit() {
         body.version = w.edit.version
       }
       body.idempotencyKey = idempotencyKey.value
-      const r = await $fetch<WorkOrderSaveResult>(`/api/work-orders/${encodeURIComponent(w.workOrderNumber)}`, { method: 'PUT', body })
+      const r = await apiFetch<WorkOrderSaveResult>(`/api/work-orders/${encodeURIComponent(w.workOrderNumber)}`, { method: 'PUT', body })
       if (r.recovery?.status === 'PENDING') {
         pendingRecovery.value = {
           operationId: r.recovery.operationId,
@@ -222,7 +222,7 @@ async function submit() {
       emit('done', w.workOrderNumber)
     } else {
       if (losesSightAfterCreate(me.value, form.projectManagerId) && !(await confirmLoseSight())) return
-      const r = await $fetch<WorkOrderSaveResult>('/api/work-orders', {
+      const r = await apiFetch<WorkOrderSaveResult>('/api/work-orders', {
         method: 'POST',
         body: {
           idempotencyKey: idempotencyKey.value,
@@ -275,7 +275,7 @@ async function retryRecovery() {
   submitError.value = null
   try {
     const opId = pendingRecovery.value.operationId
-    const res = await $fetch<WorkOrderSaveResult>(`/api/settings/work-order-saves/${encodeURIComponent(opId)}/retry`, {
+    const res = await apiFetch<WorkOrderSaveResult>(`/api/settings/work-order-saves/${encodeURIComponent(opId)}/retry`, {
       method: 'POST',
     })
     if (res.recovery?.status === 'PENDING') {

@@ -117,7 +117,7 @@ let timer: ReturnType<typeof setInterval> | undefined
 async function poll() {
   refreshUnread().catch(() => {})
   try {
-    const r = await $fetch('/api/reminders/new', { query: since ? { since } : {} })
+    const r = await apiFetch('/api/reminders/new', { query: since ? { since } : {} })
     const first = since === null
     since = new Date(r.now).toISOString()
     const fresh = r.items.filter((i) => !shown.has(i.id))
@@ -151,7 +151,7 @@ async function poll() {
         style: { cursor: i.link ? 'pointer' : 'default' },
         onClick: async () => {
           notification.close(i.id)
-          await $fetch(`/api/reminders/${i.id}/read`, { method: 'POST' }).catch(() => {})
+          await apiFetch(`/api/reminders/${i.id}/read`, { method: 'POST' }).catch(() => {})
           await refreshReminders()
           if (i.link) await navigateTo(i.link)
         },

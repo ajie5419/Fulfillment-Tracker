@@ -1,3 +1,4 @@
+import { observedFetch } from '../../observability/dependency'
 /**
  * QMS 只读增量同步接口客户端（R2，契约 v1）。
  *
@@ -83,7 +84,7 @@ export async function fetchSyncPage(
   url.searchParams.set('limit', String(limit))
   let res: Response
   try {
-    res = await fetchImpl(url.toString(), {
+    res = await observedFetch('qms.sync', fetchImpl)(url.toString(), {
       method: 'GET',
       headers: { Accept: 'application/json', 'X-Identity-Client-Id': cfg.clientId, 'X-Identity-Client-Secret': cfg.clientSecret },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

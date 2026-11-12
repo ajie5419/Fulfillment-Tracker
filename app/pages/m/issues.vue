@@ -15,7 +15,7 @@ const tab = computed({
 })
 const workOrderNumber = computed(() => typeof route.query.workOrderNumber === 'string' ? route.query.workOrderNumber : undefined)
 const returnTo = computed(() => typeof route.query.returnTo === 'string' && (route.query.returnTo === '/m/board' || route.query.returnTo.startsWith('/m/board?')) ? route.query.returnTo : undefined)
-const { data: rows, pending, error, refresh } = await useFetch('/api/issues', {
+const { data: rows, pending, error, refresh } = await useApiFetch('/api/issues', {
   query: computed(() => ({ mine: tab.value === 'all' ? undefined : tab.value as 'todo' | 'responsible' | 'reported', status: tab.value === 'todo' || tab.value === 'all' ? 'UNCLOSED' : undefined, dept: '0', workOrderNumber: workOrderNumber.value })),
   default: () => [],
 })
@@ -42,7 +42,7 @@ type Detail = {
   photos: { id: string; url: string }[]
   logs: { id: string; fromStatus: IssueStatusKey | null; toStatus: IssueStatusKey | null; note: string | null; actorName: string; createdAt: string }[]
 }
-const requestFetch = useRequestFetch()
+const requestFetch = useApiRequestFetch()
 const selected = ref<string | null>((route.query.id as string) || null)
 const { data: detail, pending: detailPending, error: detailError, refresh: refreshDetail } = await useAsyncData<Detail | null>(
   computed(() => `m-issue-detail:${selected.value ?? 'closed'}`),

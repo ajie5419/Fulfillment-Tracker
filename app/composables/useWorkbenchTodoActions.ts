@@ -21,7 +21,7 @@ export function useWorkbenchTodoActions(options: { afterTodo: () => Promise<void
       okText: '开工',
       async onOk() {
         try {
-          await $fetch(`/api/steps/${t.step!.id}/start`, { method: 'POST', body: { source: 'PC' } })
+          await apiFetch(`/api/steps/${t.step!.id}/start`, { method: 'POST', body: { source: 'PC' } })
           message.success('已开工')
           await afterTodo()
         } catch (e) {
@@ -36,7 +36,7 @@ export function useWorkbenchTodoActions(options: { afterTodo: () => Promise<void
   async function finish(t: WorkbenchTodo) {
     if (!t.step) return
     try {
-      const p = await $fetch<PartDetail>(`/api/parts/${t.step.partId}`)
+      const p = await apiFetch<PartDetail>(`/api/parts/${t.step.partId}`)
       const s = p.steps.find((x) => x.id === t.step!.id)
       finishing.value = { id: t.step.id, title: `${t.step.partName} · ${t.step.processName}`, quantity: p.quantity, doneQty: s?.returnedQty ?? 0 }
     } catch (e) {
@@ -53,7 +53,7 @@ export function useWorkbenchTodoActions(options: { afterTodo: () => Promise<void
       content: `总计划节点"${task.nodeName}"下的任务，完成日记为今天。`,
       onOk: async () => {
         try {
-          await $fetch(`/api/plan/tasks/${task.id}/complete`, { method: 'POST', body: {} })
+          await apiFetch(`/api/plan/tasks/${task.id}/complete`, { method: 'POST', body: {} })
           message.success('已完成')
           await afterTodo()
         } catch (e) {
@@ -71,7 +71,7 @@ export function useWorkbenchTodoActions(options: { afterTodo: () => Promise<void
   async function transfer() {
     if (!transferring.value || !transferTo.value) return message.warning('请选择转交对象')
     try {
-      await $fetch(`/api/todos/${transferring.value.id}/transfer`, { method: 'POST', body: { toUserId: transferTo.value } })
+      await apiFetch(`/api/todos/${transferring.value.id}/transfer`, { method: 'POST', body: { toUserId: transferTo.value } })
       message.success('已转交')
       transferring.value = null
       transferTo.value = undefined

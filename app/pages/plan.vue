@@ -18,7 +18,7 @@ const showClosed = computed({
   get: () => route.query.closed === '1',
   set: (v: boolean) => void router.replace({ query: { ...route.query, closed: v ? '1' : undefined } }),
 })
-const { data, pending, error, refresh } = await useFetch('/api/plan/list', {
+const { data, pending, error, refresh } = await useApiFetch('/api/plan/list', {
   query: computed(() => (showClosed.value ? { closed: '1' } : {})),
   default: () => ({ rows: [], summary: { total: 0, published: 0, draft: 0, none: 0, late: 0, unsplit: 0 } }),
   immediate: !wo.value,

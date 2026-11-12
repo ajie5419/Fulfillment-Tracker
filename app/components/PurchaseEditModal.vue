@@ -37,7 +37,7 @@ const editing = computed(() => !!props.line)
 let formVersion = 0
 let loadingForm = false
 
-const { data: parts, refresh: refreshParts } = await useFetch('/api/parts', {
+const { data: parts, refresh: refreshParts } = await useApiFetch('/api/parts', {
   query: computed(() => ({ workOrderNumber: form.workOrderNumber })),
   default: () => [],
   immediate: false,

@@ -26,7 +26,7 @@ watch(
   () => router.replace({ query: { ...route.query, wo: filter.workOrderNumber || undefined, incomplete: filter.incomplete ? '1' : '0', dueSoon: filter.dueSoon ? '1' : undefined } }),
 )
 
-const { data, pending, error, refresh } = await useFetch('/api/kitting', {
+const { data, pending, error, refresh } = await useApiFetch('/api/kitting', {
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber, incomplete: filter.incomplete ? '1' : '0', dueSoon: filter.dueSoon ? '1' : undefined })),
   default: (): KitList => ({ rows: [], total: 0, stats: null, canCreate: false }),
 })

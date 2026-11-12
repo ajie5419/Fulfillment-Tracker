@@ -10,7 +10,7 @@ const node = { id: 'node', name: '结构图纸', code: '2.1', dept: 'TECH', star
 beforeEach(() => {
   fetch.mockReset().mockResolvedValue({ id: 'task' })
   for (const key of ['ref', 'computed', 'reactive'] as const) vi.stubGlobal(key, Vue[key])
-  vi.stubGlobal('$fetch', fetch)
+  vi.stubGlobal('apiFetch', fetch)
   vi.stubGlobal('useMaster', async () => ({ data: Vue.ref({ users: [{ id: 'designer', name: '设计员', department: '技术部', businessDept: 'TECH' }] }) }))
   vi.stubGlobal('message', { warning: vi.fn(), success: vi.fn(), error: vi.fn() })
   vi.stubGlobal('apiError', (e: Error) => e.message)

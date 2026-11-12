@@ -4,7 +4,7 @@ const props = defineProps<{ id: string | null }>()
 const emit = defineEmits<{ close: []; changed: [] }>()
 
 // 限定读取签名，避免 Nitro 全站路由类型递归展开。
-const requestFetch = useRequestFetch()
+const requestFetch = useApiRequestFetch()
 const detail = ref<ReleaseDetail | null>(null)
 const loading = ref(false)
 const loadError = ref('')

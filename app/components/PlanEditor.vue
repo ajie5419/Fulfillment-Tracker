@@ -28,7 +28,7 @@ const focus = usePlanFocus({ reveal, reload: load })
 const { focusNode, expanded, view, today, selectFromGantt } = focus
 
 // ───── 按模板生成 / 发布 ─────
-const { data: templates } = await useFetch<PlanTemplateOption[]>('/api/plan/templates', { default: () => [] })
+const { data: templates } = await useApiFetch<PlanTemplateOption[]>('/api/plan/templates', { default: () => [] })
 const { templateId, generate, publish } = usePlanGeneration({ wo, data, templates, act })
 
 // ───── 新增 / 编辑节点 ─────

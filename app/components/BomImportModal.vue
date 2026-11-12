@@ -24,7 +24,7 @@ interface BomRow {
 }
 interface Preview { items: BomRow[]; hasTechBom: boolean; missingInQms: { name: string; drawingNo: string | null }[] }
 // 绕开 Nitro 路由类型推导（路由多了以后会"类型递归过深"）
-const requestFetch = useRequestFetch()
+const requestFetch = useApiRequestFetch()
 const post = clientRequest
 
 const rows = ref<BomRow[]>([])

@@ -1,3 +1,4 @@
+import { recordPlanChange } from '../audit/record'
 /** 总计划命令：各事务、加锁与副作用顺序按原服务整块保留。 */
 import { isPlanStartLate, planAdjustmentNeedsReason, isPlanAdjustmentReasonMissing } from '../../../shared/plan-validation'
 import { parseDay as parse } from '../../../shared/dates'
@@ -246,7 +247,7 @@ export async function createNode(workOrderNumber: string, input: NodeInput, acto
     if (input.preds !== undefined) await saveDeps(tx, workOrderNumber, node.id, input.preds)
     await assertNoCycle(tx, workOrderNumber)
     if (published) {
-      await tx.planChangeLog.create({ data: { workOrderNumber, nodeId: node.id, nodeName: node.name, kind: 'ADD', newDate: node.planDate, reason: input.reason!.trim(), actorId } })
+      await recordPlanChange(tx, { data: { workOrderNumber, nodeId: node.id, nodeName: node.name, kind: 'ADD', newDate: node.planDate, reason: input.reason!.trim(), actorId } })
       await requestConfirm(tx, node)
       await clearDelayAlerts(tx, workOrderNumber)
     }
@@ -322,18 +323,18 @@ export async function updateNode(id: string, input: Partial<NodeInput> & { linke
       for (const c of linkedChanges) {
         const updated = await tx.planNode.update({ where: { id: c.id }, data: { startDate: c.start ? parse(c.start) : null, planDate: parse(c.finish) } })
         if (published) {
-          if (c.oldFinish !== c.finish) await tx.planChangeLog.create({ data: { workOrderNumber: node.workOrderNumber, nodeId: c.id, nodeName: c.name, kind: 'DATE', oldDate: parse(c.oldFinish), newDate: parse(c.finish), reason: adjustmentReason, actorId } })
-          if (c.oldStart !== c.start) await tx.planChangeLog.create({ data: { workOrderNumber: node.workOrderNumber, nodeId: c.id, nodeName: c.name, kind: 'START', oldDate: c.oldStart ? parse(c.oldStart) : null, newDate: c.start ? parse(c.start) : null, reason: adjustmentReason, actorId } })
+          if (c.oldFinish !== c.finish) await recordPlanChange(tx, { data: { workOrderNumber: node.workOrderNumber, nodeId: c.id, nodeName: c.name, kind: 'DATE', oldDate: parse(c.oldFinish), newDate: parse(c.finish), reason: adjustmentReason, actorId } })
+          if (c.oldStart !== c.start) await recordPlanChange(tx, { data: { workOrderNumber: node.workOrderNumber, nodeId: c.id, nodeName: c.name, kind: 'START', oldDate: c.oldStart ? parse(c.oldStart) : null, newDate: c.start ? parse(c.start) : null, reason: adjustmentReason, actorId } })
           if (!after.nodes.some((n) => n.parent === c.id)) await requestConfirm(tx, updated)
         }
       }
     }
     if (published && dateChanged) {
-      await tx.planChangeLog.create({
+      await recordPlanChange(tx, {
         data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'DATE', oldDate: old.planDate, newDate: node.planDate, reason: input.reason!.trim(), actorId },
       })
     }
-    if (published && startChanged) await tx.planChangeLog.create({ data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'START', oldDate: old.startDate, newDate: node.startDate, reason: adjustmentReason, actorId } })
+    if (published && startChanged) await recordPlanChange(tx, { data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'START', oldDate: old.startDate, newDate: node.startDate, reason: adjustmentReason, actorId } })
     let reconfirm = false
     if (published && !hasKids && (dateChanged || startChanged || deptChanged)) {
       await requestConfirm(tx, node)
@@ -344,7 +345,7 @@ export async function updateNode(id: string, input: Partial<NodeInput> & { linke
     if (dateChanged || seqChanged || depsChanged || startChanged || parentChanged) await clearDelayAlerts(tx, node.workOrderNumber)
     if (processWork) {
       await settleProcessRequirementWork(tx, processWork, actorId, node.requiresProcess)
-      await tx.planChangeLog.create({ data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'PROCESS', reason: node.requiresProcess ? '启用工艺处理' : '取消工艺处理', actorId } })
+      await recordPlanChange(tx, { data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'PROCESS', reason: node.requiresProcess ? '启用工艺处理' : '取消工艺处理', actorId } })
     }
     return { id, reconfirm, dateConflicts: (await loadPlans({ workOrderNumbers: [node.workOrderNumber] }, new Date(), tx)).get(node.workOrderNumber)?.forecast.dateConflicts ?? [] }
   }, { isolationLevel: 'ReadCommitted' }).catch((error: unknown) => {
@@ -368,7 +369,7 @@ export async function deleteNode(id: string, reason: string | null | undefined, 
     // FK unlinking follows the same lock order even when the effective policy stays enabled.
     const processWork = await lockProcessRequirementWork(tx, [id], node.requiresProcess ? [] : [id])
     if (published) {
-      await tx.planChangeLog.create({ data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'DELETE', oldDate: node.planDate, reason: reason!.trim(), actorId } })
+      await recordPlanChange(tx, { data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'DELETE', oldDate: node.planDate, reason: reason!.trim(), actorId } })
     }
     await tx.todo.updateMany({ where: { refType: PLAN_REF, refId: id, status: 'OPEN' }, data: { status: 'CANCELLED', doneAt: new Date() } })
     // 节点下的其他任务随节点一起删（外键级联），待办作废

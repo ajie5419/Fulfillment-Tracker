@@ -1,3 +1,5 @@
+import { observedFetch } from '../../observability/dependency'
+import { logEvent } from '../../observability/logger'
 /**
  * QMS 身份桥客户端（授权码 + PKCE）。
  *
@@ -89,7 +91,7 @@ async function post(
 ): Promise<unknown> {
   let res: Response
   try {
-    res = await fetchImpl(new URL(path, cfg.apiBase).toString(), {
+    res = await observedFetch('qms.identity', fetchImpl)(new URL(path, cfg.apiBase).toString(), {
       method: 'POST',
       headers: init.headers,
       body: JSON.stringify(init.body ?? {}),
@@ -142,13 +144,13 @@ export async function revokeCredential(
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
   try {
-    await fetchImpl(new URL(BRIDGE_PATHS.revoke, cfg.apiBase).toString(), {
+    await observedFetch('qms.identity', fetchImpl)(new URL(BRIDGE_PATHS.revoke, cfg.apiBase).toString(), {
       method: 'POST',
       headers: clientHeaders(cfg, credential),
       body: '{}',
       signal: AbortSignal.timeout(5_000),
     })
-  } catch {
-    // 忽略
+  } catch (error) {
+    logEvent('warn', 'auth.revoke.deferred', {}, error)
   }
 }

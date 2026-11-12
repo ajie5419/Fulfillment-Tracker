@@ -3,13 +3,13 @@ import { cockpitMetrics, mergeCockpitItems, OVERDUE_ISSUES_LINK, RED_WORK_ORDERS
 import type { MonitoredEntity } from '#shared/monitoring'
 
 async function fetchAllRedEntities(): Promise<MonitoredEntity[]> {
-  // SSR 时 $fetch 不会自动带上浏览器的会话 cookie，必须显式透传，否则接口会判未登录
+  // SSR 时 apiFetch 不会自动带上浏览器的会话 cookie，必须显式透传，否则接口会判未登录
   const headers = useRequestHeaders(['cookie'])
   const all: MonitoredEntity[] = []
   let page = 1
   const pageSize = 100
   while (true) {
-    const res = await $fetch<{ asOf: string; threshold: unknown; total: number; rows: MonitoredEntity[] }>(
+    const res = await apiFetch<{ asOf: string; threshold: unknown; total: number; rows: MonitoredEntity[] }>(
       '/api/monitoring/entities',
       { query: { level: 'RED', page, pageSize }, headers },
     )
@@ -24,10 +24,10 @@ async function fetchAllRedEntities(): Promise<MonitoredEntity[]> {
 }
 
 const [overview, monitoring, releases, issues, stagnationEntities] = await Promise.all([
-  useFetch('/api/overview', { key: 'overview' }),
-  useFetch('/api/monitoring/status', { key: 'status-monitoring' }),
-  useFetch('/api/releases/stats', { key: 'cockpit-releases' }),
-  useFetch('/api/issues', { key: 'cockpit-issues', query: { overdue: '1', dept: '0', status: 'UNCLOSED' } }),
+  useApiFetch('/api/overview', { key: 'overview' }),
+  useApiFetch('/api/monitoring/status', { key: 'status-monitoring' }),
+  useApiFetch('/api/releases/stats', { key: 'cockpit-releases' }),
+  useApiFetch('/api/issues', { key: 'cockpit-issues', query: { overdue: '1', dept: '0', status: 'UNCLOSED' } }),
   useAsyncData('cockpit-stagnation-entities', fetchAllRedEntities),
 ])
 const sources = [

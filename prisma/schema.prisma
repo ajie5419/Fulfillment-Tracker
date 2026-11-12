@@ -3,6 +3,23 @@
 // 字段按 QMS 只读增量同步接口（GET /api/integration/fulfillment/<resource>）契约 v1。
 // 演示数据（DEMO- 前缀）也写在这些表里，可与真实同步来的行共存，清除演示数据只删 DEMO- 行。
 
+/// Independent snapshots survive deletion of the business entity; application code only appends.
+model AuditLog {
+  id         String   @id @default(cuid())
+  requestId  String?  @db.VarChar(64)
+  actorId    String?  @db.VarChar(64)
+  action     String   @db.VarChar(64)
+  entityType String   @db.VarChar(64)
+  entityId   String   @db.VarChar(191)
+  metadata   Json
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt])
+  @@index([requestId])
+  @@index([createdAt, id])
+  @@map("audit_log")
+}
+
 generator client {
   provider = "prisma-client-js"
 }

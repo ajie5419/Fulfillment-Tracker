@@ -1,3 +1,4 @@
+import { logEvent } from '../../observability/logger'
 import type { Prisma } from '@prisma/client'
 import { isDeadlock, prisma } from '../../utils/prisma'
 import { formatIssueNo, nextSeq } from '../issues/constants'
@@ -16,7 +17,10 @@ export async function releaseTransaction<T>(fn: (tx: Tx) => Promise<T>, readComm
     } catch (err) {
       const e = err as { code?: string; meta?: { target?: unknown } }
       const retryable = isDeadlock(err) || (e?.code === 'P2002' && String(e.meta?.target ?? '').includes('releaseNo'))
-      if (attempt < 5 && retryable) continue
+      if (attempt < 5 && retryable) {
+        logEvent('warn', 'transaction.retry', { module: 'release', count: attempt + 1 }, err)
+        continue
+      }
       throw err
     }
   }

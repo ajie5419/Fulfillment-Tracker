@@ -53,7 +53,7 @@ export interface Me {
 }
 
 export function useMe() {
-  return useFetch<Me>('/api/me', { key: 'me' })
+  return useApiFetch<Me>('/api/me', { key: 'me' })
 }
 
 export type Operation = 'purchasePlan' | 'purchasePlanConvert' | 'drawing' | 'processDoc' | 'release' | 'purchase' | 'payment' | 'route' | 'stepAction' | 'plan'

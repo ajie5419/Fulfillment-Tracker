@@ -27,7 +27,7 @@ const form = reactive({
 const photos = ref<UploadFile[]>([])
 const submitting = ref(false)
 
-const { data: parts, refresh: refreshParts } = await useFetch('/api/parts', {
+const { data: parts, refresh: refreshParts } = await useApiFetch('/api/parts', {
   query: computed(() => ({ workOrderNumber: form.workOrderNumber })),
   default: () => [],
   immediate: false,

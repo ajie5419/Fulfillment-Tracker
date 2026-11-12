@@ -1,5 +1,9 @@
 # 项目履约（Fulfillment-Tracker）
 
+## 项目接手入口
+
+先读 [AGENTS.md](AGENTS.md)，再读 [ft-project-guide](.agents/skills/ft-project-guide/SKILL.md)，按任务定位功能、架构、API 和验证入口。已加载时不重复读取；不假定客户端已自动加载另一入口。现行规则以 AGENTS 及其引用文档为准，下方旧摘要不得覆盖现行规则。
+
 ## 前端页面
 
 页面风格已定稿（电脑端和手机端），**新增或修改任何页面都按 [docs/前端设计规范.md](docs/前端设计规范.md) 做**：

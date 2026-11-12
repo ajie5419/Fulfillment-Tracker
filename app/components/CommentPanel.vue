@@ -8,7 +8,7 @@ const emit = defineEmits<{ changed: [count: number] }>()
 
 const { data: master } = await useMaster()
 const { data: me } = await useMe()
-const { data: rows, pending, error, refresh } = await useFetch('/api/comments', {
+const { data: rows, pending, error, refresh } = await useApiFetch('/api/comments', {
   query: computed(() => ({ refType: props.refType, refId: props.refId })),
   default: () => [],
   watch: [() => props.refId],
@@ -27,7 +27,7 @@ async function send() {
   if (!body.value.trim()) return message.warning('请填写留言内容')
   saving.value = true
   try {
-    await $fetch('/api/comments', { method: 'POST', body: { refType: props.refType, refId: props.refId, body: body.value, mentionIds: mentionIds.value } })
+    await apiFetch('/api/comments', { method: 'POST', body: { refType: props.refType, refId: props.refId, body: body.value, mentionIds: mentionIds.value } })
     message.success(mentionIds.value.length ? `已留言，已提醒 ${mentionIds.value.length} 人` : '已留言')
     body.value = ''
     mentionIds.value = []

@@ -7,7 +7,7 @@
 const { data: me } = await useMe()
 const { data: master } = await useMaster()
 interface Row { teamId: string; teamName: string; active: boolean; leaderId: string | null; leaderName: string | null; updatedAt: string | null; updatedByName: string | null }
-const { data, pending, error, refresh } = await useFetch<Row[]>('/api/team-leaders', { default: () => [] })
+const { data, pending, error, refresh } = await useApiFetch<Row[]>('/api/team-leaders', { default: () => [] })
 const canEdit = computed(() => !!me.value && (me.value.isAdmin || !!me.value.can?.teamLeader))
 const userOptions = computed(() => master.value.users.map((u) => ({ value: u.id, label: `${u.name}（${u.department}）` })))
 const saving = ref<string | null>(null)

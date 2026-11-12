@@ -28,7 +28,7 @@ function run(action: Exclude<PrimaryAction, null>, r: ActionRow) {
       okText: '开工',
       onOk: async () => {
         try {
-          await $fetch(`/api/steps/${r.stepId}/start`, { method: 'POST', body: { source: 'PC' } })
+          await apiFetch(`/api/steps/${r.stepId}/start`, { method: 'POST', body: { source: 'PC' } })
           await done('已开工')
         } catch (e) {
           message.error(apiError(e))
@@ -45,7 +45,7 @@ defineExpose({ run })
 async function doReturn() {
   if (!returning.row) return
   try {
-    await $fetch(`/api/steps/${returning.row.stepId}/return`, { method: 'POST', body: { qty: returning.qty, source: 'PC' } })
+    await apiFetch(`/api/steps/${returning.row.stepId}/return`, { method: 'POST', body: { qty: returning.qty, source: 'PC' } })
     returning.open = false
     await done('已登记返厂')
   } catch (e) {
@@ -55,7 +55,7 @@ async function doReturn() {
 async function doAssign() {
   if (!assigning.row || !assigning.ownerId) return message.warning('请选择负责人')
   try {
-    await $fetch(`/api/steps/${assigning.row.stepId}`, { method: 'PATCH', body: { ownerId: assigning.ownerId } })
+    await apiFetch(`/api/steps/${assigning.row.stepId}`, { method: 'PATCH', body: { ownerId: assigning.ownerId } })
     assigning.open = false
     await done('已指定负责人')
   } catch (e) {

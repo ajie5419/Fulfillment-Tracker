@@ -49,7 +49,7 @@ watch(
   },
 )
 
-const { data, pending, error, refresh } = await useFetch('/api/process', {
+const { data, pending, error, refresh } = await useApiFetch('/api/process', {
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber, view: filter.view, q: filter.q || undefined })),
   default: () => ({ rows: [] as ProcessRow[], total: 0, stats: null as ProcessStats | null }),
 })

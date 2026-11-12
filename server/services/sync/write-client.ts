@@ -1,3 +1,4 @@
+import { observedFetch } from '../../observability/dependency'
 /**
  * QMS 工单写接口客户端（履约新建工单，接口约定 v1 2026-10-27）。与只读同步客户端（client.ts）同一套配置和凭据头、同样 15 秒超时：
  *
@@ -101,7 +102,7 @@ export function qmsWorkOrderClient(cfg: Pick<QmsSyncConfig, 'apiBase' | 'clientI
     const url = new URL(path, cfg.apiBase).toString()
     let res: Response
     try {
-      res = await fetchImpl(url, {
+      res = await observedFetch('qms.write', fetchImpl)(url, {
         method,
         headers: {
           Accept: 'application/json',

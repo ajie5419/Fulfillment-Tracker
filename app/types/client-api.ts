@@ -1,8 +1,9 @@
 import type { EventHandler } from 'h3'
 import type { Serialize } from 'nitropack/types'
 import type { z } from 'zod'
+import type { ApiPayload } from '../../shared/api-response'
 
-type Endpoint<H extends EventHandler, B = never, Q = never> = { response: Serialize<Awaited<ReturnType<H>>>; body: B; query: Q }
+type Endpoint<H extends EventHandler, B = never, Q = never> = { response: ApiPayload<Serialize<Awaited<ReturnType<H>>>>; body: B; query: Q }
 
 /** 仅类型：响应取自端点，输入取自端点原有 schema；不引入服务端运行时代码。 */
 export interface ClientApi {

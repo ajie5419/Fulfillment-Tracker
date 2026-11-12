@@ -33,12 +33,12 @@ watch(() => route.query, (q) => {
   filter.blocking = q.blocking === '1' ? '1' : undefined
 })
 
-const { data, pending, error, refresh } = await useFetch('/api/payments', {
+const { data, pending, error, refresh } = await useApiFetch('/api/payments', {
   query: computed(() => ({ status: filter.status, workOrderNumber: filter.workOrderNumber, blocking: filter.blocking })),
   default: () => [],
 })
 const rows = computed(() => pending.value ? [] : data.value)
-const { data: stats, pending: statsPending, error: statsError, refresh: refreshStats } = await useFetch('/api/payments/stats', {
+const { data: stats, pending: statsPending, error: statsError, refresh: refreshStats } = await useApiFetch('/api/payments/stats', {
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber })),
   default: () => null,
 })

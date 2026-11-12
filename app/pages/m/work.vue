@@ -41,7 +41,7 @@ function setScope(m: 'mine' | 'all') {
   router.replace({ query: { ...rest, mine: m === 'mine' ? '1' : '0' } })
 }
 
-const { data, pending, error, refresh } = await useFetch('/api/production', {
+const { data, pending, error, refresh } = await useApiFetch('/api/production', {
   query: computed(() => ({ mine: scope.value === 'mine' ? '1' : '0', wo: wo.value || undefined })),
   default: () => ({ rows: [], unroutedParts: 0 }),
 })
@@ -80,7 +80,7 @@ async function start(r: Row) {
     return // 取消
   }
   try {
-    await $fetch(`/api/steps/${r.stepId}/start`, { method: 'POST', body: { source: 'MOBILE' } })
+    await apiFetch(`/api/steps/${r.stepId}/start`, { method: 'POST', body: { source: 'MOBILE' } })
     showSuccessToast('已开工，完工时到"在做"点完工')
     await after()
   } catch (e) {
@@ -109,7 +109,7 @@ async function doFinish() {
   saving.value = true
   try {
     const body = short.value > 0 ? { source: 'MOBILE', qty: finishQty.value, rest: rest.value, note: rest.value === 'SCRAP' ? scrapNote.value || null : null } : { source: 'MOBILE' }
-    const res = await $fetch(`/api/steps/${r.stepId}/finish`, { method: 'POST', body })
+    const res = await apiFetch(`/api/steps/${r.stepId}/finish`, { method: 'POST', body })
     showSuccessToast(short.value <= 0 ? '已完工' : rest.value === 'CONTINUE' ? `已报完工 ${finishQty.value} 件` : `已完工，报废已转异常 ${res.issueNo ?? ''}`)
     finishing.value = null
     await after()
@@ -131,7 +131,7 @@ async function doReturn() {
   const r = returning.value
   if (!r) return
   try {
-    await $fetch(`/api/steps/${r.stepId}/return`, { method: 'POST', body: { qty: returnQty.value, source: 'MOBILE' } })
+    await apiFetch(`/api/steps/${r.stepId}/return`, { method: 'POST', body: { qty: returnQty.value, source: 'MOBILE' } })
     showSuccessToast('已登记返厂')
     returning.value = null
     await after()

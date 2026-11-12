@@ -7,6 +7,7 @@ import { vi } from 'vitest'
 import type { RoleContext } from '../../server/services/auth/permissions'
 import type { QmsWorkOrderApi } from '../../server/services/sync/write-client'
 import { defineAdminHandler, defineFlowHandler, parseBody, routeId } from '../../server/utils/api'
+import { apiFailure } from '../../server/api-error'
 
 const require = createRequire(import.meta.url)
 const h3 = createRequire(require.resolve('nuxt/package.json'))('h3') as typeof import('h3')
@@ -40,6 +41,6 @@ export async function callWorkOrderHandler(kind: 'create' | 'update' | 'retry', 
     return { statusCode: event.node.res.statusCode, body: result }
   } catch (error) {
     if (!h3.isError(error)) throw error
-    return { statusCode: error.statusCode, body: error.toJSON() }
+    return { statusCode: error.statusCode, body: apiFailure(error) }
   }
 }

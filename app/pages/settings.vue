@@ -13,13 +13,13 @@ import type { AlertRuleKey } from '#shared/alert-rules'
 
 const { data: me } = await useMe()
 const { data: master } = await useMaster()
-const { data, refresh, error } = await useFetch('/api/settings', { immediate: !!me.value?.isAdmin })
+const { data, refresh, error } = await useApiFetch('/api/settings', { immediate: !!me.value?.isAdmin })
 // ?tab=sync 直接打开"QMS 同步状态"（同步失败提醒的跳转）
 const route = useRoute()
 const tab = ref(typeof route.query.tab === 'string' ? route.query.tab : me.value?.isAdmin ? 'thresholds' : me.value?.can?.planTemplate ? 'plan-templates' : 'team-leaders')
 
 // ───── QMS 同步状态 ─────
-const { data: sync, refresh: refreshSync, pending: syncPending } = await useFetch('/api/settings/sync', { immediate: !!me.value?.isAdmin })
+const { data: sync, refresh: refreshSync, pending: syncPending } = await useApiFetch('/api/settings/sync', { immediate: !!me.value?.isAdmin })
 const syncColumns = [
   { title: '资源', key: 'label', width: 100 },
   { title: '最后同步成功', key: 'lastSyncedAt', width: 170 },

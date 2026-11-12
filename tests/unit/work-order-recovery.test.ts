@@ -182,10 +182,10 @@ it.each(['create', 'update'] as const)('%s handler：无 key 的 QMS 瞬时失�
   vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.mocked(kind === 'create' ? qms.createWorkOrder : qms.updateWorkOrder).mockRejectedValueOnce(new QmsUnavailable('connection reset'))
   const body = kind === 'create' ? { ...input, idempotencyKey: undefined } : { version: 1, quantity: 2, productLine: '更新产品线' }
-  expect(await callWorkOrderHandler(kind, body)).toMatchObject({ statusCode: 503, body: { data: { code: 'INTERNAL' } } })
+  expect(await callWorkOrderHandler(kind, body)).toMatchObject({ statusCode: 503, body: { code: 'UNAVAILABLE', data: null } })
   const operationId = [...records.keys()][0]!
-  expect(await callWorkOrderHandler('retry', undefined, operationId)).toMatchObject({ statusCode: 409, body: { message: expect.stringContaining('已失败'), data: { code: 'CONFLICT' } } })
-  expect(await callWorkOrderHandler(kind, body)).toMatchObject({ statusCode: 200, body: { workOrderNumber: 'WO' } })
+  expect(await callWorkOrderHandler('retry', undefined, operationId)).toMatchObject({ statusCode: 409, body: { message: expect.stringContaining('已失败'), code: 'CONFLICT', data: null } })
+  expect(await callWorkOrderHandler(kind, body)).toMatchObject({ statusCode: 200, body: { code: 0, data: { workOrderNumber: 'WO' }, message: 'ok' } })
 })
 
 it.each(['create', 'update'] as const)('%s handler：无 key 的远端成功＋本地失败返回 202，管理员重试补完为 200', async (kind) => {
@@ -193,8 +193,8 @@ it.each(['create', 'update'] as const)('%s handler：无 key 的远端成功＋�
   const body = kind === 'create' ? { ...input, idempotencyKey: undefined } : { version: 1, quantity: 2, productLine: '更新产品线' }
   const response = await callWorkOrderHandler(kind, body)
   const operationId = [...records.keys()][0]!
-  expect(response).toMatchObject({ statusCode: 202, body: { recovery: { status: 'PENDING', operationId } } })
-  expect(await callWorkOrderHandler('retry', undefined, operationId)).toMatchObject({ statusCode: 200, body: { workOrderNumber: 'WO' } })
+  expect(response).toMatchObject({ statusCode: 202, body: { code: 0, data: { recovery: { status: 'PENDING', operationId } }, message: 'ok' } })
+  expect(await callWorkOrderHandler('retry', undefined, operationId)).toMatchObject({ statusCode: 200, body: { code: 0, data: { workOrderNumber: 'WO' }, message: 'ok' } })
   expect(records.get(operationId)).toMatchObject({ status: 'DONE', pendingWorkOrder: null })
 })
 
@@ -203,7 +203,7 @@ it.each([undefined, 'same-operation'])('create handler：已有 PENDING（key=%s
   const body = { ...input, idempotencyKey }
   expect(await callWorkOrderHandler('create', body)).toMatchObject({ statusCode: 202 })
   const operationId = [...records.keys()][0]!
-  expect(await callWorkOrderHandler('create', body)).toMatchObject({ statusCode: 409, body: { data: { code: 'CONFLICT', operationId } } })
+  expect(await callWorkOrderHandler('create', body)).toMatchObject({ statusCode: 409, body: { code: 'CONFLICT', data: { operationId } } })
   expect(await callWorkOrderHandler('retry', undefined, operationId)).toMatchObject({ statusCode: 200 })
-  expect(await callWorkOrderHandler('retry', undefined, operationId)).toMatchObject({ statusCode: 409, body: { message: expect.stringContaining('已完成'), data: { code: 'CONFLICT' } } })
+  expect(await callWorkOrderHandler('retry', undefined, operationId)).toMatchObject({ statusCode: 409, body: { message: expect.stringContaining('已完成'), code: 'CONFLICT', data: null } })
 })

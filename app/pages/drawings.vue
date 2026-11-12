@@ -81,7 +81,7 @@ const listQuery = computed(() => ({
   view: (layout.value === 'board' && filter.view === 'open' ? 'all' : filter.view) as DrawingView,
   q: filter.q || undefined,
 }))
-const requestFetch = useRequestFetch()
+const requestFetch = useApiRequestFetch()
 // 只由筛选 key 驱动请求，让不同筛选的结果与加载状态隔离。
 const { data, pending, error, refresh } = await useAsyncData(
   computed(() => `drawings:${JSON.stringify(listQuery.value)}`),
@@ -124,7 +124,7 @@ const tables = computed(() =>
 )
 const doneOf = (g: { rows: DrawingRow[] }) => groupProgress(g.rows, (r) => isDesignComplete(r.status), (r) => r.status !== 'CANCELLED')
 
-const { data: load, pending: loadPending, error: loadError, refresh: refreshLoad } = await useFetch('/api/drawings/load', {
+const { data: load, pending: loadPending, error: loadError, refresh: refreshLoad } = await useApiFetch('/api/drawings/load', {
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber })),
   default: () => ({ week: { monday: '', sunday: '' }, rows: [] as { ownerId: string | null; ownerName: string; open: number; pendingDraw: number; overdue: number; dueThisWeek: number; customerPending: number }[] }),
 })

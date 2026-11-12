@@ -1,0 +1,6 @@
+interface:
+  display_name: "履约项目开发导航"
+  short_description: "接手履约系统，按任务定位业务架构、接口规范、共享规则与验证入口"
+  default_prompt: "使用 $ft-project-guide，先核对当前履约项目，再按我的任务读取相关规范并开展工作。"
+policy:
+  allow_implicit_invocation: true

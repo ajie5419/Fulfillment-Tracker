@@ -1,3 +1,4 @@
+import { recordFlowEvent } from '../audit/record'
 /**
  * 工序步骤状态推进（方案 4.3 状态机）。每个对外函数都在一个事务里完成。
  *
@@ -105,7 +106,7 @@ export function sendStep(input: SendInput) {
       where: { id: step.id },
       data: { supplierId, promisedReturnDate: input.promisedReturnDate, status: 'OUT', startedAt: now },
     })
-    await tx.flowEvent.create({
+    await recordFlowEvent(tx, {
       data: {
         stepId: step.id,
         type: 'SEND',
@@ -143,7 +144,7 @@ export function startStep(input: ActInput) {
     await assertMaterialListIssued(tx, step)
     const now = new Date()
     const updated = await tx.routeStep.update({ where: { id: step.id }, data: { status: 'IN_PROGRESS', startedAt: now } })
-    await tx.flowEvent.create({
+    await recordFlowEvent(tx, {
       data: { stepId: step.id, type: 'START', qty: step.part.quantity, source: input.source, actorId: input.actorId, occurredAt: now },
     })
     await closeTodos(tx, step.id, [ARRANGE_START], now)
@@ -228,7 +229,7 @@ export async function applyReturn(
 ): Promise<ReturnResult> {
   const prevCount = await tx.flowEvent.count({ where: { stepId: step.id, type: { in: RETURN_TYPES } } })
   const prevQty = await returnedQty(tx, step.id)
-  await tx.flowEvent.create({
+  await recordFlowEvent(tx, {
     data: {
       stepId: step.id,
       type: e.type,

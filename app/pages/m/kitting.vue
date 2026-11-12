@@ -12,7 +12,7 @@ const router = useRouter()
 const tab = ref<'mine' | 'all' | 'nodes'>(route.query.tab === 'nodes' ? 'nodes' : route.query.tab === 'all' ? 'all' : 'mine')
 watch(() => route.query.tab, t => { tab.value = t === 'nodes' ? 'nodes' : t === 'all' ? 'all' : 'mine' })
 watch(tab, (t) => router.replace({ query: { ...route.query, tab: t } }))
-const { data, pending, error, refresh } = await useFetch('/api/kitting', {
+const { data, pending, error, refresh } = await useApiFetch('/api/kitting', {
   query: computed(() => (tab.value === 'mine' ? { mine: '1' } : tab.value === 'all' ? { incomplete: '1' } : {})),
   default: (): KitList => ({ rows: [], total: 0, stats: null, canCreate: false }),
 })
