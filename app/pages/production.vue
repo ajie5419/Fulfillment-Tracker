@@ -63,13 +63,13 @@ const focusStep = ref('')
 // 只处理一次（useOneShotQuery）：处理完删掉 step，之后刷新数据、切页签都不会再被拉回这道
 useOneShotQuery(['step'], { fetches: [{ pending, error }] }, ({ step: id }) => {
   const row = rows.value.find((r) => r.stepId === id)
-  if (!row) {
+  if (!row || !id) {
     message.info('这道工序现在不在生产调度里（还在排队等上一道、完成超过 7 天或工单已关闭），可以到工序编排里看')
     return
   }
   filter.view = 'list'
   filter.tab = tabForRow(row, filter.tab)
-  focusStep.value = id!
+  focusStep.value = id
   nextTick(() => document.querySelector('.focus-row')?.scrollIntoView({ block: 'center' }))
   return { tab: filter.tab === 'ready' ? undefined : filter.tab, view: undefined }
 })
@@ -97,14 +97,15 @@ const supplierName = (id: string) => supplierOptions.value.find((o) => o.value =
 /** 本人当班组长的班组（生产管理重设计第二批）：筛选里一键"本班组"，生效时条件显示成"本班组：X" */
 const myTeams = computed(() => me.value?.leadTeams ?? [])
 const myTeam = (id: string) => myTeams.value.find((t) => t.id === id)
-const chips = computed(() =>
-  [
+const chips = computed(() => {
+  const team = filter.supplierId ? myTeam(filter.supplierId) : undefined
+  return [
     filter.supplierId
-      ? { key: 'sup', text: myTeam(filter.supplierId) ? `本班组：${myTeam(filter.supplierId)!.name}` : `班组 / 外协厂：${supplierName(filter.supplierId)}`, clear: () => { filter.supplierId = '' } }
+      ? { key: 'sup', text: team ? `本班组：${team.name}` : `班组 / 外协厂：${supplierName(filter.supplierId)}`, clear: () => { filter.supplierId = '' } }
       : null,
     filter.mine ? { key: 'mine', text: myTeams.value.length ? '只看我的（含本班组）' : '只看我负责的', clear: () => { filter.mine = false } } : null,
-  ].filter((x): x is { key: string; text: string; clear: () => void } => !!x),
-)
+  ].filter((x): x is { key: string; text: string; clear: () => void } => !!x)
+})
 function clearFilters() {
   filter.supplierId = ''
   filter.mine = false
@@ -113,10 +114,19 @@ function clearFilters() {
 // ───── 操作 ─────
 const host = ref<{ run: (a: Exclude<PrimaryAction, null>, r: Row) => void } | null>(null)
 const actionOf = (r: Row) => primaryAction(r)
-function canAct(r: Row, a: Exclude<PrimaryAction, null>) {
+function canAct(r: Row, a: PrimaryAction) {
+  if (!a) return false
   return actionNeeds(a) === 'route'
     ? canDo(me.value, 'route', { workOrderNumber: r.workOrderNumber })
     : canDo(me.value, 'stepAction', { workOrderNumber: r.workOrderNumber, ownerId: r.ownerId, mode: r.mode, supplierId: r.supplierId, leaderAction: leaderAction(a) })
+}
+function runAction(r: Row) {
+  const a = actionOf(r)
+  if (a) host.value?.run(a, r)
+}
+function actionTextOf(r: Row): string {
+  const a = actionOf(r)
+  return a ? ACTION_TEXT[a] : ''
 }
 
 // ───── 工件抽屉（?part= 打开）─────
@@ -128,7 +138,7 @@ function closePart() {
   drawerPartId.value = null
 }
 // ?part=（只处理一次）：打开工件抽屉后从地址栏删掉，关掉抽屉、改筛选都不会再弹出来
-useOneShotQuery(['part'], { fetches: [] }, ({ part }) => openPart(part!))
+useOneShotQuery(['part'], { fetches: [] }, ({ part }) => { if (part) openPart(part) })
 
 const modeText = (r: Row) => (r.mode === 'SELF' ? `自制${r.supplierName ? ` · ${r.supplierName}` : ''}` : `${MODE_TEXT[r.mode]} · ${r.supplierName ?? '未选外协厂'}`)
 /** 日期一列：按所在列显示最要紧的那个日期 */
@@ -216,7 +226,7 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
               </template>
               <template v-else-if="column.key === 'action'">
                 <template v-if="actionOf(record as Row)">
-                  <a-button v-if="canAct(record as Row, actionOf(record as Row)!)" size="small" :type="actionOf(record as Row) === 'assign' ? 'default' : 'primary'" @click="host?.run(actionOf(record as Row)!, record as Row)">{{ ACTION_TEXT[actionOf(record as Row)!] }}</a-button>
+                  <a-button v-if="canAct(record as Row, actionOf(record as Row))" size="small" :type="actionOf(record as Row) === 'assign' ? 'default' : 'primary'" @click="runAction(record as Row)">{{ actionTextOf(record as Row) }}</a-button>
                   <span v-else class="muted">{{ COLUMN_TEXT[record.column as ProductionColumn] }}</span>
                 </template>
                 <UiStatusTag v-else :tone="COLUMN_TONE[record.column as ProductionColumn]">{{ COLUMN_TEXT[record.column as ProductionColumn] }}</UiStatusTag>
@@ -245,8 +255,8 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
                   <span v-if="dateInfo(c).tone !== 'late'"> · {{ dateInfo(c).text }}</span>
                 </div>
                 <div v-if="c.stuckText" class="stuck">{{ c.stuckText }}</div>
-                <div v-if="actionOf(c) && canAct(c, actionOf(c)!)" class="card-foot">
-                  <a-button size="small" :type="actionOf(c) === 'assign' ? 'default' : 'primary'" @click="host?.run(actionOf(c)!, c)">{{ ACTION_TEXT[actionOf(c)!] }}</a-button>
+                <div v-if="actionOf(c) && canAct(c, actionOf(c))" class="card-foot">
+                  <a-button size="small" :type="actionOf(c) === 'assign' ? 'default' : 'primary'" @click="runAction(c)">{{ actionTextOf(c) }}</a-button>
                 </div>
               </article>
             </div>

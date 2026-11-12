@@ -32,29 +32,31 @@ export function usePlanPhaseGroups(data: Ref<PlanData | null>) {
     if (!hasPhase.value) return []
     const runs: PlanNodeRow[][] = []
     for (const [i, n] of nodes.entries()) {
-      if (i === 0 || (n.phase ?? null) !== (nodes[i - 1]!.phase ?? null)) runs.push([])
-      runs.at(-1)!.push(n)
+      const prev = nodes[i - 1]
+      if (!prev || (n.phase ?? null) !== (prev.phase ?? null)) runs.push([n])
+      else runs[runs.length - 1]?.push(n)
     }
-    return runs.map((group) => {
-      const first = group[0]!
+    return runs.flatMap((group) => {
+      const first = group[0]
+      if (!first) return []
       const leaves = group.filter((m) => !m.childCount)
       const open = group.filter((m) => !m.done)
       const row: PhaseRow = {
         id: `phase:${first.id}`,
         isPhase: true,
         phase: first.phase ?? '未分阶段',
-        code: first.code.split('.')[0]!,
+        code: first.code.split('.')[0] ?? first.code,
         count: group.filter((m) => !m.parentId).length,
         done: group.filter((m) => !m.parentId && m.done).length,
-        start: group.map((m) => m.startDate ?? m.planDate).sort()[0]!,
-        end: group.map((m) => m.planDate).sort().at(-1)!,
-        expected: open.length ? open.map((m) => m.expectedDate).sort().at(-1)! : null,
+        start: group.map((m) => m.startDate ?? m.planDate).sort()[0] ?? first.planDate,
+        end: group.map((m) => m.planDate).sort().at(-1) ?? first.planDate,
+        expected: open.length ? (open.map((m) => m.expectedDate).sort().at(-1) ?? null) : null,
         late: open.some((m) => m.delayDays > 0),
         leaves: leaves.length,
         accepted: leaves.filter((m) => m.confirmStatus === 'CONFIRMED').length,
         pending: leaves.filter((m) => m.confirmStatus === 'PENDING').length,
       }
-      return { row, nodes: group }
+      return [{ row, nodes: group }]
     })
   })
   /** 收起的阶段行 / 汇总行 */

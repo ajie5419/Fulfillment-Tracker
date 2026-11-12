@@ -72,7 +72,7 @@ export function monthTicks(r: DayRange, maxTicks = 8): MonthTick[] {
   const step = Math.max(1, Math.ceil(firsts.length / maxTicks))
   const shown = firsts.filter((_, i) => i % step === 0)
   // 第一个刻度和跨年后的第一个刻度带年份（抽稀后 1 月可能被跳过）
-  return shown.map((f, i) => ({ label: i === 0 || f.y !== shown[i - 1]!.y ? `${f.y} 年 ${f.m} 月` : `${f.m} 月`, left: pct(f.day, r) }))
+  return shown.map((f, i) => ({ label: i === 0 || f.y !== shown[i - 1]?.y ? `${f.y} 年 ${f.m} 月` : `${f.m} 月`, left: pct(f.day, r) }))
 }
 
 export interface BarInput {

@@ -34,7 +34,8 @@ export async function listIssues(filter: IssueFilter, actor: Actor, now = new Da
     if (filter.overdue) batch = batch.filter((r) => r.overdue)
     rows.push(...batch)
     if (issues.length < READ_BATCH_SIZE) break
-    const last = issues[issues.length - 1]!
+    const last = issues[issues.length - 1]
+    if (!last) break
     after = { createdAt: last.createdAt, id: last.id }
   }
   // 未关闭在前，其中超期在前
@@ -67,6 +68,7 @@ export async function getIssue(id: string, actor: Actor, now = new Date()) {
   const issue = await prisma.issue.findUnique({ where: { id }, include: { logs: { orderBy: { createdAt: 'asc' } } } })
   if (!issue) throw new FlowError('异常不存在', 'NOT_FOUND')
   const [row] = await decorate([issue], actor, now)
+  if (!row) throw new FlowError('异常不存在', 'NOT_FOUND')
   const names = await loadNames({ user: issue.logs.map((l) => l.actorId) })
   const photoIds = Array.isArray(issue.photos) ? (issue.photos as string[]) : []
   const converted = issue.source === 'ALERT' && issue.sourceKey ? await prisma.alert.findUnique({ where: { id: issue.sourceKey.slice('ALERT:'.length) }, select: { rule: true, level: true } }) : null
@@ -82,7 +84,7 @@ export async function openIssuesOfSteps(stepIds: string[]) {
     select: { id: true, issueNo: true, refId: true },
   })
   const out = new Map<string, { id: string; issueNo: string }[]>()
-  for (const r of rows) out.set(r.refId!, [...(out.get(r.refId!) ?? []), { id: r.id, issueNo: r.issueNo }])
+  for (const r of rows) if (r.refId) out.set(r.refId, [...(out.get(r.refId) ?? []), { id: r.id, issueNo: r.issueNo }])
   return out
 }
 

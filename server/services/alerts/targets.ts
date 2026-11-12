@@ -30,7 +30,7 @@ export async function collectTargets(now: Date, t: Thresholds, offDays: string[]
   const all = parts.flat()
   // 工单已完工 / 已取消（zhao 10-22）：进度类预警（W2/W3/W5–W11）不再报，已有的本轮自动消除；
   // W1 待确认匹配（报检本身要处理）、W4 异常（人提出的问题要关闭）照常
-  const closed = await closedWorkOrders(all.filter((x) => !KEEP_WHEN_CLOSED.has(x.rule) && x.workOrderNumber).map((x) => x.workOrderNumber!))
+  const closed = await closedWorkOrders(all.flatMap((x) => (!KEEP_WHEN_CLOSED.has(x.rule) && x.workOrderNumber ? [x.workOrderNumber] : [])))
   return closed.size ? all.filter((x) => KEEP_WHEN_CLOSED.has(x.rule) || !x.workOrderNumber || !closed.has(x.workOrderNumber)) : all
 }
 

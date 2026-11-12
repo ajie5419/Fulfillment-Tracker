@@ -179,9 +179,10 @@ export async function getBoard(visibleWorkOrders: string[] | undefined, now = ne
     const candidate = plans.get(wo)
     const plan = candidate?.status === 'PUBLISHED' ? candidate : undefined
     const est = new Map((plan?.forecast.nodes ?? []).map((e) => [e.id, e]))
-    const planNodes = (plan?.nodes ?? []).map((n) => {
-      const e = est.get(n.id)!
-      return { id: n.id, seq: n.seq, name: n.name, dept: n.dept, deptText: BUSINESS_DEPT_NAME[n.dept], state: nodeState(e), planDate: dateFieldDay(n.planDate), expectedDate: e.expectedDay, selfDelayDays: e.selfDelayDays }
+    const planNodes = (plan?.nodes ?? []).flatMap((n) => {
+      const e = est.get(n.id)
+      if (!e) return []
+      return [{ id: n.id, seq: n.seq, name: n.name, dept: n.dept, deptText: BUSINESS_DEPT_NAME[n.dept], state: nodeState(e), planDate: dateFieldDay(n.planDate), expectedDate: e.expectedDay, selfDelayDays: e.selfDelayDays }]
     })
     const stuck = stuckNode(planNodes)
     const main = mains.get(wo)

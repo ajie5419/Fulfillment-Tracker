@@ -73,7 +73,7 @@ useOneShotQuery(['step'], { fetches: [{ pending: transitPending, error: transitE
     return false
   }
   filter.tab = 'out'
-  focusStep.value = id!
+  focusStep.value = id ?? ''
   nextTick(() => document.querySelector('.focus-row')?.scrollIntoView({ block: 'center' }))
   return { tab: 'out' }
 })

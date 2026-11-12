@@ -261,20 +261,24 @@ async function seedDemoPlan(day: (offset: number) => Date, now: Date) {
         if (owners.length) await tx.todo.createMany({ data: owners.map((ownerId) => ({ ownerId, action: CONFIRM_PLAN_NODE, refType: PLAN_REF, refId: n.id, createdAt: new Date(+now - 2 * DAY) })) })
       }
     }
-    const assy = nodes.find((n) => n.id === `${P}PN-06`)!
-    await tx.planChangeLog.create({
-      data: { workOrderNumber: wo, nodeId: assy.id, nodeName: assy.name, kind: 'DATE', oldDate: day(23), newDate: assy.planDate, reason: '客户要求增加一项型式试验，装配顺延 2 天', actorId: 'u-003', createdAt: new Date(+now - DAY) },
-    })
+    const assy = nodes.find((n) => n.id === `${P}PN-06`)
+    if (assy) {
+      await tx.planChangeLog.create({
+        data: { workOrderNumber: wo, nodeId: assy.id, nodeName: assy.name, kind: 'DATE', oldDate: day(23), newDate: assy.planDate, reason: '客户要求增加一项型式试验，装配顺延 2 天', actorId: 'u-003', createdAt: new Date(+now - DAY) },
+      })
+    }
     for (const [nodeId, ids] of Object.entries(PLAN_LINKS.drawing)) await tx.drawingTask.updateMany({ where: { id: { in: [...ids] } }, data: { planNodeId: nodeId } })
     for (const [nodeId, ids] of Object.entries(PLAN_LINKS.purchase)) await tx.purchaseLine.updateMany({ where: { id: { in: [...ids] } }, data: { planNodeId: nodeId } })
     for (const [nodeId, ids] of Object.entries(PLAN_LINKS.step)) await tx.routeStep.updateMany({ where: { id: { in: [...ids] } }, data: { planNodeId: nodeId } })
     for (const [nodeId, ids] of Object.entries(PLAN_LINKS.assembly)) await tx.assemblyNode.updateMany({ where: { id: { in: [...ids] } }, data: { planNodeId: nodeId } })
     // 机加被退回：提醒项目经理
-    const rejected = nodes.find((n) => n.confirm === 'REJECTED')!
-    await tx.reminder.createMany({
-      data: [{ userId: 'u-003', kind: 'PLAN', level: 'YELLOW', title: `【退回】测试生产经理（生产部）退回了总计划节点"${rejected.name}"：${'reason' in rejected ? rejected.reason : ''}（${wo}）`, link: planLink(wo, rejected.id), dedupeKey: `PLAN_REJECT:${rejected.id}:demo:u-003` }],
-      skipDuplicates: true,
-    })
+    const rejected = nodes.find((n) => n.confirm === 'REJECTED')
+    if (rejected) {
+      await tx.reminder.createMany({
+        data: [{ userId: 'u-003', kind: 'PLAN', level: 'YELLOW', title: `【退回】测试生产经理（生产部）退回了总计划节点"${rejected.name}"：${'reason' in rejected ? rejected.reason : ''}（${wo}）`, link: planLink(wo, rejected.id), dedupeKey: `PLAN_REJECT:${rejected.id}:demo:u-003` }],
+        skipDuplicates: true,
+      })
+    }
   })
   return nodes.length
 }

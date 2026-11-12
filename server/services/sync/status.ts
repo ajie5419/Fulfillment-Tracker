@@ -32,11 +32,11 @@ export interface SyncOverview {
 
 export async function syncOverview(): Promise<SyncOverview> {
   const rows = await syncStatus()
-  const synced = rows.filter((r) => r.lastSyncedAt)
-  const oldest = synced.length === rows.length ? synced.reduce((a, b) => (+a.lastSyncedAt! <= +b.lastSyncedAt! ? a : b)) : null
+  const synced = rows.flatMap((r) => (r.lastSyncedAt ? [{ ...r, lastSyncedAt: r.lastSyncedAt }] : []))
+  const oldest = synced.length === rows.length && synced.length > 0 ? synced.reduce((a, b) => (+a.lastSyncedAt <= +b.lastSyncedAt ? a : b)) : null
   return {
     lastSyncAt: oldest?.lastSyncedAt ?? null,
     oldest: oldest?.label ?? null,
-    errors: rows.filter((r) => r.failCount > 0 && r.lastError).map((r) => ({ resource: r.resource, label: r.label, lastError: r.lastError!, failCount: r.failCount })),
+    errors: rows.flatMap((r) => (r.failCount > 0 && r.lastError ? [{ resource: r.resource, label: r.label, lastError: r.lastError, failCount: r.failCount }] : [])),
   }
 }

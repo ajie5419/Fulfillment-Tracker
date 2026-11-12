@@ -6,6 +6,6 @@ export default defineFlowHandler(async (event) => {
   const id = routeId(event)
   await assertCanSeePart(event, id)
   const part = await getPart(id)
-  const prereq = (await loadPrereqs([id])).get(id)!
+  const prereq = (await loadPrereqs([id])).get(id) ?? { purchases: 0, purchasesArrived: 0, drawings: 0, drawingsDone: 0, ready: true, openMaterials: [], openDrawings: [] }
   return { ...part, prereq }
 })

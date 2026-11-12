@@ -97,7 +97,7 @@ export async function syncResource(resource: SyncResource, opts: SyncOptions): P
       const last = rows.at(-1)
       // 游标 = 本页最后一行的 (updatedAt, key)；接口给了 nextCursor 时以它为准
       const next = page.nextCursor ?? (last ? { since: last.updatedAt, afterId: def.key(last) } : null)
-      if (page.nextCursor && since && afterId && +next!.since === +since && next!.afterId === afterId) {
+      if (page.nextCursor && next && since && afterId && +next.since === +since && next.afterId === afterId) {
         throw new QmsSyncError('QMS 返回的游标没有前进，已停止本轮同步以免死循环')
       }
       const caughtUp = !page.nextCursor

@@ -118,7 +118,7 @@ const stepDates = (s: { planStartDate: string | Date | null; dueDate: string | D
               </div>
             </div>
             <span class="tags">
-              <UiStatusTag :tone="TONE[tones[i]!]">{{ tones[i] === 'late' ? '超期' : STATUS_TEXT[s.status] }}</UiStatusTag>
+              <UiStatusTag :tone="TONE[tones[i] ?? 'todo']">{{ tones[i] === 'late' ? '超期' : STATUS_TEXT[s.status] }}</UiStatusTag>
               <UiStatusTag v-if="s.holdReleaseId && s.status === 'PENDING'" tone="upstream">等变更</UiStatusTag>
             </span>
           </li>

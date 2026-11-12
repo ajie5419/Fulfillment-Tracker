@@ -73,7 +73,8 @@ async function load() {
   try {
     let r: Preview
     if (mode.value === 'file') {
-      const f = file.value!
+      const f = file.value
+      if (!f) return
       const form = new FormData()
       form.append('workOrderNumber', wo)
       form.append('file', f, f.name || 'bom.xlsx')
@@ -127,9 +128,9 @@ function beforeUpload(f: File) {
 /** 发放时调用：返回 BOM 表的 upload_file.id；没附返回 null */
 async function prepare(): Promise<string | null> {
   if (!hasInput.value) return null
-  if (mode.value === 'file') return uploadBomFile(file.value!)
+  if (mode.value === 'file') return file.value ? uploadBomFile(file.value) : null
   const r = await postText(text.value, true)
-  return r.fileId!
+  return r.fileId ?? null
 }
 defineExpose({ prepare })
 

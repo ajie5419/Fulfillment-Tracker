@@ -234,6 +234,7 @@ export async function listProcess(filter: ListFilter, canEdit: boolean) {
   const user = (id: string | null) => (id ? (names.user.get(id) ?? id) : null)
   const rows = found.map((t) => {
     const mine = releases.filter((r) => r.drawingTaskId === t.id)
+    const lastRelease = mine[mine.length - 1]
     return {
       id: t.id,
       workOrderNumber: t.workOrderNumber,
@@ -241,7 +242,7 @@ export async function listProcess(filter: ListFilter, canEdit: boolean) {
       drawingStatus: t.status,
       drawingStatusText: DRAWING_STATUS_TEXT[t.status],
       /** 图纸已发放（最近一张不是作废的发放单） */
-      drawingRelease: mine.length ? { id: mine[mine.length - 1]!.id, releaseNo: mine[mine.length - 1]!.releaseNo, at: mine[mine.length - 1]!.createdAt } : null,
+      drawingRelease: lastRelease ? { id: lastRelease.id, releaseNo: lastRelease.releaseNo, at: lastRelease.createdAt } : null,
       partIds: t.parts.map((p) => p.partId),
       parts: t.parts.map((p) => {
         const part = partOf.get(p.partId)

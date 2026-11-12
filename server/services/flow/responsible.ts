@@ -68,7 +68,10 @@ export async function resolveStepResponsibles(db: Db, steps: ResponsibleStep[], 
   const leaders = await leadersOf(db, teams)
   // 班组长的可见范围（每人只算一次）。后台流程没有请求上下文，不按管理员放宽：班组长同时是"只看本人工单的项目经理"时按项目经理算
   const scopes = await resolveScopes([...leaders.values()], [], db)
-  return steps.map((s) => pickResponsible(s, leaders, (uid, wo) => canSee(scopes.get(uid)!, wo)))
+  return steps.map((s) => pickResponsible(s, leaders, (uid, wo) => {
+    const scope = scopes.get(uid)
+    return scope ? canSee(scope, wo) : false
+  }))
 }
 
 export async function resolveStepResponsible(db: Db, step: ResponsibleStep, opts: { lock?: boolean } = {}): Promise<string | null> {

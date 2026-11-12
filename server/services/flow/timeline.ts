@@ -66,7 +66,8 @@ export async function partTimeline(partId: string) {
     if (l.arrivedAt) out.push({ at: l.arrivedAt, kind: 'purchase', tone: 'done', title: `到货"${what}"`, sub: l.arrivedDate ? `到货日 ${day(l.arrivedDate)}` : undefined, link: `/purchases?wo=${enc(wo)}&id=${enc(l.id)}` })
   }
   for (const e of events) {
-    const s = stepOf.get(e.stepId)!
+    const s = stepOf.get(e.stepId)
+    if (!s) continue
     const process = names.process.get(s.processId) ?? s.processId
     const supplier = e.type === 'SEND' && s.supplierId ? ` → ${names.supplier.get(s.supplierId) ?? s.supplierId}` : ''
     const tone = e.type === 'SCRAP' ? 'late' : e.type === 'FINISH' || RETURN_TYPES.includes(e.type) ? 'done' : 'primary'
@@ -102,18 +103,21 @@ export async function partRelatedCounts(partIds: string[]) {
   })
   const out = new Map<string, RelatedCounts>(partIds.map((id) => [id, { drawings: 0, drawingsDone: 0, purchases: 0, purchasesArrived: 0, openIssues: 0, comments: comments.get(id) ?? 0 }]))
   for (const d of drawings) {
-    const c = out.get(d.partId)!
+    const c = out.get(d.partId)
+    if (!c) continue
     c.drawings++
     if (d.task.drawnDate) c.drawingsDone++
   }
   for (const p of purchases) {
-    const c = out.get(p.partId!)!
+    const c = p.partId ? out.get(p.partId) : undefined
+    if (!c) continue
     c.purchases++
     if (p.status === 'ARRIVED') c.purchasesArrived++
   }
   for (const i of issues) {
     const pid = i.refType === 'PART' ? i.refId : partOfStep.get(i.refId ?? '')
-    if (pid && out.has(pid)) out.get(pid)!.openIssues++
+    const c = pid ? out.get(pid) : undefined
+    if (c) c.openIssues++
   }
   return out
 }

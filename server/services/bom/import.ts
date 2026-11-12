@@ -65,8 +65,8 @@ export function mapBomRow(row: QmsBomItem, known: ReadonlySet<string>): { plan: 
   const processIds: string[] = []
   for (const p of row.processes) {
     const problem = processProblem(p, known)
-    if (problem) warnings.push(`${name}：工序"${p.processName || p.processId || '未命名'}"${problem}，已跳过`)
-    else processIds.push(p.processId!)
+    if (problem || !p.processId) warnings.push(`${name}：工序"${p.processName || p.processId || '未命名'}"${problem ?? '在 QMS 没有关联工序'}，已跳过`)
+    else processIds.push(p.processId)
   }
   return {
     plan: {
@@ -231,7 +231,7 @@ export async function importBom(workOrderNumber: string, rows: QmsBomItem[], sel
         linkableParts(tx, workOrderNumber),
         linkedParts(tx, workOrderNumber),
       ])
-      const plan = planBomImport(rows, ids, new Set(existing.map((p) => p.qmsBomId!)), known, linkable, linked)
+      const plan = planBomImport(rows, ids, new Set(existing.flatMap((p) => (p.qmsBomId ? [p.qmsBomId] : []))), known, linkable, linked)
       let steps = 0
       const hasQmsPart = new Set(
         (await tx.part.findMany({ where: { id: { in: plan.link.map((l) => l.partId) }, qmsPartId: { not: null } }, select: { id: true } })).map((p) => p.id),

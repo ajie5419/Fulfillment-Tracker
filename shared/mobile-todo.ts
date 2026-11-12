@@ -34,7 +34,7 @@ export function groupByDue<T>(items: T[], dueOf: (t: T) => string | null, today:
   }
   return DUE_GROUP_ORDER.filter((g) => m.has(g)).map((g) => ({
     group: g,
-    items: [...m.get(g)!].sort((a, b) => (dueOf(a) ?? '').localeCompare(dueOf(b) ?? '')),
+    items: [...(m.get(g) ?? [])].sort((a, b) => (dueOf(a) ?? '').localeCompare(dueOf(b) ?? '')),
   }))
 }
 

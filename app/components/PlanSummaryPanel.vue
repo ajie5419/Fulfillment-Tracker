@@ -16,7 +16,7 @@ const pastDraftDates = computed(() => !props.published && props.data.nodes.some(
     <a-descriptions-item label="状态">
       <a-tag :color="displayState === 'NONE' ? 'default' : displayState === 'PUBLISHED' ? 'green' : 'blue'">{{ PLAN_STATUS_TEXT[displayState] }}</a-tag>
       <span v-if="data.plan?.templateName" class="muted">模板：{{ data.plan.templateName }}</span>
-      <div v-if="published" class="muted">{{ data.plan?.publishedByName }} {{ timeText(data.plan!.publishedAt!) }} 发布</div>
+      <div v-if="published" class="muted">{{ data.plan?.publishedByName }} {{ timeText(data.plan?.publishedAt) }} 发布</div>
     </a-descriptions-item>
     <a-descriptions-item label="合同生效日期">{{ data.workOrder.effectiveTime ?? '—' }}</a-descriptions-item>
     <a-descriptions-item label="合同交期">{{ data.workOrder.deliveryDate ?? '—' }}</a-descriptions-item>

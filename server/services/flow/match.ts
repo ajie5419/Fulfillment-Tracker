@@ -133,9 +133,10 @@ export async function matchInspection(inspectionId: string, lease?: LeaseGuard):
 
       const steps = await activeOutsourceSteps(tx, inspectionWorkOrders(ins))
       const hits = findCandidates(ins, steps)
-      if (hits.length === 1) {
+      if (hits.length === 1 && hits[0]) {
+        const matchedStep = hits[0]
         const r = await recordReturn(tx, {
-          stepId: hits[0]!.id,
+          stepId: matchedStep.id,
           qty: ins.quantity,
           source: 'QMS_INSPECTION',
           qmsInspectionId: ins.id,
@@ -143,7 +144,7 @@ export async function matchInspection(inspectionId: string, lease?: LeaseGuard):
           occurredAt: ins.submittedAt,
         })
         if (r.duplicate) return { inspectionId, status: 'duplicate' }
-        return { inspectionId, status: 'matched', stepId: hits[0]!.id, stepDone: r.stepDone, todoCreated: r.todoCreated }
+        return { inspectionId, status: 'matched', stepId: matchedStep.id, stepDone: r.stepDone, todoCreated: r.todoCreated }
       }
       const reason = hits.length === 0 ? 'NO_CANDIDATE' : 'MULTIPLE'
       const candidates = steps.map(toView)

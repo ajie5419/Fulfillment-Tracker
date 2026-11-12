@@ -36,7 +36,7 @@ function moveDraft(i: number, d: -1 | 1) {
   const j = i + d
   if (j < 0 || j >= form.steps.length) return
   const [x] = form.steps.splice(i, 1)
-  form.steps.splice(j, 0, x!)
+  if (x) form.steps.splice(j, 0, x)
 }
 async function save() {
   if (!form.name.trim()) return message.warning('请填写模板名称')

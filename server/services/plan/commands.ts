@@ -89,7 +89,7 @@ async function assertNoCycle(tx: Tx, workOrderNumber: string) {
   // 子节点等自己的上级：上级又要等子节点做完，必成环，单独说清楚
   const nameOf = new Map(rows.map((n) => [n.id, n.name]))
   const bad = facts.find((n) => n.parent && n.preds?.includes(n.parent))
-  if (bad) throw new FlowError(`"${nameOf.get(bad.id)}"的前置节点里有它的上级"${nameOf.get(bad.parent!)}"：上级要等子节点做完，子节点不能再等上级，请去掉`)
+  if (bad?.parent) throw new FlowError(`"${nameOf.get(bad.id)}"的前置节点里有它的上级"${nameOf.get(bad.parent)}"：上级要等子节点做完，子节点不能再等上级，请去掉`)
   if (topoOrder(facts.map((n) => n.id), waitsOn(resolvePreds(facts), childrenOf(facts)))) return
   throw new FlowError('前置节点成环了（A 等 B、B 又等 A）：请检查前置节点，或者没自定前置的节点默认等"上一个节点"，调整顺序后可能成环')
 }
@@ -194,19 +194,22 @@ export async function generateFromTemplate(workOrderNumber: string, templateId: 
       })
       idOfSeq.set(n.seq, node.id)
     }
-    const deps = tpl.nodes.flatMap((n) =>
-      (Array.isArray(n.predSeqs) ? (n.predSeqs as unknown[]) : [])
+    const deps = tpl.nodes.flatMap((n) => {
+      const nodeId = idOfSeq.get(n.seq)
+      if (!nodeId) return []
+      return (Array.isArray(n.predSeqs) ? (n.predSeqs as unknown[]) : [])
         .map((seq) => idOfSeq.get(Number(seq)))
-        .filter((predId): predId is string => !!predId && predId !== idOfSeq.get(n.seq))
-        .map((predId) => ({ nodeId: idOfSeq.get(n.seq)!, predId })),
-    )
+        .filter((predId): predId is string => !!predId && predId !== nodeId)
+        .map((predId) => ({ nodeId, predId }))
+    })
     if (deps.length) await tx.planNodeDep.createMany({ data: deps, skipDuplicates: true })
     // 子节点挂到上级下面（阶段跟上级）
     const phaseOfSeq = new Map(tpl.nodes.map((n) => [n.seq, n.phase]))
     for (const n of tpl.nodes) {
+      const nodeId = idOfSeq.get(n.seq)
       const parentId = n.parentSeq != null ? idOfSeq.get(n.parentSeq) : undefined
-      if (parentId && parentId !== idOfSeq.get(n.seq)) {
-        await tx.planNode.update({ where: { id: idOfSeq.get(n.seq)! }, data: { parentId, phase: phaseOfSeq.get(n.parentSeq!) ?? null } })
+      if (nodeId && n.parentSeq != null && parentId && parentId !== nodeId) {
+        await tx.planNode.update({ where: { id: nodeId }, data: { parentId, phase: phaseOfSeq.get(n.parentSeq) ?? null } })
       }
     }
     await rollupParents(tx, workOrderNumber, false)
@@ -247,7 +250,7 @@ export async function createNode(workOrderNumber: string, input: NodeInput, acto
     if (input.preds !== undefined) await saveDeps(tx, workOrderNumber, node.id, input.preds)
     await assertNoCycle(tx, workOrderNumber)
     if (published) {
-      await recordPlanChange(tx, { data: { workOrderNumber, nodeId: node.id, nodeName: node.name, kind: 'ADD', newDate: node.planDate, reason: input.reason!.trim(), actorId } })
+      await recordPlanChange(tx, { data: { workOrderNumber, nodeId: node.id, nodeName: node.name, kind: 'ADD', newDate: node.planDate, reason: (input.reason ?? '').trim(), actorId } })
       await requestConfirm(tx, node)
       await clearDelayAlerts(tx, workOrderNumber)
     }
@@ -331,7 +334,7 @@ export async function updateNode(id: string, input: Partial<NodeInput> & { linke
     }
     if (published && dateChanged) {
       await recordPlanChange(tx, {
-        data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'DATE', oldDate: old.planDate, newDate: node.planDate, reason: input.reason!.trim(), actorId },
+        data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'DATE', oldDate: old.planDate, newDate: node.planDate, reason: adjustmentReason, actorId },
       })
     }
     if (published && startChanged) await recordPlanChange(tx, { data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'START', oldDate: old.startDate, newDate: node.startDate, reason: adjustmentReason, actorId } })
@@ -369,7 +372,7 @@ export async function deleteNode(id: string, reason: string | null | undefined, 
     // FK unlinking follows the same lock order even when the effective policy stays enabled.
     const processWork = await lockProcessRequirementWork(tx, [id], node.requiresProcess ? [] : [id])
     if (published) {
-      await recordPlanChange(tx, { data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'DELETE', oldDate: node.planDate, reason: reason!.trim(), actorId } })
+      await recordPlanChange(tx, { data: { workOrderNumber: node.workOrderNumber, nodeId: id, nodeName: node.name, kind: 'DELETE', oldDate: node.planDate, reason: (reason ?? '').trim(), actorId } })
     }
     await tx.todo.updateMany({ where: { refType: PLAN_REF, refId: id, status: 'OPEN' }, data: { status: 'CANCELLED', doneAt: new Date() } })
     // 节点下的其他任务随节点一起删（外键级联），待办作废

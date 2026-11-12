@@ -132,7 +132,7 @@ export function qmsWorkOrderClient(cfg: Pick<QmsSyncConfig, 'apiBase' | 'clientI
     const code = e.success ? errCode(e.data) : null
     // 404 不带 message / 错误码（如 HTML 页面）：QMS 还没有这个接口，不当成"工单不存在"
     if (res.status === 400 || res.status === 409 || (res.status === 404 && (msg || code))) {
-      throw new QmsRejected(msg || DEFAULT_REJECT_TEXT[res.status]!, res.status, code)
+      throw new QmsRejected(msg || DEFAULT_REJECT_TEXT[res.status] || 'QMS 拒绝了请求', res.status, code)
     }
     // 401 / 403（凭据不对）、5xx、其他：用户只看到"连不上"，原因进日志
     const hint = res.status === 401 ? '（客户端凭据不对）' : res.status === 404 ? '（QMS 还没有这个接口）' : ''

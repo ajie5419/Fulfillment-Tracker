@@ -20,7 +20,7 @@ const { data: me } = await useMe()
 const FILTERS: RouteFilter[] = ['all', 'none', 'fill', 'ok']
 const workOrderNumber = ref<string | undefined>((route.query.wo as string) || undefined)
 watch(workOrders, (list) => {
-  if (!workOrderNumber.value && list.length) workOrderNumber.value = list[0]!.workOrderNumber
+  if (!workOrderNumber.value && list[0]) workOrderNumber.value = list[0].workOrderNumber
 }, { immediate: true })
 const routeFilter = ref<RouteFilter>(route.query.noRoute === '1' ? 'none' : 'all')
 // 选中的工单、筛选记在地址栏（定位用的 part / comments / edit 由 useOneShotQuery 处理一次后删掉；这里照抄，免得"去编排"切工单时提前删掉 edit）
@@ -139,7 +139,7 @@ const bomImportOpen = ref(false)
 const CHAIN_CLASS: Record<ChainTone, string> = { done: 'c-done', current: 'c-cur', late: 'c-late', blocked: 'c-late', todo: 'c-todo' }
 const chainOf = (p: PartRow) => {
   const tones = chainTones(p.steps, today)
-  return p.steps.map((s, i) => ({ id: s.id, text: s.mode === 'SELF' ? s.processName : `${s.processName}${s.supplierName ? ` · ${s.supplierName}` : ' · 外协'}`, cls: CHAIN_CLASS[tones[i]!], fill: s.needsFill }))
+  return p.steps.map((s, i) => ({ id: s.id, text: s.mode === 'SELF' ? s.processName : `${s.processName}${s.supplierName ? ` · ${s.supplierName}` : ' · 外协'}`, cls: CHAIN_CLASS[tones[i] ?? 'todo'], fill: s.needsFill }))
 }
 const columns = [
   { title: '工件', key: 'part', width: 260 },

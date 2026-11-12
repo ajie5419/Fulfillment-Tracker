@@ -88,6 +88,6 @@ async function setTeamLeaderTx(tx: Prisma.TransactionClient, teamId: string, use
     await tx.teamLeader.delete({ where: { supplierId: teamId } })
   }
   // 改之后再算一次，按同一套规则转交（清除班组长时转回兜底的人）
-  for (const [i, s] of steps.entries()) await moveStepTodos(tx, s, before[i]!, await stepTodoHolders(tx, s, s.part.workOrderNumber))
+  for (const [i, s] of steps.entries()) await moveStepTodos(tx, s, before[i] ?? [], await stepTodoHolders(tx, s, s.part.workOrderNumber))
   return { changed: true, moved: steps.length }
 }

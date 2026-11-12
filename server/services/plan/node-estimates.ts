@@ -31,7 +31,7 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
   const order = topoOrder(ids, waitsOn(preds, kids))
   // 兜底：有环时退回一条主线（不分上下级）
   if (!order) {
-    preds = new Map(nodes.map((n, i) => [n.id, i > 0 ? [nodes[i - 1]!.id] : []]))
+    preds = new Map(nodes.map((n, i) => [n.id, i > 0 && nodes[i - 1] ? [nodes[i - 1].id] : []]))
     kids = new Map(ids.map((id) => [id, []]))
   }
   const parentOf = new Map<string, string>()
@@ -41,16 +41,21 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
   const pushOf = (p: NodeEstimate, n: NodeFacts) => {
     if (parentOf.get(p.id) === n.id) return p.expectedDay
     const earliest = nextFactoryWorkDay(p.expectedDay, offDays)
-    if (!n.startDay) return maxDay(addDays(n.planDay, dayDiff(byId.get(p.id)!.planDay, p.expectedDay)), earliest)
+    const predNode = byId.get(p.id)
+    if (!n.startDay) return maxDay(addDays(n.planDay, dayDiff(predNode?.planDay ?? p.expectedDay, p.expectedDay)), earliest)
     return addDays(earliest, Math.max(0, dayDiff(n.startDay, n.planDay)))
   }
   /** 能推后节点的：有子任务的父任务是汇总行，只看子任务（自己的前置只当子任务的默认前置，不直接推它）；其余看前置 */
-  const pushers = (id: string) => pushersOf({ children: kids.get(id)!, preds: preds.get(id)! })
+  const pushers = (id: string) => pushersOf({ children: kids.get(id) ?? [], preds: preds.get(id) ?? [] })
   for (const id of order ?? ids) {
-    const n = byId.get(id)!
+    const n = byId.get(id)
+    if (!n) continue
     const tasks = n.tasks.map((t) => ({ ...t, ...estimateTask(t, n.planDay, today) }))
     const counted = tasks.filter((t) => !t.excluded)
-    const myKids = kids.get(id)!.map((c) => est.get(c)!)
+    const myKids = (kids.get(id) ?? []).flatMap((c) => {
+      const ce = est.get(c)
+      return ce ? [ce] : []
+    })
     // 子节点当作挂靠任务一起算自动完成（完成日 = 子节点实际完成日）
     const auto = autoDone(
       [...n.tasks, ...myKids.map((c): TaskFacts => ({ kind: 'task', id: c.id, excluded: false, done: c.done, doneDay: c.actualDay, planDay: null }))],
@@ -61,7 +66,7 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
     const manualDay = counted.length || myKids.length ? null : n.manualDoneDay
     const doneBy = manualDay ? 'MANUAL' : auto.done ? 'AUTO' : null
     const actualDay = manualDay ?? auto.day
-    const myPreds = preds.get(id)!
+    const myPreds = preds.get(id) ?? []
     let expectedDay: string
     let driver: NodeEstimate['driver']
     let selfExpectedDay: string
@@ -83,7 +88,9 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
       // 前置节点（和子节点）推到的最晚一天
       let shifted: string | null = null
       for (const p of pushers(id)) {
-        const d = pushOf(est.get(p)!, n)
+        const pe = est.get(p)
+        if (!pe) continue
+        const d = pushOf(pe, n)
         if (!shifted || d > shifted) [shifted, pushedBy] = [d, p]
       }
       // 计划日已过仍未完成：前置没把它推到计划日之后时算自身的（否则是在等前置）
@@ -113,7 +120,7 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
       upstream: !actualDay && upstream && dayDiff(n.planDay, expectedDay) > 0,
       preds: myPreds,
       pushedBy,
-      children: kids.get(id)!,
+      children: kids.get(id) ?? [],
       slackDays: null,
       taskCount: counted.length,
       doneCount: counted.filter((t) => t.done).length,
@@ -138,26 +145,35 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
       return latestPred < intervalLimit ? latestPred : intervalLimit
     }
     const slack = new Map<string, number>()
-    if (!est.get(last.id)!.done) slack.set(last.id, dayDiff(est.get(last.id)!.expectedDay, deliveryDay))
+    const lastEst = est.get(last.id)
+    if (lastEst && !lastEst.done) slack.set(last.id, dayDiff(lastEst.expectedDay, deliveryDay))
     const succ = new Map<string, string[]>(ids.map((id) => [id, []]))
-    for (const id of ids) for (const p of pushers(id)) succ.get(p)!.push(id)
+    for (const id of ids) for (const p of pushers(id)) succ.get(p)?.push(id)
     for (const id of [...(order ?? ids)].reverse()) {
-      const me = est.get(id)!
-      if (id === last.id || me.done) continue
+      const me = est.get(id)
+      const meFacts = byId.get(id)
+      if (!me || !meFacts || id === last.id || me.done) continue
       let best: number | null = null
-      for (const s of succ.get(id)!) {
+      for (const s of succ.get(id) ?? []) {
         const ss = slack.get(s)
-        const successor = est.get(s)!
-        if (ss == null || successor.done) continue
+        const successor = est.get(s)
+        const succFacts = byId.get(s)
+        if (ss == null || !successor || !succFacts || successor.done) continue
         const latestFinish = addDays(successor.expectedDay, ss)
-        const v = dayDiff(me.expectedDay, latestPusherDay(byId.get(id)!, byId.get(s)!, latestFinish))
+        const v = dayDiff(me.expectedDay, latestPusherDay(meFacts, succFacts, latestFinish))
         if (best == null || v < best) best = v
       }
       if (best != null) slack.set(id, best)
     }
-    for (const [id, v] of slack) est.get(id)!.slackDays = v
+    for (const [id, v] of slack) {
+      const item = est.get(id)
+      if (item) item.slackDays = v
+    }
   }
-  return input.map((n) => est.get(n.id)!)
+  return input.flatMap((n) => {
+    const item = est.get(n.id)
+    return item ? [item] : []
+  })
 }
 
 /** 关键节点：没完成、余量 ≤ 0（再晚就拖交期） */

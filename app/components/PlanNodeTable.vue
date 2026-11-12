@@ -22,6 +22,7 @@ const emit = defineEmits<{ toggleCollapse: [id: string]; edit: [node: PlanNodeRo
 
 
 const isCollapsed = (id: string) => props.collapsed.includes(id)
+const levelColor = (level: string | null) => (level === 'RED' ? 'red' : level === 'YELLOW' ? 'orange' : level === 'REMIND' ? 'blue' : undefined)
 /** 缩进层级：有阶段时 节点 = 2 级、子节点 = 3 级；没阶段时 节点 = 1 级、子节点 = 2 级 */
 const levelOf = (n: PlanNodeRow) => (n.parentId ? 3 : 2) - (props.hasPhase ? 0 : 1)
 const affectsText = (n: PlanNodeRow) => n.affects.map((p) => `${p.code} ${p.name}`).join('、')
@@ -122,7 +123,7 @@ const alertLevelOf = (n: PlanNodeRow): 'late' | 'risk' | null => {
     </template>
     <template #expandedRowRender="{ record }">
       <div v-if="record.childCount" class="muted">汇总行：任务挂在下面的子节点上</div>
-      <PlanNodeWork v-else-if="record.tasks.length" :node="record as PlanNodeRow" :wo="wo" :can-create="data!.canCreate" view-only @changed="emit('changed')" />
+      <PlanNodeWork v-else-if="record.tasks.length" :node="record as PlanNodeRow" :wo="wo" :can-create="data.canCreate" view-only @changed="emit('changed')" />
     </template>
   </a-table>
 </template>

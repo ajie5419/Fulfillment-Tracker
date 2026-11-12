@@ -35,7 +35,7 @@ export async function collectW7(now: Date, t: Thresholds, offDays: string[]): Pr
       ownerIds: d.ownerId ? [d.ownerId] : headIds,
       deptNames: [TECH_DEPT_NAME],
       departmentKeys: ['TECH'],
-      startAt: r.trigger === 'CONFIRM_OVERDUE' ? d.customerPlanDate! : d.planDate,
+      startAt: r.trigger === 'CONFIRM_OVERDUE' && d.customerPlanDate ? d.customerPlanDate : d.planDate,
       level: r.level,
       subject: `设计 ${d.componentName}（${DRAWING_STATUS_TEXT[d.status]}）`,
       summary: w7Summary(r, d, owner),

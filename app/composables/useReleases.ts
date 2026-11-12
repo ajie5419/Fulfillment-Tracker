@@ -65,7 +65,8 @@ export async function uploadBomFile(file: File): Promise<string> {
   const form = new FormData()
   form.append('file', file, file.name || 'bom.xlsx')
   const [saved] = await send('/api/uploads?kind=bom', { method: 'POST', body: form })
-  return saved!.id
+  if (!saved) throw new Error('BOM 文件上传失败')
+  return saved.id
 }
 
 export const isImage = (mime: string) => mime.startsWith('image/')

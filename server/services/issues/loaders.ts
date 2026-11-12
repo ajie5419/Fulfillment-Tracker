@@ -34,8 +34,8 @@ export async function loadIssueSources(issues: Issue[], actor: Actor) {
     prisma.qmsDepartment.findMany({ where: { id: { in: issues.map((i) => i.responsibleDeptId).filter((x): x is string => !!x) } }, select: { id: true, name: true } }),
     loadDeptIndex(),
   ])
-  const stepIds = issues.filter((i) => i.refType === 'STEP' && i.refId).map((i) => i.refId!)
-  const partIds = issues.filter((i) => i.refType === 'PART' && i.refId).map((i) => i.refId!)
+  const stepIds = issues.flatMap((i) => (i.refType === 'STEP' && i.refId ? [i.refId] : []))
+  const partIds = issues.flatMap((i) => (i.refType === 'PART' && i.refId ? [i.refId] : []))
   const [steps, parts, alerts] = await Promise.all([
     stepIds.length ? prisma.routeStep.findMany({ where: { id: { in: stepIds } }, include: { part: { select: { id: true, name: true } } } }) : [],
     partIds.length ? prisma.part.findMany({ where: { id: { in: partIds } }, select: { id: true, name: true } }) : [],

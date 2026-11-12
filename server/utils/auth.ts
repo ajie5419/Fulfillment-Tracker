@@ -158,7 +158,7 @@ export async function loadRoleContext(userId: string, admin: boolean): Promise<R
     userId,
     isAdmin: admin,
     roles: [...new Set(roles.map((r) => r.role))],
-    deptHeadOf: [...new Set(roles.filter((r) => r.role === 'DEPT_HEAD' && r.department).map((r) => r.department!))],
+    deptHeadOf: [...new Set(roles.flatMap((r) => (r.role === 'DEPT_HEAD' && r.department ? [r.department] : [])))],
     businessDept,
     pmOf: new Set(managed.map((m) => m.workOrderNumber)),
     leadOf,

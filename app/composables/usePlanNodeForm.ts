@@ -61,9 +61,11 @@ export function usePlanNodeForm(data: Ref<PlanData | null>) {
   const defaultPredText = computed(() => {
     if (formParent.value) return '没有前置（可以和同一上级下的其他子节点同时开始）'
     const list = (data.value?.nodes ?? []).filter((x) => !x.parentId)
-    if (editing.value && !editing.value.parentId) {
-      const i = list.findIndex((x) => x.id === editing.value!.id)
-      return i > 0 ? `${list[i - 1]!.code} ${list[i - 1]!.name}` : '无（第一个节点）'
+    const cur = editing.value
+    if (cur && !cur.parentId) {
+      const i = list.findIndex((x) => x.id === cur.id)
+      const prev = i > 0 ? list[i - 1] : undefined
+      return prev ? `${prev.code} ${prev.name}` : '无（第一个节点）'
     }
     const last = list.at(-1)
     return last ? `${last.code} ${last.name}（排在最后时）` : '无'

@@ -85,7 +85,7 @@ export async function getWorkOrderDetail(workOrderNumber: string, ctx: RoleConte
 
   // 总装齐套率 + 缺件原因
   const main = pickMainAssembly(assemblies.map((a) => ({ ...a, needDay: dateFieldDay(a.needDate) })))
-  const kit = main ? (await loadKits([main], now)).get(main.id)! : null
+  const kit = main ? ((await loadKits([main], now)).get(main.id) ?? null) : null
 
   // 卡点、谁在拖与预计交期、拖期同一口径：只按已发布的总计划算（草稿不算，和项目总览一致）
   const published = plan.plan?.status === 'PUBLISHED'

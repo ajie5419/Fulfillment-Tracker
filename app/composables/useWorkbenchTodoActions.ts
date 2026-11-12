@@ -15,13 +15,14 @@ export function useWorkbenchTodoActions(options: { afterTodo: () => Promise<void
   }
 
   function start(t: WorkbenchTodo) {
-    if (!t.step) return
+    const step = t.step
+    if (!step) return
     Modal.confirm({
-      title: `确认开工：${t.step.partName} · ${t.step.processName}？`,
+      title: `确认开工：${step.partName} · ${step.processName}？`,
       okText: '开工',
       async onOk() {
         try {
-          await apiFetch(`/api/steps/${t.step!.id}/start`, { method: 'POST', body: { source: 'PC' } })
+          await apiFetch(`/api/steps/${step.id}/start`, { method: 'POST', body: { source: 'PC' } })
           message.success('已开工')
           await afterTodo()
         } catch (e) {
@@ -34,11 +35,12 @@ export function useWorkbenchTodoActions(options: { afterTodo: () => Promise<void
   /** 直接完工（活已经干完才想起登记，生产管理重设计第一批）：同一个完工弹窗，可部分完工、报废 */
   const finishing = ref<{ id: string; title: string; quantity: number; doneQty: number } | null>(null)
   async function finish(t: WorkbenchTodo) {
-    if (!t.step) return
+    const step = t.step
+    if (!step) return
     try {
-      const p = await apiFetch<PartDetail>(`/api/parts/${t.step.partId}`)
-      const s = p.steps.find((x) => x.id === t.step!.id)
-      finishing.value = { id: t.step.id, title: `${t.step.partName} · ${t.step.processName}`, quantity: p.quantity, doneQty: s?.returnedQty ?? 0 }
+      const p = await apiFetch<PartDetail>(`/api/parts/${step.partId}`)
+      const s = p.steps.find((x) => x.id === step.id)
+      finishing.value = { id: step.id, title: `${step.partName} · ${step.processName}`, quantity: p.quantity, doneQty: s?.returnedQty ?? 0 }
     } catch (e) {
       message.error(apiError(e))
     }

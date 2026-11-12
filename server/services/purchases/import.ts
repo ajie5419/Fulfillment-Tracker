@@ -157,8 +157,8 @@ export function parseDateCell(v: Cell): string | null | undefined {
     s = new Date(Math.round((v - 25569) * 86_400_000)).toISOString().slice(0, 10)
   } else {
     const m = /^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/.exec(v.trim())
-    if (!m) return undefined
-    s = `${m[1]}-${m[2]!.padStart(2, '0')}-${m[3]!.padStart(2, '0')}`
+    if (!m?.[1] || !m[2] || !m[3]) return undefined
+    s = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
   }
   return dayString.safeParse(s).success ? s : undefined
 }
@@ -248,7 +248,7 @@ export function validateRows(rows: RawRow[], ctx: ImportContext): { lines: Impor
     if (supplierName) {
       if (supplierName.length > 191) msgs.push('供应商最多 191 字')
       const same = ctx.suppliers.filter((s) => s.name.trim() === supplierName)
-      if (same.length === 1) supplierId = same[0]!.id
+      if (same.length === 1 && same[0]) supplierId = same[0].id
     }
     let buyerId: string | null = null
     const buyer = text(v.buyer ?? null)
@@ -256,7 +256,7 @@ export function validateRows(rows: RawRow[], ctx: ImportContext): { lines: Impor
       const byAccount = ctx.users.filter((u) => u.username === buyer)
       const byName = ctx.users.filter((u) => u.realName?.trim() === buyer)
       const hit = byAccount.length === 1 ? byAccount : byName
-      if (hit.length === 1) buyerId = hit[0]!.id
+      if (hit.length === 1 && hit[0]) buyerId = hit[0].id
       else msgs.push(hit.length ? `采购负责人"${buyer}"有重名，请填 QMS 账号` : `采购负责人"${buyer}"不存在或已停用`)
     }
     let partId: string | null = null
@@ -266,7 +266,7 @@ export function validateRows(rows: RawRow[], ctx: ImportContext): { lines: Impor
       const byDrawing = inWo.filter((p) => p.drawingNo?.trim() === part)
       const byName = inWo.filter((p) => p.name.trim() === part)
       const hit = byDrawing.length === 1 ? byDrawing : byName
-      if (hit.length === 1) partId = hit[0]!.id
+      if (hit.length === 1 && hit[0]) partId = hit[0].id
       else msgs.push(hit.length ? `工件"${part}"有重名，请填图号` : `工单 ${wo} 下没有工件"${part}"`)
     }
     let planNodeId: string | null = null
@@ -274,7 +274,7 @@ export function validateRows(rows: RawRow[], ctx: ImportContext): { lines: Impor
     if (wo && ctx.workOrders.has(wo)) {
       if (nodeName) {
         const hit = (ctx.planNodes ?? []).filter((n) => n.workOrderNumber === wo && n.name.trim() === nodeName)
-        if (hit.length === 1) planNodeId = hit[0]!.id
+        if (hit.length === 1 && hit[0]) planNodeId = hit[0].id
         else warnings.push({ row, messages: [hit.length ? `总计划节点"${nodeName}"有重名，已留空，请在页面上选择` : `工单 ${wo} 的总计划里没有节点"${nodeName}"，已留空`] })
       } else if (ctx.publishedWos?.has(wo)) {
         warnings.push({ row, messages: [`工单 ${wo} 已发布总计划，这一行没填总计划节点，已留空，请在页面上补挂`] })
@@ -289,20 +289,20 @@ export function validateRows(rows: RawRow[], ctx: ImportContext): { lines: Impor
       else if (prev !== undefined) msgs.push(`与第 ${prev} 行重复`)
       else seen.set(k, row)
     }
-    if (msgs.length) {
+    if (msgs.length || !wo || !materialName || quantity === undefined || !d.needDate) {
       errors.push({ row, messages: msgs })
       continue
     }
     lines.push({
       row,
-      workOrderNumber: wo!,
-      materialName: materialName!,
+      workOrderNumber: wo,
+      materialName,
       spec,
-      quantity: quantity!,
+      quantity,
       unit,
       supplierId,
       supplierName,
-      needDate: d.needDate!,
+      needDate: d.needDate,
       promisedDate: d.promisedDate,
       arrivedDate: d.arrivedDate,
       buyerId,
@@ -380,7 +380,7 @@ export async function importPurchases(
     // 挂上节点的：节点已分解，清掉"未分解"提醒
     await clearAlertKeys(tx, [...new Set(lines.map((l) => l.planNodeId).filter((x): x is string => !!x))].map(w9SplitKey))
     // 挂上了未到货物料的工件：作废没处理的"可以开工"
-    for (const partId of new Set(lines.filter((l) => l.partId && !l.arrivedDate).map((l) => l.partId!))) await refreshPartReady(tx, partId, false)
+    for (const partId of new Set(lines.flatMap((l) => (l.partId && !l.arrivedDate ? [l.partId] : [])))) await refreshPartReady(tx, partId, false)
   })
   return { imported: lines.length, errors: [], warnings, rows: rows.length }
 }

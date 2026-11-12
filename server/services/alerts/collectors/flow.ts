@@ -68,7 +68,9 @@ export async function collectW2(now: Date, t: Thresholds, offDays: string[]): Pr
       : [],
   ])
   const lastClose = new Map<string, number>()
-  for (const c of closes) lastClose.set(c.issue.refId!, Math.max(lastClose.get(c.issue.refId!) ?? 0, +c.createdAt))
+  for (const c of closes) {
+    if (c.issue.refId) lastClose.set(c.issue.refId, Math.max(lastClose.get(c.issue.refId) ?? 0, +c.createdAt))
+  }
 
   const out: Target[] = []
   for (const s of steps) {
@@ -104,29 +106,32 @@ export async function collectW3(now: Date, t: Thresholds, offDays: string[]): Pr
     loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId) }),
     resolveStepResponsibles(prisma, steps.map((s) => ({ ...s, workOrderNumber: s.part.workOrderNumber }))),
   ])
-  return steps.map((s, i) => {
-    const r = judgeW3({ promisedReturnDate: s.promisedReturnDate!, dueDate: s.dueDate, now, offDays }, t.W3)
+  return steps.flatMap((s, i) => {
+    const promisedReturnDate = s.promisedReturnDate
+    if (!promisedReturnDate) return []
+    const r = judgeW3({ promisedReturnDate, dueDate: s.dueDate, now, offDays }, t.W3)
     const supplier = s.supplierId ? (names.supplier.get(s.supplierId) ?? s.supplierId) : '外协厂'
-    const summary = r.dueDatePassed
-      ? `已过要求完成日 ${dateFieldDay(s.dueDate!)}，${supplier}仍未返回`
+    const owner = owners[i]
+    const summary = r.dueDatePassed && s.dueDate
+      ? `已过要求完成日 ${dateFieldDay(s.dueDate)}，${supplier}仍未返回`
       : r.overdueDays > 0
         ? `${supplier}超承诺返回日 ${r.overdueDays} 天未返`
         : r.daysLeft > 0
-          ? `${supplier}承诺 ${dateFieldDay(s.promisedReturnDate!)} 返回，还剩 ${r.daysLeft} 天`
+          ? `${supplier}承诺 ${dateFieldDay(promisedReturnDate)} 返回，还剩 ${r.daysLeft} 天`
           : `${supplier}承诺今天返回`
-    return {
+    return [{
       rule: 'W3',
       refType: 'step',
       refId: s.id,
       key: alertKey('W3', 'step', s.id),
       workOrderNumber: s.part.workOrderNumber,
-      ownerIds: owners[i] ? [owners[i]!] : [],
-      startAt: s.promisedReturnDate!,
+      ownerIds: owner ? [owner] : [],
+      startAt: promisedReturnDate,
       level: r.level,
       subject: `${s.part.name} · ${names.process.get(s.processId) ?? s.processId}`,
       summary,
       meta: { stepMode: s.mode, supplierId: s.supplierId },
-    }
+    }]
   })
 }
 
@@ -146,9 +151,12 @@ export async function collectW10(now: Date, t: Thresholds, offDays: string[]): P
     loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId) }),
     resolveStepResponsibles(prisma, steps.map((s) => ({ ...s, workOrderNumber: s.part.workOrderNumber }))),
   ])
-  return steps.map((s, i) => {
-    const r = judgeW10({ dueDate: s.dueDate!, now, offDays }, t.W10)
-    const due = dateFieldDay(s.dueDate!)
+  return steps.flatMap((s, i) => {
+    const dueDate = s.dueDate
+    if (!dueDate) return []
+    const r = judgeW10({ dueDate, now, offDays }, t.W10)
+    const due = dateFieldDay(dueDate)
+    const owner = owners[i]
     // 厂内外协的班组、自制派工的班组都写上
     const who = s.supplierId ? `${names.supplier.get(s.supplierId) ?? s.supplierId}` : ''
     const summary =
@@ -159,20 +167,20 @@ export async function collectW10(now: Date, t: Thresholds, offDays: string[]): P
           : r.daysLeft === 0
             ? `${who}要求今天完工`
             : `${who}已过要求完成日 ${due}（中间是停工日，不计超期）`
-    return {
+    return [{
       rule: 'W10',
       refType: 'step',
       refId: s.id,
       key: alertKey('W10', 'step', s.id),
       workOrderNumber: s.part.workOrderNumber,
-      ownerIds: owners[i] ? [owners[i]!] : [],
+      ownerIds: owner ? [owner] : [],
       deptNames: [PRODUCTION_DEPT_NAME],
       departmentKeys: ['PRODUCTION'],
-      startAt: s.dueDate!,
+      startAt: dueDate,
       level: r.level,
       subject: `${s.part.name} · ${names.process.get(s.processId) ?? s.processId}`,
       summary,
       meta: { stepMode: s.mode, supplierId: s.supplierId },
-    }
+    }]
   })
 }

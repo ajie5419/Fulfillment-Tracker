@@ -105,7 +105,7 @@ export function w7Summary(r: W7Result, task: { planDate: Date; customerPlanDate:
   const plan = dateFieldDay(task.planDate)
   if (r.trigger === 'DRAW_OVERDUE') return `计划 ${plan} 完成，${r.overdueDays > 0 ? `已超 ${r.overdueDays} 天` : '已过计划日'}仍未完成设计（${ownerName}）`
   if (r.trigger === 'DRAW_DUE') return `计划 ${plan} 完成，${r.daysLeft > 0 ? `还剩 ${r.daysLeft} 天` : '就是今天'}，仍未完成设计（${ownerName}）`
-  if (r.trigger === 'CONFIRM_OVERDUE') return `客户确认计划 ${dateFieldDay(task.customerPlanDate!)}，已超 ${r.overdueDays} 天仍未确认（${ownerName}）`
+  if (r.trigger === 'CONFIRM_OVERDUE' && task.customerPlanDate) return `客户确认计划 ${dateFieldDay(task.customerPlanDate)}，已超 ${r.overdueDays} 天仍未确认（${ownerName}）`
   return ''
 }
 

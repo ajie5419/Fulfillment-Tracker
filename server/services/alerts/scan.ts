@@ -48,7 +48,7 @@ async function runScan(now: Date): Promise<ScanResult> {
   const targets = await collectTargets(now, thresholds, offDays)
   // 活动的、以及已转异常但对象仍在关注状态的（activeKey 还在）
   const keyed = await prisma.alert.findMany({ where: { activeKey: { not: null }, status: { in: ['ACTIVE', 'CONVERTED'] }, rule: { in: SCAN_RULES } } })
-  const byKey = new Map(keyed.map((a) => [a.activeKey!, a]))
+  const byKey = new Map(keyed.flatMap((a) => (a.activeKey ? [[a.activeKey, a] as const] : [])))
   const ctx = await loadNotifyContext(targets)
   const result: ScanResult = { ...EMPTY, skipped: false }
 
@@ -85,23 +85,24 @@ async function runScan(now: Date): Promise<ScanResult> {
       if (!a || a.status !== 'ACTIVE') return null
       let escalated = false
       // 只升不降：阈值调大或计时变短都不退级
-      const next = maxLevel(a.level, target.level)!
+      const next = maxLevel(a.level, target.level) ?? a.level
       if (isHigher(next, a.level)) {
         a = await tx.alert.update({ where: { id: a.id }, data: { level: next, levelAt: now } })
         escalated = true
       }
       // 当前级别该收到的人补齐（已有的跳过）
-      const users = recipientsFor(a.level, target, ctx)
+      const currentAlert = a
+      const users = recipientsFor(currentAlert.level, target, ctx)
       let count = 0
       if (users.length) {
-        const title = reminderTitle(a.level, target.subject, target.summary, target.workOrderNumber)
-        count = (await tx.reminder.createMany({ data: users.map((userId) => ({ userId, alertId: a!.id, level: a!.level, title })), skipDuplicates: true })).count
-        if (count) await tx.alert.update({ where: { id: a.id }, data: { lastNotifiedAt: new Date() } })
+        const title = reminderTitle(currentAlert.level, target.subject, target.summary, target.workOrderNumber)
+        count = (await tx.reminder.createMany({ data: users.map((userId) => ({ userId, alertId: currentAlert.id, level: currentAlert.level, title })), skipDuplicates: true })).count
+        if (count) await tx.alert.update({ where: { id: currentAlert.id }, data: { lastNotifiedAt: new Date() } })
       }
       // 红色自动转异常（W4 本身就是异常，不转）
       let converted = false
-      if (a.level === 'RED' && CONVERTIBLE_RULES.includes(target.rule) && target.workOrderNumber) {
-        await convertAlertInTx(tx, a, target, null)
+      if (currentAlert.level === 'RED' && CONVERTIBLE_RULES.includes(target.rule) && target.workOrderNumber) {
+        await convertAlertInTx(tx, currentAlert, target, null)
         converted = true
       }
       return { escalated, count, converted }
@@ -115,7 +116,7 @@ async function runScan(now: Date): Promise<ScanResult> {
 
   // 对象已离开规则关注的状态（W11 还包括状态计时周期变化或低于红线）→ 活动的消除；已转异常的只释放 activeKey
   const live = new Set(targets.map((x) => x.key))
-  const gone = keyed.filter((a) => !live.has(a.activeKey!))
+  const gone = keyed.filter((a) => !a.activeKey || !live.has(a.activeKey))
   const goneActive = gone.filter((a) => a.status === 'ACTIVE').map((a) => a.id)
   const goneConverted = gone.filter((a) => a.status === 'CONVERTED').map((a) => a.id)
   if (goneActive.length) {

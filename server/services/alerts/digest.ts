@@ -52,7 +52,7 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
     prisma.notifyRole.findMany({ where: { role: { in: ['DEPT_HEAD', 'PROJECT_DEPT_HEAD', 'LEADER'] } }, select: { userId: true } }),
     prisma.workOrderExt.findMany({ where: { projectManagerId: { not: null } }, select: { projectManagerId: true } }),
   ])
-  const recipients = [...new Set([...roles.map((r) => r.userId), ...pms.map((p) => p.projectManagerId!)])]
+  const recipients = [...new Set([...roles.map((r) => r.userId), ...pms.flatMap((p) => (p.projectManagerId ? [p.projectManagerId] : []))])]
   if (!recipients.length) return { day, notYet: false, recipients: 0, created: 0 }
   const done = new Set(
     (await prisma.reminder.findMany({ where: { dedupeKey: { in: recipients.map((u) => digestKey(day, u)) } }, select: { userId: true } })).map((r) => r.userId),
@@ -80,7 +80,7 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
   const delayedPlanNodes = [...plans.values()]
     .map((p) => ({ workOrderNumber: p.workOrderNumber, _count: { _all: p.forecast.nodes.filter((e) => judgeW9(e, thresholds.W9)).length } }))
     .filter((p) => p._count._all > 0)
-  const lateWos = [...plans.values()].filter((p) => (p.forecast.deliveryDelayDays ?? 0) > 0).map((p) => ({ workOrderNumber: p.workOrderNumber, days: p.forecast.deliveryDelayDays! }))
+  const lateWos = [...plans.values()].flatMap((p) => (p.forecast.deliveryDelayDays && p.forecast.deliveryDelayDays > 0 ? [{ workOrderNumber: p.workOrderNumber, days: p.forecast.deliveryDelayDays }] : []))
   // 只算在做的工单（没删除、没完工 / 取消），口径见 workorder/active.ts
   const countedWos = [...new Set([...unsigned, ...shortage, ...drawingOverdue, ...incompleteNodes, ...delayedPlanNodes, ...lateWos].map((s) => s.workOrderNumber))]
   const liveWos = new Set(
@@ -90,7 +90,7 @@ export async function generateDailyDigest(opts: { now?: Date; force?: boolean; a
   )
   const targetByKey = new Map(targets.map((t) => [t.key, t]))
   const alertRows = alerts
-    .map((a) => ({ a, t: targetByKey.get(a.activeKey!) }))
+    .map((a) => ({ a, t: a.activeKey ? targetByKey.get(a.activeKey) : undefined }))
     .filter((x): x is { a: (typeof alerts)[number]; t: NonNullable<typeof x.t> } => !!x.t)
     .sort((x, y) => (x.a.level === y.a.level ? 0 : x.a.level === 'RED' ? -1 : 1))
   const issueRows = issues
