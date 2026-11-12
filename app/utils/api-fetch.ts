@@ -1,6 +1,7 @@
 import type { NitroFetchOptions } from 'nitropack/types'
 import { unwrapApiResponse } from '#shared/api-response'
 import type { ApiData } from '../types/api-payload'
+import { reportRequestFailure } from './error-reporter'
 
 export type ApiFetch = <T = unknown, R extends string = string, O extends NitroFetchOptions<string> = NitroFetchOptions<string>>(
   request: R, options?: O,
@@ -11,8 +12,13 @@ export type RawApiFetch = (request: string, options?: NitroFetchOptions<string>)
 /** Request-scoped fetch preserves SSR cookies; never cache one user's fetch globally. */
 export function createApiFetch(fetcher: RawApiFetch): ApiFetch {
   return (async (request: string, options?: NitroFetchOptions<string>) => {
-    const result = await fetcher(request, options)
-    return unwrapApiResponse(result)
+    try {
+      const result = await fetcher(request, options)
+      return unwrapApiResponse(result)
+    } catch (error) {
+      reportRequestFailure(error)
+      throw error
+    }
   }) as ApiFetch
 }
 

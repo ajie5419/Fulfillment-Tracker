@@ -1,8 +1,19 @@
 # Use together with docker-compose.yml on the Linux Docker host.
 services:
+  fulfillment:
+    environment:
+      FT_METRICS_ENABLED: "1"
+      FT_METRICS_HOST: "0.0.0.0"
+    networks: [qms-network, observability]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3100/api/health',{signal:AbortSignal.timeout(5000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 30s
   alloy:
     image: grafana/alloy:v1.21.3
-    command: [run, --storage.path=/var/lib/alloy, /etc/alloy/config.alloy]
+    command: [run, --server.http.listen-addr=0.0.0.0:12345, --storage.path=/var/lib/alloy, /etc/alloy/config.alloy]
     restart: unless-stopped
     user: "0:0"
     volumes:
@@ -19,6 +30,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./deploy/observability/loki.yaml:/etc/loki/config.yaml:ro
+      - ./deploy/observability/loki-rules:/loki/rules:ro
       - loki-data:/loki
     networks: [observability]
     logging: *bounded-logs
@@ -36,10 +48,63 @@ services:
       - ./deploy/observability/grafana:/etc/grafana/provisioning:ro
     networks: [observability]
     logging: *bounded-logs
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    command: [--config.file=/etc/prometheus/prometheus.yaml, --storage.tsdb.retention.time=15d, --storage.tsdb.retention.size=2GB]
+    restart: unless-stopped
+    volumes:
+      - ./deploy/observability/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    networks: [observability]
+    logging: *bounded-logs
+  alertmanager:
+    image: prom/alertmanager:v0.35.0
+    user: "0:0"
+    command: [--config.file=/etc/alertmanager/alertmanager.yaml, --storage.path=/alertmanager]
+    restart: unless-stopped
+    volumes:
+      - ./deploy/observability/generated:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
+    networks: [observability, notification-egress]
+    logging: *bounded-logs
+  blackbox:
+    image: prom/blackbox-exporter:v0.29.1
+    command: [--config.file=/etc/blackbox/config.yaml]
+    restart: unless-stopped
+    volumes:
+      - ./deploy/observability/blackbox.yaml:/etc/blackbox/config.yaml:ro
+    networks: [observability]
+    logging: *bounded-logs
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    command: [--path.rootfs=/host, --path.procfs=/host/proc, --path.sysfs=/host/sys, --collector.filesystem.mount-points-exclude=^/(dev|proc|sys)($|/)]
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    networks: [observability]
+    logging: *bounded-logs
+  cadvisor:
+    image: ghcr.io/google/cadvisor:0.60.6
+    command: [--docker_only=true, --store_container_labels=false, --whitelisted_container_labels=com.docker.compose.service]
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    devices: [/dev/kmsg]
+    networks: [observability]
+    logging: *bounded-logs
 volumes:
   alloy-data:
   loki-data:
   grafana-data:
+  prometheus-data:
+  alertmanager-data:
 networks:
+  notification-egress:
   observability:
     internal: true

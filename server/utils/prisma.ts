@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { logEvent } from '../observability/logger'
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
 
@@ -13,7 +14,13 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
  *   发 / 转待办算"谁负责"时对班组行加共享锁（flow/responsible.ts lock），换班组长对它加排他锁（flow/team-leaders.ts）。
  *   一个事务涉及多个工件时，要在锁第一个班组行之前把工件全部锁完。
  */
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({ transactionOptions: { isolationLevel: 'ReadCommitted' } })
+function createClient() {
+  const client = new PrismaClient({ transactionOptions: { isolationLevel: 'ReadCommitted' }, log: [{ emit: 'event', level: 'error' }] })
+  // Prisma's raw error event may include SQL values; retain only the dependency category.
+  client.$on('error', () => logEvent('error', 'database.failed', { module: 'prisma' }))
+  return client
+}
+export const prisma = globalForPrisma.prisma ?? createClient()
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 

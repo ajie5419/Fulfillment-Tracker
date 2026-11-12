@@ -3,6 +3,7 @@ import { performance } from 'node:perf_hooks'
 import { getResponseStatus, setResponseHeader, type H3Event } from 'h3'
 import { logContext } from './context'
 import { logEvent } from './logger'
+import { requestDuration } from './metrics'
 
 interface RequestObservation { requestId: string; started: number; finished?: boolean; errorLogged?: boolean }
 declare module 'h3' { interface H3EventContext { observation?: RequestObservation } }
@@ -39,5 +40,6 @@ export function finishRequest(event: H3Event) {
   if (state.finished) return
   state.finished = true
   const fields = requestFields(event)
+  requestDuration.observe({ status: String(fields.statusCode) }, fields.durationMs / 1000)
   logEvent(fields.statusCode >= 500 ? 'error' : fields.statusCode >= 400 ? 'warn' : 'info', 'request.completed', fields)
 }

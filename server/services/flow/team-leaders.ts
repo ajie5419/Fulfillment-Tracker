@@ -1,3 +1,4 @@
+import { logEvent } from '../../observability/logger'
 /**
  * 班组长（生产管理重设计第二批）：设置页"班组长"维护，一个班组一个班组长，一个人可以带多个班组。
  * 班组来自 QMS 同步（qms_supplier kind = TEAM）；班组长存在 team_leader，同步不碰它。
@@ -48,7 +49,10 @@ export async function setTeamLeader(teamId: string, userId: string | null, actor
       // 每道工序逐个算"谁负责"、转待办：一个班组一般几十道待开工工序，默认 5 秒事务超时偏紧，放宽到 15 秒（不做分批，分批会破坏原子性）
       return await prisma.$transaction((tx) => setTeamLeaderTx(tx, teamId, userId, actorId), { timeout: 15_000, maxWait: 5_000 })
     } catch (err) {
-      if (attempt < 4 && (err instanceof TeamStepsChanged || isDeadlock(err))) continue
+      if (attempt < 4 && (err instanceof TeamStepsChanged || isDeadlock(err))) {
+        logEvent('warn', 'transaction.retry', { module: 'team-leader', count: attempt + 1 }, err)
+        continue
+      }
       if (err instanceof TeamStepsChanged) throw new FlowError('这个班组的工序正在调整，请稍后再试')
       throw err
     }

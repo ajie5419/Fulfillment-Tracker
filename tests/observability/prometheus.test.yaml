@@ -1,0 +1,55 @@
+rule_files: [/config/rules.yaml, /config/external-rules.yaml]
+evaluation_interval: 30s
+tests:
+  - interval: 30s
+    input_series:
+      - series: 'up{job="application",instance="fulfillment:9464"}'
+        values: '0+0x20'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ServiceUnavailable
+        exp_alerts:
+          - exp_labels: {job: application, instance: "fulfillment:9464", severity: critical}
+            exp_annotations: {summary: "服务或监测组件连续两分钟不可用"}
+  - interval: 30s
+    input_series:
+      - series: 'node_filesystem_avail_bytes{fstype="ext4",mountpoint="/"}'
+        values: '10+0x20'
+      - series: 'node_filesystem_size_bytes{fstype="ext4",mountpoint="/"}'
+        values: '100+0x20'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: DiskSpaceLow
+        exp_alerts:
+          - exp_labels: {fstype: ext4, mountpoint: /, severity: critical}
+            exp_annotations: {summary: "主机文件系统可用空间不足 15%"}
+  - interval: 30s
+    input_series:
+      - series: 'ft_task_last_start_seconds{task="sync-qms"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ScheduledTaskMissing
+        exp_alerts:
+          - exp_labels: {task: sync-qms, severity: critical}
+            exp_annotations: {summary: "定时任务超过两个周期未启动"}
+  - interval: 30s
+    input_series:
+      - series: 'probe_success{job="production-external",instance="https://fixture/api/health"}'
+        values: '0+0x20'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ProductionUnavailableExternally
+        exp_alerts:
+          - exp_labels: {job: production-external, instance: "https://fixture/api/health", severity: critical}
+            exp_annotations: {summary: "外部探测无法访问履约健康接口：检查主机、网络、反向代理和数据库"}
+  - interval: 30s
+    input_series:
+      - series: 'container_oom_events_total{container="fulfillment"}'
+        values: '0 0 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ContainerOOM
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations: {summary: "容器发生 OOM 终止"}

@@ -84,7 +84,7 @@ export async function saveUpload(dir: string, data: Buffer, uploaderId: string, 
   try {
     return await prisma.uploadFile.create({ data: { id, storedName, mime: type.mime, size: data.length, uploaderId } })
   } catch (err) {
-    await rm(join(root, storedName), { force: true })
+    await rm(join(root, storedName), { force: true }).catch(error => logEvent('error', 'upload.cleanup.failed', { entityId: id }, error))
     throw err
   }
 }
@@ -140,5 +140,5 @@ export async function readOwnUnbound(dir: string, id: string, uploaderId: string
 
 /** 清理演示数据时删文件（尽力而为，文件不在也不报错） */
 export async function removeUploadFiles(dir: string, storedNames: string[]) {
-  for (const name of storedNames) await rm(safePath(dir, name), { force: true }).catch(() => {})
+  for (const name of storedNames) await rm(safePath(dir, name), { force: true }).catch(error => logEvent('error', 'upload.cleanup.failed', {}, error))
 }

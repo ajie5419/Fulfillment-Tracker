@@ -1,3 +1,4 @@
+import { logEvent } from '../../observability/logger'
 import { prisma } from '../../utils/prisma'
 import { ISSUE_NUMBER_CONFLICT_RETRIES, formatIssueNo, issueNoPrefix, nextSeq } from './constants'
 import type { Tx } from './types'
@@ -16,7 +17,10 @@ export async function issueTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T
     try {
       return await prisma.$transaction(fn)
     } catch (err) {
-      if (attempt < ISSUE_NUMBER_CONFLICT_RETRIES && uniqueOn(err, 'issueNo')) continue
+      if (attempt < ISSUE_NUMBER_CONFLICT_RETRIES && uniqueOn(err, 'issueNo')) {
+        logEvent('warn', 'transaction.retry', { module: 'issue', count: attempt + 1 }, err)
+        continue
+      }
       throw err
     }
   }

@@ -19,6 +19,10 @@ export function inspectArchitecture(file, content) {
     const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
     const line = node => source.getLineAndCharacterOfPosition(node.getStart(source)).line + offset + 1
     function visit(node) {
+      if (file.startsWith('server/') && ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+        && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === 'console') {
+        add(line(node), 'structured-logging: 服务端必须使用脱敏结构化日志')
+      }
       if (file.startsWith('server/api/') && ts.isExportAssignment(node)) {
         const expression = node.expression
         const handler = ts.isCallExpression(expression) && ts.isIdentifier(expression.expression) ? expression.expression.text : ''
@@ -28,7 +32,7 @@ export function inspectArchitecture(file, content) {
       }
       if (file.startsWith('app/') && ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
         const name = node.expression.text
-        const boundary = ['app/utils/api-fetch.ts', 'app/composables/useApiFetch.ts', 'app/plugins/api-401.client.ts'].includes(file)
+        const boundary = ['app/utils/api-fetch.ts', 'app/utils/error-reporter.ts', 'app/composables/useApiFetch.ts', 'app/plugins/api-401.client.ts'].includes(file)
         const logout = name === '$fetch' && ts.isStringLiteralLike(node.arguments[0] ?? node) && node.arguments[0].text === '/auth/logout'
         if (!boundary && !logout && ['$fetch', 'useFetch', 'useRequestFetch', 'fetch'].includes(name)) {
           add(line(node), 'api-response-contract: 页面请求必须通过统一解包层')

@@ -1,3 +1,4 @@
+import { observedFetch } from '../../observability/dependency'
 /**
  * QMS 项目 BOM 按需读取（R8）。不是增量同步：BOM 行在 QMS 里是硬删除，工序子表变化也不刷新父行时间，
  * 所以每次用户点"从 QMS BOM 导入"时实时读一次。只在服务端调用（凭据不出服务器）。
@@ -38,7 +39,7 @@ export async function fetchWorkOrderBom(cfg: QmsSyncConfig, workOrderNumber: str
   const url = new URL(bomPath(workOrderNumber), cfg.apiBase)
   let res: Response
   try {
-    res = await fetchImpl(url.toString(), {
+    res = await observedFetch('qms.bom', fetchImpl)(url.toString(), {
       method: 'GET',
       headers: { Accept: 'application/json', 'X-Identity-Client-Id': cfg.clientId, 'X-Identity-Client-Secret': cfg.clientSecret },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

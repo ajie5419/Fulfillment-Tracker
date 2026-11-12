@@ -7,7 +7,7 @@
 
 内部接口遵循 [API 响应规范](docs/API响应规范.md)：成功和失败统一 `{ code, data, message }`，保留真实 HTTP 状态码；桌面与手机通过公共请求层解包。
 
-运行日志采用 Pino JSON 和请求编号，关键业务修改使用同事务 MySQL 审计；Alloy／Loki／Grafana 部署入口、查询方法与覆盖边界见 [日志与审计规范](docs/日志与审计规范.md)。
+运行日志采用 Pino JSON 和请求编号，关键业务修改使用同事务 MySQL 审计；前端错误、依赖失败、进程异常及任务健康接入监测，Prometheus／Alertmanager 支持邮件告警。采集部署、独立主机探测、邮箱配置与覆盖边界见 [日志与审计规范](docs/日志与审计规范.md)。
 
 ## 本地启动
 

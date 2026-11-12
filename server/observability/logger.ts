@@ -1,8 +1,9 @@
 import pino, { type DestinationStream, type Level } from 'pino'
 import { logContext } from './context'
+import { errorEvents } from './metrics'
 
 const FIELD_LIMIT = 256
-const FIELDS = ['module', 'requestId', 'actorId', 'taskName', 'method', 'route', 'statusCode', 'durationMs', 'count', 'entityId', 'resultCode'] as const
+const FIELDS = ['module', 'requestId', 'actorId', 'taskName', 'method', 'route', 'statusCode', 'durationMs', 'count', 'entityId', 'resultCode', 'clientFingerprint', 'clientErrorType', 'relatedRequestId'] as const
 type Fields = Partial<Record<typeof FIELDS[number], string | number>>
 
 /** Only explicitly selected scalar fields may leave the application; never serialize errors or HTTP objects. */
@@ -28,6 +29,7 @@ export function createLogWriter(destination?: DestinationStream, level = process
       const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
       if (typeof code === 'string' && /^(P\d{4}|ECONNREFUSED|ETIMEDOUT|ECONNRESET|ENOTFOUND)$/.test(code)) safe.errorCode = code
     }
+    if (level === 'error' || level === 'fatal') errorEvents.inc({ event })
     logger[level](safe)
   }
 }

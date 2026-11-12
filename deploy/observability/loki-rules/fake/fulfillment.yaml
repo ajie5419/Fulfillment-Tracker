@@ -1,0 +1,17 @@
+groups:
+  - name: fulfillment-logs
+    interval: 30s
+    rules:
+      - alert: LogHeartbeatMissing
+        expr: absent_over_time({service="fulfillment-tracker"} | json | event="observability.heartbeat" [3m])
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "五分钟未收到应用日志心跳，检查应用和采集链路"}
+      - alert: FatalProcessError
+        expr: sum(count_over_time({service="fulfillment-tracker",level="fatal"}[5m])) > 0
+        labels: {severity: critical}
+        annotations: {summary: "履约进程发生致命异常并退出"}
+      - alert: FrontendErrors
+        expr: sum(count_over_time({service="fulfillment-tracker"} | json | event="client.reported" [5m])) >= 5
+        labels: {severity: warning}
+        annotations: {summary: "五分钟内收到多次前端错误报告（客户端证据）"}

@@ -1,0 +1,12 @@
+groups:
+  - name: independent-availability
+    rules:
+      - alert: ProductionUnavailableExternally
+        expr: probe_success{job="production-external"} == 0 or up{job="production-external"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "外部探测无法访问履约健康接口：检查主机、网络、反向代理和数据库"}
+      - alert: ProductionTLSExpiring
+        expr: probe_ssl_earliest_cert_expiry - time() < 604800
+        labels: {severity: warning}
+        annotations: {summary: "生产 HTTPS 证书将在七天内过期"}

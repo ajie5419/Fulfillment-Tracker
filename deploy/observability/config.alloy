@@ -26,6 +26,20 @@ loki.process "fulfillment" {
   stage.labels {
     values = {service = "", environment = "", level = ""}
   }
+  // Framework startup failures may precede JSON logging. Keep an error marker, never raw stderr secrets.
+  stage.match {
+    selector = "{service!=\"fulfillment-tracker\",stream=\"stderr\"}"
+    stage.static_labels {
+      values = {service = "fulfillment-tracker", environment = "production", level = "error"}
+    }
+    stage.template {
+      source = "sanitized"
+      template = "{\"service\":\"fulfillment-tracker\",\"environment\":\"production\",\"level\":\"error\",\"event\":\"runtime.unstructured\"}"
+    }
+    stage.output {
+      source = "sanitized"
+    }
+  }
   stage.match {
     selector = "{service!=\"fulfillment-tracker\"}"
     action   = "drop"
