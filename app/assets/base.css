@@ -79,9 +79,9 @@
   /* 主色浅底与主色文字 */
   --ft-primary-bg: #EFF6FF;
   --ft-primary-text: #1D4ED8;
-  /* 分组浅灰大托盘（Brick 风格：白画布 → 浅灰外托盘 → 纯白内嵌卡） */
-  --ft-tray-bg: #F5F5F7;
-  --ft-tray-border: #ECECEF;
+  /* 分组浅灰大托盘（Brick 风格：白画布 → 浅灰外托盘 → 纯白内嵌卡；对齐 sRGB 0.977 纯中性高级浅灰） */
+  --ft-tray-bg: #F9F9F9;
+  --ft-tray-border: #EEEEEE;
   /* 责任人微头像柔和色板 */
   --ft-av-1-bg: #FDE68A;
   --ft-av-1-text: #92400E;
