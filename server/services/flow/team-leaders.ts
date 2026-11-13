@@ -81,13 +81,13 @@ async function setTeamLeaderTx(tx: Prisma.TransactionClient, teamId: string, use
   if (steps.some((s) => !partIds.has(s.partId))) throw new TeamStepsChanged()
   // 改之前算"待办现在按规则在谁手里"（原班组长看不到工单时是兜底的人）
   const before = []
-  for (const s of steps) before.push(await stepTodoHolders(tx, s, s.part.workOrderNumber))
+  for (const s of steps) before.push({ step: s, holders: await stepTodoHolders(tx, s, s.part.workOrderNumber) })
   if (userId) {
     await tx.teamLeader.upsert({ where: { supplierId: teamId }, create: { supplierId: teamId, userId, updatedBy: actorId }, update: { userId, updatedBy: actorId } })
   } else {
     await tx.teamLeader.delete({ where: { supplierId: teamId } })
   }
   // 改之后再算一次，按同一套规则转交（清除班组长时转回兜底的人）
-  for (const [i, s] of steps.entries()) await moveStepTodos(tx, s, before[i] ?? [], await stepTodoHolders(tx, s, s.part.workOrderNumber))
+  for (const { step: s, holders } of before) await moveStepTodos(tx, s, holders, await stepTodoHolders(tx, s, s.part.workOrderNumber))
   return { changed: true, moved: steps.length }
 }

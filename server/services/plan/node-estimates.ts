@@ -31,7 +31,10 @@ export function estimateNodes(input: NodeFacts[], today: string, deliveryDay?: s
   const order = topoOrder(ids, waitsOn(preds, kids))
   // 兜底：有环时退回一条主线（不分上下级）
   if (!order) {
-    preds = new Map(nodes.map((n, i) => [n.id, i > 0 && nodes[i - 1] ? [nodes[i - 1].id] : []]))
+    preds = new Map(nodes.map((n, i) => {
+      const previous = nodes[i - 1]
+      return [n.id, previous ? [previous.id] : []]
+    }))
     kids = new Map(ids.map((id) => [id, []]))
   }
   const parentOf = new Map<string, string>()

@@ -43,7 +43,7 @@ const rowClass = (n: TableRow) =>
 const alertLevelOf = (n: PlanNodeRow): 'late' | 'risk' | null => {
   if (n.done) return null
   if (n.delayDays > 0 || n.alertLevel === 'RED') return 'late'
-  if (n.alertLevel === 'YELLOW' || n.lateTasks > 0) return 'risk'
+  if (n.alertLevel === 'YELLOW' || n.lateCount > 0) return 'risk'
   return null
 }
 </script>
