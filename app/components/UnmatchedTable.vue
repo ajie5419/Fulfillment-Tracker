@@ -13,7 +13,10 @@ const canHandle = (r: Row) => canDo(me.value, 'route', { workOrderNumber: r.insp
 const chosen = reactive<Record<string, string | undefined>>({})
 
 watch(rows, (list) => {
-  for (const r of list) if (!chosen[r.qmsInspectionId] && r.candidates.length === 1) chosen[r.qmsInspectionId] = r.candidates[0]!.stepId
+  for (const r of list) {
+    const first = r.candidates[0]
+    if (!chosen[r.qmsInspectionId] && r.candidates.length === 1 && first) chosen[r.qmsInspectionId] = first.stepId
+  }
 }, { immediate: true })
 
 async function act(r: Pick<Row, 'qmsInspectionId'>, kind: 'resolve' | 'ignore') {

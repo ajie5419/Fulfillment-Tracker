@@ -41,7 +41,7 @@ const keyword = ref('')
 let timer: ReturnType<typeof setTimeout> | undefined
 watch(keyword, (v) => {
   clearTimeout(timer)
-  timer = setTimeout(() => (filter.q = v.trim()), 300)
+  timer = setTimeout(() => (filter.q = v.trim()), FILTER_DEBOUNCE_MS)
 })
 watch(
   () => [filter.workOrderNumber, filter.view, filter.ownerId, tab.value],
@@ -123,6 +123,45 @@ const tables = computed(() =>
     : [{ key: '__all', workOrderNumber: '', rows: rows.value }],
 )
 const doneOf = (g: { rows: DrawingRow[] }) => groupProgress(g.rows, (r) => isDesignComplete(r.status), (r) => r.status !== 'CANCELLED')
+
+// ───── 顶部双栏行动聚焦卡（Spotlight Actionable Mini-List Cards）─────
+const spotlightLeftItems = computed(() => {
+  const openRows = rows.value.filter((r) => r.status !== 'DONE' && r.status !== 'CANCELLED' && !r.overdue)
+  return [...openRows]
+    .sort((a, b) => dayText(a.planDate).localeCompare(dayText(b.planDate)))
+    .slice(0, SPOTLIGHT_MAX_ITEMS)
+    .map((r) => {
+      const stagePrefix = r.status === 'PENDING' ? '计划完成' : r.needsCustomerConfirm && !r.customerConfirmedDate ? '待确认' : '待发放'
+      const targetDate = shortDayText(r.customerPlanDate && r.status !== 'PENDING' ? r.customerPlanDate : r.planDate)
+      return {
+        id: r.id,
+        title: r.componentName,
+        meta: r.workOrderNumber,
+        ownerName: r.ownerText,
+        rightText: `${stagePrefix} ${targetDate}`,
+      }
+    })
+})
+const spotlightRightItems = computed(() => {
+  const attentionRows = rows.value.filter((r) => r.status !== 'DONE' && r.status !== 'CANCELLED' && (r.overdue || r.alertLevel === 'YELLOW' || r.presentation.designWarning))
+  return [...attentionRows]
+    .sort((a, b) => Number(b.overdue) - Number(a.overdue) || dayText(a.planDate).localeCompare(dayText(b.planDate)))
+    .slice(0, SPOTLIGHT_MAX_ITEMS)
+    .map((r) => ({
+      id: r.id,
+      title: r.componentName,
+      meta: r.workOrderNumber,
+      ownerName: r.ownerText,
+      level: (r.overdue ? 'late' : 'risk') as 'late' | 'risk',
+      rightText: `${r.presentation.designWarning || (r.overdue ? '已逾期' : '临期')} · 止 ${shortDayText(r.planDate)}`,
+    }))
+})
+function selectSpotlightTask(it: { id: string }) {
+  const target = rows.value.find((r) => r.id === it.id)
+  if (!target) return
+  if (canEditTask.value) openEdit(target)
+  else keyword.value = target.componentName
+}
 
 const { data: load, pending: loadPending, error: loadError, refresh: refreshLoad } = await useApiFetch('/api/drawings/load', {
   query: computed(() => ({ workOrderNumber: filter.workOrderNumber })),
@@ -307,6 +346,16 @@ const loadColumns = [
     <UiStatCard label="本周到期" :value="stats ? stats.dueThisWeek : '—'" unit="项" tone="risk" accent icon="warn" clickable :active="filter.view === 'week'" sub="设计中且计划完成日在本周" @click="applyView('week')" />
     <UiStatCard label="逾期" :value="stats ? stats.overdue : '—'" unit="项" tone="late" accent icon="alert" clickable :active="filter.view === 'overdue'" sub="设计中过计划完成日，或客户确认过计划日" @click="applyView('overdue')" />
   </div>
+  <UiSpotlightGrid
+    v-if="tab === 'list' && (spotlightLeftItems.length || spotlightRightItems.length)"
+    left-title="近期计划 / 待推进"
+    :left-items="spotlightLeftItems"
+    left-empty="当前没有待推进的设计任务"
+    right-title="需要关注 / 临期与逾期"
+    :right-items="spotlightRightItems"
+    right-empty="当前无逾期或临期设计任务"
+    @select="selectSpotlightTask"
+  />
   <UiSectionCard>
     <template #title>
       <div class="card-head-left">
@@ -378,7 +427,7 @@ const loadColumns = [
           size="small"
           :row-expandable="(r: DrawingRow) => hasTaskDetails(r)"
           :scroll="{ x: layout === 'group' ? groupWidth : tableWidth }"
-          :pagination="layout === 'group' ? false : { pageSize: 50, hideOnSinglePage: true }"
+          :pagination="layout === 'group' ? false : { pageSize: DEFAULT_TABLE_PAGE_SIZE, hideOnSinglePage: true }"
         >
           <template #expandedRowRender="{ record }">
             <div class="task-details">
@@ -393,13 +442,16 @@ const loadColumns = [
           <template #emptyText><a-empty v-if="!pending" :description="filter.view === 'open' ? '没有未完成的设计任务' : '没有记录'" /></template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'component'">
-              <button v-if="canEditTask" type="button" class="link-btn task-title-btn" @click="openEdit(record as DrawingRow)">{{ record.componentName }}</button>
-              <span v-else class="task-title-text">{{ record.componentName }}</span>
-              <span v-if="record.parts.length" class="muted"> · {{ record.parts.length }} 个工件</span>
+              <span class="component-cell">
+                <button v-if="canEditTask" type="button" class="link-btn task-title-btn" @click="openEdit(record as DrawingRow)">{{ record.componentName }}</button>
+                <span v-else class="task-title-text">{{ record.componentName }}</span>
+                <UiAlertMark :level="record.overdue ? 'late' : record.alertLevel === 'YELLOW' ? 'risk' : null" />
+                <span v-if="record.parts.length" class="muted"> · {{ record.parts.length }} 个工件</span>
+              </span>
             </template>
             <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
             <template v-else-if="column.key === 'planNode'"><PlanNodeCell :work-order-number="record.workOrderNumber" :node="record.planNode" /></template>
-            <template v-else-if="column.key === 'owner'"><span :class="{ muted: !record.ownerId }">{{ record.ownerText }}</span></template>
+            <template v-else-if="column.key === 'owner'"><UiUserChip :name="record.ownerText" :muted="!record.ownerId" /></template>
             <template v-else-if="column.key === 'planDate'">
               <span class="plan-range" :class="{ warn: record.overdue && record.status === 'PENDING' }" :title="`开始：${record.startDate ? dayText(record.startDate) : '未填'} / 完成：${dayText(record.planDate)}`">
                 {{ planRangeText(record as DrawingRow) }}
@@ -502,6 +554,7 @@ const loadColumns = [
 .link-btn:hover { text-decoration: underline; }
 .link-btn:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; border-radius: 2px; }
 .task-title-btn, .task-title-text { font-weight: 500; }
+.component-cell { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .warn { color: var(--ft-late-text); }
 .small { font-size: 12px; }
 .state-tabs { max-width: 100%; overflow-x: auto; }

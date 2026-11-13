@@ -178,7 +178,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
       row-key="id"
       size="small"
       :scroll="{ x: 1000 }"
-      :pagination="layout === 'group' ? false : { pageSize: 50, hideOnSinglePage: true }"
+      :pagination="layout === 'group' ? false : { pageSize: DEFAULT_TABLE_PAGE_SIZE, hideOnSinglePage: true }"
     >
       <template #emptyText><a-empty description="没有付款申请" /></template>
       <template #bodyCell="{ column, record }">
@@ -204,8 +204,8 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
         </template>
         <template v-else-if="column.key === 'amount'">{{ moneyText(record.amount) }}</template>
         <template v-else-if="column.key === 'request'">
-          {{ dayText(record.requestDate) }}
-          <div class="muted">{{ record.requesterName }}</div>
+          <div>{{ dayText(record.requestDate) }}</div>
+          <UiUserChip :name="record.requesterName" />
         </template>
         <template v-else-if="column.key === 'status'">
           <a-tag :color="PAYMENT_STATUS_COLOR[record.status as PaymentStatusKey]">{{ record.statusText }}</a-tag>

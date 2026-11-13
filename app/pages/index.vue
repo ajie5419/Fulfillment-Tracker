@@ -159,7 +159,7 @@ function onCardClick(c: Card) {
                   class="sq-badge"
                   :class="c.kind === 'todo' ? 'sq-primary' : c.tone === 'late' ? 'sq-late' : c.tone === 'risk' ? 'sq-risk' : 'sq-none'"
                 >
-                  {{ c.kind === 'todo' ? '待办' : LEVEL_LABEL[c.reminder!.level] }}
+                  {{ c.kind === 'todo' || !c.reminder ? '待办' : LEVEL_LABEL[c.reminder.level] }}
                 </span>
                 <template v-if="c.todo">
                   <a-button v-if="c.todo.link" type="primary" size="small" @click="navigateTo(c.todo.link)">{{ c.todo.refType === 'drawing' ? '查看设计任务' : '查看采购计划' }}</a-button>
@@ -180,7 +180,7 @@ function onCardClick(c: Card) {
                   <a-button v-else-if="c.todo.action === 'CONFIRM_PLAN_NODE' && c.todo.plan" type="primary" size="small" @click="navigateTo(c.todo.plan.link)">去确认</a-button>
                   <a-button v-else-if="c.todo.action === 'DO_PLAN_TASK' && c.todo.planTask" type="primary" size="small" @click="finishPlanTask(c.todo)">完成</a-button>
                   <a-button v-if="c.todo.refType !== 'drawing' && c.todo.action !== 'SIGN_RELEASE' && c.todo.action !== 'PURCHASE_PLAN_ISSUED'" size="small" @click="transferring = c.todo">转交</a-button>
-                  <NuxtLink v-if="todoLink(c.todo) && !c.todo.plan && !c.todo.release && !c.todo.link" :to="todoLink(c.todo)!" class="go">查看 ›</NuxtLink>
+                  <NuxtLink v-if="todoLink(c.todo) && !c.todo.plan && !c.todo.release && !c.todo.link" :to="todoLink(c.todo) ?? '/'" class="go">查看 ›</NuxtLink>
                 </template>
                 <template v-else-if="c.reminder">
                   <a-button v-if="c.unread" size="small" @click="readReminder(c.reminder)">标已读</a-button>

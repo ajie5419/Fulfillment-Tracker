@@ -25,7 +25,8 @@ export async function collectW8(now: Date, t: Thresholds): Promise<Target[]> {
   const out: Target[] = []
   for (const n of nodes) {
     if (!live.has(n.workOrderNumber)) continue
-    const kit = kits.get(n.id)!
+    const kit = kits.get(n.id)
+    if (!kit) continue
     const r = judgeW8({ ...kit, needDate: n.needDate, now }, t.W8)
     if (!r.level) continue
     const owner = n.ownerId ? (names.user.get(n.ownerId) ?? n.ownerId) : '生产经理'

@@ -18,6 +18,8 @@ ENV NODE_ENV=production HOST=0.0.0.0 PORT=3100
 RUN npm install -g prisma@6.19.3 && npm cache clean --force
 COPY --from=build /app/.output ./.output
 COPY --from=build /app/prisma ./prisma
+COPY scripts/check-production.mjs ./scripts/check-production.mjs
+COPY shared/production-config.mjs ./shared/production-config.mjs
 # 异常照片目录（NUXT_UPLOAD_DIR 默认 ./data/uploads），部署时挂载数据卷
 RUN mkdir -p /app/data/uploads && chown -R node:node /app/data
 USER node

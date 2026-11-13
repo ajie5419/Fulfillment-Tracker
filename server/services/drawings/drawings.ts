@@ -390,7 +390,7 @@ async function describeTasks(rows: TaskWithParts[], now: Date, viewer?: Actor) {
     planNodeLabels(rows.map((r) => r.planNodeId)),
   ])
   const partOf = new Map(parts.map((p) => [p.id, p]))
-  const levelOf = new Map(alerts.map((a) => [a.activeKey!, a.level]))
+  const levelOf = new Map(alerts.flatMap((a) => (a.activeKey ? [[a.activeKey, a.level] as const] : [])))
   const user = (id: string | null) => (id ? (names.user.get(id) ?? id) : null)
   return rows.map(({ parts: links, ...t }) => {
     const mine = releases.filter((r) => r.drawingTaskId === t.id)
@@ -477,7 +477,8 @@ export async function getTask(id: string, viewer: Actor, now = new Date()) {
   const task = await prisma.drawingTask.findUnique({ where: { id }, include: PARTS_INCLUDE })
   if (!task) throw new FlowError('设计任务不存在')
   const [row] = await describeTasks([task], now, viewer)
-  return row!
+  if (!row) throw new FlowError('设计任务不存在')
+  return row
 }
 
 /**

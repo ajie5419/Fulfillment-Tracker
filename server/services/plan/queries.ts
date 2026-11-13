@@ -29,12 +29,13 @@ export async function getPlan(workOrderNumber: string, ctx: RoleContext, now = n
   const wo = await prisma.qmsWorkOrder.findUnique({ where: { workOrderNumber } })
   if (!wo) throw new FlowError('工单不存在')
   const [data, plan, ext, logs, unlinked] = await Promise.all([
-    loadPlans({ workOrderNumbers: [workOrderNumber] }, now).then((m) => m.get(workOrderNumber)!),
+    loadPlans({ workOrderNumbers: [workOrderNumber] }, now).then((m) => m.get(workOrderNumber)),
     prisma.workOrderPlan.findUnique({ where: { workOrderNumber } }),
     prisma.workOrderExt.findUnique({ where: { workOrderNumber } }),
     prisma.planChangeLog.findMany({ where: { workOrderNumber }, orderBy: { createdAt: 'desc' }, take: 200 }),
     unlinkedCounts(workOrderNumber),
   ])
+  if (!data) throw new FlowError('工单不存在')
   const nodeIds = data.nodes.map((n) => n.id)
   const [names, mine, alerts] = await Promise.all([
     loadNames({ user: [ext?.projectManagerId ?? null, plan?.publishedBy ?? null, ...data.nodes.flatMap((n) => [n.confirmedBy, n.manualDoneBy]), ...logs.map((l) => l.actorId)] }),

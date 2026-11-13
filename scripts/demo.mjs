@@ -58,6 +58,7 @@ GRANT ALL PRIVILEGES ON ${database}.* TO '${databaseUser}'@'%';\n`,
   Object.assign(process.env, {
     DATABASE_URL: `mysql://${databaseUser}:${password}@127.0.0.1:3307/${database}`,
     NODE_ENV: 'production',
+    FT_DEPLOYMENT_MODE: 'demo',
     NUXT_DEV_TOOLS: '1',
     NUXT_ISOLATED_DEMO: '1',
     NUXT_ADMIN_USER_IDS: 'u-005',

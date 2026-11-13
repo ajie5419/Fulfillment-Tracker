@@ -255,7 +255,7 @@ const columns = [
   { title: '到货', key: 'arrived', width: 104 },
   { title: '进度', key: 'progress', width: 112 },
   { title: '延误原因', key: 'delay', width: 92 },
-  { title: '负责人', key: 'owner', width: 80 },
+  { title: '负责人', key: 'owner', width: 100 },
   { title: '', key: 'actions', width: 150, fixed: 'right' as const },
 ]
 const groupColumns = columns.filter((c) => c.key !== 'wo')
@@ -319,8 +319,11 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
       <template #emptyText><a-empty :description="filter.view === 'open' ? '没有未到货的关键物料' : '没有记录'" /></template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'material'">
-          <button v-if="canEdit(record as PurchaseRow)" type="button" class="link-btn" @click="openEdit(record as PurchaseRow)">{{ record.materialName }}</button>
-          <span v-else>{{ record.materialName }}</span>
+          <span class="material-head">
+            <button v-if="canEdit(record as PurchaseRow)" type="button" class="link-btn" @click="openEdit(record as PurchaseRow)">{{ record.materialName }}</button>
+            <span v-else>{{ record.materialName }}</span>
+            <UiAlertMark :level="record.alertLevel === 'RED' || record.late ? 'late' : record.alertLevel === 'YELLOW' ? 'risk' : null" />
+          </span>
           <div class="muted">{{ [record.spec, record.partName ? `用于 ${record.partName}` : ''].filter(Boolean).join(' · ') }}</div>
           <button type="button" class="comment-link" @click="commenting = { id: record.id, name: record.materialName }">{{ record.commentCount ? `留言 ${record.commentCount}` : '留言' }}</button>
         </template>
@@ -358,7 +361,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
           <span v-else-if="record.late" class="warn">待填</span>
           <span v-else class="muted">—</span>
         </template>
-        <template v-else-if="column.key === 'owner'"><span :class="{ muted: !record.buyerId }">{{ record.ownerText }}</span></template>
+        <template v-else-if="column.key === 'owner'"><UiUserChip :name="record.ownerText" :muted="!record.buyerId" /></template>
         <template v-else-if="column.key === 'actions'">
           <span v-if="!canEdit(record as PurchaseRow)" class="muted">—</span>
           <a-space v-else size="small">
@@ -407,6 +410,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
 
 <style scoped>
 .muted { color: var(--ft-text-2); font-size: 12px; }
+.material-head { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .link-btn { padding: 0; border: 0; background: none; font: inherit; color: var(--ft-primary); text-align: left; cursor: pointer; }
 .link-btn:hover { text-decoration: underline; }
 .link-btn:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; border-radius: 2px; }

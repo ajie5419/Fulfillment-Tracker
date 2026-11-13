@@ -10,6 +10,7 @@ export function stableDoneDay(est: Pick<NodeEstimate, 'done' | 'doneBy' | 'actua
   if (!est.done) return null
   if (est.doneBy === 'MANUAL') return est.actualDay
   const counted = tasks.filter((t) => !t.excluded)
-  if (!counted.length || counted.some((t) => !t.doneDay)) return null
-  return counted.map((t) => t.doneDay!).reduce((a, b) => (a >= b ? a : b))
+  const doneDays = counted.flatMap((t) => (t.doneDay ? [t.doneDay] : []))
+  if (!counted.length || doneDays.length !== counted.length) return null
+  return doneDays.reduce((a, b) => (a >= b ? a : b))
 }

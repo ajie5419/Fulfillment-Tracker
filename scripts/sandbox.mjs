@@ -140,7 +140,7 @@ async function start() {
     } catch { res.writeHead(502); res.end('Sandbox identity bridge unavailable') }
   })
   await new Promise((accept, reject) => { proxy.once('error', reject); proxy.listen(PROXY_PORT, '127.0.0.1', accept) })
-  const child = spawn('node_modules/.bin/nuxt', ['dev', '--dotenv', ENV, '--host', HOST, '--port', String(PORT), '--no-fork'], { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn('node_modules/.bin/nuxt', ['dev', '--dotenv', ENV, '--host', HOST, '--port', String(PORT), '--no-fork'], { env: { ...process.env, ...env, FT_DEPLOYMENT_MODE: 'sandbox' }, stdio: ['ignore', 'pipe', 'pipe'] })
   const redact = chunk => String(chunk).replace(/([?&](?:code|state)=)[^&\s"'<>]+/g, '$1[redacted]')
   createInterface({ input: child.stdout }).on('line', line => console.log(redact(line)))
   createInterface({ input: child.stderr }).on('line', line => console.error(redact(line)))

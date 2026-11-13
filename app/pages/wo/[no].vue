@@ -46,7 +46,8 @@ const group = computed(() => {
   return boardGroup({ hasPlan: x.published, delayDays: x.delayDays, delayedPlanNodes: x.progress.source, color, dateConflicts: x.dateConflicts })
 })
 const pill = computed(() => {
-  const x = d.value!
+  const x = d.value
+  if (!x) return { tone: 'none', icon: 'ring' as const, text: BOARD_GROUP_TEXT.NO_PLAN }
   switch (group.value) {
     case 'LATE':
       return { tone: 'late', icon: 'alert' as const, text: `交期风险 · 预计拖期 ${x.delayDays} 天` }
@@ -86,16 +87,18 @@ const ticks = computed(() => (range.value ? monthTicks(range.value) : []))
 const todayLeft = computed(() => (range.value && d.value ? pct(d.value.today, range.value) : 0))
 const bars = computed(() => {
   const x = d.value
-  if (!x || !x.nodes.length) return []
-  const first = x.nodes[0]!.planDate
+  const firstNode = x?.nodes[0]
+  if (!x || !firstNode) return []
+  const first = firstNode.planDate
   const start = x.plan?.startDate && x.plan.startDate < first ? x.plan.startDate : first
   return nodeBars(
     x.nodes.map((n) => ({ planDay: n.planDate, endDay: n.actualDate ?? n.expectedDate })),
     start,
   )
 })
-function seg(from: string, to: string) {
-  const r = range.value!
+function seg(from?: string, to?: string) {
+  const r = range.value
+  if (!r || !from || !to) return { left: '0%', width: '0%' }
   const l = pct(from, r)
   return { left: `${l}%`, width: `${Math.max(pct(to, r) - l, 0)}%` }
 }
@@ -119,8 +122,8 @@ function toggle(id: string) {
 }
 async function focusHash() {
   const m = /^#node-(.+)$/.exec(route.hash)
-  if (!m || !d.value) return
-  const id = decodeURIComponent(m[1]!)
+  if (!m?.[1] || !d.value) return
+  const id = decodeURIComponent(m[1])
   if (!d.value.nodes.some((n) => n.id === id)) return
   expanded.value = new Set([...expanded.value, id])
   await nextTick()
@@ -356,8 +359,8 @@ function confirmCancel() {
                     </div>
                     <div class="g-track" :title="`计划 ${n.planDate}${n.actualDate ? ` · 实际 ${n.actualDate}` : ` · 预计 ${n.expectedDate}`}${n.baselineDate && n.baselineDate !== n.planDate ? ` · 基线 ${n.baselineDate}` : ''}`">
                       <span class="today-line" :style="{ left: `${todayLeft}%` }" />
-                      <span class="plan-box" :style="seg(bars[i]!.planFrom, bars[i]!.planTo)" />
-                      <span class="real-bar" :style="{ ...seg(bars[i]!.from, bars[i]!.to), background: NODE_STATE_COLOR[n.state] }" />
+                      <span class="plan-box" :style="seg(bars[i]?.planFrom, bars[i]?.planTo)" />
+                      <span class="real-bar" :style="{ ...seg(bars[i]?.from, bars[i]?.to), background: NODE_STATE_COLOR[n.state] }" />
                     </div>
                   </div>
                   <div v-if="expanded.has(n.id)" class="tasks">

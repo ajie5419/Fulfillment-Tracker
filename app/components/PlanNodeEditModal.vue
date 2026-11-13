@@ -81,9 +81,9 @@ const DEPTS = BUSINESS_DEPT_OPTIONS
       </a-form-item>
     </div>
 
-    <a-form-item v-if="isSummary" label="计划日期">
+    <a-form-item v-if="isSummary && editing" label="计划日期">
       <div class="summary-date-box">
-        <span>{{ editing!.startDate ?? editing!.planDate }} ～ {{ editing!.planDate }}</span>
+        <span>{{ editing.startDate ?? editing.planDate }} ～ {{ editing.planDate }}</span>
         <span class="muted">由子节点汇总（最早开始～最晚完成），请直接修改子节点的日期</span>
       </div>
     </a-form-item>

@@ -86,9 +86,11 @@ const monthCards = computed(() =>
 const days = computed(() => (period.value ? gridDays(period.value) : []))
 const entries = computed<CalendarEntry[]>(() => {
   const g = days.value
-  if (!g.length || !data.value) return []
+  const firstDay = g[0]
+  const lastDay = g.at(-1)
+  if (!firstDay || !lastDay || !data.value) return []
   return data.value.completions
-    .filter((c) => c.displayDay >= g[0]! && c.displayDay <= g.at(-1)!)
+    .filter((c) => c.displayDay >= firstDay && c.displayDay <= lastDay)
     .map((c) => ({
       key: c.workOrderNumber,
       day: c.displayDay,

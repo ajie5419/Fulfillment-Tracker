@@ -46,7 +46,7 @@ description: 接手、解释、开发或排查项目履约系统 Fulfillment-Tra
 | 生产、返厂、预警、待办 | README 对应功能、相邻行为测试 | `server/services/flow/`、`server/services/alerts/`、`server/services/jobs/` |
 | QMS 联调 | [接口约定](../../../docs/接口约定.md)、[同步客户端](../../../server/services/sync/client.ts) | `server/services/auth/identity-bridge.ts`、`server/services/sync/`、`server/services/workorder/` |
 | 演示或单工单沙盒 | [独立演示环境](../../../docs/独立演示环境.md)、[单工单沙盒](../../../docs/single-order-sandbox.md) | `scripts/demo.mjs`、`scripts/sandbox.mjs` |
-| 数据升级与发布准备 | [发版手册](../../../docs/发版手册.md)、维护性治理 | migrations、`.github/workflows/`、升级测试 |
+| 数据升级与发布准备 | [首次生产部署](../../../docs/首次生产部署.md)、[发版手册](../../../docs/发版手册.md)、维护性治理 | migrations、`scripts/production.mjs`、隔离镜像演练、`.github/workflows/` |
 
 `docs/角色与可见范围现状.md` 标注的是历史代码快照，`docs/权限方案-待确认.md` 含提案；不能直接当作现行权限契约。带日期的验收记录仅证明当时的代码与环境。
 

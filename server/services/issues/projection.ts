@@ -57,9 +57,9 @@ export function projectIssues(issues: Issue[], { ctx, thresholds, offDays, depts
   })
 }
 
-export function projectIssueDetail(issue: Prisma.IssueGetPayload<{ include: { logs: true } }>, row: ReturnType<typeof projectIssues>[number] | undefined, names: NameMaps, photoIds: string[], converted: Pick<Alert, 'rule' | 'level'> | null) {
+export function projectIssueDetail(issue: Prisma.IssueGetPayload<{ include: { logs: true } }>, row: ReturnType<typeof projectIssues>[number], names: NameMaps, photoIds: string[], converted: Pick<Alert, 'rule' | 'level'> | null) {
   return {
-    ...row!,
+    ...row,
     photos: photoIds.map((pid) => ({ id: pid, url: `/api/files/${pid}` })),
     fromAlert: converted,
     logs: issue.logs.map((l) => ({

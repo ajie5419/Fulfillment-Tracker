@@ -41,7 +41,9 @@ export async function workOrderOfLines(ids: string[]): Promise<string> {
   const wos = new Set(lines.map((l) => l.workOrderNumber))
   if (wos.size > 1) throw new FlowError('一张付款申请只能关联同一个工单的采购行')
   if (lines.some((l) => l.status === 'CANCELLED')) throw new FlowError('已取消的采购行不能申请付款')
-  return [...wos][0]!
+  const [firstWo] = wos
+  if (!firstWo) throw new FlowError('请选择采购行')
+  return firstWo
 }
 
 export async function createPayment(input: NewPaymentInput, requesterId: string) {

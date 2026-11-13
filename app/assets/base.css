@@ -79,6 +79,20 @@
   /* 主色浅底与主色文字 */
   --ft-primary-bg: #EFF6FF;
   --ft-primary-text: #1D4ED8;
+  /* 分组浅灰大托盘（Brick 风格：白画布 → 浅灰外托盘 → 纯白内嵌卡） */
+  --ft-tray-bg: #F5F5F7;
+  --ft-tray-border: #ECECEF;
+  /* 责任人微头像柔和色板 */
+  --ft-av-1-bg: #FDE68A;
+  --ft-av-1-text: #92400E;
+  --ft-av-2-bg: #DBEAFE;
+  --ft-av-2-text: #1E40AF;
+  --ft-av-3-bg: #E0E7FF;
+  --ft-av-3-text: #3730A3;
+  --ft-av-4-bg: #FCE7F3;
+  --ft-av-4-text: #9D174D;
+  --ft-av-5-bg: #D1FAE5;
+  --ft-av-5-text: #065F46;
 }
 
 html, body { margin: 0; background: var(--ft-page-bg); color: var(--ft-text); font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif; -webkit-font-smoothing: antialiased; }
@@ -121,8 +135,26 @@ html, body { margin: 0; background: var(--ft-page-bg); color: var(--ft-text); fo
 .ft-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .ft-stats.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 991px) { .ft-stats, .ft-stats.cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } }
-/* 按工单分组：组与组之间留白，组内小表格 */
-.ft-wo-group + .ft-wo-group { margin-top: 18px; }
+/* 按工单分组（Brick 风格）：浅灰圆角大托盘 + 纯白内嵌表格卡 */
+.ft-wo-group {
+  background: var(--ft-tray-bg);
+  border: 1px solid var(--ft-tray-border);
+  border-radius: 14px;
+  padding: 10px 12px 12px;
+}
+.ft-wo-group + .ft-wo-group { margin-top: 16px; }
+.ft-wo-group > .ft-table {
+  background: var(--ft-card-bg);
+  border: 1px solid var(--ft-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ft-wo-group > .ft-table .ant-table-thead > tr > th {
+  background: var(--ft-card-bg);
+  color: var(--ft-text-3);
+  font-size: 12px;
+  font-weight: 600;
+}
 /* 表格右侧固定的操作列（第一轮遗留）：横向还能滚时左侧加明显的分隔阴影，看得出下面还有列 */
 .ft-app .ant-table-ping-right .ant-table-cell-fix-right-first { box-shadow: -8px 0 10px -8px rgba(16, 24, 40, 0.28); }
 

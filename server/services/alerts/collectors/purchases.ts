@@ -41,7 +41,7 @@ export async function collectW6(now: Date, t: Thresholds, offDays: string[]): Pr
       watcherIds: blocking ? finance : [],
       deptNames: [PURCHASE_DEPT_NAME],
       departmentKeys: ['PURCHASE'],
-      startAt: r.trigger === 'OVERDUE' ? l.promisedDate! : l.needDate,
+      startAt: r.trigger === 'OVERDUE' && l.promisedDate ? l.promisedDate : l.needDate,
       level: r.level,
       subject: `关键物料 ${l.materialName}${l.spec ? `（${l.spec}）` : ''}`,
       summary: `${w6Summary(r, l)}${extra.length ? `；${extra.join('，')}` : ''}`,

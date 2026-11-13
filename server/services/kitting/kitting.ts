@@ -319,9 +319,10 @@ export async function loadKits(nodes: NodeWithLinks[], now: Date): Promise<Map<s
   const drawingsOf = group(drawings.map((d) => ({ partId: d.partId, name: d.task.componentName })))
   const materialsOf = group(materials.map((m) => ({ partId: m.partId, name: m.materialName })))
   const blockerOf = new Map(
-    waiting.map((id) => {
-      const p = partOf.get(id)!
-      return [
+    waiting.flatMap((id) => {
+      const p = partOf.get(id)
+      if (!p) return []
+      return [[
         id,
         partBlocker({
           steps: p.steps.map((s) => ({
@@ -334,7 +335,7 @@ export async function loadKits(nodes: NodeWithLinks[], now: Date): Promise<Map<s
           openDrawings: drawingsOf.get(id) ?? [],
           openMaterials: materialsOf.get(id) ?? [],
         }),
-      ]
+      ] as const]
     }),
   )
   const partName = (p: { name: string; drawingNo: string | null }) => (p.drawingNo ? `${p.name}（${p.drawingNo}）` : p.name)
@@ -352,7 +353,8 @@ export async function loadKits(nodes: NodeWithLinks[], now: Date): Promise<Map<s
         readyItems.push(partName(p))
         continue
       }
-      const b = blockerOf.get(p.id)!
+      const b = blockerOf.get(p.id)
+      if (!b) continue
       shortages.push({ kind: 'part', id: p.id, name: partName(p), stage: b.stage, reason: b.text, reasonCode: b.code, detail: b.detail })
     }
     const counted = ls.filter(isPurchaseCounted)
@@ -405,12 +407,13 @@ async function describeNodes(rows: NodeWithLinks[], now: Date, ctx: EditorContex
     productionHeadText(),
     planNodeLabels(rows.map((r) => r.planNodeId)),
   ])
-  const levelOf = new Map(alerts.map((a) => [a.activeKey!, a.level]))
+  const levelOf = new Map(alerts.flatMap((a) => (a.activeKey ? [[a.activeKey, a.level] as const] : [])))
   const today = shanghaiDay(now)
-  return rows.map(({ parts, purchases, ...n }) => {
-    const kit = kits.get(n.id)!
+  return rows.flatMap(({ parts, purchases, ...n }) => {
+    const kit = kits.get(n.id)
+    if (!kit) return []
     const ownerName = n.ownerId ? (names.user.get(n.ownerId) ?? n.ownerId) : null
-    return {
+    return [{
       ...n,
       partIds: parts.map((p) => p.partId),
       purchaseIds: purchases.map((p) => p.purchaseLineId),
@@ -424,7 +427,7 @@ async function describeNodes(rows: NodeWithLinks[], now: Date, ctx: EditorContex
       canEdit: !!ctx && canEditWith(ctx, n.workOrderNumber),
       /** 所属总计划节点的序号、名称（列表"总计划节点"列）；没挂为 null */
       planNode: (n.planNodeId && planNodes.get(n.planNodeId)) || null,
-    }
+    }]
   })
 }
 
@@ -480,7 +483,8 @@ export async function getNode(id: string, actor: Actor, now = new Date()) {
   const node = await prisma.assemblyNode.findUnique({ where: { id }, include: NODE_LINKS })
   if (!node) throw new FlowError('装配节点不存在或已删除')
   const [row] = await describeNodes([node], now, await editorContext(actor))
-  return row!
+  if (!row) throw new FlowError('装配节点不存在或已删除')
+  return row
 }
 
 /** 编辑弹窗的选项：该工单的工件（带是否已完成）和关键物料（带状态；已取消的标出来） */

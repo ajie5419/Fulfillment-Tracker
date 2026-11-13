@@ -110,7 +110,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
   const stepById = new Map(steps.map((s) => [s.id, s]))
   const partById = new Map(parts.map((p) => [p.id, p]))
   const releaseOf = new Map(receipts.map((r) => [r.id, r.releaseId]))
-  const issueBySource = new Map(issues.map((i) => [i.sourceKey!, i]))
+  const issueBySource = new Map(issues.flatMap((i) => (i.sourceKey ? [[i.sourceKey, i] as const] : [])))
   const out = new Map<string, LinkInfo>()
   for (const a of alerts) {
     let link: Link = { pc: null, mobile: null }
@@ -313,12 +313,12 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
     userDeptNames([...targets.values()].flatMap((t) => t.ownerIds)),
   ])
   const pmOf = new Map(exts.map((e) => [e.workOrderNumber, e.projectManagerId]))
-  const issueBySource = new Map(issues.map((i) => [i.sourceKey!, i]))
+  const issueBySource = new Map(issues.flatMap((i) => (i.sourceKey ? [[i.sourceKey, i] as const] : [])))
   const visible = filter.visibleWorkOrders ? new Set(filter.visibleWorkOrders) : null
   const rank = { RED: 0, YELLOW: 1, REMIND: 2 } as const
   return alerts
     .map((a) => {
-      const t = targets.get(a.activeKey!)
+      const t = a.activeKey ? targets.get(a.activeKey) : undefined
       // 对象状态刚变、下一轮扫描才消除的，不再列出
       if (!t) return null
       if (filter.workOrderNumber && t.workOrderNumber !== filter.workOrderNumber) return null

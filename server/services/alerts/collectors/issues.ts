@@ -21,8 +21,8 @@ export async function collectW4(now: Date, t: Thresholds, offDays: string[]): Pr
   return issues.map((i) => {
     const r = judgeW4({ status: i.status, createdAt: i.createdAt, dueDate: i.dueDate, now, offDays }, t.W4)
     const summary =
-      r.overdueDays > 0
-        ? `超要求解决日 ${dateFieldDay(i.dueDate!)} ${r.overdueDays} 天未解决`
+      r.overdueDays > 0 && i.dueDate
+        ? `超要求解决日 ${dateFieldDay(i.dueDate)} ${r.overdueDays} 天未解决`
         : i.status === 'OPEN'
           ? `待受理 ${durationText(r.openMs)}`
           : `要求 ${i.dueDate ? dateFieldDay(i.dueDate) : '—'} 前解决`

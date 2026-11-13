@@ -21,8 +21,8 @@ export default defineFlowHandler(async (event) => {
   if (length > MAX_REQUEST_BYTES) throw createError({ statusCode: 413, statusMessage: 'Payload Too Large', message: `文件太大：不能超过 ${formatUploadLimit(MAX_BOM_BYTES)}` })
   const parts = (await readMultipartFormData(event).catch(() => undefined)) ?? []
   const files = parts.filter((p) => p.name === 'file' && p.filename !== undefined)
-  if (files.length !== 1) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: '请选择一个 Excel 文件' })
-  const file = files[0]!
+  const file = files[0]
+  if (files.length !== 1 || !file) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: '请选择一个 Excel 文件' })
   // Content-Length 只管整个请求；文件本身再查一次
   if (file.data.length > MAX_BOM_BYTES) throw createError({ statusCode: 413, statusMessage: 'Payload Too Large', message: `文件太大：不能超过 ${formatUploadLimit(MAX_BOM_BYTES)}` })
   if (!isZip(file.data)) throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: 'BOM 只能是 .xlsx 文件（.xls 请先用 Excel 另存为 .xlsx）' })

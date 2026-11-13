@@ -63,13 +63,13 @@ const focusStep = ref('')
 // 只处理一次（useOneShotQuery）：处理完删掉 step，之后刷新数据、切页签都不会再被拉回这道
 useOneShotQuery(['step'], { fetches: [{ pending, error }] }, ({ step: id }) => {
   const row = rows.value.find((r) => r.stepId === id)
-  if (!row) {
+  if (!row || !id) {
     message.info('这道工序现在不在生产调度里（还在排队等上一道、完成超过 7 天或工单已关闭），可以到工序编排里看')
     return
   }
   filter.view = 'list'
   filter.tab = tabForRow(row, filter.tab)
-  focusStep.value = id!
+  focusStep.value = id
   nextTick(() => document.querySelector('.focus-row')?.scrollIntoView({ block: 'center' }))
   return { tab: filter.tab === 'ready' ? undefined : filter.tab, view: undefined }
 })
@@ -97,14 +97,15 @@ const supplierName = (id: string) => supplierOptions.value.find((o) => o.value =
 /** 本人当班组长的班组（生产管理重设计第二批）：筛选里一键"本班组"，生效时条件显示成"本班组：X" */
 const myTeams = computed(() => me.value?.leadTeams ?? [])
 const myTeam = (id: string) => myTeams.value.find((t) => t.id === id)
-const chips = computed(() =>
-  [
+const chips = computed(() => {
+  const team = filter.supplierId ? myTeam(filter.supplierId) : undefined
+  return [
     filter.supplierId
-      ? { key: 'sup', text: myTeam(filter.supplierId) ? `本班组：${myTeam(filter.supplierId)!.name}` : `班组 / 外协厂：${supplierName(filter.supplierId)}`, clear: () => { filter.supplierId = '' } }
+      ? { key: 'sup', text: team ? `本班组：${team.name}` : `班组 / 外协厂：${supplierName(filter.supplierId)}`, clear: () => { filter.supplierId = '' } }
       : null,
     filter.mine ? { key: 'mine', text: myTeams.value.length ? '只看我的（含本班组）' : '只看我负责的', clear: () => { filter.mine = false } } : null,
-  ].filter((x): x is { key: string; text: string; clear: () => void } => !!x),
-)
+  ].filter((x): x is { key: string; text: string; clear: () => void } => !!x)
+})
 function clearFilters() {
   filter.supplierId = ''
   filter.mine = false
@@ -113,10 +114,19 @@ function clearFilters() {
 // ───── 操作 ─────
 const host = ref<{ run: (a: Exclude<PrimaryAction, null>, r: Row) => void } | null>(null)
 const actionOf = (r: Row) => primaryAction(r)
-function canAct(r: Row, a: Exclude<PrimaryAction, null>) {
+function canAct(r: Row, a: PrimaryAction) {
+  if (!a) return false
   return actionNeeds(a) === 'route'
     ? canDo(me.value, 'route', { workOrderNumber: r.workOrderNumber })
     : canDo(me.value, 'stepAction', { workOrderNumber: r.workOrderNumber, ownerId: r.ownerId, mode: r.mode, supplierId: r.supplierId, leaderAction: leaderAction(a) })
+}
+function runAction(r: Row) {
+  const a = actionOf(r)
+  if (a) host.value?.run(a, r)
+}
+function actionTextOf(r: Row): string {
+  const a = actionOf(r)
+  return a ? ACTION_TEXT[a] : ''
 }
 
 // ───── 工件抽屉（?part= 打开）─────
@@ -128,7 +138,7 @@ function closePart() {
   drawerPartId.value = null
 }
 // ?part=（只处理一次）：打开工件抽屉后从地址栏删掉，关掉抽屉、改筛选都不会再弹出来
-useOneShotQuery(['part'], { fetches: [] }, ({ part }) => openPart(part!))
+useOneShotQuery(['part'], { fetches: [] }, ({ part }) => { if (part) openPart(part) })
 
 const modeText = (r: Row) => (r.mode === 'SELF' ? `自制${r.supplierName ? ` · ${r.supplierName}` : ''}` : `${MODE_TEXT[r.mode]} · ${r.supplierName ?? '未选外协厂'}`)
 /** 日期一列：按所在列显示最要紧的那个日期 */
@@ -189,12 +199,15 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
       <a-spin v-else :spinning="pending">
         <template v-if="filter.view === 'list'">
           <a-empty v-if="!listRows.length" :description="EMPTY_TEXT[filter.tab]" />
-          <a-table v-else class="ft-table" :columns="tableColumns" :data-source="listRows" row-key="stepId" :row-class-name="rowClass" size="small" :scroll="{ x: 980 }" :pagination="listRows.length > 50 ? { pageSize: 50, showSizeChanger: false } : false">
+          <a-table v-else class="ft-table" :columns="tableColumns" :data-source="listRows" row-key="stepId" :row-class-name="rowClass" size="small" :scroll="{ x: 980 }" :pagination="listRows.length > DEFAULT_TABLE_PAGE_SIZE ? { pageSize: DEFAULT_TABLE_PAGE_SIZE, showSizeChanger: false } : false">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'wo'"><span class="nowrap"><WoLink :no="record.workOrderNumber" /></span></template>
               <template v-else-if="column.key === 'name'">
-                <button type="button" class="name-btn" @click="openPart(record.partId)">{{ record.partName }}</button>
-                <span class="muted"> · {{ record.seq }}. </span>{{ record.processName }}
+                <span class="step-name-line">
+                  <button type="button" class="name-btn" @click="openPart(record.partId)">{{ record.partName }}</button>
+                  <span class="muted"> · {{ record.seq }}. </span>{{ record.processName }}
+                  <UiAlertMark :level="dateInfo(record as Row).tone === 'late' ? 'late' : record.stuckText ? 'risk' : null" />
+                </span>
                 <div v-if="record.stuckText" class="stuck">{{ record.stuckText }}
                   <NuxtLink v-for="i in record.issues" :key="i.id" :to="`/issues?id=${encodeURIComponent(i.id)}`" class="issue">{{ i.issueNo }}</NuxtLink>
                   <NuxtLink v-if="record.stuckKind === 'HELD' && record.holdReleaseId" :to="`/releases?id=${encodeURIComponent(record.holdReleaseId)}`" class="issue">看变更</NuxtLink>
@@ -202,8 +215,8 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
               </template>
               <template v-else-if="column.key === 'mode'"><span class="muted">{{ modeText(record as Row) }}</span></template>
               <template v-else-if="column.key === 'owner'">
-                <span v-if="record.ownerName">{{ record.ownerName }}</span>
-                <span v-else-if="record.leaderName" class="muted">班组长 {{ record.leaderName }}</span>
+                <UiUserChip v-if="record.ownerName" :name="record.ownerName" />
+                <UiUserChip v-else-if="record.leaderName" :name="`班组长 ${record.leaderName}`" muted />
                 <UiStatusTag v-else tone="risk">未指定</UiStatusTag>
               </template>
               <template v-else-if="column.key === 'qty'"><span class="num">{{ record.doneQty ? `${record.doneQty}/` : '' }}{{ record.quantity }} 件</span></template>
@@ -213,7 +226,7 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
               </template>
               <template v-else-if="column.key === 'action'">
                 <template v-if="actionOf(record as Row)">
-                  <a-button v-if="canAct(record as Row, actionOf(record as Row)!)" size="small" :type="actionOf(record as Row) === 'assign' ? 'default' : 'primary'" @click="host?.run(actionOf(record as Row)!, record as Row)">{{ ACTION_TEXT[actionOf(record as Row)!] }}</a-button>
+                  <a-button v-if="canAct(record as Row, actionOf(record as Row))" size="small" :type="actionOf(record as Row) === 'assign' ? 'default' : 'primary'" @click="runAction(record as Row)">{{ actionTextOf(record as Row) }}</a-button>
                   <span v-else class="muted">{{ COLUMN_TEXT[record.column as ProductionColumn] }}</span>
                 </template>
                 <UiStatusTag v-else :tone="COLUMN_TONE[record.column as ProductionColumn]">{{ COLUMN_TEXT[record.column as ProductionColumn] }}</UiStatusTag>
@@ -237,10 +250,13 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
                 </div>
                 <button type="button" class="name-btn name" @click="openPart(c.partId)">{{ c.partName }} · {{ c.seq }}. {{ c.processName }}</button>
                 <div class="meta">{{ modeText(c) }} · {{ c.doneQty ? `${c.doneQty}/` : '' }}{{ c.quantity }} 件</div>
-                <div class="meta">{{ c.ownerName ?? (c.leaderName ? `班组长 ${c.leaderName}` : '未指定负责人') }}{{ dateInfo(c).tone === 'late' ? '' : ` · ${dateInfo(c).text}` }}</div>
+                <div class="meta meta-owner">
+                  <UiUserChip :name="c.ownerName ?? (c.leaderName ? `班组长 ${c.leaderName}` : null)" fallback="未指定负责人" :muted="!c.ownerName" />
+                  <span v-if="dateInfo(c).tone !== 'late'"> · {{ dateInfo(c).text }}</span>
+                </div>
                 <div v-if="c.stuckText" class="stuck">{{ c.stuckText }}</div>
-                <div v-if="actionOf(c) && canAct(c, actionOf(c)!)" class="card-foot">
-                  <a-button size="small" :type="actionOf(c) === 'assign' ? 'default' : 'primary'" @click="host?.run(actionOf(c)!, c)">{{ ACTION_TEXT[actionOf(c)!] }}</a-button>
+                <div v-if="actionOf(c) && canAct(c, actionOf(c))" class="card-foot">
+                  <a-button size="small" :type="actionOf(c) === 'assign' ? 'default' : 'primary'" @click="runAction(c)">{{ actionTextOf(c) }}</a-button>
                 </div>
               </article>
             </div>
@@ -279,9 +295,11 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
 .col { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .col-head { display: flex; align-items: center; gap: 8px; }
 .count { font-size: 14px; font-weight: 600; color: var(--ft-text); }
-.col-body { display: flex; flex-direction: column; gap: 8px; min-height: 120px; padding: 10px; background: var(--card-canvas-bg); border-radius: var(--card-radius-inner); }
+.col-body { display: flex; flex-direction: column; gap: 8px; min-height: 120px; padding: 10px; background: var(--ft-tray-bg); border: 1px solid var(--ft-tray-border); border-radius: var(--card-radius); }
 .empty { margin: 8px 0; color: var(--ft-text-2); font-size: 13px; text-align: center; }
-.card { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); color: var(--ft-text); }
+.card { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--ft-card-bg); border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); color: var(--ft-text); min-width: 0; overflow: hidden; }
+.step-name-line { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.meta-owner { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .card.late { border-color: var(--ft-late); }
 .card-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .wo { font-size: 12px; color: var(--ft-text-2); }

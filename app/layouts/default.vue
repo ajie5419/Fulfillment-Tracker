@@ -71,7 +71,7 @@ watch(() => route.value.path, () => {
 const MENU_ALIAS: Record<string, string> = { '/wo': '/board', '/templates': '/parts', '/workshop': '/production', '/unmatched': '/outsource' }
 const selected = computed(() => {
   const alias = Object.keys(MENU_ALIAS).find((k) => route.value.path === k || route.value.path.startsWith(`${k}/`))
-  const path = alias ? MENU_ALIAS[alias]! : route.value.path
+  const path = (alias ? MENU_ALIAS[alias] : undefined) ?? route.value.path
   const match = menu.value.find((m) => path === m.key || (m.key !== '/' && path.startsWith(`${m.key}/`)))
   return match ? [match.key] : []
 })

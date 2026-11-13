@@ -108,8 +108,7 @@ async function submitDone() {
 }
 const undoDone = (n: DeptPlanNode) => act(() => send(`/api/plan/nodes/${n.id}/undo-complete`, { method: 'POST', body: {} }), '已撤销完成')
 
-const md = (d: string | null) => (d ? d.slice(5) : '')
-const planText = (n: DeptPlanNode) => (n.startDate && n.startDate !== n.planDate ? `${md(n.startDate)} ~ ${md(n.planDate)}` : md(n.planDate))
+const planText = (n: DeptPlanNode) => shortRangeText(n.startDate, n.planDate)
 
 const workRefs = reactive<Record<string, { openSplit: () => void } | null>>({})
 function setWorkRef(id: string, el: unknown) {
@@ -177,12 +176,13 @@ function canSplitNode(n: DeptPlanNode, c: CanCreate): boolean {
                   <div class="node-main">
                     <div class="node-title">
                       <span>{{ n.name }}</span>
+                      <UiAlertMark :level="!n.done && n.delayDays > 0 ? 'late' : n.confirmAlertLevel && n.confirmStatus === 'PENDING' ? 'risk' : null" />
                       <span v-if="n.parentName" class="parent-tag">{{ n.parentName }}</span>
                       <span class="ft-muted small meta">
                         <span>计划 {{ planText(n) }}</span>
                         <template v-if="n.preds.length"><span class="sep">·</span><span>前置 {{ n.preds.map((p) => `${p.code} ${p.name}`).join('、') }}</span></template>
                         <template v-if="!n.done && n.delayDays > 0">
-                          <span class="sep">·</span><span class="late">预计 {{ md(n.expectedDate) }}，晚 {{ n.delayDays }} 天<template v-if="n.upstream && n.pushedBy">（受 {{ n.pushedBy.code }} {{ n.pushedBy.name }} 影响）</template><template v-if="n.affects.length"> · 影响 {{ n.affects.length }} 个节点</template></span>
+                          <span class="sep">·</span><span class="late">预计 {{ shortDayText(n.expectedDate) }}，晚 {{ n.delayDays }} 天<template v-if="n.upstream && n.pushedBy">（受 {{ n.pushedBy.code }} {{ n.pushedBy.name }} 影响）</template><template v-if="n.affects.length"> · 影响 {{ n.affects.length }} 个节点</template></span>
                         </template>
                         <template v-if="n.done"><span class="sep">·</span><span>实际完成 {{ n.actualDate }}</span></template>
                         <template v-if="(n.tab !== 'pending' || justAccepted.includes(n.id)) && !n.tasks.length && !n.done">

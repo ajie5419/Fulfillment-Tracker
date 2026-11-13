@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
- * 按工单分组的组标题（前端改版第二轮，部门工作台）：工单号（WoLink）+ 组里挂的总计划节点 + 本组完成度小进度条（如"到货 1/2"）+ 条数。
- * 节点多时只列前 2 个，其余"等 N 个"。
+ * 按工单分组的托盘标题栏（Brick 风格）：
+ * 左侧：折叠徽标 + 工单号（WoLink）+ 组内关联的总计划节点；
+ * 右侧：微型进度条 + 完成度（如"1/5 已完成"）+ 条数统计。
  */
 const props = withDefaults(
   defineProps<{
@@ -17,33 +18,117 @@ const props = withDefaults(
   }>(),
   { nodes: () => [], unit: '项' },
 )
+const MAX_INLINE_NODES = 2
 const pct = computed(() => (props.total ? Math.round((props.done / props.total) * 100) : 0))
 </script>
 
 <template>
   <div class="ft-group-head">
-    <span class="wo"><WoLink :no="no" /></span>
-    <span v-if="nodes.length" class="nodes">
-      总计划节点
-      <template v-for="(n, i) in nodes.slice(0, 2)" :key="n.id"><template v-if="i">、</template><WoLink :no="no" :node="n.id" :text="`${n.code ?? n.seq} ${n.name}`" /></template>
-      <template v-if="nodes.length > 2"> 等 {{ nodes.length }} 个</template>
-    </span>
-    <span class="prog" :title="`${label} ${done}/${total}`">
-      <span class="track"><span class="fill" :class="{ full: total && done === total }" :style="{ width: `${pct}%` }" /></span>
-      <span class="txt">{{ label }} {{ done }}/{{ total }}</span>
-    </span>
-    <span class="count">{{ matchedCount == null ? `${count} ${unit}` : `本页 ${count} / 匹配共 ${matchedCount} ${unit}` }}</span>
+    <div class="head-left">
+      <span class="tray-chevron" aria-hidden="true">⌄</span>
+      <span class="wo"><WoLink :no="no" /></span>
+      <template v-if="nodes.length">
+        <span class="sep" aria-hidden="true">/</span>
+        <span class="nodes">
+          总计划节点
+          <template v-for="(n, i) in nodes.slice(0, MAX_INLINE_NODES)" :key="n.id"><template v-if="i">、</template><WoLink :no="no" :node="n.id" :text="`${n.code ?? n.seq} ${n.name}`" /></template>
+          <template v-if="nodes.length > MAX_INLINE_NODES"> 等 {{ nodes.length }} 个</template>
+        </span>
+      </template>
+    </div>
+
+    <div class="head-right">
+      <span class="prog" :title="`${label} ${done}/${total}`">
+        <span class="track"><span class="fill" :style="{ width: `${pct}%` }" /></span>
+        <span class="txt">{{ label }} {{ done }}/{{ total }}</span>
+      </span>
+      <span class="count">{{ matchedCount == null ? `${count} ${unit}` : `本页 ${count} / 匹配共 ${matchedCount} ${unit}` }}</span>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.ft-group-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; padding: 8px 12px; margin-bottom: 6px; border-radius: 8px; background: var(--ft-fill); font-size: 13px; color: var(--ft-text-2); }
-.wo { font-size: 14px; font-weight: 600; }
-.nodes { min-width: 0; }
-.prog { display: inline-flex; align-items: center; gap: 8px; }
-.track { width: 96px; height: 6px; border-radius: 3px; background: var(--ft-border); overflow: hidden; }
-.fill { display: block; height: 100%; background: var(--ft-primary); border-radius: 3px; }
-.fill.full { background: var(--ft-done); }
-.txt { white-space: nowrap; color: var(--ft-text); font-variant-numeric: tabular-nums; }
-.count { margin-left: auto; color: var(--ft-text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ft-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 2px 6px 10px;
+  font-size: 13px;
+  color: var(--ft-text-2);
+}
+.head-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.tray-chevron {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--ft-card-bg);
+  border: 1px solid var(--ft-border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ft-text-2);
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.wo {
+  font-size: 14px;
+  font-weight: 600;
+}
+.sep {
+  color: var(--ft-border-hover);
+}
+.nodes {
+  min-width: 0;
+  color: var(--ft-text-2);
+  font-size: 12.5px;
+}
+.head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+.prog {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.track {
+  width: 48px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ft-border-hover);
+  overflow: hidden;
+}
+.fill {
+  display: block;
+  height: 100%;
+  background: var(--ft-done);
+  border-radius: 999px;
+}
+.txt {
+  white-space: nowrap;
+  color: var(--ft-text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.count {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--ft-card-bg);
+  border: 1px solid var(--ft-border);
+  color: var(--ft-text-2);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
 </style>

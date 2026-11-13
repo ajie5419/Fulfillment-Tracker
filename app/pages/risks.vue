@@ -217,7 +217,7 @@ const activeChips = computed(() => {
   }
   if (showIssueFilters.value) {
     if (filter.dept !== deptDefault.value) out.push({ key: 'dept', text: `异常范围：${filter.dept === '1' ? '本部门' : '全部'}`, clear: () => (filter.dept = deptDefault.value) })
-    if (filter.mine) out.push({ key: 'mine', text: labelOf(mineOptions, filter.mine)!, clear: () => (filter.mine = undefined) })
+    if (filter.mine) out.push({ key: 'mine', text: labelOf(mineOptions, filter.mine) ?? filter.mine, clear: () => (filter.mine = undefined) })
     if (filter.status !== 'UNCLOSED') out.push({ key: 'status', text: `状态：${filter.status ? labelOf(statusOptions, filter.status) : '全部'}`, clear: () => (filter.status = 'UNCLOSED') })
     if (filter.category) out.push({ key: 'category', text: `分类：${labelOf(categoryOptions, filter.category)}`, clear: () => (filter.category = undefined) })
     if (filter.overdue) out.push({ key: 'overdue', text: '只看超期', clear: () => (filter.overdue = undefined) })

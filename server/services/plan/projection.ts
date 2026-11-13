@@ -18,49 +18,50 @@ const day = (d: Date) => dateFieldDay(d)
 
 export function projectPlanTasks({ drawings, purchases, steps, assemblies, others, kits, names, today }: PlanSources): TaskRow[] {
   const tasks: TaskRow[] = [
-    ...drawings.map((d) => ({
+    ...drawings.flatMap((d) => d.planNodeId ? [{
       kind: 'drawing' as const,
       id: d.id,
-      nodeId: d.planNodeId!,
+      nodeId: d.planNodeId,
       name: d.componentName,
       ...(d.ownerId ? { owner: { id: d.ownerId, name: names.user.get(d.ownerId) ?? d.ownerId } } : {}),
       dateLabel: d.drawnDate && d.needsCustomerConfirm && !d.customerConfirmedDate && d.customerPlanDate ? '客户确认计划日' : '计划完成日',
       statusText: DRAWING_STATUS_TEXT[d.status],
       link: drawingLink(d.id),
       facts: drawingFacts(d),
-    })),
-    ...purchases.map((l) => ({
+    }] : []),
+    ...purchases.flatMap((l) => l.planNodeId ? [{
       kind: 'purchase' as const,
       id: l.id,
-      nodeId: l.planNodeId!,
+      nodeId: l.planNodeId,
       name: l.spec ? `${l.materialName}（${l.spec}）` : l.materialName,
       dateLabel: l.promisedDate ? '承诺到货日' : '需求日',
       statusText: PURCHASE_STATUS_TEXT[l.status],
       link: purchaseLink(l.id),
       facts: purchaseFacts(l),
-    })),
-    ...steps.map((s) => ({
+    }] : []),
+    ...steps.flatMap((s) => s.planNodeId ? [{
       kind: 'step' as const,
       id: s.id,
-      nodeId: s.planNodeId!,
+      nodeId: s.planNodeId,
       name: `${s.part.name} · ${names.process.get(s.processId) ?? s.processId}（${MODE_TEXT[s.mode]}）`,
       dateLabel: s.mode === 'EXTERNAL_OUTSOURCE' && s.promisedReturnDate ? '承诺返回日' : '要求完成日',
       statusText: STEP_STATUS_TEXT[s.status],
       link: `/parts?wo=${encodeURIComponent('')}`, // 下面按节点所属工单补全
       facts: stepFacts(s, shanghaiDay),
-    })),
-    ...assemblies.map((a) => {
+    }] : []),
+    ...assemblies.flatMap((a) => {
+      if (!a.planNodeId) return []
       const kit = kits.get(a.id) ?? { total: 0, ready: 0 }
-      return {
+      return [{
         kind: 'assembly' as const,
         id: a.id,
-        nodeId: a.planNodeId!,
+        nodeId: a.planNodeId,
         name: a.name,
         dateLabel: '需求日',
         statusText: kit.total ? `齐套 ${kit.ready}/${kit.total}` : '清单为空',
         link: kittingLink(a.id),
         facts: assemblyFacts(a, kit, today),
-      }
+      }]
     }),
     ...others.map((t) => ({
       kind: 'task' as const,
@@ -92,13 +93,13 @@ interface PlanViewSources {
 
 export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, alerts }: PlanViewSources, workOrderNumber: string, ctx: RoleContext) {
   const user = (id: string | null | undefined) => (id ? (names.user.get(id) ?? id) : null)
-  const levelOf = new Map(alerts.map((a) => [a.activeKey!, a.level]))
+  const levelOf = new Map(alerts.flatMap((a) => (a.activeKey ? [[a.activeKey, a.level] as const] : [])))
   const planAlert = alerts.find((a) => a.activeKey === w9PlanKey(workOrderNumber))
   const published = plan?.status === 'PUBLISHED'
   const est = new Map(data.forecast.nodes.map((n) => [n.id, n]))
   /** 大纲编号：阶段.节点.子节点（没用阶段时 节点.子节点），页面、前置节点、影响范围都用它 */
   const codeOf = outlineCodes(data.nodes)
-  const seqName = new Map(data.nodes.map((n) => [n.id, { seq: n.seq, code: codeOf.get(n.id)!, name: n.name }]))
+  const seqName = new Map(data.nodes.map((n) => [n.id, { seq: n.seq, code: codeOf.get(n.id) ?? String(n.seq), name: n.name }]))
   /** 用了前置节点、开始日或子节点（多条线并行）：页面才显示余量 / 关键节点；一条主线时每个节点都"关键"，不显示 */
   const network = data.nodes.some((n) => n.customDeps || n.startDate || n.parentId)
   // 有后续 = 能推后别的节点（汇总行自己的前置不推任何节点，不算）
@@ -126,7 +127,7 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
     unlinked,
     network,
     /** 没有后续节点接着的节点（最后一个除外）：它们晚了不影响预计交期，多半是漏连了前置关系 */
-    dangling: network ? data.nodes.filter((n) => n.id !== lastId && !hasSucc.has(n.id)).map((n) => ({ id: n.id, seq: n.seq, code: codeOf.get(n.id)!, name: n.name })) : [],
+    dangling: network ? data.nodes.filter((n) => n.id !== lastId && !hasSucc.has(n.id)).map((n) => ({ id: n.id, seq: n.seq, code: codeOf.get(n.id) ?? String(n.seq), name: n.name })) : [],
     /** 对应交期的节点（最后一个一级节点） */
     lastNodeId: lastId,
     /** 阶段下拉（已用过的阶段名，按出现顺序） */
@@ -139,14 +140,17 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
       route: canOperate(ctx, 'route', { workOrderNumber }),
       kitting: ctx.isAdmin || isDeptHead(ctx, 'PRODUCTION') || ctx.pmOf.has(workOrderNumber),
     },
-    nodes: data.nodes.map((n) => {
-      const e = est.get(n.id)!
+    nodes: data.nodes.flatMap((n) => {
+      const e = est.get(n.id)
+      const code = codeOf.get(n.id)
+      if (!e || !code) return []
       const tasks = data.tasks.filter((t) => t.nodeId === n.id)
       const canSplit = canOperate(ctx, 'planTask', { workOrderNumber, dept: n.dept })
-      return {
+      const pushedByRef = e.pushedBy ? seqName.get(e.pushedBy) : undefined
+      return [{
         id: n.id,
         seq: n.seq,
-        code: codeOf.get(n.id)!,
+        code,
         name: n.name,
         dept: n.dept,
         requiresProcess: n.requiresProcess,
@@ -160,11 +164,17 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
         planDate: day(n.planDate),
         /** 前置节点：customDeps = false 时是默认的"上一个节点" */
         customDeps: n.customDeps,
-        preds: e.preds.map((id) => ({ id, ...seqName.get(id)! })),
+        preds: e.preds.flatMap((id) => {
+          const ref = seqName.get(id)
+          return ref ? [{ id, ...ref }] : []
+        }),
         /** 被哪个前置节点（或子节点，child = true）推后（driver = prev 时） */
-        pushedBy: e.pushedBy ? { ...seqName.get(e.pushedBy)!, child: e.children.includes(e.pushedBy) } : null,
+        pushedBy: e.pushedBy && pushedByRef ? { ...pushedByRef, child: e.children.includes(e.pushedBy) } : null,
         /** 影响范围：本节点晚了会推后的节点（按页面顺序；一条主线时就是后面全部） */
-        affects: (affects.get(n.id) ?? []).map((id) => seqName.get(id)!),
+        affects: (affects.get(n.id) ?? []).flatMap((id) => {
+          const ref = seqName.get(id)
+          return ref ? [ref] : []
+        }),
         slackDays: network ? e.slackDays : null,
         critical: network && isCritical(e),
         baselineDate: n.baselineDate ? day(n.baselineDate) : null,
@@ -193,9 +203,10 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
         lateCount: e.lateCount,
         alertLevel: published ? levelOf.get(w9Key(n.id)) ?? null : null,
         confirmAlertLevel: published ? levelOf.get(w9ConfirmKey(n.id)) ?? null : null,
-        tasks: tasks.map((t) => {
-          const te = e.tasks.find((x) => x.kind === t.kind && x.id === t.id)!
-          return {
+        tasks: tasks.flatMap((t) => {
+          const te = e.tasks.find((x) => x.kind === t.kind && x.id === t.id)
+          if (!te) return []
+          return [{
             kind: t.kind,
             kindText: TASK_KIND_TEXT[t.kind],
             id: t.id,
@@ -216,7 +227,7 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
             /** 其他任务：能改 / 删（节点责任部门的人、项目经理、项目部、管理员）；能标完成 / 撤销（再加任务负责人） */
             canEdit: t.kind === 'task' && canSplit,
             canDone: t.kind === 'task' && (canSplit || t.owner?.id === ctx.userId),
-          }
+          }]
         }),
         /** 未分解：节点下还没有任何部门任务（不算已取消的），也没有子节点 */
         unsplit: e.taskCount === 0 && e.children.length === 0,
@@ -226,7 +237,7 @@ export function projectPlan({ wo, data, plan, ext, logs, unlinked, names, mine, 
         canConfirm: published && n.confirmStatus !== null && (canOperate(ctx, 'planConfirm', { dept: n.dept }) || mine.has(n.id)),
         // Cancelled records remain visible but no longer own node completion.
         canComplete: !e.taskCount && !e.children.length && canOperate(ctx, 'planNodeDone', { workOrderNumber, dept: n.dept }),
-      }
+      }]
     }),
     changeLogs: logs.map((l) => ({
       id: l.id,

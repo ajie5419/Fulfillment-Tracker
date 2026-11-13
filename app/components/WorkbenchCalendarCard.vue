@@ -22,7 +22,7 @@ const items = computed(() =>
       to:
         i.key === 'thisMonth'
           ? { path: '/calendar', query: { mode: 'calendar', d: i.period.start } }
-          : { path: '/calendar', query: { mode: 'list', d: i.key === 'thisWeek' ? data.value!.today : i.period.start, wk: i.period.start } },
+          : { path: '/calendar', query: { mode: 'list', d: i.key === 'thisWeek' ? (data.value?.today ?? i.period.start) : i.period.start, wk: i.period.start } },
     }
   }),
 )

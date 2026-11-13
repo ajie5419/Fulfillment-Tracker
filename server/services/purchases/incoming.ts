@@ -36,13 +36,14 @@ export async function matchIncoming(inspectionId: string, lease?: LeaseGuard): P
       if (!ins || ins.isDeleted || ins.status === 'CANCELLED' || !isIncomingInspection(ins)) return { inspectionId, result: 'SKIPPED' }
       const lines = await tx.purchaseLine.findMany({ where: { workOrderNumber: { in: inspectionWorkOrders(ins) }, status: 'OPEN', qmsInspectionId: null } })
       const hits = findPurchaseCandidates(ins, lines)
-      if (hits.length !== 1) {
+      const matchedLine = hits[0]
+      if (hits.length !== 1 || !matchedLine) {
         const result = hits.length ? 'MULTIPLE' : 'NO_CANDIDATE'
         await tx.incomingCheck.create({ data: { qmsInspectionId: inspectionId, result } })
         return { inspectionId, result }
       }
       // 先锁工件再锁采购行，读最新数据复核（同时有人手工确认 / 取消时以先提交的为准）
-      const line = await lockLine(tx, hits[0]!.id)
+      const line = await lockLine(tx, matchedLine.id)
       // 锁之前这一行可能刚被改过（名称、供应商、工单下的工件……）：用最新数据再走一遍同样的匹配规则
       if (line.status !== 'OPEN' || line.qmsInspectionId || findPurchaseCandidates(ins, [line]).length !== 1) {
         await tx.incomingCheck.create({ data: { qmsInspectionId: inspectionId, result: 'NO_CANDIDATE' } })

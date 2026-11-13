@@ -42,7 +42,7 @@ export async function collectW9(now: Date, t: Thresholds, offDays: string[]): Pr
     if (!liveWos.has(plan.workOrderNumber)) continue
     const f = plan.forecast
     const late = plan.deliveryDay ? judgeW9Plan(f.deliveryDelayDays) : null
-    if (late) {
+    if (late && plan.deliveryDay) {
       const pm = pmOf.get(plan.workOrderNumber)
       out.push({
         rule: 'W9',
@@ -56,11 +56,12 @@ export async function collectW9(now: Date, t: Thresholds, offDays: string[]): Pr
         startAt: now,
         level: late,
         subject: '总计划预计交期',
-        summary: w9PlanSummary(plan.deliveryDay!, f, plan.nodes.filter((n) => f.nodes.find((x) => x.id === n.id)?.source).map((n) => n.name)),
+        summary: w9PlanSummary(plan.deliveryDay, f, plan.nodes.filter((n) => f.nodes.find((x) => x.id === n.id)?.source).map((n) => n.name)),
       })
     }
     for (const n of plan.nodes) {
-      const e = f.nodes.find((x) => x.id === n.id)!
+      const e = f.nodes.find((x) => x.id === n.id)
+      if (!e) continue
       const dept = BUSINESS_DEPT_NAME[n.dept]
       const subject = `总计划节点 ${n.name}（${dept}）`
       const level = judgeW9(e, t.W9)

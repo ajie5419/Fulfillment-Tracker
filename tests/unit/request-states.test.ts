@@ -31,6 +31,12 @@ beforeEach(() => {
   vi.stubGlobal('definePageMeta', vi.fn())
   vi.stubGlobal('canDo', () => false)
   vi.stubGlobal('dayAfter', () => '2026-11-01')
+  vi.stubGlobal('dayText', (v: string | null | undefined) => v ? String(v).slice(0, 10) : '')
+  vi.stubGlobal('shortDayText', (v: string | null | undefined) => v ? String(v).slice(5, 10) : '')
+  vi.stubGlobal('shortRangeText', (s: string | null | undefined, e: string | null | undefined) => e ? String(e).slice(5, 10) : '')
+  vi.stubGlobal('SPOTLIGHT_MAX_ITEMS', 4)
+  vi.stubGlobal('FILTER_DEBOUNCE_MS', 300)
+  vi.stubGlobal('DEFAULT_TABLE_PAGE_SIZE', 50)
   vi.stubGlobal('apiError', (e: Error) => e.message)
   vi.stubGlobal('LAYOUT_OPTIONS', [])
   vi.stubGlobal('DRAWING_LAYOUT_OPTIONS', [])
@@ -47,10 +53,10 @@ const stat = Vue.defineComponent({ props: ['value'], setup: (props, { slots }) =
 async function page(file: string) {
   const component = loadComponent(file, { '#shared/workbench': workbench, '#shared/drawing': drawing, '#shared/mobile-todo': mobileTodo })
   const wrapper = mount(Vue.defineComponent({ setup: () => () => Vue.h(Vue.Suspense, null, { default: () => Vue.h(component) }) }), {
-    global: { plugins: [(app: Vue.App) => Object.assign(app.config.globalProperties, { apiError: (e: unknown) => e instanceof Error ? e.message : '', canDo: () => false, LAYOUT_OPTIONS: [], DRAWING_LAYOUT_OPTIONS: [] })], stubs: Object.fromEntries([
+    global: { plugins: [(app: Vue.App) => Object.assign(app.config.globalProperties, { apiError: (e: unknown) => e instanceof Error ? e.message : '', canDo: () => false, LAYOUT_OPTIONS: [], DRAWING_LAYOUT_OPTIONS: [], SPOTLIGHT_MAX_ITEMS: 4, FILTER_DEBOUNCE_MS: 300, DEFAULT_TABLE_PAGE_SIZE: 50 })], stubs: Object.fromEntries([
       ...['ACard', 'AResult', 'AAlert', 'ATabs', 'ATabPane', 'AEmpty', 'VanEmpty', 'VanTabs'].map(name => [name, container]),
       ['AButton', button], ['VanButton', button], ['UiStatCard', stat],
-      ...['ASpin', 'VanLoading', 'ASelect', 'ASegmented', 'ACheckbox', 'ATable', 'UiHelpTip', 'UiRefreshButton', 'UiRing', 'VanTab', 'VanNavBar', 'DrawingEditModal', 'DrawingKanbanBoard', 'ReleaseCreateModal', 'ReleaseDrawer', 'KittingNodeModal', 'AModal', 'AInputSearch', 'ATag', 'ASpace', 'KittingNodeCard', 'KittingShortageTable', 'WoLink', 'PlanNodeCell', 'VanTag', 'MCard', 'UiStatusIcon', 'UiWoGroupHead', 'UiStatusTag', 'UiDatePicker', 'AFormItem', 'AForm', 'AProgress', 'NuxtLink', 'AMenuItem', 'AMenu', 'ADropdown'].map(name => [name, true]),
+      ...['ASpin', 'VanLoading', 'ASelect', 'ASegmented', 'ACheckbox', 'ATable', 'UiHelpTip', 'UiRefreshButton', 'UiRing', 'VanTab', 'VanNavBar', 'DrawingEditModal', 'DrawingKanbanBoard', 'ReleaseCreateModal', 'ReleaseDrawer', 'KittingNodeModal', 'AModal', 'AInputSearch', 'ATag', 'ASpace', 'KittingNodeCard', 'KittingShortageTable', 'WoLink', 'PlanNodeCell', 'VanTag', 'MCard', 'UiStatusIcon', 'UiWoGroupHead', 'UiStatusTag', 'UiDatePicker', 'UiUserChip', 'UiAlertMark', 'UiSpotlightGrid', 'AFormItem', 'AForm', 'AProgress', 'NuxtLink', 'AMenuItem', 'AMenu', 'ADropdown'].map(name => [name, true]),
     ]) },
   })
   cleanups.push(() => wrapper.unmount())

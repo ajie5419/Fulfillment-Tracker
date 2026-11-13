@@ -123,11 +123,11 @@ export function judgeW6(input: W6Input, t: RuleThreshold): W6Result {
 export function w6Summary(r: W6Result, l: { needDate: Date; promisedDate: Date | null; supplierName: string | null }): string {
   const need = dateFieldDay(l.needDate)
   const who = l.supplierName || '供应商'
-  if (r.trigger === 'OVERDUE') {
+  if (r.trigger === 'OVERDUE' && l.promisedDate) {
     const late = r.overdueDays > 0 ? `已超 ${r.overdueDays} 天未到` : '已过承诺日未到'
-    return `${who}承诺 ${dateFieldDay(l.promisedDate!)} 到货，${late}${r.needPassed ? `（需求日 ${need} 已过）` : ''}`
+    return `${who}承诺 ${dateFieldDay(l.promisedDate)} 到货，${late}${r.needPassed ? `（需求日 ${need} 已过）` : ''}`
   }
-  if (r.trigger === 'NEED_PASSED') return `需求日 ${need} 已过 ${-r.daysLeft} 天，${who}承诺 ${dateFieldDay(l.promisedDate!)} 才到`
+  if (r.trigger === 'NEED_PASSED' && l.promisedDate) return `需求日 ${need} 已过 ${-r.daysLeft} 天，${who}承诺 ${dateFieldDay(l.promisedDate)} 才到`
   if (r.daysLeft > 0) return `需求日 ${need}（还剩 ${r.daysLeft} 天）仍无承诺到货日`
   if (r.daysLeft === 0) return `需求日就是今天（${need}），仍无承诺到货日`
   return `需求日 ${need} 已过 ${-r.daysLeft} 天，仍无承诺到货日`

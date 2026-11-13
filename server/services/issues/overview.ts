@@ -73,9 +73,10 @@ export async function getOverview(now = new Date()) {
   for (const p of plans.values()) {
     if (!onBoard.has(p.workOrderNumber)) continue
     for (const n of p.nodes) {
-      const e = p.forecast.nodes.find((x) => x.id === n.id)!
-      if (e.done) continue
-      const row = deptDelayed.get(n.dept)!
+      const e = p.forecast.nodes.find((x) => x.id === n.id)
+      if (!e || e.done) continue
+      const row = deptDelayed.get(n.dept)
+      if (!row) continue
       row.open++
       if (e.source) row.delayed++ // 源头延误节点（只因上游顺延的不算）
     }
@@ -83,8 +84,8 @@ export async function getOverview(now = new Date()) {
   const firstDelayed = (wo: string) => {
     const p = plans.get(wo)
     const e = p?.forecast.nodes.find((x) => x.source)
-    const n = e && p!.nodes.find((x) => x.id === e.id)
-    return n ? `${n.name}（${BUSINESS_DEPT_NAME[n.dept]}）自身晚 ${e!.selfDelayDays} 天` : '—'
+    const n = e && p ? p.nodes.find((x) => x.id === e.id) : undefined
+    return n && e ? `${n.name}（${BUSINESS_DEPT_NAME[n.dept]}）自身晚 ${e.selfDelayDays} 天` : '—'
   }
 
   return {
@@ -125,7 +126,7 @@ export async function getOverview(now = new Date()) {
       })),
     planDelays: board.rows
       .filter((r) => (r.delayDays ?? 0) > 0)
-      .sort((a, b) => b.delayDays! - a.delayDays! || +a.deliveryDate - +b.deliveryDate)
+      .sort((a, b) => (b.delayDays ?? 0) - (a.delayDays ?? 0) || +a.deliveryDate - +b.deliveryDate)
       .map((r) => ({
         workOrderNumber: r.workOrderNumber,
         projectName: r.projectName ?? r.customerName,

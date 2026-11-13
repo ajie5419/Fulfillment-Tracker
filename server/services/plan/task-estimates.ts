@@ -64,7 +64,7 @@ export function stepFacts(
  * 缺日期（老数据工件没有 statusSince 一般不会发生）时为 null，按"不知道完成日"处理（autoDone 按今天算，项目日历不计入实际完成）。
  */
 export function assemblyFacts(n: { id: string; needDate: Date }, kit: { total: number; ready: number; readyDay?: string | null }, _today: string): TaskFacts {
-  const need = day(n.needDate)!
+  const need = n.needDate.toISOString().slice(0, 10)
   const done = kit.total > 0 && kit.ready >= kit.total
   return { kind: 'assembly', id: n.id, excluded: false, done, doneDay: done ? (kit.readyDay ?? null) : null, planDay: need }
 }

@@ -80,10 +80,11 @@ const removeStep = (s: StepRow) => call(() => apiFetch(`/api/steps/${s.id}`, { m
 // ───── 加一道 ─────
 const draft = reactive<{ processId?: string; mode: StepModeKey; supplierId?: string; ownerId?: string; planStartDate?: string; dueDate?: string; planNodeId?: string }>({ mode: 'SELF' })
 async function addStep() {
-  if (!props.part) return
+  const part = props.part
+  if (!part) return
   if (!draft.processId) return message.warning('请选择工序')
   if (props.planOpts.published && !draft.planNodeId) return message.warning('该工单已发布总计划，请选择所属总计划节点')
-  await call(() => apiFetch(`/api/parts/${props.part!.id}/steps`, { method: 'POST', body: { ...draft, supplierId: draft.supplierId ?? null, planStartDate: draft.planStartDate ?? null, planNodeId: draft.planNodeId ?? null } }))
+  await call(() => apiFetch(`/api/parts/${part.id}/steps`, { method: 'POST', body: { ...draft, supplierId: draft.supplierId ?? null, planStartDate: draft.planStartDate ?? null, planNodeId: draft.planNodeId ?? null } }))
   Object.assign(draft, { processId: undefined, supplierId: undefined, ownerId: undefined, planStartDate: undefined, dueDate: undefined })
 }
 
@@ -100,8 +101,10 @@ function openCopy() {
   Object.assign(copyForm, { open: true, fromWo: props.workOrderNumber, fromPartId: undefined })
 }
 async function doCopy() {
-  if (!props.part || !copyForm.fromPartId) return message.warning('请选择来源工件')
-  await call(() => apiFetch(`/api/parts/${props.part!.id}/copy-route`, { method: 'POST', body: { fromPartId: copyForm.fromPartId } }), '已复制')
+  const part = props.part
+  const fromPartId = copyForm.fromPartId
+  if (!part || !fromPartId) return message.warning('请选择来源工件')
+  await call(() => apiFetch(`/api/parts/${part.id}/copy-route`, { method: 'POST', body: { fromPartId } }), '已复制')
   copyForm.open = false
 }
 
@@ -119,9 +122,10 @@ watch(() => props.part, (p) => {
   if (p) Object.assign(info, { name: p.name, drawingNo: p.drawingNo ?? '', revision: p.revision ?? '', quantity: p.quantity, qmsPartId: p.qmsPartId ?? '' })
 }, { immediate: true })
 async function saveInfo() {
-  if (!props.part) return
+  const part = props.part
+  if (!part) return
   if (!info.name.trim()) return message.warning('请填写工件名称')
-  await call(() => apiFetch(`/api/parts/${props.part!.id}`, { method: 'PATCH', body: { name: info.name, drawingNo: info.drawingNo || null, revision: info.revision || null, quantity: info.quantity, qmsPartId: info.qmsPartId || null } }), '已保存')
+  await call(() => apiFetch(`/api/parts/${part.id}`, { method: 'PATCH', body: { name: info.name, drawingNo: info.drawingNo || null, revision: info.revision || null, quantity: info.quantity, qmsPartId: info.qmsPartId || null } }), '已保存')
 }
 function removePart() {
   const p = props.part

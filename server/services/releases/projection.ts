@@ -94,7 +94,7 @@ export function projectRelease({ rel, partIds, parts, attachments, confirmTodos,
 }
 
 export function projectReleaseRows(rows: ReleaseRow[], parts: Parts, names: NameMaps, held: { holdReleaseId: string | null; _count: { _all: number } }[], viewerId: string) {
-  const heldOf = new Map(held.map((h) => [h.holdReleaseId!, h._count._all]))
+  const heldOf = new Map(held.flatMap((h) => (h.holdReleaseId ? [[h.holdReleaseId, h._count._all] as const] : [])))
   return rows.map(({ receipts, ...r }) => {
     const counts = countReceipts(receipts)
     const mine = receipts.find((x) => x.userId === viewerId)

@@ -22,6 +22,7 @@ const emit = defineEmits<{ toggleCollapse: [id: string]; edit: [node: PlanNodeRo
 
 
 const isCollapsed = (id: string) => props.collapsed.includes(id)
+const levelColor = (level: string | null) => (level === 'RED' ? 'red' : level === 'YELLOW' ? 'orange' : level === 'REMIND' ? 'blue' : undefined)
 /** 缩进层级：有阶段时 节点 = 2 级、子节点 = 3 级；没阶段时 节点 = 1 级、子节点 = 2 级 */
 const levelOf = (n: PlanNodeRow) => (n.parentId ? 3 : 2) - (props.hasPhase ? 0 : 1)
 const affectsText = (n: PlanNodeRow) => n.affects.map((p) => `${p.code} ${p.name}`).join('、')
@@ -31,7 +32,7 @@ const predsTitle = (n: PlanNodeRow) =>
 
 const columns = [
   { title: '编号 / 节点', key: 'name', width: 300 },
-  { title: '责任部门', dataIndex: 'deptText', width: 92 },
+  { title: '责任部门', key: 'dept', width: 108 },
   { title: '前置', key: 'preds', width: 104 },
   { title: '计划开始日期', key: 'start', width: 132 },
   { title: '计划完成日期', key: 'plan', width: 132 },
@@ -39,7 +40,12 @@ const columns = [
 ]
 const rowClass = (n: TableRow) =>
   isPhaseRow(n) ? 'phase-row' : [n.id === props.focusNode ? 'focus-row' : '', !n.done && n.delayDays > 0 ? 'late-row' : '', n.parentId ? 'child-row' : '', n.childCount ? 'summary-row' : ''].join(' ')
-const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ? 'orange' : l === 'REMIND' ? 'blue' : undefined)
+const alertLevelOf = (n: PlanNodeRow): 'late' | 'risk' | null => {
+  if (n.done) return null
+  if (n.delayDays > 0 || n.alertLevel === 'RED') return 'late'
+  if (n.alertLevel === 'YELLOW' || n.lateCount > 0) return 'risk'
+  return null
+}
 </script>
 
 <template>
@@ -84,11 +90,15 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
           <span class="code">{{ record.code }}</span>
           <span class="node-main">
             <span :class="{ 'summary-name': record.childCount }">{{ record.name }}</span>
+            <UiAlertMark :level="alertLevelOf(record as PlanNodeRow)" />
             <span v-if="record.childCount" class="muted">{{ record.childCount }} 个子节点</span>
-            <a-tag v-if="record.alertLevel" :color="levelColor(record.alertLevel)">W9 {{ record.alertLevel === 'RED' ? '红' : '黄' }}</a-tag>
+            <span v-if="record.alertLevel" class="small" :class="record.alertLevel === 'RED' ? 'late' : 'warn'">W9 {{ record.alertLevel === 'RED' ? '红' : '黄' }}</span>
           </span>
         </div>
         <div v-if="record.note" class="muted node-note" :class="`lv${levelOf(record as PlanNodeRow)}`">{{ record.note }}</div>
+      </template>
+      <template v-else-if="column.key === 'dept'">
+        <UiUserChip :name="record.deptText" />
       </template>
       <template v-else-if="column.key === 'preds'">
         <span v-if="record.childCount" class="muted" title="汇总行：日期由子节点算，看子节点的前置">—</span>
@@ -113,7 +123,7 @@ const levelColor = (l: string | null) => (l === 'RED' ? 'red' : l === 'YELLOW' ?
     </template>
     <template #expandedRowRender="{ record }">
       <div v-if="record.childCount" class="muted">汇总行：任务挂在下面的子节点上</div>
-      <PlanNodeWork v-else-if="record.tasks.length" :node="record as PlanNodeRow" :wo="wo" :can-create="data!.canCreate" view-only @changed="emit('changed')" />
+      <PlanNodeWork v-else-if="record.tasks.length" :node="record as PlanNodeRow" :wo="wo" :can-create="data.canCreate" view-only @changed="emit('changed')" />
     </template>
   </a-table>
 </template>

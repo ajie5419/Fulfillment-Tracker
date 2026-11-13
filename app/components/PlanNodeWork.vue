@@ -191,10 +191,11 @@ const stepSelection = computed(() => ({
             <span v-if="t.note" class="muted task-note">{{ t.note }}</span>
           </template>
           <NuxtLink v-else :to="t.link" class="task-name task-link">{{ t.name }}</NuxtLink>
+          <UiAlertMark :level="!t.done && !t.excluded ? (t.overdue ? 'late' : t.lateForNode ? 'risk' : null) : null" />
         </div>
 
         <div class="task-meta">
-          <span class="task-owner" title="责任人">{{ t.ownerName ?? '—' }}</span>
+          <UiUserChip :name="t.ownerName" :muted="!t.ownerName" />
           <span class="task-date" :class="{ late: t.lateForNode && !t.done }" title="计划完成日">
             {{ t.planDate ?? '未填' }}
             <span v-if="t.lateForNode && !t.done && !t.excluded" class="late small">晚于节点</span>
@@ -202,10 +203,10 @@ const stepSelection = computed(() => ({
           <span class="task-status">
             <span v-if="t.excluded" class="muted">{{ t.statusText }}（不计）</span>
             <template v-else-if="t.done">
-              <UiStatusTag tone="done">{{ t.statusText }}{{ t.doneDate ? ` · ${t.doneDate.slice(5)}` : '' }}</UiStatusTag>
+              <UiStatusTag tone="done">{{ t.statusText }}{{ t.doneDate ? ` · ${shortDayText(t.doneDate)}` : '' }}</UiStatusTag>
             </template>
             <template v-else>
-              <UiStatusTag v-if="t.overdue" tone="late">逾期{{ t.expectedDate && t.expectedDate !== t.planDate ? ` · 预计 ${t.expectedDate.slice(5)}` : '' }}</UiStatusTag>
+              <UiStatusTag v-if="t.overdue" tone="late">逾期{{ t.expectedDate && t.expectedDate !== t.planDate ? ` · 预计 ${shortDayText(t.expectedDate)}` : '' }}</UiStatusTag>
               <span v-else class="status-pill">{{ t.kind === 'task' ? '未完成' : t.statusText }}</span>
             </template>
           </span>

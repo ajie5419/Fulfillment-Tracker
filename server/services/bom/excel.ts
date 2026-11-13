@@ -105,9 +105,11 @@ function findWorkOrder(ws: ExcelJS.Worksheet, headerRow: number): string | null 
     const cells: string[] = []
     ws.getRow(r).eachCell((cell) => cells.push(String(cellValue(cell.value) ?? '')))
     for (let k = 0; k < cells.length; k++) {
-      const m = WO_RE.exec(cells[k]!)
-      if (m) return m[1]!
-      if (/工单号\s*[:：]?$/.test(cells[k]!.trim()) && cells[k + 1]) return cells[k + 1]!.trim() || null
+      const cellText = cells[k] ?? ''
+      const m = WO_RE.exec(cellText)
+      if (m?.[1]) return m[1]
+      const nextCell = cells[k + 1]
+      if (/工单号\s*[:：]?$/.test(cellText.trim()) && nextCell) return nextCell.trim() || null
     }
   }
   return null
@@ -192,7 +194,7 @@ export async function bomTextToXlsx(textIn: string): Promise<{ buf: Buffer; rowO
   if (!hasHeader) {
     grid = grid.map((row) => {
       const cells = row.filter((c) => c !== '')
-      return cells.length >= 3 && /^\d+$/.test(cells[0]!) ? cells.slice(1) : cells
+      return cells.length >= 3 && /^\d+$/.test(cells[0] ?? '') ? cells.slice(1) : cells
     })
     // 有第三列才当有数量列；只有代号、名称两列时按每个图号 1 件
     grid.unshift(grid.some((r) => r.length >= 3) ? ['代号', '名称', '数量'] : ['代号', '名称'])
@@ -257,16 +259,16 @@ export function classifyBom(rows: RawBomRow[], existing: ExistingPart[]): { line
     const revision = r.revision?.slice(0, 64) ?? null
     if (!name && !drawingNo) continue // 只有数量等零散内容的行（小计、备注）不算
     if (isFastener(name)) {
-      lines.push({ rows: [r.row], drawingNo, revision, name: name!, quantity: parseQuantity(r.quantity) ?? 0, status: 'fastener', notes: ['螺栓、螺母由生产辅材采购，不建工件'] })
+      lines.push({ rows: [r.row], drawingNo, revision, name: name ?? '', quantity: parseQuantity(r.quantity) ?? 0, status: 'fastener', notes: ['螺栓、螺母由生产辅材采购，不建工件'] })
       continue
     }
     if (!drawingNo) {
-      lines.push({ rows: [r.row], drawingNo: null, revision, name: name!, quantity: parseQuantity(r.quantity) ?? 0, status: 'noDrawing', notes: ['没有图号：不建工件，正式发放时生成采购计划草稿'] })
+      lines.push({ rows: [r.row], drawingNo: null, revision, name: name ?? '', quantity: parseQuantity(r.quantity) ?? 0, status: 'noDrawing', notes: ['没有图号：不建工件，正式发放时生成采购计划草稿'] })
       continue
     }
     const quantity = parseQuantity(r.quantity)
     if (quantity === undefined) messages.push(r.quantity === null ? '数量没填' : `数量"${r.quantity}"不对，要是 1 到 100000 的整数`)
-    if (messages.length) {
+    if (messages.length || quantity === undefined) {
       errors.push({ row: r.row, messages })
       continue
     }
@@ -278,18 +280,18 @@ export function classifyBom(rows: RawBomRow[], existing: ExistingPart[]): { line
         errors.push({ row: r.row, messages: [`图号 ${drawingNo} 的版号"${revision ?? '空'}"和第 ${same.rows[0]} 行的"${same.revision ?? '空'}"不一致`] })
         continue
       }
-      if (same.quantity + quantity! > MAX_QUANTITY) {
+      if (same.quantity + quantity > MAX_QUANTITY) {
         // 合计超过上限时报错，不悄悄截断
-        errors.push({ row: r.row, messages: [`图号 ${drawingNo} 合并后数量 ${same.quantity + quantity!} 超过 ${MAX_QUANTITY}`] })
+        errors.push({ row: r.row, messages: [`图号 ${drawingNo} 合并后数量 ${same.quantity + quantity} 超过 ${MAX_QUANTITY}`] })
         continue
       }
       same.rows.push(r.row)
-      same.quantity += quantity!
+      same.quantity += quantity
       if (name && name !== same.name) same.notes.push(`第 ${r.row} 行名称是"${name}"，按第 ${same.rows[0]} 行的"${same.name}"建`)
       continue
     }
     const old = have.get(key)
-    const line: BomLine = { rows: [r.row], drawingNo, revision, name: name ?? drawingNo, quantity: quantity!, status: 'new', notes: [] }
+    const line: BomLine = { rows: [r.row], drawingNo, revision, name: name ?? drawingNo, quantity, status: 'new', notes: [] }
     if (r.noQuantityColumn) line.notes.push('表里没有数量列，按每个图号 1 件建，数量请生产核对')
     if (old) {
       line.existing = { id: old.id, name: old.name, revision: old.revision }
@@ -366,11 +368,13 @@ export async function applyTechBom(tx: Prisma.TransactionClient, workOrderNumber
   }
   const conflict = lines.filter((l) => l.status === 'revisionChanged' && l.existing?.revision)
   if (conflict.length) {
-    const head = conflict.slice(0, 5).map((l) => `${l.drawingNo}（已有 ${l.existing!.revision}，表里 ${l.revision}）`).join('、')
+    const head = conflict.slice(0, 5).map((l) => `${l.drawingNo}（已有 ${l.existing?.revision ?? ''}，表里 ${l.revision}）`).join('、')
     throw new FlowError(`BOM 里 ${conflict.length} 个图号的版号和已有工件不一样，没有发放：${head}。版号变了请发"设计变更"`)
   }
-  const fill = lines.filter((l) => l.status === 'revisionChanged' && !l.existing?.revision)
-  for (const l of fill) await tx.part.update({ where: { id: l.existing!.id }, data: { revision: l.revision } })
+  const fill = lines.filter((l) => l.status === 'revisionChanged' && l.existing && !l.existing.revision)
+  for (const l of fill) {
+    if (l.existing) await tx.part.update({ where: { id: l.existing.id }, data: { revision: l.revision } })
+  }
   const toCreate = lines.filter((l) => l.status === 'new')
   const created: string[] = []
   for (const l of toCreate) {
@@ -380,7 +384,7 @@ export async function applyTechBom(tx: Prisma.TransactionClient, workOrderNumber
     })
     created.push(p.id)
   }
-  const matched = lines.filter((l) => (l.status === 'exists' || l.status === 'revisionChanged') && l.existing).map((l) => l.existing!.id)
+  const matched = lines.flatMap((l) => ((l.status === 'exists' || l.status === 'revisionChanged') && l.existing ? [l.existing.id] : []))
   // 正式应用和工件写入共用调用方事务；预览不会走到这里。
   const purchased = lines.filter(l => l.status === 'noDrawing' && !isFastener(l.name))
   if (!created.length && !matched.length && !purchased.length) throw new FlowError('BOM 表里没有要建的工件或外购件（只有螺栓螺母等辅材），没有发放')

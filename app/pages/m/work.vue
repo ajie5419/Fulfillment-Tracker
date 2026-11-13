@@ -55,7 +55,7 @@ const list = computed(() => {
 // 提醒跳过来（?stepId=）：只处理一次——切到这道工序实际所在的分段并标出；不在手机三段里（卡住、已完成、排队中）时提示。
 // 处理完删掉 stepId，并把当时的范围（带 stepId 默认"全部"）写成 mine=0 / 1，之后刷新、切分段都不会再被拉回来
 useOneShotQuery(['stepId'], { fetches: [{ pending, error }] }, ({ stepId: id }) => {
-  focusId.value = id!
+  focusId.value = id ?? ''
   const row = data.value.rows.find((r) => r.stepId === id)
   const target = row ? segOfColumn(row.column) : null
   if (!target) showToast(row?.column === 'stuck' ? `这道工序卡住了：${row.stuckText ?? '请到电脑端生产调度查看'}` : '这道工序现在不在能开工 / 在做 / 在外里，可能已完成或还在排队')

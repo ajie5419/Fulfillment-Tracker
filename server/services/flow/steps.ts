@@ -85,7 +85,7 @@ async function loadParts(where: Prisma.PartWhereInput) {
   const steps = parts.flatMap((p) => p.steps)
   const stepIds = steps.map((s) => s.id)
   const woOf = new Map(parts.map((p) => [p.id, p.workOrderNumber]))
-  const responsibles = await resolveStepResponsibles(prisma, steps.map((s) => ({ ...s, workOrderNumber: woOf.get(s.partId)! })))
+  const responsibles = await resolveStepResponsibles(prisma, steps.map((s) => ({ ...s, workOrderNumber: woOf.get(s.partId) ?? '' })))
   const responsibleOf = new Map(steps.map((s, i) => [s.id, responsibles[i] ?? null]))
   const [names, sums, counts, issues, related] = await Promise.all([
     loadNames({ process: steps.map((s) => s.processId), supplier: steps.map((s) => s.supplierId), user: [...steps.map((s) => s.ownerId), ...responsibles] }),
@@ -104,21 +104,24 @@ async function loadParts(where: Prisma.PartWhereInput) {
   const eventCount = new Map(counts.map((c) => [c.stepId, c._count._all]))
   return parts.map((p) => ({
     ...p,
-    related: related.get(p.id)!,
-    steps: p.steps.map((s) => ({
-      ...s,
-      processName: names.process.get(s.processId) ?? s.processId,
-      supplierName: s.supplierId ? (names.supplier.get(s.supplierId) ?? s.supplierId) : null,
-      ownerName: s.ownerId ? (names.user.get(s.ownerId) ?? s.ownerId) : null,
-      /** 没有负责人、派到班组时由班组长负责（flow/responsible.ts）；有负责人时为 null */
-      leaderName: !s.ownerId && responsibleOf.get(s.id) ? (names.user.get(responsibleOf.get(s.id)!) ?? responsibleOf.get(s.id)!) : null,
-      returnedQty: returned.get(s.id) ?? 0,
-      eventCount: eventCount.get(s.id) ?? 0,
-      /** 该步骤上未关闭的异常（步骤"有异常"时） */
-      issues: issues.get(s.id) ?? [],
-      /** 待补充：还没开工、但缺负责人，或外协却没选外协厂（BOM 导入的步骤默认就是这样） */
-      needsFill: needsFill(s, responsibleOf.get(s.id) ?? null),
-    })),
+    related: related.get(p.id) ?? { drawings: 0, drawingsDone: 0, purchases: 0, purchasesArrived: 0, openIssues: 0, comments: 0 },
+    steps: p.steps.map((s) => {
+      const respId = responsibleOf.get(s.id) ?? null
+      return {
+        ...s,
+        processName: names.process.get(s.processId) ?? s.processId,
+        supplierName: s.supplierId ? (names.supplier.get(s.supplierId) ?? s.supplierId) : null,
+        ownerName: s.ownerId ? (names.user.get(s.ownerId) ?? s.ownerId) : null,
+        /** 没有负责人、派到班组时由班组长负责（flow/responsible.ts）；有负责人时为 null */
+        leaderName: !s.ownerId && respId ? (names.user.get(respId) ?? respId) : null,
+        returnedQty: returned.get(s.id) ?? 0,
+        eventCount: eventCount.get(s.id) ?? 0,
+        /** 该步骤上未关闭的异常（步骤"有异常"时） */
+        issues: issues.get(s.id) ?? [],
+        /** 待补充：还没开工、但缺负责人，或外协却没选外协厂（BOM 导入的步骤默认就是这样） */
+        needsFill: needsFill(s, respId),
+      }
+    }),
   }))
 }
 

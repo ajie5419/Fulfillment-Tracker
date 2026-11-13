@@ -6,6 +6,7 @@ import * as planValidation from '../../shared/plan-validation'
 import * as purchases from '../../shared/purchases'
 import * as purchaseQuantity from '../../shared/purchase-quantity'
 import { deferred, flushVue, mountScript } from '../helpers/vue-script'
+import { FILTER_DEBOUNCE_MS } from '../../app/composables/useFlow'
 
 const cleanups: (() => void)[] = []
 const message = { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() }
@@ -16,6 +17,7 @@ const parts = Vue.ref<any[]>([])
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.stubGlobal('FILTER_DEBOUNCE_MS', FILTER_DEBOUNCE_MS)
   for (const name of ['ref', 'reactive', 'computed', 'watch', 'onMounted', 'onBeforeUnmount'] as const) vi.stubGlobal(name, Vue[name])
   vi.stubGlobal('useWorkOrders', async () => ({ data: Vue.ref([{ workOrderNumber: 'WO-A' }, { workOrderNumber: 'WO-B' }]) }))
   vi.stubGlobal('useMaster', async () => ({ data: Vue.ref({ suppliers: [], users: [] }) }))

@@ -80,7 +80,7 @@ export function deptIdsResolvingTo(identity: string, index: DeptIndex): string[]
 export function representativeDeptId(identity: string, index: DeptIndex): string | null {
   const alive = [...index.depts.entries()].filter(([, d]) => !d.isDeleted)
   const sameName = alive.filter(([id, d]) => (legacyBusinessDeptCode(d.name) ?? d.name) === identity && resolveDeptIdentity(id, index) === identity).map(([id]) => id).sort()
-  if (sameName.length) return sameName[0]!
+  if (sameName[0]) return sameName[0]
   const biz = isBusinessDeptCode(identity) ? identity : null
   if (!biz) return null
   const depth = (id: string) => {

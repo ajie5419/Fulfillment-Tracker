@@ -32,11 +32,11 @@ function assertNodes(nodes: TemplateInput['nodes']) {
     if (n.parent == null) continue
     const label = `第 ${i + 1} 个节点"${names[i]}"`
     if (n.parent < 1 || n.parent >= i + 1) throw new FlowError(`${label}的上级节点要是排在它前面的节点`)
-    if (nodes[n.parent - 1]!.parent != null) throw new FlowError(`${label}的上级"${names[n.parent - 1]}"本身是子节点：子节点下面不能再挂子节点`)
+    if (nodes[n.parent - 1]?.parent != null) throw new FlowError(`${label}的上级"${names[n.parent - 1]}"本身是子节点：子节点下面不能再挂子节点`)
     if (n.preds?.includes(n.parent)) throw new FlowError(`${label}的前置节点不能是自己的上级（上级要等子节点做完）`)
   }
   const ids = nodes.map((_, i) => String(i + 1))
-  const facts = nodes.map((n, i) => ({ id: ids[i]!, preds: n.preds == null ? null : n.preds.map(String), parent: n.parent == null ? null : String(n.parent) }))
+  const facts = nodes.map((n, i) => ({ id: String(i + 1), preds: n.preds == null ? null : n.preds.map(String), parent: n.parent == null ? null : String(n.parent) }))
   if (!topoOrder(ids, waitsOn(resolvePreds(facts), childrenOf(facts)))) throw new FlowError('前置节点成环了（A 等 B、B 又等 A），请检查')
 }
 

@@ -26,6 +26,15 @@ const open = async (over: Record<string, unknown> = {}) => {
 }
 
 describe('PlanNodeTable 行视图辅助', () => {
+  it('marks late tasks as risks and suppresses alerts for completed nodes', async () => {
+    const v = await open()
+    expect(v.state.alertLevelOf(n({ lateCount: 1 }))).toBe('risk')
+    expect(v.state.alertLevelOf(n({ lateCount: 0 }))).toBeNull()
+    expect(v.state.alertLevelOf(n({ lateCount: 1, delayDays: 1 }))).toBe('late')
+    expect(v.state.alertLevelOf(n({ lateCount: 1, done: true }))).toBeNull()
+    v.unmount()
+  })
+
   it('缩进层级：有阶段 2 / 3 级，没阶段 1 / 2 级', async () => {
     let v = await open()
     expect([NODES[0], NODES[2]].map((x) => v.state.levelOf(x))).toEqual([2, 3])

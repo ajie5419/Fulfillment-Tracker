@@ -13,7 +13,7 @@ const props = defineProps<{
 }>()
 const cells = computed(() => {
   const keep = props.stuckId ? props.nodes.findIndex((n) => n.id === props.stuckId) : -1
-  return compactIndexes(props.nodes.length, props.max ?? 7, keep >= 0 ? keep : null).map((i) => (i === null ? null : props.nodes[i]!))
+  return compactIndexes(props.nodes.length, props.max ?? 7, keep >= 0 ? keep : null).map((i) => (i === null ? null : (props.nodes[i] ?? null)))
 })
 const tip = (n: (typeof props.nodes)[number]) =>
   `${n.seq}. ${n.name}（${n.deptText}）\n计划 ${n.planDate} · ${n.state === 'DONE' ? '完成' : '预计'} ${n.expectedDate}\n${NODE_STATE_TEXT[n.state]}`

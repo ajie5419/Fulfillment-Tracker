@@ -172,10 +172,10 @@ export async function refreshPartReady(tx: Tx, partId: string | null, notify: bo
     const r = await tx.todo.updateMany({ where, data: { status: 'CANCELLED', doneAt: now } })
     return r.count ? 'revoked' : null
   }
-  if (!notify) return null
+  if (!notify || !first || !part[0]) return null
   const open = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM todo WHERE refType = 'part' AND refId = ${partId} AND action = ${READY_TO_START} AND status = 'OPEN' LIMIT 1 FOR SHARE`
   if (open.length) return null
-  const owners = await readyOwners(tx, first!, part[0]!.workOrderNumber)
+  const owners = await readyOwners(tx, first, part[0].workOrderNumber)
   if (!owners.length) return null
   await tx.todo.createMany({ data: owners.map((ownerId) => ({ ownerId, action: READY_TO_START, refType: 'part', refId: partId })) })
   return 'sent'
@@ -387,7 +387,7 @@ async function describeLines(rows: LineWithPayments[], now: Date, amountVisible:
   const alerts = rows.length
     ? await prisma.alert.findMany({ where: { activeKey: { in: rows.map((r) => w6Key(r.id)) } }, select: { activeKey: true, level: true } })
     : []
-  const levelOf = new Map(alerts.map((a) => [a.activeKey!, a.level]))
+  const levelOf = new Map(alerts.flatMap((a) => (a.activeKey ? [[a.activeKey, a.level] as const] : [])))
   return rows.map(({ payments, ...r }) => {
     const p = lineProgress(r, now)
     const unpaid = payments.map((x) => x.payment).filter((x) => x.status !== 'PAID')
@@ -564,8 +564,9 @@ export async function getLine(id: string, now = new Date(), amountVisible?: Amou
   const line = await prisma.purchaseLine.findUnique({ where: { id }, include: PAYMENTS_INCLUDE })
   if (!line) throw new FlowError('采购行不存在')
   const [row] = await describeLines([line], now, amountVisible)
+  if (!row) throw new FlowError('采购行不存在')
   const wo = await prisma.qmsWorkOrder.findUnique({ where: { workOrderNumber: line.workOrderNumber }, select: { projectName: true, customerName: true } })
-  return { ...row!, projectName: wo?.projectName ?? null, customerName: wo?.customerName ?? null }
+  return { ...row, projectName: wo?.projectName ?? null, customerName: wo?.customerName ?? null }
 }
 
 /** 我的待办里的"可以开工"：附上工件和第一道工序，页面按工序方式给"登记发出"或"开工"按钮 */

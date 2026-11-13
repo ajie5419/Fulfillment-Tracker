@@ -31,14 +31,14 @@ function edit(t: Tpl | null) {
   else {
     const keys = t.nodes.map(() => nextKey++)
     form.nodes = t.nodes.map((n, i) => ({
-      key: keys[i]!,
+      key: keys[i] ?? nextKey++,
       name: n.name,
       dept: n.dept,
       requiresProcess: n.requiresProcess,
       daysBeforeDelivery: n.daysBeforeDelivery,
       phase: n.phase ?? '',
       durationDays: n.durationDays ?? undefined,
-      preds: n.preds == null ? [] : n.preds.length ? n.preds.map((seq) => keys[seq - 1]!).filter((k) => k != null) : [NONE],
+      preds: n.preds == null ? [] : n.preds.length ? n.preds.map((seq) => keys[seq - 1]).filter((k): k is number => k != null) : [NONE],
       parent: n.parent != null ? keys[n.parent - 1] : undefined,
     }))
   }
@@ -47,12 +47,13 @@ function edit(t: Tpl | null) {
 const addRow = (i: number) => form.nodes.splice(i + 1, 0, blank(form.nodes[i]))
 function removeRow(i: number) {
   const [gone] = form.nodes.splice(i, 1)
+  if (!gone) return
   // 只等被删那一行的：改成"无前置"，不能变成空（空 = 默认等上一个，会凭空多出前置关系）
   for (const n of form.nodes) {
     // 上级被删了：变回一级节点
-    if (n.parent === gone!.key) n.parent = undefined
-    if (!n.preds.includes(gone!.key)) continue
-    const rest = n.preds.filter((k) => k !== gone!.key)
+    if (n.parent === gone.key) n.parent = undefined
+    if (!n.preds.includes(gone.key)) continue
+    const rest = n.preds.filter((k) => k !== gone.key)
     n.preds = rest.length ? rest : [NONE]
   }
 }
@@ -86,7 +87,7 @@ function move(i: number, d: -1 | 1) {
   const j = i + d
   if (j < 0 || j >= form.nodes.length) return
   const [x] = form.nodes.splice(i, 1)
-  form.nodes.splice(j, 0, x!)
+  if (x) form.nodes.splice(j, 0, x)
 }
 
 async function save() {
@@ -107,7 +108,7 @@ async function save() {
       phase: n.phase.trim() || null,
       durationDays: n.durationDays || null,
       // 没选 = 默认上一个；"无前置" = []；其余换成当前顺序号
-      preds: !n.preds.length ? null : n.preds[0] === NONE ? [] : n.preds.map((k) => pos.get(k)!).filter(Boolean),
+      preds: !n.preds.length ? null : n.preds[0] === NONE ? [] : n.preds.map((k) => pos.get(k)).filter((seq): seq is number => Boolean(seq)),
       parent: n.parent != null ? (pos.get(n.parent) ?? null) : null,
     }))
     const body = { name: form.name, description: form.description || null, nodes }
@@ -193,7 +194,7 @@ const columns = [
           </div>
           <div v-for="(n, i) in form.nodes" :key="n.key" class="node-row">
             <span class="seq">{{ i + 1 }}</span>
-            <a-input v-if="parentRow(n)" :value="parentRow(n)!.phase" disabled title="子节点的阶段跟上级" style="width: 120px" aria-label="阶段（跟上级）" />
+            <a-input v-if="parentRow(n)" :value="parentRow(n)?.phase" disabled title="子节点的阶段跟上级" style="width: 120px" aria-label="阶段（跟上级）" />
             <a-auto-complete v-else v-model:value="n.phase" :options="phaseOptions" placeholder="阶段" style="width: 120px" :maxlength="64" />
             <a-select
               :value="n.parent"

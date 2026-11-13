@@ -21,10 +21,14 @@ const ringColor = computed(() => {
 <template>
   <a-card :id="`node-${n.id}`" size="small" class="node" :class="{ focus }">
     <template #title>
-      <span class="node-name">{{ n.name }}</span>
-      <a-tag v-if="n.alertLevel === 'RED'" color="red">红</a-tag>
-      <a-tag v-else-if="n.alertLevel === 'YELLOW'" color="orange">黄</a-tag>
-      <span class="muted">　<WoLink v-if="linkable" :no="n.workOrderNumber" /><template v-else>{{ n.workOrderNumber }}</template>　总计划节点 <PlanNodeCell v-if="linkable" :work-order-number="n.workOrderNumber" :node="n.planNode" /><template v-else>{{ n.planNode ? `${n.planNode.seq}. ${n.planNode.name}` : '未挂节点' }}</template>　需求日 {{ dayText(n.needDate) }}（<span :class="{ warn: n.incomplete && n.daysLeft <= windowDays }">{{ daysLeftText(n.daysLeft) }}</span>）　负责人 {{ n.ownerText }}</span>
+      <span class="node-head-line">
+        <span class="node-name">{{ n.name }}</span>
+        <UiAlertMark :level="n.alertLevel === 'RED' ? 'late' : n.alertLevel === 'YELLOW' ? 'risk' : null" />
+        <a-tag v-if="n.alertLevel === 'RED'" color="red">红</a-tag>
+        <a-tag v-else-if="n.alertLevel === 'YELLOW'" color="orange">黄</a-tag>
+        <span class="muted">　<WoLink v-if="linkable" :no="n.workOrderNumber" /><template v-else>{{ n.workOrderNumber }}</template>　总计划节点 <PlanNodeCell v-if="linkable" :work-order-number="n.workOrderNumber" :node="n.planNode" /><template v-else>{{ n.planNode ? `${n.planNode.seq}. ${n.planNode.name}` : '未挂节点' }}</template>　需求日 {{ dayText(n.needDate) }}（<span :class="{ warn: n.incomplete && n.daysLeft <= windowDays }">{{ daysLeftText(n.daysLeft) }}</span>）　</span>
+        <UiUserChip :name="n.ownerText" :muted="!n.ownerId" />
+      </span>
     </template>
     <template #extra>
       <a-space v-if="n.canEdit" size="small">
@@ -57,7 +61,8 @@ const ringColor = computed(() => {
 .warn { color: var(--ft-late-text); }
 .node { margin-bottom: 12px; }
 .node.focus, .ft-app .ft-content .ant-card.node.focus { border-color: var(--ft-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ft-primary) 20%, transparent); }
-.node-name { font-weight: 600; margin-right: 6px; }
+.node-name { font-weight: 600; margin-right: 4px; }
+.node-head-line { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .progress { display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
 .progress :deep(.txt) { font-size: 14px; }
 .summary { min-width: 0; }

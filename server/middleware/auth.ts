@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   const resolved = await resolveSession(prisma, token)
   if (resolved) {
     event.context.user = { qmsUserId: resolved.session.qmsUserId, name: resolved.session.userName }
-    if (resolved.renewedExpiresAt) setSessionCookie(event, token!, resolved.renewedExpiresAt)
+    if (resolved.renewedExpiresAt && token) setSessionCookie(event, token, resolved.renewedExpiresAt)
     return
   }
 

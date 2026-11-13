@@ -23,7 +23,7 @@ export function parentsOf(nodes: { id: string; parent?: string | null }[]): Map<
     const p = raw.get(id)
     return !p || p === id || !raw.has(p)
   }
-  return new Map(nodes.map((n) => [n.id, !isTop(n.id) && isTop(n.parent!) ? n.parent! : null]))
+  return new Map(nodes.map((n) => [n.id, n.parent && !isTop(n.id) && isTop(n.parent) ? n.parent : null]))
 }
 
 /**
@@ -55,7 +55,7 @@ export function childrenOf(nodes: Pick<NodeFacts, 'id' | 'parent'>[]): Map<strin
   const out = new Map<string, string[]>(nodes.map((n) => [n.id, []]))
   for (const n of nodes) {
     const p = parentOf.get(n.id)
-    if (p) out.get(p)!.push(n.id)
+    if (p) out.get(p)?.push(n.id)
   }
   return out
 }
@@ -82,12 +82,14 @@ export function topoOrder(ids: string[], preds: Map<string, string[]>): string[]
   const ready = ids.filter((id) => indeg.get(id) === 0)
   const pos = new Map(ids.map((id, i) => [id, i]))
   while (ready.length) {
-    ready.sort((a, b) => pos.get(a)! - pos.get(b)!)
-    const id = ready.shift()!
+    ready.sort((a, b) => (pos.get(a) ?? 0) - (pos.get(b) ?? 0))
+    const id = ready.shift()
+    if (!id) break
     out.push(id)
-    for (const s of succ.get(id)!) {
-      indeg.set(s, indeg.get(s)! - 1)
-      if (indeg.get(s) === 0) ready.push(s)
+    for (const s of succ.get(id) ?? []) {
+      const nextDeg = (indeg.get(s) ?? 1) - 1
+      indeg.set(s, nextDeg)
+      if (nextDeg === 0) ready.push(s)
     }
   }
   return out.length === ids.length ? out : null
@@ -154,14 +156,14 @@ export function downstreamOf(est: Pick<NodeEstimate, 'id' | 'preds' | 'children'
   const out = new Map<string, string[]>()
   for (const e of est) {
     const seen = new Set<string>()
-    const stack = [...succ.get(e.id)!]
+    const stack = [...(succ.get(e.id) ?? [])]
     while (stack.length) {
-      const id = stack.pop()!
-      if (seen.has(id) || id === e.id) continue
+      const id = stack.pop()
+      if (!id || seen.has(id) || id === e.id) continue
       seen.add(id)
-      stack.push(...succ.get(id)!)
+      stack.push(...(succ.get(id) ?? []))
     }
-    out.set(e.id, [...seen].sort((a, b) => pos.get(a)! - pos.get(b)!))
+    out.set(e.id, [...seen].sort((a, b) => (pos.get(a) ?? 0) - (pos.get(b) ?? 0)))
   }
   return out
 }

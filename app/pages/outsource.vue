@@ -73,7 +73,7 @@ useOneShotQuery(['step'], { fetches: [{ pending: transitPending, error: transitE
     return false
   }
   filter.tab = 'out'
-  focusStep.value = id!
+  focusStep.value = id ?? ''
   nextTick(() => document.querySelector('.focus-row')?.scrollIntoView({ block: 'center' }))
   return { tab: 'out' }
 })
@@ -139,7 +139,7 @@ const backColumns = [
           <template v-if="column.key === 'name'"><button type="button" class="name-btn" @click="drawerPartId = record.partId">{{ record.partName }}</button><span class="muted"> · </span>{{ record.processName }}</template>
           <template v-else-if="column.key === 'wo'"><WoLink :no="record.workOrderNumber" /></template>
           <template v-else-if="column.key === 'sup'"><span v-if="record.supplierName">{{ record.supplierName }}</span><UiStatusTag v-else tone="risk">未选</UiStatusTag></template>
-          <template v-else-if="column.key === 'owner'"><span v-if="record.ownerName">{{ record.ownerName }}</span><UiStatusTag v-else tone="risk">未指定</UiStatusTag></template>
+          <template v-else-if="column.key === 'owner'"><UiUserChip v-if="record.ownerName" :name="record.ownerName" /><UiStatusTag v-else tone="risk">未指定</UiStatusTag></template>
           <template v-else-if="column.key === 'date'">
             <UiStatusTag v-if="record.startLateDays" tone="late">应开工已过 {{ record.startLateDays }} 天</UiStatusTag>
             <span v-else class="muted">{{ record.planStartDate ? dayText(record.planStartDate) : '未定' }}</span>
