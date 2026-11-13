@@ -154,8 +154,11 @@ const isMilestone = (n: GNode) => !(n.childCount && n.childCount > 0) && (!n.sta
 
 function nodeProgress(n: GNode): number {
   if (n.done) return 100
-  if (n.taskCount && n.taskCount > 0) return Math.round(((n.doneCount ?? 0) / n.taskCount) * 100)
-  return 0
+  /** Direct tasks and child nodes are separate completion obligations; task counts exclude children. */
+  const children = props.nodes.filter((child) => child.parentId === n.id)
+  const total = (n.taskCount ?? 0) + Math.max(n.childCount ?? 0, children.length)
+  const completed = (n.doneCount ?? 0) + children.filter((child) => child.done).length
+  return total > 0 ? Math.round((completed / total) * 100) : 0
 }
 
 function nodeAlertLevel(n: GNode): 'late' | 'risk' | null {
