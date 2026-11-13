@@ -4,7 +4,7 @@
  */
 import { SESSION_COOKIE, resolveSession } from '../services/auth/session'
 
-const PUBLIC_PREFIXES = ['/auth/', '/api/health', '/_nuxt/', '/__nuxt', '/favicon']
+const PUBLIC_PREFIXES = ['/auth/', '/api/health', '/_nuxt/', '/__nuxt', '/favicon', '/brick-demo']
 
 function isPublic(path: string) {
   if (path === '/api/telemetry/client') return true
