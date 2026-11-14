@@ -1,38 +1,35 @@
 <script setup lang="ts">
 /**
- * 计划甘特图 (PlanGantt) - 1:1 还原 BRICK 现代工程协同视觉规范
- * 1. 外层浅灰圆角大托盘 (Project Tray, #F9F9F9, sRGB 0.977)
- * 2. 托盘顶栏信息提纯 (单行流式排开工单、项目名称、交付日期、完成度、快捷操作)
- * 3. 纯白内嵌精密卡片 (#FFFFFF)
- * 4. 左半边 4 列极简大纲表 (TASK | ASSIGNED | PROGRESS | DATES) - Sticky 固定吸顶吸左
- * 5. 右半边双色调日历甘特图 (月份条 + 34px 舒适日宽 + 今日蓝色胶囊药丸 + 贯穿细蓝线 + 周末柔灰背景带 + 药丸胶囊横道)
+ * 总计划同屏甘特视图（Brick 风格，只读）：
+ * 外层采用「浅灰圆角大托盘（Project Tray）+ 纯白内嵌卡（Inset Card）」三层结构；
+ * 左侧固定 4 列精简表（节点/任务名称、责任部门/人、完成进度、计划起止），右侧无缝拼接日历时间轴与 SVG 依赖连线。
  */
-import { computed, nextTick, onMounted, ref } from 'vue'
-import type { AlertLevel } from '~/components/ui/AlertMark.vue'
-
-export interface GNode {
+interface GNode {
   id: string
-  parentId: string | null
+  seq: number
   code: string
-  name: string
-  phase?: string | null
-  deptText?: string | null
-  confirmedByName?: string | null
-  planDate: string
-  startDate?: string | null
-  expectedDate: string
-  actualDate?: string | null
-  baselineDate?: string | null
-  done: boolean
-  critical: boolean
-  delayDays: number
+  parentId: string | null
   childCount?: number
+  name: string
+  deptText: string
+  confirmedByName?: string | null
+  phase: string | null
+  startDate: string | null
+  planDate: string
+  baselineDate: string | null
+  expectedDate: string
+  actualDate: string | null
+  done: boolean
+  delayDays: number
+  critical: boolean
+  slackDays: number | null
+  customDeps: boolean
   taskCount?: number
   doneCount?: number
+  overdueCount?: number
   dateConflict?: boolean
   preds: { id: string; seq: number; code: string; name?: string }[]
 }
-
 const props = withDefaults(
   defineProps<{
     nodes: GNode[]
@@ -46,18 +43,16 @@ const props = withDefaults(
 const emit = defineEmits<{ select: [id: string] }>()
 
 const DAY = 86_400_000
-const DAY_WIDTH = 34
 const GANTT_LAYOUT = {
-  leftWidth: 480,
+  leftWidth: 490,
   rowHeight: 38,
-  headHeight: 52,
+  headHeight: 42,
   svgWidth: 1000,
   shortSpanDays: 45,
   midMonthDay: 15,
   compactRowSpan: 4,
   maxInlinePreds: 2,
 } as const
-
 const ganttCssVars = {
   '--gantt-left-w': `${GANTT_LAYOUT.leftWidth}px`,
   '--gantt-row-h': `${GANTT_LAYOUT.rowHeight}px`,
@@ -65,11 +60,8 @@ const ganttCssVars = {
 }
 
 const hoverId = ref<string | null>(null)
-const scrollContainer = ref<HTMLElement | null>(null)
 
 const t = (d: string) => Date.parse(`${d}T00:00:00.000Z`)
-
-// 确定全局日历范围（对齐到整天）
 const range = computed(() => {
   const days: number[] = [t(props.today)]
   for (const n of props.nodes) {
@@ -78,88 +70,34 @@ const range = computed(() => {
     if (n.baselineDate) days.push(t(n.baselineDate))
   }
   if (props.deliveryDate) days.push(t(props.deliveryDate))
-  const rawMin = Math.min(...days) - 2 * DAY
-  const rawMax = Math.max(...days) + 4 * DAY
-  const startDate = new Date(rawMin)
-  const min = Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate())
-  const endDate = new Date(rawMax)
-  const max = Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate())
-  const span = Math.max(DAY, max - min + DAY)
-  return { min, span }
+  const min = Math.min(...days) - 3 * DAY
+  const max = Math.max(...days) + 5 * DAY
+  return { min, span: Math.max(DAY, max - min) }
 })
-
-const WEEKDAY_NAMES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const
-
-interface CalendarDay {
-  dateStr: string
-  dayName: string
-  dateNum: number
-  isWeekend: boolean
-  isToday: boolean
-}
-
-const calendarDays = computed<CalendarDay[]>(() => {
-  const { min, span } = range.value
-  const list: CalendarDay[] = []
-  for (let d = min; d < min + span; d += DAY) {
-    const x = new Date(d)
-    const y = x.getUTCFullYear()
-    const m = x.getUTCMonth() + 1
-    const dt = x.getUTCDate()
-    const dow = x.getUTCDay()
-    const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(dt).padStart(2, '0')}`
-    list.push({
-      dateStr,
-      dayName: WEEKDAY_NAMES[dow] ?? 'MO',
-      dateNum: dt,
-      isWeekend: dow === 0 || dow === 6,
-      isToday: dateStr === props.today,
-    })
-  }
-  return list
-})
-
-interface MonthGroup {
-  key: string
-  label: string
-  daysCount: number
-  widthPx: number
-}
-
-const monthGroups = computed<MonthGroup[]>(() => {
-  const groups: MonthGroup[] = []
-  let currentKey = ''
-  let currentGroup: MonthGroup | null = null
-
-  for (const d of calendarDays.value) {
-    const ym = d.dateStr.slice(0, 7)
-    if (ym !== currentKey) {
-      currentKey = ym
-      const parts = ym.split('-')
-      const y = parts[0] ?? ''
-      const m = Number(parts[1] ?? '1')
-      currentGroup = {
-        key: ym,
-        label: `${y}年 ${m}月`,
-        daysCount: 0,
-        widthPx: 0,
-      }
-      groups.push(currentGroup)
-    }
-    if (currentGroup) {
-      currentGroup.daysCount++
-      currentGroup.widthPx = currentGroup.daysCount * DAY_WIDTH
-    }
-  }
-  return groups
-})
-
-const timelineWidthPx = computed(() => Math.max(600, calendarDays.value.length * DAY_WIDTH))
-
 /** 某天的左边位置（0~100%）；end = true 取当天结束 */
 const pos = (d: string, end = false) => ((t(d) + (end ? DAY : 0) - range.value.min) / range.value.span) * 100
 const clampPct = (v: number) => Math.max(0, Math.min(100, v))
 const pct = (v: number) => `${clampPct(v).toFixed(3)}%`
+
+/** 时间刻度：每月 1 号主刻度线；跨度短于 45 天加每周一，否则加每月 15 号半月次刻度线 */
+const ticks = computed(() => {
+  const out: { left: string; label: string; major: boolean }[] = []
+  const { min, span } = range.value
+  const start = new Date(min)
+  const short = span < GANTT_LAYOUT.shortSpanDays * DAY
+  for (let d = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()); d <= min + span; d += DAY) {
+    const x = new Date(d)
+    const date = x.getUTCDate()
+    const month = date === 1
+    const minor = short ? x.getUTCDay() === 1 : date === GANTT_LAYOUT.midMonthDay
+    if (month || minor) {
+      const m = x.getUTCMonth() + 1
+      const label = month ? (m === 1 ? `${x.getUTCFullYear()}年1月` : `${m}月`) : `${m}/${date}`
+      out.push({ left: pct(((d - min) / span) * 100), label, major: month })
+    }
+  }
+  return out
+})
 
 const leafNodes = computed(() => {
   const leaves = props.nodes.filter((n) => !(n.childCount && n.childCount > 0))
@@ -206,7 +144,7 @@ const rows = computed<Row[]>(() => {
       cur = ph
     }
     const next = props.nodes[i + 1]
-    const isLastChild = Boolean(n.parentId && (!next || next.parentId !== n.parentId))
+    const isLastChild = !!n.parentId && (!next || next.parentId !== n.parentId)
     out.push({ kind: 'node', key: n.id, n, isSummary: (n.childCount ?? 0) > 0, isLastChild })
   }
   return out
@@ -214,393 +152,322 @@ const rows = computed<Row[]>(() => {
 
 const isMilestone = (n: GNode) => !(n.childCount && n.childCount > 0) && (!n.startDate || n.startDate === n.planDate)
 
-function nodeProgress(n: { done?: boolean; childCount?: number; taskCount?: number; doneCount?: number; id?: string }): number {
+function nodeProgress(n: GNode): number {
   if (n.done) return 100
   /** Direct tasks and child nodes are separate completion obligations; task counts exclude children. */
   const children = props.nodes.filter((child) => child.parentId === n.id)
   const total = (n.taskCount ?? 0) + Math.max(n.childCount ?? 0, children.length)
   const completed = (n.doneCount ?? 0) + children.filter((child) => child.done).length
-  return total ? Math.round((completed / total) * 100) : 0
+  return total > 0 ? Math.round((completed / total) * 100) : 0
 }
 
-const shortDayText = (d: string) => {
-  const parts = d.split('-')
-  return `${parts[1] ?? ''}-${parts[2] ?? ''}`
+function nodeAlertLevel(n: GNode): 'late' | 'risk' | null {
+  if (n.done) return null
+  if (n.delayDays > 0 || (n.overdueCount ?? 0) > 0) return 'late'
+  if (n.dateConflict || n.critical) return 'risk'
+  return null
 }
 
-const shortRangeText = (start?: string | null, end?: string | null) => {
-  if (!start && !end) return '—'
-  if (!start || start === end) return shortDayText(end ?? '')
-  return `${shortDayText(start)} ~ ${shortDayText(end ?? '')}`
+function barStyle(n: GNode) {
+  const l = pos(n.startDate ?? n.planDate)
+  return { left: pct(l), width: pct(Math.max(0.8, pos(n.planDate, true) - l)) }
 }
-
-const nodeAlertLevel = (n: GNode): AlertLevel => {
-  if (n.done) return 'none'
-  if (n.delayDays > 0) return 'danger'
-  if (n.dateConflict) return 'warn'
-  return 'none'
-}
-
+const lateStyle = (n: GNode) => ({ left: pct(pos(n.planDate, true)), width: pct(Math.max(0.4, pos(n.expectedDate, true) - pos(n.planDate, true))) })
 const baseStyle = (n: GNode) => {
-  if (!n.baselineDate) return {}
-  const left = pct(pos(n.startDate ?? n.baselineDate))
-  const width = pct(Math.max(0.6, pos(n.baselineDate, true) - pos(n.startDate ?? n.baselineDate)))
-  return { left, width }
+  const base = n.baselineDate ?? n.planDate
+  const dur = n.startDate ? (t(n.planDate) - t(n.startDate)) / DAY : 0
+  const l = pos(base) - (dur / range.value.span) * DAY * 100
+  return { left: pct(l), width: pct(Math.max(0.5, pos(base, true) - l)) }
 }
 
-const barStyle = (n: GNode) => {
-  const start = n.startDate ?? n.planDate
-  const left = pct(pos(start))
-  const width = pct(Math.max(0.8, pos(n.planDate, true) - pos(start)))
-  return { left, width }
+/** 节点右侧前置短标签：显示前置编号，让用户不悬停也能直接看到前置来源 */
+function predBadgeText(n: GNode): string | null {
+  if ((n.childCount ?? 0) > 0 || !n.preds.length) return null
+  if (n.preds.length <= GANTT_LAYOUT.maxInlinePreds) return `← ${n.preds.map((p) => p.code).join('、')}`
+  const head = n.preds.slice(0, GANTT_LAYOUT.maxInlinePreds).map((p) => p.code).join('、')
+  return `← ${head} 等${n.preds.length}项`
 }
 
-const barEndLeft = (n: GNode) => pct(pos(n.planDate, true))
-
-const lateStyle = (n: GNode) => {
-  const left = pct(pos(n.planDate, true))
-  const width = pct(Math.max(0.6, pos(n.expectedDate, true) - pos(n.planDate, true)))
-  return { left, width }
+function barEndLeft(n: GNode): string {
+  const endDate = !n.done && n.delayDays > 0 && n.expectedDate > n.planDate ? n.expectedDate : n.planDate
+  return pct(pos(endDate, true))
 }
 
-const predBadgeText = (n: GNode) => {
-  if (!n.preds || !n.preds.length) return ''
-  const codes = n.preds.map((p) => p.code).slice(0, GANTT_LAYOUT.maxInlinePreds)
-  return `← ${codes.join(', ')}`
+/** 计算前置依赖连线（SVG 坐标系：X 为 0~1000，Y 为像素行中心） */
+interface DepEdge {
+  key: string
+  fromId: string
+  toId: string
+  path: string
+  arrowX: number
+  arrowY: number
+  critical: boolean
+  compact: boolean
+  active: boolean
+  dimmed: boolean
 }
 
-const tip = (n: GNode) => {
-  const rangeStr = shortRangeText(n.startDate, n.planDate)
-  const owner = n.confirmedByName ? `${n.confirmedByName}（${n.deptText}）` : n.deptText
-  const lines = [`${n.code} ${n.name}`, `责任：${owner ?? '—'}`, `计划：${rangeStr}`]
-  if (n.delayDays > 0) lines.push(`延误：${n.delayDays} 天`)
-  return lines.join('\n')
-}
-
-// 依赖连线与高亮
-const nodeRowIndexMap = computed(() => {
-  const map = new Map<string, number>()
+const rowIndexByNodeId = computed(() => {
+  const map = new Map<string, { idx: number; node: GNode }>()
   rows.value.forEach((r, idx) => {
-    if (r.kind === 'node') map.set(r.n.id, idx)
+    if (r.kind === 'node') map.set(r.n.id, { idx, node: r.n })
   })
   return map
 })
 
-const predGraph = computed(() => {
-  const predsOf = new Map<string, string[]>()
-  const succsOf = new Map<string, string[]>()
+const relatedIds = computed(() => {
+  const active = hoverId.value
+  if (!active) return null
+  const set = new Set<string>([active])
   for (const n of props.nodes) {
-    const pids = (n.preds ?? []).map((p) => p.id)
-    predsOf.set(n.id, pids)
-    for (const pid of pids) {
-      const arr = succsOf.get(pid) ?? []
-      arr.push(n.id)
-      succsOf.set(pid, arr)
+    if (n.id === active) {
+      for (const p of n.preds) set.add(p.id)
+    } else if (n.preds.some((p) => p.id === active)) {
+      set.add(n.id)
     }
   }
-  return { predsOf, succsOf }
-})
-
-const relatedIds = computed<Set<string> | null>(() => {
-  const id = hoverId.value
-  if (!id) return null
-  const set = new Set<string>([id])
-  const walk = (cur: string, map: Map<string, string[]>) => {
-    for (const next of map.get(cur) ?? []) {
-      if (!set.has(next)) {
-        set.add(next)
-        walk(next, map)
-      }
-    }
-  }
-  walk(id, predGraph.value.predsOf)
-  walk(id, predGraph.value.succsOf)
   return set
 })
 
-const relationRole = (id: string): 'self' | 'pred' | 'succ' | 'none' => {
-  const cur = hoverId.value
-  if (!cur) return 'none'
-  if (id === cur) return 'self'
-  if (predGraph.value.predsOf.get(cur)?.includes(id)) return 'pred'
-  if (predGraph.value.succsOf.get(cur)?.includes(id)) return 'succ'
-  return 'none'
-}
-
-interface DepEdge {
-  key: string
-  path: string
-  arrowX: number
-  arrowY: number
-  active: boolean
-  critical: boolean
-  compact: boolean
-  dimmed: boolean
-}
-
-const svgHeight = computed(() => rows.value.length * GANTT_LAYOUT.rowHeight)
-
 const depEdges = computed<DepEdge[]>(() => {
+  const map = rowIndexByNodeId.value
+  const active = hoverId.value
   const edges: DepEdge[] = []
-  const nodeMap = new Map(props.nodes.map((n) => [n.id, n]))
-  const hId = hoverId.value
-  const relSet = relatedIds.value
+  for (const r of rows.value) {
+    if (r.kind !== 'node' || r.isSummary) continue
+    const to = r.n
+    const toEntry = map.get(to.id)
+    if (!toEntry) continue
+    for (const p of to.preds) {
+      const fromEntry = map.get(p.id)
+      if (!fromEntry) continue
+      const from = fromEntry.node
+      const x1 = (clampPct(pos(from.planDate, true)) / 100) * GANTT_LAYOUT.svgWidth
+      const y1 = fromEntry.idx * GANTT_LAYOUT.rowHeight + GANTT_LAYOUT.rowHeight / 2
+      const toStart = isMilestone(to)
+        ? pos(to.planDate) + (pos(to.planDate, true) - pos(to.planDate)) / 2
+        : pos(to.startDate ?? to.planDate)
+      const x2 = (clampPct(toStart) / 100) * GANTT_LAYOUT.svgWidth
+      const y2 = toEntry.idx * GANTT_LAYOUT.rowHeight + GANTT_LAYOUT.rowHeight / 2
 
-  for (const n of props.nodes) {
-    const toRow = nodeRowIndexMap.value.get(n.id)
-    if (toRow == null) continue
-    for (const p of n.preds ?? []) {
-      const fromNode = nodeMap.get(p.id)
-      const fromRow = nodeRowIndexMap.value.get(p.id)
-      if (!fromNode || fromRow == null) continue
+      const rowDist = Math.abs(toEntry.idx - fromEntry.idx)
+      const critical = from.critical && to.critical && !from.done && !to.done
+      const compact = rowDist <= GANTT_LAYOUT.compactRowSpan
+      const isEdgeActive = active === from.id || active === to.id
+      const isDimmed = !!active && !isEdgeActive
 
-      const x1 = (pos(fromNode.planDate, true) / 100) * GANTT_LAYOUT.svgWidth
-      const y1 = fromRow * GANTT_LAYOUT.rowHeight + GANTT_LAYOUT.rowHeight / 2
-      const x2 = (pos(n.startDate ?? n.planDate) / 100) * GANTT_LAYOUT.svgWidth
-      const y2 = toRow * GANTT_LAYOUT.rowHeight + GANTT_LAYOUT.rowHeight / 2
-
-      const rowSpan = Math.abs(toRow - fromRow)
-      const isShort = rowSpan <= GANTT_LAYOUT.compactRowSpan
-      const active = Boolean(hId && (n.id === hId || fromNode.id === hId))
-      const dimmed = Boolean(relSet && !relSet.has(n.id) && !relSet.has(fromNode.id))
-      const critical = n.critical && fromNode.critical
-
-      const offset = isShort ? 6 : 10
-      const midX = Math.max(x1 + offset, Math.min(x2 - offset, (x1 + x2) / 2))
-      const path = `M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`
-
+      let path = ''
+      if (x2 >= x1 + 4) {
+        const midX = x1 + Math.min(10, Math.max(3, (x2 - x1) * 0.4))
+        path = `M ${x1.toFixed(1)} ${y1} L ${midX.toFixed(1)} ${y1} L ${midX.toFixed(1)} ${y2} L ${x2.toFixed(1)} ${y2}`
+      } else {
+        const dir = y2 >= y1 ? 1 : -1
+        const detY = y1 + dir * (GANTT_LAYOUT.rowHeight * 0.45)
+        const leftX = Math.max(4, x2 - 8)
+        path = `M ${x1.toFixed(1)} ${y1} L ${(x1 + 5).toFixed(1)} ${y1} L ${(x1 + 5).toFixed(1)} ${detY.toFixed(1)} L ${leftX.toFixed(1)} ${detY.toFixed(1)} L ${leftX.toFixed(1)} ${y2} L ${x2.toFixed(1)} ${y2}`
+      }
       edges.push({
-        key: `${fromNode.id}->${n.id}`,
+        key: `${from.id}->${to.id}`,
+        fromId: from.id,
+        toId: to.id,
         path,
         arrowX: x2,
         arrowY: y2,
-        active,
         critical,
-        compact: isShort,
-        dimmed,
+        compact,
+        active: isEdgeActive,
+        dimmed: isDimmed,
       })
     }
   }
-  return edges
+  return edges.sort((a, b) => Number(a.active) - Number(b.active) || Number(a.critical) - Number(b.critical))
 })
 
-const deliveryLeft = computed(() => (props.deliveryDate ? pct(pos(props.deliveryDate)) : null))
+const svgHeight = computed(() => Math.max(GANTT_LAYOUT.rowHeight, rows.value.length * GANTT_LAYOUT.rowHeight))
 
-// 页面挂载后自动平滑定位到「今天」
-onMounted(() => {
-  nextTick(() => {
-    if (!scrollContainer.value) return
-    const todayIndex = calendarDays.value.findIndex((d) => d.isToday)
-    if (todayIndex > 0) {
-      const targetScroll = Math.max(0, todayIndex * DAY_WIDTH - 160)
-      scrollContainer.value.scrollLeft = targetScroll
-    }
-  })
-})
+function relationRole(id: string): 'self' | 'pred' | 'succ' | null {
+  const active = hoverId.value
+  if (!active) return null
+  if (id === active) return 'self'
+  const cur = rowIndexByNodeId.value.get(active)?.node
+  if (cur?.preds.some((p) => p.id === id)) return 'pred'
+  const target = rowIndexByNodeId.value.get(id)?.node
+  if (target?.preds.some((p) => p.id === active)) return 'succ'
+  return null
+}
+
+function tip(n: GNode) {
+  const parts = [`#${n.code} ${n.name}（${n.deptText}）`, `计划 ${n.startDate ? `${n.startDate} ~ ` : ''}${n.planDate}`]
+  if (n.baselineDate && n.baselineDate !== n.planDate) parts.push(`基线 ${n.baselineDate}`)
+  if (n.done) parts.push(`已完成 ${n.actualDate}`)
+  else {
+    parts.push(`预计 ${n.expectedDate}${n.delayDays > 0 ? `（晚 ${n.delayDays} 天）` : ''}`)
+    if (n.slackDays != null) parts.push(n.slackDays <= 0 ? '关键节点：再晚就拖交期' : `余量 ${n.slackDays} 天`)
+  }
+  if (n.preds.length) parts.push(`前置 ${n.preds.map((p) => `#${p.code}${p.name ? ` ${p.name}` : ''}`).join('、')}`)
+  return parts.join('\n')
+}
+const todayLeft = computed(() => pct(pos(props.today)))
+const deliveryLeft = computed(() => (props.deliveryDate ? pct(pos(props.deliveryDate, true)) : null))
 </script>
 
 <template>
-  <div class="gantt-wrap" @mouseleave="hoverId = null">
-    <!-- 浅灰大圆角托盘 (Project Tray) -->
-    <section class="project-tray">
-      <!-- 托盘顶栏 -->
+  <div class="gantt-wrap" :style="ganttCssVars">
+    <!-- Brick 风格浅灰圆角大托盘 + 纯白内嵌卡 -->
+    <div class="project-tray">
       <div class="tray-head">
         <div class="tray-left">
-          <button type="button" class="tray-chevron" aria-label="收起/展开工单">⌄</button>
-          <span class="av-circle">{{ (wo || '工')[0] }}</span>
-          <span class="tray-wo">{{ wo || 'DEMO-001' }}</span>
-          <span class="tray-sep">/</span>
-          <span class="tray-product">{{ projectName || '全生命周期协同工程' }}</span>
-          <span class="tray-scope">阶段：全生命周期 ⌄</span>
+          <span class="tray-chevron" aria-hidden="true">⌄</span>
+          <span v-if="wo" class="tray-wo">{{ wo }}</span>
+          <template v-if="projectName">
+            <span class="tray-sep" aria-hidden="true">/</span>
+            <span class="tray-product">{{ projectName }}</span>
+          </template>
+          <span class="tray-scope">总计划同屏甘特</span>
         </div>
         <div class="tray-right">
           <span v-if="deliveryDate">合同交期 <b class="tray-strong">{{ shortDayText(deliveryDate) }}</b></span>
-          <span class="tray-sep">·</span>
           <span class="mini-progress">
             <span class="mini-track"><span class="mini-fill" :style="{ width: `${overallPct}%` }" /></span>
             <span>{{ doneLeafCount }}/{{ totalLeafCount }} 已完成</span>
           </span>
-          <span class="tray-icons" aria-hidden="true">
-            <span>📷</span>
-            <span>📎</span>
-            <span>✏</span>
-            <span>⛶</span>
-          </span>
         </div>
       </div>
 
-      <!-- 纯白内嵌精密卡片 (Inset Card) -->
-      <div class="inset-card">
-        <div ref="scrollContainer" class="gantt-scroll">
-          <div class="gantt" :style="{ ...ganttCssVars, '--gantt-timeline-w': `${timelineWidthPx}px` }">
-            <!-- 表头 -->
-            <div class="g-row g-head">
-              <div class="g-split-cols">
-                <span class="col-head">TASK</span>
-                <span class="col-head">ASSIGNED</span>
-                <span class="col-head" style="text-align: right">PROGRESS</span>
-                <span class="col-head">DATES</span>
-              </div>
-              <div class="gt-timeline-track">
-                <div class="gt-head">
-                  <!-- 月份标头栏 -->
-                  <div class="gt-months-row">
-                    <div
-                      v-for="m in monthGroups"
-                      :key="m.key"
-                      class="gt-month-cell"
-                      :style="{ width: `${m.widthPx}px` }"
-                    >
-                      <span class="month-title">{{ m.label }}</span>
-                    </div>
-                  </div>
-                  <!-- 日期与星期标头栏 -->
-                  <div class="gt-days-row" :style="{ gridTemplateColumns: `repeat(${calendarDays.length}, ${DAY_WIDTH}px)` }">
-                    <div
-                      v-for="d in calendarDays"
-                      :key="d.dateStr"
-                      class="gt-day"
-                      :class="{ weekend: d.isWeekend, today: d.isToday }"
-                    >
-                      <span class="d-name">{{ d.dayName }}</span>
-                      <span class="d-num">{{ d.dateNum }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+      <div class="gantt-scroll">
+        <div class="gantt" role="table" aria-label="总计划甘特图" @mouseleave="hoverId = null">
+          <!-- 顶部刻度栏（左 4 列精简表头 + 右时间轴刻度） -->
+          <div class="g-row g-head" role="row">
+            <div class="g-split-cols g-head-cols" role="columnheader">
+              <span>节点 / 任务名称</span>
+              <span>责任部门 / 人</span>
+              <span class="col-prog">进度</span>
+              <span class="col-date">计划起止</span>
+            </div>
+            <div class="g-track g-head-track" role="columnheader">
+              <span v-for="k in ticks" :key="k.left" class="tick-label" :class="{ minor: !k.major }" :style="{ left: k.left }">{{ k.label }}</span>
+              <span class="marker-pill today-pill" :style="{ left: todayLeft }">今天</span>
+              <span v-if="deliveryLeft" class="marker-pill delivery-pill" :style="{ left: deliveryLeft }">合同交期</span>
+            </div>
+          </div>
+
+          <!-- 主体行与轨道 -->
+          <div class="g-body">
+            <!-- 背景网格竖线与今天/交期参考线 -->
+            <div class="g-lines" aria-hidden="true">
+              <span v-for="k in ticks" :key="k.left" class="tick" :class="{ minor: !k.major }" :style="{ left: k.left }" />
+              <span class="today-line" :style="{ left: todayLeft }" />
+              <span v-if="deliveryLeft" class="delivery-line" :style="{ left: deliveryLeft }" />
             </div>
 
-            <!-- 主体行与轨道 -->
-            <div class="g-body">
-              <!-- 垂直网格线背景层（含周末浅灰底色带 + 今日贯穿细蓝线） -->
-              <div class="gt-cols-bg" :style="{ gridTemplateColumns: `repeat(${calendarDays.length}, ${DAY_WIDTH}px)` }" aria-hidden="true">
-                <div
-                  v-for="d in calendarDays"
-                  :key="d.dateStr"
-                  class="gt-col-cell"
-                  :class="{ weekend: d.isWeekend, 'today-line': d.isToday }"
-                />
+            <!-- SVG 前置依赖连线层 -->
+            <svg
+              class="g-deps"
+              :viewBox="`0 0 ${GANTT_LAYOUT.svgWidth} ${svgHeight}`"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <g v-for="e in depEdges" :key="e.key" class="dep-group" :class="{ active: e.active, critical: e.critical, compact: e.compact, dimmed: e.dimmed }">
+                <path :d="e.path" class="dep-line" vector-effect="non-scaling-stroke" />
+                <circle :cx="e.arrowX" :cy="e.arrowY" r="2.2" class="dep-dot" vector-effect="non-scaling-stroke" />
+              </g>
+            </svg>
+
+            <!-- 阶段汇总行与节点行 -->
+            <template v-for="r in rows" :key="r.key">
+              <div v-if="r.kind === 'phase'" class="g-row g-phase" role="row">
+                <div class="g-split-cols phase-cols" role="cell">
+                  <div class="st-task">
+                    <span class="phase-code">{{ r.code }}</span>
+                    <span class="phase-name">{{ r.phase }}</span>
+                  </div>
+                  <span class="phase-meta">阶段汇总</span>
+                  <span class="col-prog" :class="{ 'c-done': r.count && r.done === r.count }">
+                    {{ r.count ? `${Math.round((r.done / r.count) * 100)}%` : '—' }}
+                  </span>
+                  <span class="col-date">{{ shortRangeText(r.start, r.end) }}</span>
+                </div>
+                <div class="g-track" role="cell">
+                  <span class="phase-bar" :style="{ left: pct(pos(r.start)), width: pct(Math.max(0.8, pos(r.end, true) - pos(r.start))) }" :title="`${r.phase}：${r.start} ~ ${r.end}`" />
+                </div>
               </div>
 
-              <!-- 合同交期垂直指示线 -->
               <div
-                v-if="deliveryLeft != null"
-                class="gt-delivery-line"
-                :style="{ left: deliveryLeft }"
-                title="合同交期"
+                v-else
+                class="g-row g-node-row"
+                :class="{
+                  'child-row': r.n.parentId,
+                  'last-child-row': r.isLastChild,
+                  'summary-row': r.isSummary,
+                  'is-hovered': relationRole(r.n.id) === 'self',
+                  'is-related': relationRole(r.n.id) === 'pred' || relationRole(r.n.id) === 'succ',
+                  'is-dimmed': relatedIds && !relatedIds.has(r.n.id),
+                }"
+                role="row"
+                :aria-label="tip(r.n)"
+                @mouseenter="hoverId = r.n.id"
               >
-                <div class="gt-delivery-tag">合同交期 {{ shortDayText(props.deliveryDate ?? '') }}</div>
+                <button type="button" class="g-split-cols node-cols" role="cell" :title="tip(r.n)" @click="emit('select', r.n.id)">
+                  <span class="st-task">
+                    <span class="seq" :class="{ child: r.n.parentId }">{{ r.n.code }}</span>
+                    <span class="name" :class="{ 'summary-name': r.isSummary }">{{ r.n.name }}</span>
+                    <UiAlertMark :level="nodeAlertLevel(r.n)" />
+                    <span v-if="relationRole(r.n.id) === 'pred'" class="rel-tag pred">前置</span>
+                    <span v-else-if="relationRole(r.n.id) === 'succ'" class="rel-tag succ">后继</span>
+                  </span>
+                  <span class="st-user">
+                    <UiUserChip :name="r.n.confirmedByName || r.n.deptText" />
+                  </span>
+                  <span class="col-prog" :class="{ 'c-done': nodeProgress(r.n) === 100 }">
+                    {{ nodeProgress(r.n) }}%
+                  </span>
+                  <span class="col-date" :class="{ 'c-danger': !r.n.done && r.n.delayDays > 0, 'c-warn': !r.n.done && r.n.dateConflict }">
+                    {{ shortRangeText(r.n.startDate, r.n.planDate) }}
+                  </span>
+                </button>
+
+                <div class="g-track" role="cell" :title="tip(r.n)" @click="emit('select', r.n.id)">
+                  <span v-if="r.n.baselineDate && r.n.baselineDate !== r.n.planDate" class="baseline" :style="baseStyle(r.n)" />
+                  <span
+                    v-if="r.isSummary"
+                    class="summary-bar"
+                    :class="{ done: r.n.done }"
+                    :style="barStyle(r.n)"
+                  />
+                  <span
+                    v-else-if="isMilestone(r.n)"
+                    class="milestone"
+                    :class="{ done: r.n.done, critical: r.n.critical }"
+                    :style="{ left: pct(pos(r.n.planDate) + (pos(r.n.planDate, true) - pos(r.n.planDate)) / 2) }"
+                  />
+                  <span
+                    v-else
+                    class="bar"
+                    :class="{ done: r.n.done, critical: r.n.critical && !r.n.done }"
+                    :style="barStyle(r.n)"
+                  >
+                    <span
+                      v-if="!r.n.done && nodeProgress(r.n) > 0"
+                      class="bar-progress-fill"
+                      :style="{ width: `${nodeProgress(r.n)}%` }"
+                    />
+                  </span>
+                  <span v-if="!r.n.done && r.n.delayDays > 0 && !r.isSummary" class="late" :style="lateStyle(r.n)" />
+                  <span
+                    v-if="predBadgeText(r.n)"
+                    class="pred-badge"
+                    :class="{ active: relationRole(r.n.id) === 'self' || relationRole(r.n.id) === 'succ' }"
+                    :style="{ left: barEndLeft(r.n) }"
+                  >
+                    {{ predBadgeText(r.n) }}
+                  </span>
+                </div>
               </div>
-
-              <!-- SVG 前置依赖连线层 -->
-              <svg
-                class="g-deps"
-                :viewBox="`0 0 ${GANTT_LAYOUT.svgWidth} ${svgHeight}`"
-                preserveAspectRatio="none"
-                aria-hidden="true"
-              >
-                <g v-for="e in depEdges" :key="e.key" class="dep-group" :class="{ active: e.active, critical: e.critical, compact: e.compact, dimmed: e.dimmed }">
-                  <path :d="e.path" class="dep-line" vector-effect="non-scaling-stroke" />
-                  <circle :cx="e.arrowX" :cy="e.arrowY" r="2.2" class="dep-dot" vector-effect="non-scaling-stroke" />
-                </g>
-              </svg>
-
-              <!-- 阶段汇总行与节点行 -->
-              <template v-for="r in rows" :key="r.key">
-                <div v-if="r.kind === 'phase'" class="g-row g-phase" role="row">
-                  <div class="g-split-cols phase-cols" role="cell">
-                    <div class="st-task">
-                      <span class="phase-code">{{ r.code }}</span>
-                      <span class="phase-name">{{ r.phase }}</span>
-                    </div>
-                    <span class="phase-meta">阶段汇总</span>
-                    <span class="col-prog" :class="{ 'c-done': r.count && r.done === r.count }">
-                      {{ r.count ? `${Math.round((r.done / r.count) * 100)}%` : '—' }}
-                    </span>
-                    <span class="col-date">{{ shortRangeText(r.start, r.end) }}</span>
-                  </div>
-                  <div class="g-track" role="cell">
-                    <span class="phase-bar" :style="{ left: pct(pos(r.start)), width: pct(Math.max(0.8, pos(r.end, true) - pos(r.start))) }" :title="`${r.phase}：${r.start} ~ ${r.end}`" />
-                  </div>
-                </div>
-
-                <div
-                  v-else
-                  class="g-row g-node-row"
-                  :class="{
-                    'child-row': r.n.parentId,
-                    'last-child-row': r.isLastChild,
-                    'summary-row': r.isSummary,
-                    'is-hovered': relationRole(r.n.id) === 'self',
-                    'is-related': relationRole(r.n.id) === 'pred' || relationRole(r.n.id) === 'succ',
-                    'is-dimmed': relatedIds && !relatedIds.has(r.n.id),
-                  }"
-                  role="row"
-                  :aria-label="tip(r.n)"
-                  @mouseenter="hoverId = r.n.id"
-                >
-                  <button type="button" class="g-split-cols node-cols" role="cell" :title="tip(r.n)" @click="emit('select', r.n.id)">
-                    <span class="st-task">
-                      <span class="seq" :class="{ child: r.n.parentId }">{{ r.n.code }}</span>
-                      <span class="name" :class="{ 'summary-name': r.isSummary }">{{ r.n.name }}</span>
-                      <UiAlertMark :level="nodeAlertLevel(r.n)" />
-                      <span v-if="relationRole(r.n.id) === 'pred'" class="rel-tag pred">前置</span>
-                      <span v-else-if="relationRole(r.n.id) === 'succ'" class="rel-tag succ">后继</span>
-                    </span>
-                    <span class="st-user">
-                      <UiUserChip :name="r.n.confirmedByName || r.n.deptText" />
-                    </span>
-                    <span class="col-prog" :class="{ 'c-done': nodeProgress(r.n) === 100 }">
-                      {{ nodeProgress(r.n) }}%
-                    </span>
-                    <span class="col-date" :class="{ 'c-danger': !r.n.done && r.n.delayDays > 0, 'c-warn': !r.n.done && r.n.dateConflict }">
-                      {{ shortRangeText(r.n.startDate, r.n.planDate) }}
-                    </span>
-                  </button>
-
-                  <div class="g-track" role="cell" :title="tip(r.n)" @click="emit('select', r.n.id)">
-                    <span v-if="r.n.baselineDate && r.n.baselineDate !== r.n.planDate" class="baseline" :style="baseStyle(r.n)" />
-                    <span
-                      v-if="r.isSummary"
-                      class="summary-bar"
-                      :class="{ done: r.n.done }"
-                      :style="barStyle(r.n)"
-                    />
-                    <span
-                      v-else-if="isMilestone(r.n)"
-                      class="milestone"
-                      :class="{ done: r.n.done, critical: r.n.critical }"
-                      :style="{ left: pct(pos(r.n.planDate) + (pos(r.n.planDate, true) - pos(r.n.planDate)) / 2) }"
-                    />
-                    <span
-                      v-else
-                      class="bar"
-                      :class="{ done: r.n.done, critical: r.n.critical && !r.n.done }"
-                      :style="barStyle(r.n)"
-                    >
-                      <span
-                        v-if="!r.n.done && nodeProgress(r.n) > 0"
-                        class="bar-progress-fill"
-                        :style="{ width: `${nodeProgress(r.n)}%` }"
-                      />
-                    </span>
-                    <span v-if="!r.n.done && r.n.delayDays > 0 && !r.isSummary" class="late" :style="lateStyle(r.n)" />
-                    <span
-                      v-if="predBadgeText(r.n)"
-                      class="pred-badge"
-                      :class="{ active: relationRole(r.n.id) === 'self' || relationRole(r.n.id) === 'succ' }"
-                      :style="{ left: barEndLeft(r.n) }"
-                    >
-                      {{ predBadgeText(r.n) }}
-                    </span>
-                  </div>
-                </div>
-              </template>
-            </div>
+            </template>
           </div>
         </div>
       </div>
-    </section>
+    </div>
 
     <!-- 底部图例 -->
     <div class="legend">
@@ -618,5 +485,213 @@ onMounted(() => {
 </template>
 
 <style scoped>
-@import '~/assets/plan-gantt.css';
+.gantt-wrap { display: flex; flex-direction: column; gap: 10px; }
+
+/* Brick 风格外层浅灰圆角托盘 */
+.project-tray {
+  background: var(--ft-tray-bg);
+  border: 1px solid var(--ft-tray-border);
+  border-radius: 14px;
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tray-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 2px 6px;
+  font-size: 12.5px;
+  color: var(--ft-text-2);
+}
+.tray-left, .tray-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.tray-chevron {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--ft-card-bg);
+  border: 1px solid var(--ft-border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ft-text-2);
+  font-size: 11px;
+  line-height: 1;
+}
+.tray-wo { font-size: 14px; font-weight: 600; color: var(--ft-text); }
+.tray-sep { color: var(--ft-border-hover); }
+.tray-product { color: var(--ft-text-2); font-size: 13px; }
+.tray-scope { color: var(--ft-text-3); font-size: 12px; margin-left: 4px; }
+.tray-strong { color: var(--ft-text); font-weight: 600; }
+.mini-progress { display: inline-flex; align-items: center; gap: 8px; margin-left: 6px; }
+.mini-track { width: 48px; height: 6px; border-radius: 999px; background: var(--ft-border-hover); overflow: hidden; }
+.mini-fill { display: block; height: 100%; background: var(--ft-done); border-radius: 999px; }
+
+/* 内层纯白圆角表格+甘特一体卡 */
+.gantt-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--ft-border);
+  border-radius: 10px;
+  background: var(--ft-card-bg);
+}
+.gantt { min-width: 1060px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.g-row { display: grid; grid-template-columns: var(--gantt-left-w) 1fr; height: var(--gantt-row-h); align-items: center; border-bottom: 1px solid var(--card-border-subtle); transition: background-color 0.12s, opacity 0.15s; }
+.g-body > .g-row:last-child { border-bottom: none; }
+
+/* 表头 */
+.g-head { height: var(--gantt-head-h); background: var(--ft-card-bg); color: var(--ft-text-3); font-size: 11.5px; font-weight: 600; border-bottom: 1px solid var(--ft-border); }
+.g-head-track { overflow: hidden; }
+
+/* 左半边 4 列精简表（节点名称 | 责任人 | 进度 | 计划起止） */
+.g-split-cols {
+  position: relative;
+  padding: 0 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) 108px 54px 86px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+  border-right: 1px solid var(--ft-border);
+  overflow: hidden;
+}
+.node-cols {
+  background: none;
+  border: 0;
+  border-right: 1px solid var(--ft-border);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ft-text);
+  height: 100%;
+  width: 100%;
+}
+.node-cols:hover .name { color: var(--ft-primary); }
+.node-cols:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: -2px; }
+
+.st-task { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
+.st-user { min-width: 0; overflow: hidden; }
+.col-prog { text-align: right; padding-right: 6px; color: var(--ft-text-2); font-size: 12px; font-weight: 500; }
+.col-date { color: var(--ft-text-2); font-size: 12px; white-space: nowrap; }
+.c-done { color: var(--ft-done-text); font-weight: 600; }
+.c-warn { color: var(--ft-risk-text); font-weight: 500; }
+.c-danger { color: var(--ft-late-text); font-weight: 500; }
+
+.seq { flex: none; min-width: 26px; color: var(--ft-text-3); font-size: 12px; }
+.seq.child { margin-left: 18px; min-width: 32px; }
+.name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.summary-name { font-weight: 600; }
+
+/* 子节点左侧连续树形引导线 */
+.child-row .node-cols::before { content: ""; position: absolute; left: 22px; top: 0; bottom: 0; border-left: 1px solid var(--ft-border-hover); pointer-events: none; }
+.child-row.last-child-row .node-cols::before { bottom: 50%; }
+.child-row .node-cols::after { content: ""; position: absolute; left: 22px; top: 50%; width: 8px; border-top: 1px solid var(--ft-border-hover); pointer-events: none; }
+
+/* 悬停上下游联动高亮 */
+.g-node-row:hover, .g-node-row.is-hovered { background: var(--ft-primary-bg); }
+.g-node-row.is-related { background: var(--ft-fill); }
+.g-node-row.is-dimmed { opacity: 0.42; }
+.rel-tag { flex: none; padding: 0 5px; height: 17px; line-height: 17px; border-radius: 999px; font-size: 10.5px; font-weight: 500; }
+.rel-tag.pred { background: var(--ft-indigo-bg); color: var(--ft-indigo-text); }
+.rel-tag.succ { background: var(--ft-primary-bg); color: var(--ft-primary-text); }
+
+/* 右侧时间轴轨道与网格线 */
+.g-track { position: relative; height: 100%; cursor: pointer; }
+.g-phase .g-track, .g-head .g-track { cursor: default; }
+.g-body { position: relative; }
+.g-lines { position: absolute; inset: 0 0 0 var(--gantt-left-w); pointer-events: none; z-index: 0; }
+.tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--ft-border); }
+.tick.minor { border-left: 1px dashed var(--card-border-subtle); }
+.tick-label { position: absolute; top: 11px; transform: translateX(5px); white-space: nowrap; color: var(--ft-text-2); font-weight: 500; }
+.tick-label.minor { color: var(--ft-text-3); font-weight: 400; font-size: 11px; }
+
+/* 今天 & 合同交期竖线与顶部胶囊 */
+.today-line { position: absolute; top: 0; bottom: 0; border-left: 1.5px solid var(--ft-primary); z-index: 3; }
+.delivery-line { position: absolute; top: 0; bottom: 0; border-left: 2px solid var(--ft-text); z-index: 3; }
+.marker-pill { position: absolute; bottom: 4px; transform: translateX(-50%); padding: 0 6px; height: 16px; line-height: 16px; border-radius: 999px; font-size: 10px; font-weight: 600; white-space: nowrap; z-index: 4; pointer-events: none; }
+.today-pill { background: var(--ft-primary-bg); color: var(--ft-primary-text); border: 1px solid var(--ft-primary); }
+.delivery-pill { background: var(--ft-text); color: var(--ft-card-bg); }
+
+/* SVG 依赖连线 */
+.g-deps { position: absolute; inset: 0 0 0 var(--gantt-left-w); width: calc(100% - var(--gantt-left-w)); height: 100%; pointer-events: none; z-index: 1; overflow: visible; }
+.dep-line { fill: none; stroke: var(--ft-border-hover); stroke-width: 1.2px; stroke-dasharray: 3 3; opacity: 0.45; transition: stroke 0.15s, stroke-width 0.15s, opacity 0.15s; }
+.dep-dot { fill: var(--ft-border-hover); opacity: 0.5; transition: fill 0.15s, opacity 0.15s; }
+.dep-group.compact .dep-line { stroke-dasharray: none; opacity: 0.75; }
+.dep-group.critical .dep-line { stroke: var(--ft-primary); stroke-dasharray: none; opacity: 0.65; }
+.dep-group.critical .dep-dot { fill: var(--ft-primary); opacity: 0.8; }
+.dep-group.dimmed .dep-line, .dep-group.dimmed .dep-dot { opacity: 0.12; }
+.dep-group.active .dep-line { stroke: var(--ft-primary); stroke-width: 1.8px; stroke-dasharray: none; opacity: 1; }
+.dep-group.active .dep-dot { fill: var(--ft-primary); opacity: 1; }
+
+/* 阶段行与阶段括号横梁 */
+.g-phase { background: var(--ft-fill); font-weight: 600; }
+.phase-code { color: var(--ft-text-2); min-width: 16px; }
+.phase-name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phase-meta { color: var(--ft-text-3); font-size: 11.5px; font-weight: 400; }
+.phase-bar { position: absolute; top: 50%; height: 6px; margin-top: -4px; background: var(--ft-text-2); border-radius: 2px 2px 0 0; z-index: 2; }
+.phase-bar::before, .phase-bar::after { content: ""; position: absolute; bottom: -4px; width: 0; height: 0; border-top: 4px solid var(--ft-text-2); }
+.phase-bar::before { left: 0; border-right: 4px solid transparent; }
+.phase-bar::after { right: 0; border-left: 4px solid transparent; }
+
+/* 二级汇总节点横梁 */
+.summary-bar { position: absolute; top: 50%; height: 6px; margin-top: -3px; background: var(--ft-text-3); border-radius: 2px; z-index: 2; }
+.summary-bar::before, .summary-bar::after { content: ""; position: absolute; bottom: -3px; width: 0; height: 0; border-top: 3px solid var(--ft-text-3); }
+.summary-bar::before { left: 0; border-right: 3px solid transparent; }
+.summary-bar::after { right: 0; border-left: 3px solid transparent; }
+.summary-bar.done { background: var(--ft-done); }
+.summary-bar.done::before, .summary-bar.done::after { border-top-color: var(--ft-done); }
+
+/* 作业节点横道（双色进度填充）、里程碑、延误段与前置标签 */
+.bar {
+  position: absolute;
+  top: 50%;
+  height: 16px;
+  margin-top: -8px;
+  border-radius: 5px;
+  background: var(--ft-indigo-bg);
+  border: 1px solid var(--ft-indigo);
+  z-index: 2;
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.bar-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--ft-indigo);
+  border-radius: 4px;
+}
+.g-node-row.is-hovered .bar { box-shadow: 0 0 0 2px var(--ft-primary-bg), 0 1px 4px rgba(9, 9, 11, 0.12); }
+.bar.critical { background: var(--ft-primary-bg); border-color: var(--ft-primary); }
+.bar.critical .bar-progress-fill { background: var(--ft-primary); }
+.bar.done { background: var(--ft-done); border-color: var(--ft-done); }
+.late { position: absolute; top: 50%; height: 16px; margin-top: -8px; border-radius: 0 5px 5px 0; z-index: 2; box-sizing: border-box;
+  background: repeating-linear-gradient(135deg, var(--ft-late) 0 3px, var(--ft-late-bg) 3px 6px); border: 1px solid var(--ft-late); border-left: 0; }
+.milestone { position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; transform: rotate(45deg); background: var(--ft-card-bg); border: 2px solid var(--ft-primary); border-radius: 1px; z-index: 3; box-sizing: border-box; }
+.milestone.critical { background: var(--ft-primary); }
+.milestone.done { background: var(--ft-done); border-color: var(--ft-done); }
+.baseline { position: absolute; top: 50%; height: 3px; margin-top: 9px; background: var(--ft-text-3); border-radius: 1px; z-index: 1; }
+
+.pred-badge { position: absolute; top: 50%; transform: translate(6px, -50%); font-size: 11px; color: var(--ft-text-3); white-space: nowrap; pointer-events: none; z-index: 3; padding: 0 4px; border-radius: 4px; transition: color 0.12s, background-color 0.12s; }
+.pred-badge.active { color: var(--ft-primary-text); background: var(--ft-primary-bg); font-weight: 500; }
+
+/* 图例 */
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 2px 4px; font-size: 12px; color: var(--ft-text-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.lg { display: inline-block; width: 18px; height: 10px; border-radius: 3px; position: relative; box-sizing: border-box; }
+.lg.bar { position: relative; top: 0; margin: 0; height: 10px; }
+.lg.summary { height: 5px; background: var(--ft-text-2); border-radius: 1px; }
+.lg.late { background: repeating-linear-gradient(135deg, var(--ft-late) 0 3px, var(--ft-late-bg) 3px 6px); border: 1px solid var(--ft-late); }
+.lg.milestone { width: 9px; height: 9px; margin: 0 3px; transform: rotate(45deg); position: relative; top: 0; border-width: 2px; border-radius: 1px; }
+.lg.dep { height: 0; border-top: 1.5px solid var(--ft-primary); border-radius: 0; }
+.lg.dep::after { content: ""; position: absolute; right: -1px; top: -3px; width: 4px; height: 4px; border-radius: 50%; background: var(--ft-primary); }
+.lg.today { width: 0; height: 12px; border-left: 1.5px solid var(--ft-primary); border-radius: 0; }
+.lg.delivery { width: 0; height: 12px; border-left: 2px solid var(--ft-text); border-radius: 0; }
 </style>

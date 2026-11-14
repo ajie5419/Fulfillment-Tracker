@@ -72,6 +72,15 @@ const enc = encodeURIComponent
   <div class="page">
     <!-- 某个工单的计划 -->
     <template v-if="wo">
+      <div class="topbar">
+        <div class="crumbs">
+          <NuxtLink to="/plan">项目计划</NuxtLink><span class="sep">/</span><span>{{ wo }}</span>
+        </div>
+        <div class="topbar-actions">
+          <NuxtLink to="/brick-demo" class="demo-pill">✨ BRICK 风格全新 Demo 页 ›</NuxtLink>
+          <NuxtLink :to="`/wo/${enc(wo)}`">工单详情 ›</NuxtLink>
+        </div>
+      </div>
       <!-- key：换工单时重建，避免上一个工单打开的编辑框（节点 ID）带到新工单里被保存 -->
       <PlanEditor :key="wo" :wo="wo" />
     </template>
@@ -181,6 +190,8 @@ const enc = encodeURIComponent
 .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 20px; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 16px; }
 .topbar-actions { display: inline-flex; align-items: center; gap: 14px; }
+.demo-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; background: var(--ft-primary-bg); color: var(--ft-primary-text); font-size: 12.5px; font-weight: 600; text-decoration: none; border: 1px solid var(--ft-border); transition: background 0.15s; }
+.demo-pill:hover { background: var(--ft-fill); }
 .crumbs { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--ft-text-2); }
 .sep { color: var(--ft-text-3); }
 .small { font-size: 12px; }

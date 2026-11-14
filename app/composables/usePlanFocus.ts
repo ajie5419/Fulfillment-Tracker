@@ -11,7 +11,7 @@ export function usePlanFocus(options: { reveal: (id: string) => void; reload: ()
   const route = useRoute()
   const focusNode = ref<string | null>((route.query.node as string) || null)
   const expanded = ref<string[]>([])
-  const view = ref<'table' | 'gantt'>('gantt')
+  const view = ref<'table' | 'gantt'>('table')
   const today = computed(() => factoryDay(new Date()))
 
   /** 加载完成后：地址栏指定的节点存在就展开并滚动到它 */
