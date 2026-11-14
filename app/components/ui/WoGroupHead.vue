@@ -25,8 +25,9 @@ const pct = computed(() => (props.total ? Math.round((props.done / props.total) 
 <template>
   <div class="ft-group-head">
     <div class="head-left">
-      <span class="tray-chevron" aria-hidden="true">⌄</span>
-      <span class="wo"><WoLink :no="no" /></span>
+      <!-- Preview callers can supply a real toggle and avoid links to synthetic work orders. -->
+      <slot name="leading"><span class="tray-chevron" aria-hidden="true">⌄</span></slot>
+      <span class="wo"><slot name="workOrder"><WoLink :no="no" /></slot></span>
       <template v-if="nodes.length">
         <span class="sep" aria-hidden="true">/</span>
         <span class="nodes">

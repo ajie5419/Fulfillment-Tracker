@@ -84,6 +84,7 @@ GRANT ALL PRIVILEGES ON ${database}.* TO '${databaseUser}'@'%';\n`,
   const foreign = await prisma.qmsWorkOrder.count({ where: { NOT: { workOrderNumber: { startsWith: 'DEMO-' } } } })
   if (foreign) throw new Error('演示库中存在非演示工单，已停止，未清除任何记录。')
   if (!process.argv.includes('--keep-data')) await seedDemo()
+  stage = '修复演示身份配置及计划接收待办'
   const { repairIsolatedDemo } = await jiti.import(resolve('server/services/dev/repair-isolated-demo.ts'))
   const repaired = await repairIsolatedDemo()
   if (repaired.created) console.log(`已补齐演示账号身份配置，补发 ${repaired.created} 条计划接收待办。`)
@@ -109,8 +110,13 @@ GRANT ALL PRIVILEGES ON ${database}.* TO '${databaseUser}'@'%';\n`,
   console.log(`独立演示环境已启动：${origin}（${count} 个演示工单）。选择“演示管理员 / 分管领导”可查看全部模块。`)
 }
 
-main().catch(() => {
+main().catch((error) => {
   // Driver/child-process errors can contain connection credentials; do not dump them.
+  const code = error?.code ?? error?.errorCode
+  if (typeof code === 'string' && /^(P\d{4}|ECONNREFUSED|ETIMEDOUT|ECONNRESET|ENOTFOUND)$/.test(code)) {
+    console.error(`演示启动错误码：${code}`)
+    if (code === 'P2028') console.error('数据库事务启动或执行超时。请检查数据库负载和锁等待；不要清空演示数据，也不要重复并发启动。')
+  }
   console.error(`演示环境准备失败：${stage}。请检查构建产物、端口、本地证书及 qms-container-mysql 容器；未删除原环境数据。`)
   process.exit(1)
 })

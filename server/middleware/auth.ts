@@ -7,6 +7,7 @@ import { SESSION_COOKIE, resolveSession } from '../services/auth/session'
 const PUBLIC_PREFIXES = ['/auth/', '/api/health', '/_nuxt/', '/__nuxt', '/favicon']
 
 function isPublic(path: string) {
+  if (path === '/brick-demo' || path === '/brick-demo/') return true
   if (path === '/api/telemetry/client') return true
   if (PUBLIC_PREFIXES.some((p) => path.startsWith(p))) return true
   // 带扩展名的静态文件放行；接口一律要登录，哪怕路径像文件名
