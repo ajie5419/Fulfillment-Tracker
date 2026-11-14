@@ -356,7 +356,7 @@ const loadColumns = [
     right-empty="当前无逾期或临期设计任务"
     @select="selectSpotlightTask"
   />
-  <UiSectionCard>
+  <UiSectionCard tray>
     <template #title>
       <div class="card-head-left">
         <span class="ft-title">设计任务</span>

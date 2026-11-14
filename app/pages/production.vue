@@ -172,7 +172,7 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
       <UiStatCard label="没排工序的工件" :value="shown(data.unroutedParts)" unit="个" tone="risk" accent icon="warn" :to="{ path: '/parts', query: { wo: filter.wo || undefined, noRoute: '1' } }" sub="点开到工序编排" />
     </div>
 
-    <a-card>
+    <UiSectionCard tray>
       <template #title>
         <span class="ft-title">生产调度 <UiHelpTip>跨工单看工序，每行一个主按钮：没有负责人先"指定负责人"；可以开工的自制 / 厂内外协点"开工"，厂外外协点"发出"；加工中点"完工"（可部分完工、报废）；在外的 QMS 漏报检时点"登记返厂"。"可以开工"= 上一道已完成或已有部分返回；第一道还要求挂着的关键物料都到货、设计任务都完成。排工序、改日期到"工序编排"。</UiHelpTip></span>
       </template>
@@ -263,7 +263,7 @@ const EMPTY_TEXT: Record<ProductionTab, string> = { ready: '没有可以开工�
           </section>
         </div>
       </a-spin>
-    </a-card>
+    </UiSectionCard>
 
     <StepActionHost ref="host" @done="refresh()" />
     <PartDrawer :part-id="drawerPartId" @close="closePart" @changed="refresh()" />

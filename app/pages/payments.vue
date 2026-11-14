@@ -144,7 +144,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
     <UiStatCard label="暂缓" :value="stats ? stats.onHold : '—'" unit="笔" tone="risk" accent icon="warn" clickable :active="filter.status === 'ON_HOLD' && !filter.blocking" @click="applyStatus('ON_HOLD')" />
     <UiStatCard label="已付" :value="stats ? stats.paid : '—'" unit="笔" tone="done" accent icon="check" clickable :active="filter.status === 'PAID' && !filter.blocking" @click="applyStatus('PAID')" />
   </div>
-  <a-card v-if="!error">
+  <UiSectionCard tray v-if="!error">
     <div class="ft-toolbar">
       <a-segmented v-model:value="filter.status" :options="statusOptions" />
       <div class="ft-toolbar-right">
@@ -225,7 +225,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
       </template>
     </a-table>
     </div>
-  </a-card>
+  </UiSectionCard>
   </div>
 
   <PaymentCreateModal :open="creating" @close="creating = false" @done="creating = false; refreshAll()" />

@@ -152,7 +152,7 @@ const woOptions = computed(() => workOrders.value.map((w) => ({ value: w.workOrd
 
 <template>
   <div>
-  <a-card>
+  <UiSectionCard tray>
     <template #title>
       <span class="ft-title">工序编排 <UiHelpTip>给工件排工序链：工序、方式（自制 / 厂内外协 / 厂外外协）、班组或外协厂、负责人、应开工和要求完成日、所属总计划节点。点"编排"在右侧改，勾选多个工件可批量套模板、批量设负责人 / 班组 / 日期。工件一般由技术部发放图纸时附 BOM 自动建好。开工、完工、发出在"生产调度"和"外协"做。</UiHelpTip></span>
     </template>
@@ -214,7 +214,7 @@ const woOptions = computed(() => workOrders.value.map((w) => ({ value: w.workOrd
         工序链：<span class="step-chip c-done">已完成</span> <span class="step-chip c-cur">当前</span> <span class="step-chip c-late">超期 / 有异常</span> <span class="step-chip c-todo">未开始</span> <span class="step-chip c-todo fill">待补充</span>
       </p>
     </a-spin>
-  </a-card>
+  </UiSectionCard>
 
   <RouteEditDrawer :part="editPart" :work-order-number="workOrderNumber ?? ''" :plan-opts="planOpts" :can-route="canRoute" @close="editId = null" @changed="refresh()" @deleted="editId = null; refresh()" />
   <RouteBatchModal :open="batch.open" :mode="batch.mode" :part-ids="selected" :plan-opts="planOpts" @close="batch.open = false" @done="afterBatch" />

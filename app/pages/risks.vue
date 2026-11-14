@@ -253,7 +253,7 @@ function clearFilters() {
       </UiSectionCard>
     </div>
 
-    <UiSectionCard icon="shield" padding="none" title="风险明细" :sub="filter.workOrderNumber ? `工单 ${filter.workOrderNumber}` : '按紧急度排序：红色预警 → 超期异常 → 黄色预警 → 未超期异常'">
+    <UiSectionCard icon="shield" padding="none" title="风险明细" tray :sub="filter.workOrderNumber ? `工单 ${filter.workOrderNumber}` : '按紧急度排序：红色预警 → 超期异常 → 黄色预警 → 未超期异常'">
       <template #extra>
         <a-segmented v-model:value="tab" :options="tabOptions" class="tabs" />
         <a-select v-model:value="filter.workOrderNumber" allow-clear show-search placeholder="全部工单" style="width: 168px" :options="woOptions" />

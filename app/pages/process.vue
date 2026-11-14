@@ -174,7 +174,7 @@ const whoWhen = (name: string | null, at: string | null) => (name && at ? `${nam
       <template #sub>工艺已下发 {{ num(stats?.processIssued) }} · 共 {{ num(stats?.total) }} 个部件</template>
     </UiStatCard>
   </div>
-  <a-card>
+  <UiSectionCard tray>
     <div class="ft-toolbar">
       <a-segmented v-model:value="filter.view" :options="VIEWS.map((v) => ({ value: v.value, label: v.label }))" />
       <div class="ft-toolbar-right">
@@ -247,7 +247,7 @@ const whoWhen = (name: string | null, at: string | null) => (name && at ? `${nam
     </a-table>
     </div>
     </template>
-  </a-card>
+  </UiSectionCard>
   </div>
 
   <ReleaseCreateModal :open="releaseOpen" :prefill="prefill" @close="releaseOpen = false" @done="releaseOpen = false" />

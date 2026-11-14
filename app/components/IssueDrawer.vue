@@ -120,7 +120,7 @@ const actions: IssueAction[] = ['accept', 'resolve', 'close', 'reject', 'reassig
           <a-tag v-if="detail.overdue" color="red">超期{{ detail.overdueDays ? ` ${detail.overdueDays} 天` : '（待受理超时）' }}</a-tag>
         </a-space>
         <p class="desc">{{ detail.description }}</p>
-        <a-descriptions :column="2" size="small" bordered>
+        <a-descriptions :column="2" size="small" class="meta-card">
           <a-descriptions-item label="工单"><WoLink :no="detail.workOrderNumber" /></a-descriptions-item>
           <a-descriptions-item label="关联">
             <NuxtLink v-if="detail.refText" :to="detail.partId ? `/parts?wo=${encodeURIComponent(detail.workOrderNumber)}&part=${encodeURIComponent(detail.partId)}` : `/parts?wo=${encodeURIComponent(detail.workOrderNumber)}`">{{ detail.refText }}</NuxtLink>
@@ -183,6 +183,8 @@ const actions: IssueAction[] = ['accept', 'resolve', 'close', 'reject', 'reassig
 
 <style scoped>
 .desc { font-size: 15px; white-space: pre-wrap; }
+.meta-card { background: var(--ft-tray-bg); border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); padding: 12px 16px; }
+.meta-card :deep(.ant-descriptions-view) { border: none; }
 .photos { margin-top: 12px; display: flex; gap: 8px; }
 .photos :deep(.ant-image) { margin-right: 8px; }
 .actions { margin-top: 16px; }

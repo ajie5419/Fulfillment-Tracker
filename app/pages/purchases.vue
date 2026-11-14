@@ -277,7 +277,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
     </UiStatCard>
     <UiStatCard label="卡付款" :value="stats ? stats.blockedByPayment : '—'" unit="项" tone="upstream" accent icon="warn" clickable :active="filter.view === 'blocked'" sub="未到货，有没付的卡交期付款申请" @click="applyView('blocked')" />
   </div>
-  <a-card>
+  <UiSectionCard tray>
     <!-- 左边按状态切换，右边是工单、搜索、显示方式和操作按钮（统一单行工具栏） -->
     <div class="ft-toolbar">
       <a-segmented v-model:value="filter.view" :options="VIEWS.map((v) => ({ value: v.value, label: v.label }))" />
@@ -382,7 +382,7 @@ const sourceText = { MOBILE: '手机', PC: '电脑', QMS_INSPECTION: 'QMS 进货
     </a-table>
     </div>
     <UiListPager v-if="!error" :page="page" :page-size="pageSize" :total="total" :loading="pending" @change="changePage" />
-  </a-card>
+  </UiSectionCard>
   </div>
 
   <a-drawer :open="!!commenting" :title="`留言：${commenting?.name ?? ''}`" :width="520" destroy-on-close @close="closeComments">

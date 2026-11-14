@@ -67,7 +67,7 @@ const statusText = (item: Item) => !item.convertedLineId ? '未转入' : `已转
         </a-space>
         <p class="muted">总计划节点：{{ plan.planNode ? `${plan.planNode.seq}. ${plan.planNode.name}` : '未关联' }}<br>创建人：{{ plan.createdBy }}<template v-if="plan.issuedAt"><br>最近下发：{{ plan.issuedAt.slice(0, 10) }}（{{ plan.issuedBy }}）</template><br>{{ plan.note || '无备注' }}</p>
       </UiSectionCard>
-      <UiSectionCard title="计划明细" style="margin-top: 16px">
+      <UiSectionCard tray title="计划明细" style="margin-top: 16px">
         <template #extra><a-button v-if="editable" :disabled="busy" @click="editItem()">添加明细</a-button></template>
         <a-alert v-if="conversionErrors.length" type="error" message="以下明细转入失败，其余成功项已保留" style="margin-bottom: 12px"><template #description><p v-for="r in conversionErrors" :key="r.itemId">{{ plan.items.find(i => i.id === r.itemId)?.materialName ?? r.itemId }}：{{ r.error }}</p></template></a-alert>
         <div class="ft-well list">
