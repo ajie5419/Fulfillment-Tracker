@@ -157,7 +157,7 @@ async function onCreated(no: string) {
     <!-- 汇总 -->
     <div class="summary">
       <UiStatCard v-for="c in COLUMNS" :key="c.key" :label="BOARD_GROUP_TEXT[c.key]" :value="grouped[c.key].length" :sub="c.key === 'RISK' ? '含预计拖期、预警、未关闭异常、缺件及未齐套，按工单去重' : undefined" unit="个工单" :tone="c.tone" :icon="c.icon" accent />
-      <UiSectionCard padding="tight" class="dept-card">
+      <UiSectionCard tray padding="tight" class="dept-card">
         <div class="dept-title">源头延误在哪个部门<span class="ft-muted">（节点数）</span></div>
         <UiBarList :items="deptItems" compact empty="没有源头延误的节点" />
       </UiSectionCard>
@@ -169,7 +169,7 @@ async function onCreated(no: string) {
     </div>
 
     <a-spin :spinning="pending">
-        <UiSectionCard v-if="layout === 'table'" padding="none">
+        <UiSectionCard v-if="layout === 'table'" tray padding="none">
           <a-table class="ft-table board-table" :columns="tableColumns" :data-source="tableRows" row-key="workOrderNumber" :pagination="false" size="small">
             <template #bodyCell="{ column, record: r }">
               <WoLink v-if="column.key === 'wo'" :no="r.workOrderNumber" />
@@ -182,7 +182,7 @@ async function onCreated(no: string) {
           </a-table>
         </UiSectionCard>
         <div v-else-if="layout === 'manager'" class="manager-groups">
-          <UiSectionCard v-for="group in managerGroups" :key="group.key" flat :title="`${group.name} · ${group.rows.length}`">
+          <UiSectionCard v-for="group in managerGroups" :key="group.key" tray :title="`${group.name} · ${group.rows.length}`">
             <div class="noplan-grid"><BoardWoCard v-for="r in group.rows" :key="r.workOrderNumber" :row="r" :group="groupOf(r)" /></div>
           </UiSectionCard>
           <a-empty v-if="!managerGroups.length" description="没有预计拖期或有风险的工单" />
@@ -217,12 +217,12 @@ async function onCreated(no: string) {
 .summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, 1.6fr); gap: 16px; margin-bottom: 20px; }
 .dept-title { font-size: 13px; color: var(--ft-text-2); margin-bottom: 6px; }
 .columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
-.col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.col-title { display: flex; align-items: center; gap: 6px; margin: 0 0 2px; font-size: 15px; font-weight: 600; color: var(--ft-text); }
+.col { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; background: var(--card-tray-bg); border: 1px solid var(--card-border); border-radius: var(--card-radius-outer); }
+.col-title { display: flex; align-items: center; gap: 6px; margin: 0 2px 2px; font-size: 14.5px; font-weight: 600; color: var(--ft-text); }
 .col-empty { padding: 12px 4px; font-size: 13px; }
-.noplan-sec { margin-top: 24px; }
+.noplan-sec { margin-top: 20px; padding: 12px; background: var(--card-tray-bg); border: 1px solid var(--card-border); border-radius: var(--card-radius-outer); }
 /* align-items: start：卡片按各自内容高度，不被同一行最高的卡片拉高（否则只有两行字的卡片里空一大块） */
-.noplan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 10px; align-items: start; }
+.noplan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 4px; align-items: start; }
 .manager-groups { display: grid; gap: 16px; }
 .board-toolbar { margin-bottom: 16px; }
 .board-table { overflow-x: auto; }

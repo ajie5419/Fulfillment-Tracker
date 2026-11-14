@@ -81,9 +81,12 @@ const attentionSpotlight = computed(() => {
 </script>
 
 <template>
-  <UiSectionCard title="总计划" sub="项目经理、项目部编制、发布和调整；各部门在“部门计划”里接收本部门节点、分解任务，这里只读看执行情况">
-    <template #extra>
-      <a-space wrap>
+  <div class="plan-editor">
+    <UiPageHero
+      title="总计划"
+      summary="项目经理、项目部编制、发布和调整；各部门在“部门计划”里接收本部门节点、分解任务，这里只读看执行情况"
+    >
+      <template #actions>
         <a-segmented v-model:value="view" :options="[{ value: 'table', label: '表格' }, { value: 'gantt', label: '甘特图' }]" aria-label="切换表格 / 甘特图" />
         <a-button v-if="view === 'table' && collapsibleIds.length" @click="toggleAll">{{ allOpen ? (phaseGroups.length ? '只看阶段' : '收起子节点') : '全部展开' }}</a-button>
         <UiRefreshButton @click="load()" />
@@ -95,8 +98,8 @@ const attentionSpotlight = computed(() => {
           <a-button @click="openEdit(null)">新增节点</a-button>
           <a-button v-if="!published" type="primary" :disabled="!data.nodes.length || data.dateConflicts.some((conflict) => conflict.blocksPublish)" @click="publish">发布</a-button>
         </template>
-      </a-space>
-    </template>
+      </template>
+    </UiPageHero>
 
     <a-result v-if="loadError" status="error" :title="loadError" />
     <a-spin v-else-if="!data" />
@@ -123,23 +126,30 @@ const attentionSpotlight = computed(() => {
         @select="selectFromGantt"
       />
 
-      <PlanNodeTable
+      <UiSectionCard
         v-else
-        v-model:expanded="expanded"
-        :data="data"
-        :table-rows="tableRows"
-        :collapsed="collapsed"
-        :has-phase="hasPhase"
-        :loading="loading"
-        :published="published"
-        :wo="wo"
-        :focus-node="focusNode"
-        @toggle-collapse="toggleCollapse"
-        @edit="openEdit($event)"
-        @add-child="openEdit(null, $event)"
-        @remove="askDelete"
-        @changed="onWorkChanged"
-      />
+        tray
+        padding="none"
+        :title="`${wo} · ${data.workOrder.projectName ?? data.workOrder.customerName}`"
+        :sub="data.workOrder.deliveryDate ? `合同交期 ${data.workOrder.deliveryDate}` : undefined"
+      >
+        <PlanNodeTable
+          v-model:expanded="expanded"
+          :data="data"
+          :table-rows="tableRows"
+          :collapsed="collapsed"
+          :has-phase="hasPhase"
+          :loading="loading"
+          :published="published"
+          :wo="wo"
+          :focus-node="focusNode"
+          @toggle-collapse="toggleCollapse"
+          @edit="openEdit($event)"
+          @add-child="openEdit(null, $event)"
+          @remove="askDelete"
+          @changed="onWorkChanged"
+        />
+      </UiSectionCard>
 
       <PlanChangeLogTable :logs="data.changeLogs" />
     </template>
@@ -161,5 +171,13 @@ const attentionSpotlight = computed(() => {
     />
 
     <PlanDeleteReasonModal v-model:open="reasonOpen" v-model:text="reasonText" :node="reasonFor" @ok="submitReason" />
-  </UiSectionCard>
+  </div>
 </template>
+
+<style scoped>
+.plan-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+</style>
