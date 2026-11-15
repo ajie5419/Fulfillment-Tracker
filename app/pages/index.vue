@@ -4,7 +4,7 @@ import { RULE_TEXT, ALERT_LEVEL_TEXT } from '#shared/alert-rules'
 import { todoLink, hasTodoMenu, toneIcon, type Card, type WorkbenchFilter } from '../composables/useWorkbenchFeed'
 
 const { data, pending, error: remindersError } = await useReminders()
-const { openReminder, openPinned, digestOpen, openDigest, readAll } = useWorkbenchReminderActions(() => data.value?.digest)
+const { openReminder, openPinned, readAll } = useWorkbenchReminderActions()
 const { data: todos, pending: todosPending, error: todosError, refresh: refreshTodos } = await useTodos()
 const { data: master } = await useMaster()
 const { data: me } = await useMe()
@@ -65,13 +65,6 @@ function onCardClick(c: Card) {
         </a-result>
         <template v-else-if="!loading">
           <template v-if="isNotifications">
-            <div v-if="data?.digest && !selectedWo && (notificationFilter !== 'unread' || !data.digest.readAt || digestOpen)" class="daily-summary">
-              <button type="button" class="summary-toggle" :aria-expanded="digestOpen" @click="openDigest">
-                <span>每日汇总 · {{ data.digest.title }}</span>
-                <span class="muted">{{ !data.digest.readAt ? '未读 · ' : '' }}{{ digestOpen ? '收起' : '展开' }}</span>
-              </button>
-              <ol v-if="digestOpen"><li v-for="(line, i) in data.digest.lines" :key="i">{{ line }}</li></ol>
-            </div>
             <p class="notification-hint">{{ notificationFilter === 'attention' ? '已关联待办的预警在任务中展示；已消除的预警可在最近记录中查看。' : '已读仅表示看过通知，不代表业务已处理。' }}</p>
             <div v-if="!cards.length" class="empty-box"><a-empty description="没有符合条件的通知" /></div>
             <div v-else class="feed-rows">
@@ -170,7 +163,7 @@ function onCardClick(c: Card) {
 .group-title { margin: 0; padding: 8px 20px; background: var(--ft-fill); border-block: 1px solid var(--ft-border); font-size: 13px; color: var(--ft-text-2); }
 .group-title span { margin-left: 8px; font-weight: 400; }
 .feed-rows { padding: 0 20px; }
-.feed-rows :deep(.title), .task-details, .daily-summary { overflow-wrap: anywhere; }
+.feed-rows :deep(.title), .task-details { overflow-wrap: anywhere; }
 .feed-rows :deep(.extra) { gap: 24px; }
 .due { min-width: 145px; text-align: right; color: var(--ft-text-2); }
 .late { color: var(--ft-late-text); }
@@ -182,12 +175,8 @@ function onCardClick(c: Card) {
 .linked-alert span { flex: 1; min-width: 0; }
 .notification-title { text-align: left; padding: 0; border: 0; background: none; color: var(--ft-text); cursor: pointer; font: inherit; }
 .notification-title.unread { font-weight: 600; }
-.daily-summary { margin: 0 20px; padding: 10px 12px; background: var(--ft-fill); border: 1px solid var(--ft-border); border-radius: 8px; }
-.summary-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left; border: 0; padding: 0; background: none; cursor: pointer; font: inherit; color: var(--ft-text); }
-.summary-toggle .muted { flex-shrink: 0; }
-.daily-summary ol { padding-left: 20px; margin-bottom: 0; color: var(--ft-text-2); font-size: 13px; }
 .due, .views, .group-title, .feed-rows :deep(.meta) { font-variant-numeric: tabular-nums; }
-.notification-title:focus-visible, .summary-toggle:focus-visible, summary:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
+.notification-title:focus-visible, summary:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
 @media (max-width: 767px) {
   .controls { padding-inline: 12px; }
   .views { align-self: stretch; font-size: 12px; }

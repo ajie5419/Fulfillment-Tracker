@@ -25,7 +25,7 @@ it('returns persisted alert identity without guessing from notification links, s
   expect(result.items[0]).toMatchObject({ subject: { type: 'drawing', id: 'd1' }, workOrderNumber: 'WO1', bucket: 'OVERDUE', cleared: false })
   expect(result.items[1]).toMatchObject({ subject: null, link: '/drawings?id=d1' })
   expect(db.reminder.findMany.mock.calls.every(([args]) => args.where.userId === 'owner')).toBe(true)
-  expect(db.reminder.count).toHaveBeenCalledWith({ where: { userId: 'owner', readAt: null } })
+  expect(db.reminder.count).toHaveBeenCalledWith({ where: { userId: 'owner', readAt: null, OR: [{ kind: null }, { kind: { not: 'DIGEST' } }] } })
 })
 
 it('keeps a removed alert unassociated instead of inventing a business reference', async () => {

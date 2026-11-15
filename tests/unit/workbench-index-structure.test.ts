@@ -105,7 +105,7 @@ async function openDom() {
 }
 
 describe('workbench rendered states', () => {
-  it('puts actionable tasks first; notifications and collapsed digest appear only in their view', async () => {
+  it('puts actionable tasks first and omits daily summaries even when the response includes one', async () => {
     const wrapper = await openDom()
     expect(wrapper.text()).toContain('开工零件A')
     expect(wrapper.text()).not.toContain('每日汇总')
@@ -119,11 +119,9 @@ describe('workbench rendered states', () => {
     expect(wrapper.text()).not.toContain('开工零件A')
     expect(wrapper.text()).toContain('红色预警')
     expect(wrapper.text()).not.toContain('已读已消除')
-    expect(wrapper.find('.summary-toggle').attributes('aria-expanded')).toBe('false')
-    expect(wrapper.find('.daily-summary ol').exists()).toBe(false)
-    await wrapper.find('.summary-toggle').trigger('click')
-    expect(wrapper.find('.daily-summary ol').text()).toBe('a')
-    expect(reminderCalls).toContain('readDigest:d1')
+    expect(wrapper.text()).not.toContain('每日汇总')
+    expect(wrapper.find('.daily-summary').exists()).toBe(false)
+    expect(reminderCalls).not.toContain('readDigest:d1')
     expect(calls).toEqual([])
     wrapper.unmount()
   })
@@ -301,17 +299,11 @@ describe('工作台提醒动作', () => {
     v.unmount()
   })
 
-  it('置顶故障先标已读再跳转；每日汇总切换展开并标已读；全部已读失败提示', async () => {
+  it('keeps pinned failures actionable and reports mark-all-read failures', async () => {
     const v = await open()
     await v.state.openPinned(REMINDERS.pinned[0])
     expect(reminderCalls).toEqual(['readDigest:pin1'])
     expect(nav).toEqual(['/settings?tab=sync'])
-    expect(v.state.digestOpen).toBe(false)
-    await v.state.openDigest()
-    expect(v.state.digestOpen).toBe(true)
-    expect(reminderCalls.at(-1)).toBe('readDigest:d1')
-    await v.state.openDigest()
-    expect(v.state.digestOpen).toBe(false)
     await v.state.readAll()
     expect(toasts).toEqual([])
     failUrl = 'readAll'

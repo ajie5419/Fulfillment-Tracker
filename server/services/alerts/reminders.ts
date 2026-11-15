@@ -157,9 +157,11 @@ const isLinked = (kind: string | null) => !!kind && LINKED_KINDS.includes(kind)
 /** 预警/待办类提醒、跳转地址存在提醒上的通知 + 已读的同步失败提醒（未读的置顶，不在分组里重复出现） */
 const LISTED = { OR: [{ kind: null }, { kind: { in: LINKED_KINDS } }, { kind: 'SYNC_FAIL', readAt: { not: null } }] }
 
+/** Hidden daily summaries must not leave an unread badge with no visible notification. Null kinds are ordinary alerts. */
+const WORKBENCH_UNREAD = { readAt: null, OR: [{ kind: null }, { kind: { not: 'DIGEST' } }] }
+
 /**
- * 我的提醒。每日汇总（kind = DIGEST）单独返回最新一条作为置顶（digest），不混在分组列表里；
- * 生成新汇总时旧汇总已自动标为已读，所以未读数里最多只有当天这一条。
+ * The digest field is retained for response compatibility; workbenches neither display nor count it.
  * QMS 同步连续失败（kind = SYNC_FAIL，只发给管理员）未读时置顶（pinned），读过后回到红色分组里。
  */
 export async function listReminders(userId: string, now = new Date()) {
@@ -170,7 +172,7 @@ export async function listReminders(userId: string, now = new Date()) {
       take: 100,
       select: SELECT,
     }),
-    prisma.reminder.count({ where: { userId, readAt: null } }),
+    prisma.reminder.count({ where: { userId, ...WORKBENCH_UNREAD } }),
     // dedupeKey 里带日期（DIGEST:<YYYY-MM-DD>:<用户>），同一人按它倒序就是最新一天
     prisma.reminder.findFirst({ where: { userId, kind: 'DIGEST' }, orderBy: { dedupeKey: 'desc' }, select: SELECT }),
     prisma.reminder.findMany({ where: { userId, kind: 'SYNC_FAIL', readAt: null }, orderBy: { createdAt: 'desc' }, take: 5, select: SELECT }),
@@ -210,9 +212,9 @@ function woOfLink(link: string | null): string | null {
   return new URLSearchParams(link.slice(q + 1)).get('wo')
 }
 
-/** 未读提醒数（菜单"工作台"角标，前端改版第二轮）：与 listReminders 的 unread 同一口径（本人的、未读的，含每日汇总） */
+/** Keep navigation badges consistent with the workbench, excluding hidden daily summaries. */
 export async function unreadCount(userId: string) {
-  return { unread: await prisma.reminder.count({ where: { userId, readAt: null } }) }
+  return { unread: await prisma.reminder.count({ where: { userId, ...WORKBENCH_UNREAD } }) }
 }
 
 export async function markRead(userId: string, id: string) {

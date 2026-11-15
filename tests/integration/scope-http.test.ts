@@ -1086,7 +1086,9 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
       db.reminder.create({ data: { userId: 'h-pm', title: '普通提醒', level: 'REMIND' } }),
       db.reminder.create({ data: { userId: 'h-pm', title: '已读的', level: 'RED', readAt: new Date() } }),
       db.reminder.create({ data: { userId: 'h-pm2', title: '别人的', level: 'RED' } }),
+      db.reminder.create({ data: { userId: 'h-pm', title: '隐藏的每日汇总', kind: 'DIGEST', level: 'RED' } }),
     ])
+    expect(await db.reminder.count({ where: { userId: 'h-pm', readAt: null } })).toBe(3)
     expect(await json('/api/reminders/unread-count', pm)).toEqual({ unread: 2, planPending: 0 })
     expect(await json('/api/reminders/unread-count', pm2)).toEqual({ unread: 1, planPending: 0 })
     const list = await json<{ unread: number; items: { id: string; workOrderNumber: string | null; dueDay: string | null; bucket: string }[] }>('/api/reminders', pm)
