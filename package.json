@@ -19,7 +19,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "cert:local": "node scripts/local-cert.mjs",
-    "test:integration": "vitest run tests/integration"
+    "test:integration": "vitest run tests/integration",
+    "test:kiri": "node scripts/test-kiri.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

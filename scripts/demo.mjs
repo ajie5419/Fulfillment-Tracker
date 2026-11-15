@@ -8,16 +8,17 @@ import { createServer } from 'node:net'
 import { resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { startMockIdentityBridge } from './mock-identity-bridge.mjs'
+import { KIRI_MYSQL, ensureMysql, mysqlSql } from './kiri-mysql.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 process.chdir(root)
-const database = 'fulfillment_demo'
-const databaseUser = 'fulfillment_demo'
+const mysql = KIRI_MYSQL.demo
+const database = mysql.database
+const databaseUser = database
 const appPort = 3101
 const bridgePort = 4101
 // A different host also isolates cookies from the existing localhost:3100 app.
 const origin = `https://127.0.0.1:${appPort}`
-const containerName = 'qms-container-mysql'
 const publicCert = resolve('certs/localhost.pem')
 const privateKey = resolve('certs/localhost-key.pem')
 let stage = '检查文件和端口'
@@ -35,28 +36,28 @@ async function main() {
   if (!existsSync(publicCert) || !existsSync(privateKey)) throw new Error('缺少本地 HTTPS 证书，请先完成本地证书配置。')
   await Promise.all([assertPortFree(appPort), assertPortFree(bridgePort)])
   if (process.argv.includes('--check')) {
-    console.log(`演示入口 ${origin}；数据库 ${database}；模拟登录端口 ${bridgePort}。文件及端口检查通过，未写数据库、未启动服务。`)
+    stage = '检查 Kiri 演示数据库'
+    await ensureMysql('demo', { checkOnly: true })
+    console.log(`演示入口 ${origin}；Kiri 数据库 ${database}（${mysql.port}）；模拟登录端口 ${bridgePort}。文件、端口及数据库检查通过，未写数据库、未启动服务。`)
     return
   }
 
   const password = randomBytes(24).toString('hex')
   const bridgeSecret = randomBytes(32).toString('hex')
   stage = '创建独立数据库账号（需要访问本机容器）'
+  await ensureMysql('demo')
   // Credentials travel over stdin and process memory, never command arguments or logs.
   // This account can access only the dedicated demo schema, not the existing database.
-  execFileSync('container', ['exec', '-i', containerName, 'sh', '-c', 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot'], {
-    input: `CREATE DATABASE IF NOT EXISTS ${database} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+  mysqlSql('demo', `CREATE DATABASE IF NOT EXISTS ${database} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '${databaseUser}'@'%' IDENTIFIED BY '${password}';
 ALTER USER '${databaseUser}'@'%' IDENTIFIED BY '${password}';
-GRANT ALL PRIVILEGES ON ${database}.* TO '${databaseUser}'@'%';\n`,
-    stdio: ['pipe', 'ignore', 'ignore'],
-  })
+GRANT ALL PRIVILEGES ON ${database}.* TO '${databaseUser}'@'%';\n`)
   // Remove inherited app overrides before supplying a complete isolated configuration.
   for (const key of Object.keys(process.env)) {
     if (key.startsWith('NUXT_') || key.startsWith('NITRO_') || key.startsWith('DEV_HTTPS_')) delete process.env[key]
   }
   Object.assign(process.env, {
-    DATABASE_URL: `mysql://${databaseUser}:${password}@127.0.0.1:3307/${database}`,
+    DATABASE_URL: `mysql://${databaseUser}:${password}@127.0.0.1:${mysql.port}/${database}`,
     NODE_ENV: 'production',
     FT_DEPLOYMENT_MODE: 'demo',
     NUXT_DEV_TOOLS: '1',
@@ -117,6 +118,6 @@ main().catch((error) => {
     console.error(`演示启动错误码：${code}`)
     if (code === 'P2028') console.error('数据库事务启动或执行超时。请检查数据库负载和锁等待；不要清空演示数据，也不要重复并发启动。')
   }
-  console.error(`演示环境准备失败：${stage}。请检查构建产物、端口、本地证书及 qms-container-mysql 容器；未删除原环境数据。`)
+  console.error(`演示环境准备失败：${stage}。请检查构建产物、端口、本地证书及 Kiri 中的 ${mysql.name} 容器；未删除原环境数据。`)
   process.exit(1)
 })

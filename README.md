@@ -13,7 +13,7 @@
 
 演示验收后首次部署生产，统一按 [首次生产部署](docs/首次生产部署.md) 执行；生产配置模板为 `deploy/production.env.example`。演示可用、基础部署通过和真实业务验收分别记录。
 
-只试用演示数据、不混入 QMS 工单时，使用[独立演示环境](docs/独立演示环境.md)：`pnpm build` 后执行 `pnpm demo`。它使用单独数据库、模拟角色登录与 `https://127.0.0.1:3101` 入口，保留原环境。
+只试用演示数据、不混入 QMS 工单时，先打开 Kiri，使用[独立演示环境](docs/独立演示环境.md)：`pnpm build` 后执行 `pnpm demo --keep-data` 保留已有数据（首次写入样例使用 `pnpm demo`）。它使用 Kiri 的独立 MySQL 容器、模拟角色登录与 `https://127.0.0.1:3101` 入口。Kiri 专用集成测试入口为 `pnpm test:kiri`，测试库与演示库隔离；旧 Apple Container 数据需按文档单独迁移。
 
 ```bash
 pnpm install
