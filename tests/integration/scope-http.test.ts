@@ -1054,6 +1054,20 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     expect(lines.rows.find((r) => r.materialName === '详情未挂物料')!.planNode).toBeNull()
   })
 
+  it('returns stable reminder subjects only to recipients and keeps read state separate from alert resolution', async () => {
+    const pm = await login('h-pm')
+    const pm2 = await login('h-pm2')
+    const alert = await db.alert.create({ data: { rule: 'W9', refType: 'plan', refId: MINE, level: 'RED', firstAt: new Date(), levelAt: new Date() } })
+    const reminder = await db.reminder.create({ data: { userId: 'h-pm', alertId: alert.id, title: 'Workbench association', level: 'RED' } })
+    const mine = await readApiBody(await get('/api/reminders', pm)) as { items: { id: string; subject: unknown }[] }
+    expect(mine.items.find(r => r.id === reminder.id)?.subject).toEqual({ type: 'plan', id: MINE })
+    const other = await readApiBody(await get('/api/reminders', pm2)) as { items: { id: string }[] }
+    expect(other.items.some(r => r.id === reminder.id)).toBe(false)
+    const read = await fetch(`${base}/api/reminders/${reminder.id}/read`, { method: 'POST', headers: { cookie: cookieHeader(pm) } })
+    expect(read.status).toBe(200)
+    expect((await db.alert.findUniqueOrThrow({ where: { id: alert.id } })).status).toBe('ACTIVE')
+  })
+
   it('前端改版第二轮：未读提醒数只数本人的、与提醒列表同一口径；提醒 / 待办带工作台分组；各页统计卡与对应筛选同一口径', async () => {
     const pm = await login('h-pm')
     const pm2 = await login('h-pm2')

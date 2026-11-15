@@ -69,11 +69,12 @@ describe('Frontend audit P2: accessibility, motion preferences, narrow-screen dr
 
     const index = readFileSync('app/pages/index.vue', 'utf8')
     expect(index).toContain('<UiPageHero :title="heroTitle" :summary="heroSummary">')
-    expect(index).toContain('<UiSectionCard icon="inbox" padding="none" title="待办与提醒"')
-    expect(index).toContain('class="wrow"')
-    expect(index).toContain('class="row-badge"')
-    expect(index).toContain(':tabindex="c.reminder ? 0 : undefined"')
-    expect(index).toContain('@keydown.space.prevent="onCardClick(c)"')
+    expect(index).toContain('<UiSectionCard icon="inbox" padding="none"')
+    expect(index).toContain('<UiListItem')
+    expect(index).toContain('type="button" class="notification-title"')
+    expect(index).toContain('@click="onCardClick(c)"')
+    expect(index).not.toContain('<WorkbenchCalendarCard')
+    expect(index).not.toContain('<UiStatCard')
 
     const risks = readFileSync('app/pages/risks.vue', 'utf8')
     expect(risks).toContain('<UiPageHero title="风险与异常监控" :summary="heroSummary">')

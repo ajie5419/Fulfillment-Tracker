@@ -26,6 +26,8 @@ interface Link {
 }
 
 interface LinkInfo extends Link {
+  /** Stable object identity lets clients attach alerts without guessing from titles or links. */
+  subject: { type: string; id: string }
   /** 所属工单（工作台卡片用）；对象删了或不属于某个工单为 null */
   workOrderNumber: string | null
   /** 对象的截止日 'YYYY-MM-DD'（工作台按它分组）：设计计划完成日（设计完成等客户确认时为客户确认计划日）、物料需求日、装配节点需求日、
@@ -137,7 +139,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     const issue = a.status === 'CONVERTED' ? issueBySource.get(alertSourceKey(a.id)) : undefined
     if (issue) link = issueLink(issue.id)
     const f = facts.get(`${a.refType}:${a.refId}`) ?? { workOrderNumber: a.refType === 'plan' ? a.refId : null, dueDay: null }
-    out.set(a.id, { ...link, ...f, rule: a.rule, cleared: a.status === 'CLEARED', issueNo: issue?.issueNo ?? null })
+    out.set(a.id, { ...link, ...f, subject: { type: a.refType, id: a.refId }, rule: a.rule, cleared: a.status === 'CLEARED', issueNo: issue?.issueNo ?? null })
   }
   return out
 }
@@ -181,12 +183,13 @@ export async function listReminders(userId: string, now = new Date()) {
     digest: digest ? { ...digest, lines: (digest.body ?? '').split('\n').filter(Boolean) } : null,
     pinned: pinned.map((p) => ({ ...p, lines: (p.body ?? '').split('\n').filter(Boolean), link: SYNC_FAIL_LINK })),
     items: items.map((i) => {
-      const none = { workOrderNumber: null, dueDay: null }
+      const none = { workOrderNumber: null, dueDay: null, subject: null }
       if (i.kind === 'SYNC_FAIL') return card({ ...i, ...none, rule: null, cleared: false, issueNo: null, link: SYNC_FAIL_LINK, mobileLink: null })
       if (isLinked(i.kind)) return card({ ...i, ...none, workOrderNumber: woOfLink(i.link), rule: null, cleared: false, issueNo: null, link: i.link, mobileLink: mobileOf(i.link) })
       const l = i.alertId ? links.get(i.alertId) : undefined
       return card({
         ...i,
+        subject: l?.subject ?? null,
         workOrderNumber: l?.workOrderNumber ?? null,
         dueDay: l?.dueDay ?? null,
         rule: l?.rule ?? null,

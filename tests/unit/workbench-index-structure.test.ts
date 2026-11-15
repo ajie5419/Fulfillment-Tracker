@@ -1,4 +1,7 @@
+// @vitest-environment jsdom
 import * as Vue from 'vue'
+import { flushPromises, mount } from '@vue/test-utils'
+import { loadComponent } from '../helpers/vue-component'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as alertRules from '../../shared/alert-rules'
 import * as workbench from '../../shared/workbench'
@@ -74,7 +77,131 @@ const feedModule = Object.entries(composableModules).find(([path]) => path.endsW
 // 拆分前页面没有对 composable 的 import；拆分后页面显式 import 子模块，这里提供真实模块
 const open = () => mountScript('app/pages/index.vue', {}, { '#shared/alert-rules': alertRules, '#shared/workbench': workbench, ...(feedModule ? { '../composables/useWorkbenchFeed': feedModule } : {}) })
 
+async function openDom() {
+  const component = loadComponent('app/pages/index.vue', { '#shared/alert-rules': alertRules, '#shared/workbench': workbench, '../composables/useWorkbenchFeed': feedModule })
+  const box = Vue.defineComponent({
+    props: ['title', 'subTitle', 'description', 'message'],
+    setup: (p, { slots }) => () => Vue.h('div', [p.title, p.subTitle, p.description, p.message, ...Object.values(slots).map(s => s?.())]),
+  })
+  const segment = Vue.defineComponent({
+    props: ['options', 'value'], emits: ['change'],
+    setup: (p, { emit }) => () => Vue.h('nav', p.options.map((o: { value: string; label: string }) => Vue.h('button', { onClick: () => emit('change', o.value) }, o.label))),
+  })
+  const wrapper = mount(Vue.defineComponent({ setup: () => () => Vue.h(Vue.Suspense, null, { default: () => Vue.h(component) }) }), {
+    global: { plugins: [(app: Vue.App) => Object.assign(app.config.globalProperties, {
+      navigateTo: (to: string) => { nav.push(to) },
+      apiError: (e: Error) => e.message,
+      readReminder: (r: { id: string }) => reminderCalls.push(`readReminder:${r.id}`),
+      refreshReminders: () => reminderCalls.push('refreshReminders'),
+    })], stubs: {
+      ...Object.fromEntries(['UiPageHero', 'UiSectionCard', 'UiListItem', 'ASpin', 'AResult', 'AEmpty', 'AAlert'].map(k => [k, box])),
+      ...Object.fromEntries(['UiFilterChips', 'UiRefreshButton', 'UiAlertMark', 'WoLink', 'NuxtLink', 'ASelect', 'ADropdown', 'AModal', 'SendStepModal', 'FinishStepModal', 'ReleaseDrawer'].map(k => [k, true])),
+      ASegmented: segment,
+      AButton: Vue.defineComponent({ setup: (_, { slots }) => () => Vue.h('button', slots.default?.()) }),
+    } },
+  })
+  await flushPromises()
+  return wrapper
+}
+
+describe('workbench rendered states', () => {
+  it('puts actionable tasks first; notifications and collapsed digest appear only in their view', async () => {
+    const wrapper = await openDom()
+    expect(wrapper.text()).toContain('开工零件A')
+    expect(wrapper.text()).not.toContain('每日汇总')
+    expect(wrapper.text()).not.toContain('全部标为已读')
+    expect(wrapper.text()).not.toContain('红色预警')
+    const tab = wrapper.findAll('button').find(b => b.text().startsWith('通知 ·'))!
+    await tab.trigger('click')
+    expect(nav.at(-1)).toEqual({ query: { f: 'notifications', n: undefined } })
+    route.query.f = 'notifications'
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('开工零件A')
+    expect(wrapper.text()).toContain('红色预警')
+    expect(wrapper.text()).not.toContain('已读已消除')
+    expect(wrapper.find('.summary-toggle').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('.daily-summary ol').exists()).toBe(false)
+    await wrapper.find('.summary-toggle').trigger('click')
+    expect(wrapper.find('.daily-summary ol').text()).toBe('a')
+    expect(reminderCalls).toContain('readDigest:d1')
+    expect(calls).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('never renders a task failure as zero or empty; notification failure leaves working tasks accessible', async () => {
+    state.todos = []; state.todosError = new Error('offline')
+    let wrapper = await openDom()
+    expect(wrapper.text()).toContain('待办加载失败')
+    expect(wrapper.text()).toContain('待处理 —')
+    expect(wrapper.text()).not.toContain('暂无待处理事项')
+    await wrapper.findAll('button').find(b => b.text() === '重试')!.trigger('click')
+    expect(refreshTodos).toHaveBeenCalled()
+    wrapper.unmount()
+    state.todos = structuredClone(TODOS); state.todosError = null; state.remindersError = new Error('offline')
+    wrapper = await openDom()
+    expect(wrapper.text()).toContain('通知加载失败，待办仍可处理')
+    expect(wrapper.text()).toContain('开工零件A')
+    expect(wrapper.text()).toContain('通知 · — 未读')
+    route.query.f = 'notifications'
+    await flushPromises()
+    expect(wrapper.text()).toContain('通知加载失败')
+    expect(wrapper.text()).not.toContain('没有符合条件的通知')
+    wrapper.unmount()
+  })
+})
+
 describe('工作台卡片流', () => {
+  it('attaches only exact active object alerts; keeps converted, cleared and unrelated records accessible', async () => {
+    state.todos[0].refType = 'step'; state.todos[0].refId = 's1'
+    state.reminders.items[0].subject = { type: 'step', id: 's1' }
+    state.reminders.items.push(
+      { ...state.reminders.items[0], id: 'other-type', subject: { type: 'drawing', id: 's1' } },
+      { ...state.reminders.items[0], id: 'other-order', workOrderNumber: 'WO9' },
+      { ...state.reminders.items[0], id: 'converted', issueNo: 'I-001' },
+      { ...state.reminders.items[0], id: 'cleared', cleared: true },
+    )
+    const v = await open()
+    expect(v.state.cards.find((c: any) => c.todo?.id === 't1').alerts.map((r: any) => r.id)).toEqual(['r1'])
+    expect(v.state.counts.overdue).toBe(1)
+    route.query.f = 'notifications'
+    await flushVue()
+    expect(v.state.cards.map((c: any) => c.reminder.id)).toEqual(expect.arrayContaining(['other-type', 'other-order', 'converted']))
+    expect(v.state.cards.map((c: any) => c.reminder.id)).not.toContain('r1')
+    expect(v.state.cards.map((c: any) => c.reminder.id)).not.toContain('cleared')
+    route.query.n = 'unread'
+    await flushVue()
+    expect(v.state.cards.map((c: any) => c.reminder.id)).toContain('r1')
+    route.query.n = 'history'
+    await flushVue()
+    expect(v.state.cards.map((c: any) => c.reminder.id)).toContain('cleared')
+    // Finishing or reassigning the task must not hide an unresolved alert.
+    v.state.todos.splice(0, 1)
+    route.query.n = 'attention'
+    await flushVue()
+    expect(v.state.cards.map((c: any) => c.reminder.id)).toContain('r1')
+    v.unmount()
+  })
+
+  it('does not hide alerts behind a failed task request; scopes filters from the URL', async () => {
+    state.todos[0].refType = 'step'; state.todos[0].refId = 's1'
+    state.reminders.items[0].subject = { type: 'step', id: 's1' }
+    state.todosError = new Error('offline')
+    route.query.f = 'notifications'
+    const v = await open()
+    expect(v.state.cards.map((c: any) => c.key)).toContain('r:r1')
+    expect(v.state.filterOptions[0].label).toBe('待处理 —')
+    route.query.f = 'todo'; route.query.wo = 'WO2'
+    await flushVue()
+    expect(v.state.cards.map((c: any) => c.key)).toEqual(['t:t2'])
+    route.query.wo = undefined; route.query.action = 'DO_PLAN_TASK'
+    await flushVue()
+    expect(v.state.cards.map((c: any) => c.key)).toEqual(['t:t3'])
+    route.query.action = undefined
+    await flushVue()
+    expect(v.state.cards).toHaveLength(3)
+    v.unmount()
+  })
+
   it('待办 / 提醒合成卡片，按 红 → 黄 → 普通、未读在前、截止日近在前、待办在提醒前排序', async () => {
     const v = await open()
     expect(v.state.allCards.map((c: any) => [c.key, c.kind, c.bucket, c.tone, c.unread, c.dueDay, c.wo])).toEqual([
@@ -89,10 +216,9 @@ describe('工作台卡片流', () => {
     expect(v.state.allCards[1].todo).toBe(v.state.todos[0])
     expect(v.state.allCards[0].reminder.id).toBe('r1')
     expect(v.state.allCards.map((c: any) => c.createdAt)[1]).toBe('2026-11-01T01:00:00.000Z')
-    expect(v.state.counts).toEqual({ todo: 3, overdue: 2, today: 2, unread: 2 })
-    expect(v.state.statDenom).toBe(7)
+    expect(v.state.counts).toEqual({ todo: 3, overdue: 1, today: 1, unread: 2 })
     expect(v.state.groups.map((g: any) => [g.bucket, g.items.map((c: any) => c.key)])).toEqual([
-      ['OVERDUE', ['r:r1', 't:t1']], ['TODAY', ['r:r2', 't:t3']], ['LATER', ['r:r3']], ['NO_DUE', ['t:t2', 'r:r4']],
+      ['OVERDUE', ['t:t1']], ['TODAY', ['t:t3']], ['NO_DUE', ['t:t2']],
     ])
     expect(v.state.toneIcon('late')).toBe('alert')
     expect(v.state.toneIcon('risk')).toBe('warn')
@@ -101,7 +227,7 @@ describe('工作台卡片流', () => {
   })
 
   it.each([
-    [undefined, null, 7], ['todo', 'todo', 3], ['overdue', 'overdue', 2], ['today', 'today', 2], ['unread', 'unread', 2], ['bogus', null, 7],
+    [undefined, 'todo', 3], ['todo', 'todo', 3], ['overdue', 'overdue', 1], ['today', 'today', 1], ['unread', 'unread', 2], ['bogus', 'todo', 3], ['notifications', 'notifications', 3],
   ])('?f=%s 过滤：active=%s，共 %i 条', async (f, active, total) => {
     route.query.f = f
     const v = await open()
@@ -110,10 +236,10 @@ describe('工作台卡片流', () => {
     v.unmount()
   })
 
-  it('filterTo：再点同一张取消筛选，保留其它查询参数；路由变化后重新过滤', async () => {
+  it('switches views while preserving other query filters and reacts to route changes', async () => {
     route.query.x = '1'
     const v = await open()
-    expect(v.state.filterTo('todo')).toEqual({ query: { x: '1', f: 'todo' } })
+    expect(v.state.filterTo('todo')).toEqual({ query: { x: '1', f: undefined, n: undefined } })
     route.query.f = 'todo'
     await flushVue()
     expect(v.state.filterTo('todo')).toEqual({ query: { x: '1', f: undefined } })
@@ -124,25 +250,26 @@ describe('工作台卡片流', () => {
 
   it('概览标题 / 摘要：正常、清零、加载中、失败', async () => {
     let v = await open()
-    expect(v.state.heroTitle).toBe('甲，今日工作概览')
-    expect(v.state.heroSummary).toBe('当前有 2 项已过期事项急需跟进，2 项今天到期，待办共 3 条，未读提醒 2 条。')
-    expect(v.state.loadError).toBe(false)
+    expect(v.state.heroTitle).toBe('甲，工作台')
+    expect(v.state.heroSummary).toBe('有 3 项待处理，优先处理逾期和今日到期事项。')
+    expect(v.state.loadError).toBeNull()
     v.unmount()
 
     state.reminders = { items: [], unread: 0, digest: null, pinned: [] }; state.todos = []
     v = await open()
-    expect(v.state.heroSummary).toBe('当前所有待办均已清零，暂无未读预警提醒。')
+    expect(v.state.heroSummary).toBe('暂无待处理事项。')
     v.unmount()
 
     state.pending = true
     v = await open()
-    expect(v.state.heroSummary).toBe('正在同步待办事项与预警提醒…')
+    expect(v.state.heroSummary).toBe('暂无待处理事项。')
+    expect(v.state.filterOptions[3].label).toContain('—')
     v.unmount()
 
     state.todosError = new Error('x')
     v = await open()
-    expect(v.state.loadError).toBe(true)
-    expect(v.state.heroSummary).toBe('待办与提醒数据加载失败，暂无法汇总，请重试。')
+    expect(v.state.loadError).toBeInstanceOf(Error)
+    expect(v.state.heroSummary).toBe('待办加载失败，请重试。')
     await v.state.retryLoad()
     expect(reminderCalls).toEqual(['refreshTodos', 'refreshReminders'])
     v.unmount()

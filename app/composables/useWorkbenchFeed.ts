@@ -1,5 +1,6 @@
 import { computed, type Ref } from 'vue'
 import { groupByBucket, type WorkBucket } from '#shared/workbench'
+import { todoActionText } from '#shared/todo-actions'
 import type { useTodos } from './useFlow'
 import type { ReminderItem, useReminders } from './useReminders'
 
@@ -21,12 +22,13 @@ export interface Card {
   unread: boolean
   todo?: WorkbenchTodo
   reminder?: ReminderItem
+  alerts: ReminderItem[]
 }
 const TONE_RANK: Record<Tone, number> = { late: 0, risk: 1, normal: 2 }
 
-export const WORKBENCH_FILTERS = ['todo', 'overdue', 'today', 'unread'] as const
+export const WORKBENCH_FILTERS = ['todo', 'overdue', 'today', 'notifications', 'unread'] as const
 export type WorkbenchFilter = (typeof WORKBENCH_FILTERS)[number]
-export const WORKBENCH_FILTER_TEXT: Record<WorkbenchFilter, string> = { todo: '我的待办', overdue: '已过期', today: '今天到期', unread: '未读提醒' }
+export const WORKBENCH_FILTER_TEXT: Record<WorkbenchFilter, string> = { todo: '待处理', overdue: '逾期', today: '今日到期', notifications: '通知', unread: '未读通知' }
 
 export const toneIcon = (t: Tone) => (t === 'late' ? 'alert' : t === 'risk' ? 'warn' : 'dot')
 /** 待办的"查看"跳转：工序 → 工件抽屉（工序编排页）；发放 → 发放单；总计划 → 工单详情的总计划页签 */
@@ -42,16 +44,23 @@ export function todoLink(t: WorkbenchTodo): string | null {
   return null
 }
 
-/** 工作台卡片流（pages/index.vue 拆分）：待办 + 提醒转成卡片排序、统计卡计数、?f= 筛选、按截止日分组。 */
-export function useWorkbenchFeed(options: { todos: Ref<WorkbenchTodo[]>; reminders: Ref<RemindersData | null | undefined> }) {
+/** Direct links already open details; avoid a second menu with the same destination. */
+export function hasTodoMenu(t: WorkbenchTodo): boolean {
+  return (t.refType !== 'drawing' && t.action !== 'SIGN_RELEASE' && t.action !== 'PURCHASE_PLAN_ISSUED')
+    || (!!todoLink(t) && !t.link && !t.release && !t.plan)
+}
+
+/** Keep actionable tasks and notifications separate while preserving server-owned scopes and due dates. */
+export function useWorkbenchFeed(options: { todos: Ref<WorkbenchTodo[]>; reminders: Ref<RemindersData | null | undefined>; todosAvailable?: Ref<boolean> }) {
   const { todos, reminders: data } = options
   const route = useRoute()
 
   const allCards = computed<Card[]>(() => {
     const list: Card[] = []
+    const bySubject = new Map<string, Card>()
     for (const t of todos.value) {
       const bucket = (t.bucket ?? 'NO_DUE') as WorkBucket
-      list.push({
+      const card: Card = {
         key: `t:${t.id}`,
         kind: 'todo',
         bucket,
@@ -62,9 +71,20 @@ export function useWorkbenchFeed(options: { todos: Ref<WorkbenchTodo[]>; reminde
         createdAt: String(t.createdAt),
         unread: false,
         todo: t,
-      })
+        alerts: [],
+      }
+      list.push(card)
+      // Distinct actions stay actionable even when they share an object. Attach alerts once.
+      if (t.refType && t.refId && !bySubject.has(`${t.refType}:${t.refId}`)) bySubject.set(`${t.refType}:${t.refId}`, card)
     }
     for (const r of data.value?.items ?? []) {
+      const target = r.subject && !r.cleared && !r.issueNo && options.todosAvailable?.value !== false
+        ? bySubject.get(`${r.subject.type}:${r.subject.id}`) : undefined
+      if (target && (!r.workOrderNumber || !target.wo || r.workOrderNumber === target.wo)) {
+        target.alerts.push(r)
+        if (r.level === 'RED') target.tone = 'late'
+        else if (r.level === 'YELLOW' && target.tone === 'normal') target.tone = 'risk'
+      }
       list.push({
         key: `r:${r.id}`,
         kind: 'reminder',
@@ -76,6 +96,7 @@ export function useWorkbenchFeed(options: { todos: Ref<WorkbenchTodo[]>; reminde
         createdAt: r.createdAt,
         unread: !r.readAt,
         reminder: r,
+        alerts: [],
       })
     }
     // 组内：红 → 黄 → 普通；同色未读在前，再按截止日从近到远（没有截止日的在后），待办在提醒前
@@ -88,25 +109,38 @@ export function useWorkbenchFeed(options: { todos: Ref<WorkbenchTodo[]>; reminde
     )
   })
 
-  const active = computed<WorkbenchFilter | null>(() => ((WORKBENCH_FILTERS as readonly string[]).includes(route.query.f as string) ? (route.query.f as WorkbenchFilter) : null))
+  const active = computed<WorkbenchFilter>(() => ((WORKBENCH_FILTERS as readonly string[]).includes(route.query.f as string) ? (route.query.f as WorkbenchFilter) : 'todo'))
+  const isNotifications = computed(() => active.value === 'notifications' || active.value === 'unread')
+  const notificationFilter = computed(() => active.value === 'unread' ? 'unread' : ['unread', 'history'].includes(String(route.query.n)) ? String(route.query.n) : 'attention')
+  const selectedWo = computed(() => typeof route.query.wo === 'string' ? route.query.wo : undefined)
+  const selectedAction = computed(() => typeof route.query.action === 'string' ? route.query.action : undefined)
   const counts = computed(() => ({
     todo: todos.value.length,
-    overdue: allCards.value.filter((c) => c.bucket === 'OVERDUE').length,
-    today: allCards.value.filter((c) => c.bucket === 'TODAY').length,
+    overdue: todos.value.filter((t) => t.bucket === 'OVERDUE').length,
+    today: todos.value.filter((t) => t.bucket === 'TODAY').length,
     unread: data.value?.unread ?? 0,
   }))
-  const statDenom = computed(() => Math.max(1, allCards.value.length))
+  const attachedIds = computed(() => new Set(allCards.value.flatMap(c => c.alerts.map(r => r.id))))
   const cards = computed(() => {
     const f = active.value
-    if (!f) return allCards.value
-    if (f === 'todo') return allCards.value.filter((c) => c.kind === 'todo')
-    if (f === 'overdue') return allCards.value.filter((c) => c.bucket === 'OVERDUE')
-    if (f === 'today') return allCards.value.filter((c) => c.bucket === 'TODAY')
-    return allCards.value.filter((c) => c.unread)
+    return allCards.value.filter(c => {
+      if (selectedWo.value && c.wo !== selectedWo.value) return false
+      if (isNotifications.value) {
+        if (!c.reminder) return false
+        if (notificationFilter.value === 'unread') return c.unread
+        if (notificationFilter.value === 'history') return true
+        return !c.reminder.cleared && !attachedIds.value.has(c.reminder.id)
+      }
+      if (!c.todo || (selectedAction.value && c.todo.action !== selectedAction.value)) return false
+      return f === 'todo' || (f === 'overdue' ? c.bucket === 'OVERDUE' : c.bucket === 'TODAY')
+    })
   })
   const groups = computed(() => groupByBucket(cards.value))
-  /** 点统计卡：套用筛选；再点同一张取消 */
-  const filterTo = (f: WorkbenchFilter) => ({ query: { ...route.query, f: active.value === f ? undefined : f } })
+  const workOrders = computed(() => [...new Set(allCards.value.map(c => c.wo).filter((wo): wo is string => !!wo))].sort().map(value => ({ value, label: value })))
+  const actionOptions = computed(() => [...new Set(todos.value.map(t => t.action))].map(value => ({ value, label: todoActionText(value) })))
+  /** Selecting a view preserves scope filters and supports browser back/forward. */
+  const filterTo = (f: WorkbenchFilter) => ({ query: { ...route.query, f: f === 'todo' ? undefined : f, n: undefined } })
+  const updateFilter = (key: 'wo' | 'action' | 'n', value?: string) => navigateTo({ query: { ...route.query, [key]: value || undefined, ...(key === 'n' ? { f: 'notifications' } : {}) } })
 
-  return { allCards, active, counts, statDenom, cards, groups, filterTo }
+  return { allCards, active, counts, cards, groups, filterTo, isNotifications, notificationFilter, selectedWo, selectedAction, workOrders, actionOptions, updateFilter }
 }
