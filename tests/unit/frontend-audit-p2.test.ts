@@ -68,7 +68,7 @@ describe('Frontend audit P2: accessibility, motion preferences, narrow-screen dr
     expect(hero).toContain('class="ft-hero-spark"')
 
     const index = readFileSync('app/pages/index.vue', 'utf8')
-    expect(index).toContain('<UiPageHero :title="heroTitle" :summary="heroSummary">')
+    expect(index).not.toContain('<UiPageHero')
     expect(index).toContain('<UiSectionCard icon="inbox" padding="none"')
     expect(index).toContain('<UiListItem')
     expect(index).toContain('type="button" class="notification-title"')

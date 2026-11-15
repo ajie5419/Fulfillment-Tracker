@@ -16,12 +16,6 @@ async function afterTodo() {
 const { sending, openSend, start, finishing, finish, finishPlanTask, releaseId, transferring, transferTo, transfer } = useWorkbenchTodoActions({ afterTodo })
 const todosAvailable = computed(() => !todosError.value && !todosPending.value)
 const { allCards, active, counts, cards, groups, filterTo, isNotifications, notificationFilter, selectedWo, selectedAction, workOrders, actionOptions, updateFilter } = useWorkbenchFeed({ todos, reminders: data, todosAvailable })
-const heroTitle = computed(() => me.value?.name ? `${me.value.name}，工作台` : '工作台')
-const heroSummary = computed(() => {
-  if (todosError.value) return '待办加载失败，请重试。'
-  if (todosPending.value) return '正在加载待办…'
-  return counts.value.todo ? `有 ${counts.value.todo} 项待处理，优先处理逾期和今日到期事项。` : '暂无待处理事项。'
-})
 const loadError = computed(() => isNotifications.value ? remindersError.value : todosError.value)
 const loading = computed(() => isNotifications.value ? pending.value : todosPending.value)
 const filterOptions = computed(() => [
@@ -45,10 +39,7 @@ function onCardClick(c: Card) {
 
 <template>
   <div class="wb">
-    <UiPageHero :title="heroTitle" :summary="heroSummary">
-      <template #actions><NuxtLink to="/board"><a-button size="small">项目总览</a-button></NuxtLink></template>
-    </UiPageHero>
-    <UiSectionCard icon="inbox" padding="none" :title="isNotifications ? '通知' : '我的待办'">
+    <UiSectionCard icon="inbox" padding="none" :title="isNotifications ? '通知' : '我的待办'" tray>
       <template #extra><UiRefreshButton :loading="loading" @click="retryLoad" /></template>
       <div class="controls">
         <a-segmented class="views" :value="isNotifications ? 'notifications' : active" :options="filterOptions" @change="(f) => navigateTo(filterTo(f as WorkbenchFilter))" />

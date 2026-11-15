@@ -248,28 +248,24 @@ describe('工作台卡片流', () => {
     v.unmount()
   })
 
-  it('概览标题 / 摘要：正常、清零、加载中、失败', async () => {
+  it('待办加载态、清零与重试', async () => {
     let v = await open()
-    expect(v.state.heroTitle).toBe('甲，工作台')
-    expect(v.state.heroSummary).toBe('有 3 项待处理，优先处理逾期和今日到期事项。')
     expect(v.state.loadError).toBeNull()
     v.unmount()
 
     state.reminders = { items: [], unread: 0, digest: null, pinned: [] }; state.todos = []
     v = await open()
-    expect(v.state.heroSummary).toBe('暂无待处理事项。')
+    expect(v.state.filterOptions[0].label).toBe('待处理 0')
     v.unmount()
 
     state.pending = true
     v = await open()
-    expect(v.state.heroSummary).toBe('暂无待处理事项。')
     expect(v.state.filterOptions[3].label).toContain('—')
     v.unmount()
 
     state.todosError = new Error('x')
     v = await open()
     expect(v.state.loadError).toBeInstanceOf(Error)
-    expect(v.state.heroSummary).toBe('待办加载失败，请重试。')
     await v.state.retryLoad()
     expect(reminderCalls).toEqual(['refreshTodos', 'refreshReminders'])
     v.unmount()
