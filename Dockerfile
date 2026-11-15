@@ -11,6 +11,10 @@ RUN pnpm install --frozen-lockfile --ignore-scripts && pnpm exec prisma generate
 COPY . .
 RUN pnpm exec nuxt prepare && pnpm build
 
+# Local demo bootstrap and tests need the toolchain; production still uses the runtime stage below.
+FROM build AS local
+CMD ["node", "scripts/demo-runtime.mjs"]
+
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3100

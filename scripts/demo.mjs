@@ -1,123 +1,72 @@
 #!/usr/bin/env node
-/** Isolated local demo: never loads .env or connects to the configured QMS. */
-import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { createServer } from 'node:net'
+import { existsSync, mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { startMockIdentityBridge } from './mock-identity-bridge.mjs'
-import { KIRI_MYSQL, ensureMysql, mysqlSql } from './kiri-mysql.mjs'
+import { createServer } from 'node:net'
+import { buildLocalImage, ensureMysql, kiri, kiriProgress, mysqlSql } from './kiri-mysql.mjs'
 
-const root = fileURLToPath(new URL('../', import.meta.url))
-process.chdir(root)
-const mysql = KIRI_MYSQL.demo
-const database = mysql.database
-const databaseUser = database
-const appPort = 3101
-const bridgePort = 4101
-// A different host also isolates cookies from the existing localhost:3100 app.
-const origin = `https://127.0.0.1:${appPort}`
-const publicCert = resolve('certs/localhost.pem')
-const privateKey = resolve('certs/localhost-key.pem')
-let stage = '检查文件和端口'
+process.chdir(resolve(import.meta.dirname, '..'))
+const image = 'ft-local:demo'
+const compose = ['compose', '--env-file', '/dev/null', '-p', 'ft-demo', '-f', 'docker-compose.demo.yml']
+const network = 'ft-demo'
+let stage = '检查 Kiri 和本地证书'
 
-async function assertPortFree(port) {
-  await new Promise((resolve, reject) => {
+async function assertPortsAvailable() {
+  for (const port of [3101, 4101]) await new Promise((resolve, reject) => {
     const server = createServer()
-    server.once('error', () => reject(new Error(`端口 ${port} 已被占用，未启动演示环境。`)))
+    server.once('error', reject)
     server.listen(port, '127.0.0.1', () => server.close(resolve))
   })
 }
 
-async function main() {
-  if (!existsSync('.output/server/index.mjs')) throw new Error('请先执行 pnpm build。')
-  if (!existsSync(publicCert) || !existsSync(privateKey)) throw new Error('缺少本地 HTTPS 证书，请先完成本地证书配置。')
-  await Promise.all([assertPortFree(appPort), assertPortFree(bridgePort)])
-  if (process.argv.includes('--check')) {
-    stage = '检查 Kiri 演示数据库'
-    await ensureMysql('demo', { checkOnly: true })
-    console.log(`演示入口 ${origin}；Kiri 数据库 ${database}（${mysql.port}）；模拟登录端口 ${bridgePort}。文件、端口及数据库检查通过，未写数据库、未启动服务。`)
-    return
+try {
+  const exists = kiri(['ps', '-a', '--format', '{{.Names}}']).trim().split('\n').includes('ft-demo-app')
+  if (exists) {
+    const label = kiri(['inspect', '--format', '{{index .Config.Labels "com.docker.compose.project"}}', 'ft-demo-app']).trim()
+    if (label !== 'ft-demo') throw new Error('Existing app is not owned by this launcher')
   }
-
-  const password = randomBytes(24).toString('hex')
-  const bridgeSecret = randomBytes(32).toString('hex')
-  stage = '创建独立数据库账号（需要访问本机容器）'
-  await ensureMysql('demo')
-  // Credentials travel over stdin and process memory, never command arguments or logs.
-  // This account can access only the dedicated demo schema, not the existing database.
-  mysqlSql('demo', `CREATE DATABASE IF NOT EXISTS ${database} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '${databaseUser}'@'%' IDENTIFIED BY '${password}';
-ALTER USER '${databaseUser}'@'%' IDENTIFIED BY '${password}';
-GRANT ALL PRIVILEGES ON ${database}.* TO '${databaseUser}'@'%';\n`)
-  // Remove inherited app overrides before supplying a complete isolated configuration.
-  for (const key of Object.keys(process.env)) {
-    if (key.startsWith('NUXT_') || key.startsWith('NITRO_') || key.startsWith('DEV_HTTPS_')) delete process.env[key]
+  if (process.argv.includes('--stop')) {
+    if (exists) kiri(['stop', 'ft-demo-app'])
+    console.log('演示应用容器已停止，数据库和附件保留。')
+  } else {
+    for (const path of ['certs/localhost.pem', 'certs/localhost-key.pem']) if (!existsSync(path)) throw new Error('Local certificates are required')
+    if (process.argv.includes('--check')) {
+      await ensureMysql('demo', { checkOnly: true })
+      console.log('Kiri 演示数据库和证书检查通过；未创建或启动服务。')
+    } else {
+      if (!exists) await assertPortsAvailable()
+      stage = '构建容器内的前后端'
+      await buildLocalImage(image)
+      stage = '准备独立演示数据库和网络'
+      await ensureMysql('demo')
+      const networks = kiri(['network', 'ls', '--format', '{{.Name}}']).trim().split('\n')
+      if (!networks.includes(network)) kiri(['network', 'create', '--label', 'app.fulfillment.demo=1', network])
+      const owner = kiri(['network', 'inspect', '--format', '{{index .Labels "app.fulfillment.demo"}}', network]).trim()
+      if (owner !== '1') throw new Error('Existing network is not owned by the demo')
+      const attached = JSON.parse(kiri(['inspect', '--format', '{{json .NetworkSettings.Networks}}', 'ft-demo-mysql']))
+      if (!Object.hasOwn(attached, network)) kiri(['network', 'connect', network, 'ft-demo-mysql'])
+      // Build first; stop the old app only when its replacement and database are ready.
+      if (exists) kiri(['stop', 'ft-demo-app'])
+      await assertPortsAvailable()
+      const password = randomBytes(24).toString('hex')
+      const secret = randomBytes(32).toString('hex')
+      mysqlSql('demo', `CREATE DATABASE IF NOT EXISTS fulfillment_demo CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'fulfillment_demo'@'%' IDENTIFIED BY '${password}';
+ALTER USER 'fulfillment_demo'@'%' IDENTIFIED BY '${password}';
+GRANT ALL PRIVILEGES ON fulfillment_demo.* TO 'fulfillment_demo'@'%';`)
+      mkdirSync('.data/demo/uploads', { recursive: true })
+      const env = {
+        FT_LOCAL_IMAGE: image,
+        FT_DEMO_DATABASE_URL: `mysql://fulfillment_demo:${password}@ft-demo-mysql:3306/fulfillment_demo`,
+        FT_DEMO_BRIDGE_SECRET: secret,
+        FT_DEMO_KEEP_DATA: process.argv.includes('--keep-data') ? '1' : '0',
+      }
+      stage = '启动应用容器并等待健康检查'
+      await kiriProgress([...compose, 'up', '-d', '--no-build', '--wait', '--wait-timeout', '120'], env, [password, secret])
+      console.log('Docker 演示环境已启动：https://127.0.0.1:3101；前端、后端和模拟登录均在 ft-demo-app 容器中。')
+    }
   }
-  Object.assign(process.env, {
-    DATABASE_URL: `mysql://${databaseUser}:${password}@127.0.0.1:${mysql.port}/${database}`,
-    NODE_ENV: 'production',
-    FT_DEPLOYMENT_MODE: 'demo',
-    NUXT_DEV_TOOLS: '1',
-    NUXT_ISOLATED_DEMO: '1',
-    NUXT_ADMIN_USER_IDS: 'u-005',
-    NUXT_UPLOAD_DIR: resolve('.data/demo/uploads'),
-    NUXT_QMS_API_BASE: `http://127.0.0.1:${bridgePort}`,
-    NUXT_QMS_AUTHORIZE_URL: `http://127.0.0.1:${bridgePort}/identity/authorize`,
-    NUXT_QMS_CLIENT_ID: 'fulfillment-demo',
-    NUXT_QMS_CLIENT_SECRET: bridgeSecret,
-    NUXT_QMS_CALLBACK_URL: `${origin}/auth/callback`,
-    NUXT_QMS_SYNC_ENABLED: '0',
-    HOST: '127.0.0.1',
-    PORT: String(appPort),
-  })
-  console.log('正在准备独立演示数据库…')
-  stage = '迁移独立演示数据库'
-  execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], { env: process.env, stdio: ['ignore', 'ignore', 'ignore'] })
-  const require = createRequire(import.meta.resolve('nuxt'))
-  const { createJiti } = require('jiti')
-  const jiti = createJiti(import.meta.url)
-  const { prisma } = await jiti.import(resolve('server/utils/prisma.ts'))
-  const { seedDemo } = await jiti.import(resolve('server/services/dev/demo.ts'))
-  stage = '检查并写入演示数据'
-  const foreign = await prisma.qmsWorkOrder.count({ where: { NOT: { workOrderNumber: { startsWith: 'DEMO-' } } } })
-  if (foreign) throw new Error('演示库中存在非演示工单，已停止，未清除任何记录。')
-  if (!process.argv.includes('--keep-data')) await seedDemo()
-  stage = '修复演示身份配置及计划接收待办'
-  const { repairIsolatedDemo } = await jiti.import(resolve('server/services/dev/repair-isolated-demo.ts'))
-  const repaired = await repairIsolatedDemo()
-  if (repaired.created) console.log(`已补齐演示账号身份配置，补发 ${repaired.created} 条计划接收待办。`)
-  const users = await prisma.qmsUser.findMany({ where: { username: { startsWith: 'DEMO-' }, isDeleted: false, status: 'ACTIVE' }, select: { id: true, realName: true } })
-  const count = await prisma.qmsWorkOrder.count()
-  await prisma.$disconnect()
-  mkdirSync(process.env.NUXT_UPLOAD_DIR, { recursive: true })
-  stage = '启动模拟登录和 HTTPS 服务'
-  await startMockIdentityBridge({
-    port: bridgePort,
-    host: '127.0.0.1',
-    clientId: 'fulfillment-demo',
-    clientSecret: bridgeSecret,
-    callback: `${origin}/auth/callback`,
-    chooser: true,
-    sync: false,
-    users: Object.fromEntries(users.map(user => [user.id, { name: user.id === 'u-005' ? '演示管理员 / 分管领导' : user.realName, active: true }])),
-  })
-  // TLS material is supplied only to the local HTTPS server and never printed.
-  process.env.NITRO_SSL_CERT = readFileSync(publicCert, 'utf8')
-  process.env.NITRO_SSL_KEY = readFileSync(privateKey, 'utf8')
-  await import(pathToFileURL(resolve('.output/server/index.mjs')).href)
-  console.log(`独立演示环境已启动：${origin}（${count} 个演示工单）。选择“演示管理员 / 分管领导”可查看全部模块。`)
+} catch {
+  console.error(`演示环境操作失败：${stage}。检查 Kiri、3101/4101 端口和容器日志；数据库及附件未删除。`)
+  process.exitCode = 1
 }
-
-main().catch((error) => {
-  // Driver/child-process errors can contain connection credentials; do not dump them.
-  const code = error?.code ?? error?.errorCode
-  if (typeof code === 'string' && /^(P\d{4}|ECONNREFUSED|ETIMEDOUT|ECONNRESET|ENOTFOUND)$/.test(code)) {
-    console.error(`演示启动错误码：${code}`)
-    if (code === 'P2028') console.error('数据库事务启动或执行超时。请检查数据库负载和锁等待；不要清空演示数据，也不要重复并发启动。')
-  }
-  console.error(`演示环境准备失败：${stage}。请检查构建产物、端口、本地证书及 Kiri 中的 ${mysql.name} 容器；未删除原环境数据。`)
-  process.exit(1)
-})

@@ -1,6 +1,7 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { createInterface } from 'node:readline'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -20,17 +21,46 @@ export function dockerCommand(exists = existsSync) {
   return exists(bundled) ? bundled : 'docker'
 }
 
-export function kiri(args, options = {}) {
+export function kiriClient(environment = {}) {
   // Public MySQL pulls need no registry credentials. Do not inherit stale Desktop credential helpers.
   if (!clientConfig) {
     clientConfig = mkdtempSync(join(tmpdir(), 'ft-kiri-client-'))
+    writeFileSync(join(clientConfig, 'config.json'), JSON.stringify({ cliPluginsExtraDirs: ['/Applications/Kiri.app/Contents/Resources/bin/cli-plugins'] }))
     process.once('exit', () => rmSync(clientConfig, { recursive: true, force: true }))
   }
-  const env = { ...process.env, ...options.env }
+  const env = { ...process.env, ...environment }
   for (const key of ['DOCKER_CONTEXT', 'DOCKER_HOST', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH']) delete env[key]
-  return execFileSync(dockerCommand(), ['--config', clientConfig, '--host', `unix://${homedir()}/.kiri/run/docker.sock`, ...args], {
-    encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], ...options, env,
+  return { command: dockerCommand(), args: ['--config', clientConfig, '--host', `unix://${homedir()}/.kiri/run/docker.sock`], env }
+}
+
+export function kiri(args, options = {}) {
+  const client = kiriClient(options.env)
+  return execFileSync(client.command, [...client.args, ...args], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], ...options, env: client.env })
+}
+
+/** Stream progress without placing generated credentials in arguments or printing them on errors. */
+export function kiriProgress(args, environment = {}, secrets = []) {
+  const client = kiriClient(environment)
+  return new Promise((resolve, reject) => {
+    const child = spawn(client.command, [...client.args, ...args], { env: client.env, stdio: ['ignore', 'pipe', 'pipe'] })
+    for (const stream of [child.stdout, child.stderr]) createInterface({ input: stream }).on('line', line => {
+      for (const secret of secrets.filter(Boolean)) line = line.replaceAll(secret, '[redacted]')
+      console.log(line)
+    })
+    child.on('error', () => reject(new Error('Docker command could not start')))
+    child.on('exit', code => code === 0 ? resolve() : reject(new Error(`Docker ${args[0]} failed`)))
   })
+}
+
+export async function buildLocalImage(image) {
+  // Keep BuildKit's cache across runs, but never reuse a Desktop credential configuration.
+  const buildxConfig = join(homedir(), '.local', 'share', 'fulfillment-buildx')
+  mkdirSync(buildxConfig, { recursive: true })
+  const env = { BUILDX_CONFIG: buildxConfig }
+  try { kiri(['buildx', 'inspect', 'ft-local'], { env }) } catch {
+    kiri(['buildx', 'create', '--name', 'ft-local', '--driver', 'docker-container', `unix://${homedir()}/.kiri/run/docker.sock`], { env })
+  }
+  await kiriProgress(['buildx', 'build', '--builder', 'ft-local', '--load', '--target', 'local', '-t', image, '.'], env)
 }
 
 export function mysqlTarget(kind) {

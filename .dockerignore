@@ -18,6 +18,12 @@
 !prisma/**
 !scripts/
 !scripts/**
+!tests/
+!tests/**
+!vitest.config.ts
+!.github/
+!.github/workflows/
+!.github/workflows/ci.yml
 **/.env
 **/.env.*
 **/*.pem
