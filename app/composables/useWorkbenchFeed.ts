@@ -26,9 +26,8 @@ export interface Card {
 }
 const TONE_RANK: Record<Tone, number> = { late: 0, risk: 1, normal: 2 }
 
-export const WORKBENCH_FILTERS = ['todo', 'overdue', 'today', 'notifications', 'unread'] as const
+export const WORKBENCH_FILTERS = ['todo', 'notifications'] as const
 export type WorkbenchFilter = (typeof WORKBENCH_FILTERS)[number]
-export const WORKBENCH_FILTER_TEXT: Record<WorkbenchFilter, string> = { todo: '待处理', overdue: '逾期', today: '今日到期', notifications: '通知', unread: '未读通知' }
 
 export const toneIcon = (t: Tone) => (t === 'late' ? 'alert' : t === 'risk' ? 'warn' : 'dot')
 /** 待办的"查看"跳转：工序 → 工件抽屉（工序编排页）；发放 → 发放单；总计划 → 工单详情的总计划页签 */
@@ -109,9 +108,10 @@ export function useWorkbenchFeed(options: { todos: Ref<WorkbenchTodo[]>; reminde
     )
   })
 
-  const active = computed<WorkbenchFilter>(() => ((WORKBENCH_FILTERS as readonly string[]).includes(route.query.f as string) ? (route.query.f as WorkbenchFilter) : 'todo'))
-  const isNotifications = computed(() => active.value === 'notifications' || active.value === 'unread')
-  const notificationFilter = computed(() => active.value === 'unread' ? 'unread' : ['unread', 'history'].includes(String(route.query.n)) ? String(route.query.n) : 'attention')
+  // Old due-date links open the grouped task list; old unread links still open unread notifications.
+  const active = computed<WorkbenchFilter>(() => route.query.f === 'notifications' || route.query.f === 'unread' ? 'notifications' : 'todo')
+  const isNotifications = computed(() => active.value === 'notifications')
+  const notificationFilter = computed(() => route.query.f !== 'unread' && route.query.n === 'history' ? 'history' : 'unread')
   const selectedWo = computed(() => typeof route.query.wo === 'string' ? route.query.wo : undefined)
   const selectedAction = computed(() => typeof route.query.action === 'string' ? route.query.action : undefined)
   const counts = computed(() => ({
@@ -120,19 +120,15 @@ export function useWorkbenchFeed(options: { todos: Ref<WorkbenchTodo[]>; reminde
     today: todos.value.filter((t) => t.bucket === 'TODAY').length,
     unread: data.value?.unread ?? 0,
   }))
-  const attachedIds = computed(() => new Set(allCards.value.flatMap(c => c.alerts.map(r => r.id))))
   const cards = computed(() => {
-    const f = active.value
     return allCards.value.filter(c => {
       if (selectedWo.value && c.wo !== selectedWo.value) return false
       if (isNotifications.value) {
         if (!c.reminder) return false
-        if (notificationFilter.value === 'unread') return c.unread
-        if (notificationFilter.value === 'history') return true
-        return !c.reminder.cleared && !attachedIds.value.has(c.reminder.id)
+        return notificationFilter.value === 'history' || c.unread
       }
       if (!c.todo || (selectedAction.value && c.todo.action !== selectedAction.value)) return false
-      return f === 'todo' || (f === 'overdue' ? c.bucket === 'OVERDUE' : c.bucket === 'TODAY')
+      return true
     })
   })
   const groups = computed(() => groupByBucket(cards.value))

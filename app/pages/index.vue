@@ -19,12 +19,9 @@ const { allCards, active, counts, cards, groups, filterTo, isNotifications, noti
 const loadError = computed(() => isNotifications.value ? remindersError.value : todosError.value)
 const loading = computed(() => isNotifications.value ? pending.value : todosPending.value)
 const filterOptions = computed(() => [
-  { value: 'todo', label: `待处理 ${todosAvailable.value ? counts.value.todo : '—'}` },
-  { value: 'overdue', label: `逾期 ${todosAvailable.value ? counts.value.overdue : '—'}` },
-  { value: 'today', label: `今日到期 ${todosAvailable.value ? counts.value.today : '—'}` },
-  { value: 'notifications', label: `通知 · ${pending.value || remindersError.value ? '—' : counts.value.unread} 未读` },
+  { value: 'todo', label: `我的待办 (${todosAvailable.value ? counts.value.todo : '—'})` },
+  { value: 'notifications', label: `通知 (${pending.value || remindersError.value ? '—' : counts.value.unread} 未读)` },
 ])
-const notificationOptions = [{ value: 'attention', label: '待关注' }, { value: 'unread', label: '未读' }, { value: 'history', label: '最近记录' }]
 const filterChips = computed(() => [
   ...(selectedWo.value ? [{ key: 'wo', text: `工单：${selectedWo.value}`, clear: () => updateFilter('wo') }] : []),
   ...(!isNotifications.value && selectedAction.value ? [{ key: 'action', text: `类型：${actionOptions.value.find(a => a.value === selectedAction.value)?.label ?? selectedAction.value}`, clear: () => updateFilter('action') }] : []),
@@ -40,16 +37,18 @@ function onCardClick(c: Card) {
 <template>
   <div class="wb">
     <UiSectionCard icon="inbox" padding="none" :title="isNotifications ? '通知' : '我的待办'" tray>
-      <template #extra><UiRefreshButton :loading="loading" @click="retryLoad" /></template>
+      <template #extra>
+        <a-button v-if="isNotifications && !pending && !remindersError && counts.unread > 0" size="small" @click="readAll">全部标为已读</a-button>
+        <UiRefreshButton :loading="loading" @click="retryLoad" />
+      </template>
       <div class="controls">
-        <a-segmented class="views" :value="isNotifications ? 'notifications' : active" :options="filterOptions" @change="(f) => navigateTo(filterTo(f as WorkbenchFilter))" />
+        <a-segmented class="views" :value="active" :options="filterOptions" @change="(f) => navigateTo(filterTo(f as WorkbenchFilter))" />
         <div class="filters">
-          <a-segmented v-if="isNotifications" :value="notificationFilter" :options="notificationOptions" @change="(v) => updateFilter('n', String(v))" />
-          <a-select v-else aria-label="任务类型" :value="selectedAction" :options="actionOptions" allow-clear placeholder="全部类型" @change="(v) => updateFilter('action', typeof v === 'string' ? v : undefined)" />
+          <a-select v-if="!isNotifications" aria-label="任务类型" :value="selectedAction" :options="actionOptions" allow-clear placeholder="全部类型" @change="(v) => updateFilter('action', typeof v === 'string' ? v : undefined)" />
           <a-select aria-label="工单筛选" :value="selectedWo" :options="workOrders" allow-clear show-search option-filter-prop="label" placeholder="全部工单" @change="(v) => updateFilter('wo', typeof v === 'string' ? v : undefined)" />
-          <a-button v-if="isNotifications" size="small" :disabled="pending || !!remindersError || !counts.unread" @click="readAll">全部标为已读</a-button>
+          <label v-if="isNotifications" class="unread-switch"><a-switch aria-label="只看未读" size="small" :checked="notificationFilter === 'unread'" @change="(checked) => updateFilter('n', checked ? undefined : 'history')" />只看未读</label>
         </div>
-        <UiFilterChips :items="filterChips" @clear-all="navigateTo({ query: { f: active === 'todo' ? undefined : active, n: notificationFilter === 'attention' ? undefined : notificationFilter } })" />
+        <UiFilterChips :items="filterChips" @clear-all="navigateTo({ query: { f: active === 'todo' ? undefined : active, n: notificationFilter === 'unread' ? undefined : notificationFilter } })" />
       </div>
       <div v-if="!remindersError && !pending && data?.pinned.length" class="sync-notices">
         <div v-for="p in data.pinned" :key="p.id" class="sync-notice">
@@ -65,7 +64,7 @@ function onCardClick(c: Card) {
         </a-result>
         <template v-else-if="!loading">
           <template v-if="isNotifications">
-            <p class="notification-hint">{{ notificationFilter === 'attention' ? '已关联待办的预警在任务中展示；已消除的预警可在最近记录中查看。' : '已读仅表示看过通知，不代表业务已处理。' }}</p>
+            <p class="notification-hint">已读仅表示看过通知，不代表业务已处理。</p>
             <div v-if="!cards.length" class="empty-box"><a-empty description="没有符合条件的通知" /></div>
             <div v-else class="feed-rows">
               <UiListItem v-for="c in cards" :key="c.key" compact :tone="c.tone === 'normal' ? 'none' : c.tone" :icon="toneIcon(c.tone)">
@@ -154,6 +153,7 @@ function onCardClick(c: Card) {
 .views { align-self: flex-start; max-width: 100%; }
 .filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .filters :deep(.ant-select) { width: 180px; max-width: 100%; }
+.unread-switch { display: inline-flex; align-items: center; gap: 6px; color: var(--ft-text-2); font-size: 12px; white-space: nowrap; cursor: pointer; }
 .muted, .notification-hint { color: var(--ft-text-2); font-size: 12px; }
 .notification-hint { margin: 12px 20px; }
 .sync-notices, .notice-error { margin: 0 20px 12px; }

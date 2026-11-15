@@ -97,6 +97,10 @@ async function openDom() {
       ...Object.fromEntries(['UiPageHero', 'UiSectionCard', 'UiListItem', 'ASpin', 'AResult', 'AEmpty', 'AAlert'].map(k => [k, box])),
       ...Object.fromEntries(['UiFilterChips', 'UiRefreshButton', 'UiAlertMark', 'WoLink', 'NuxtLink', 'ASelect', 'ADropdown', 'AModal', 'SendStepModal', 'FinishStepModal', 'ReleaseDrawer'].map(k => [k, true])),
       ASegmented: segment,
+      ASwitch: Vue.defineComponent({
+        props: ['checked'], emits: ['change'],
+        setup: (p, { emit }) => () => Vue.h('button', { role: 'switch', 'aria-checked': p.checked, onClick: () => emit('change', !p.checked) }),
+      }),
       AButton: Vue.defineComponent({ setup: (_, { slots }) => () => Vue.h('button', slots.default?.()) }),
     } },
   })
@@ -111,7 +115,8 @@ describe('workbench rendered states', () => {
     expect(wrapper.text()).not.toContain('每日汇总')
     expect(wrapper.text()).not.toContain('全部标为已读')
     expect(wrapper.text()).not.toContain('红色预警')
-    const tab = wrapper.findAll('button').find(b => b.text().startsWith('通知 ·'))!
+    expect(wrapper.findAll('nav button').map(b => b.text())).toEqual(['我的待办 (3)', '通知 (2 未读)'])
+    const tab = wrapper.findAll('button').find(b => b.text().startsWith('通知 ('))!
     await tab.trigger('click')
     expect(nav.at(-1)).toEqual({ query: { f: 'notifications', n: undefined } })
     route.query.f = 'notifications'
@@ -120,6 +125,23 @@ describe('workbench rendered states', () => {
     expect(wrapper.text()).toContain('红色预警')
     expect(wrapper.text()).not.toContain('已读已消除')
     expect(wrapper.text()).not.toContain('每日汇总')
+    expect(wrapper.findAll('nav')).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('待关注')
+    expect(wrapper.text()).not.toContain('最近记录')
+    expect(wrapper.find('.filters').text()).not.toContain('全部标为已读')
+    const unreadSwitch = wrapper.find('[role="switch"]')
+    expect(unreadSwitch.attributes('aria-checked')).toBe('true')
+    await unreadSwitch.trigger('click')
+    expect(nav.at(-1)).toEqual({ query: { f: 'notifications', n: 'history' } })
+    route.query.n = 'history'
+    await flushPromises()
+    expect(wrapper.text()).toContain('已读已消除')
+    expect(unreadSwitch.attributes('aria-checked')).toBe('false')
+    await unreadSwitch.trigger('click')
+    expect(nav.at(-1)).toEqual({ query: { f: 'notifications', n: undefined } })
+    route.query.n = undefined
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('已读已消除')
     expect(wrapper.find('.daily-summary').exists()).toBe(false)
     expect(reminderCalls).not.toContain('readDigest:d1')
     expect(calls).toEqual([])
@@ -130,7 +152,7 @@ describe('workbench rendered states', () => {
     state.todos = []; state.todosError = new Error('offline')
     let wrapper = await openDom()
     expect(wrapper.text()).toContain('待办加载失败')
-    expect(wrapper.text()).toContain('待处理 —')
+    expect(wrapper.text()).toContain('我的待办 (—)')
     expect(wrapper.text()).not.toContain('暂无待处理事项')
     await wrapper.findAll('button').find(b => b.text() === '重试')!.trigger('click')
     expect(refreshTodos).toHaveBeenCalled()
@@ -139,11 +161,26 @@ describe('workbench rendered states', () => {
     wrapper = await openDom()
     expect(wrapper.text()).toContain('通知加载失败，待办仍可处理')
     expect(wrapper.text()).toContain('开工零件A')
-    expect(wrapper.text()).toContain('通知 · — 未读')
+    expect(wrapper.text()).toContain('通知 (— 未读)')
     route.query.f = 'notifications'
     await flushPromises()
     expect(wrapper.text()).toContain('通知加载失败')
     expect(wrapper.text()).not.toContain('没有符合条件的通知')
+    expect(wrapper.text()).not.toContain('全部标为已读')
+    wrapper.unmount()
+  })
+
+  it('shows the bulk read action only for unread notifications and never completes business tasks', async () => {
+    route.query.f = 'notifications'
+    let wrapper = await openDom()
+    await wrapper.findAll('button').find(b => b.text() === '全部标为已读')!.trigger('click')
+    expect(reminderCalls).toEqual(['readAll'])
+    expect(calls).toEqual([])
+    wrapper.unmount()
+    state.reminders.unread = 0
+    wrapper = await openDom()
+    expect(wrapper.text()).not.toContain('全部标为已读')
+    expect(wrapper.text()).toContain('通知 (0 未读)')
     wrapper.unmount()
   })
 })
@@ -164,8 +201,8 @@ describe('工作台卡片流', () => {
     route.query.f = 'notifications'
     await flushVue()
     expect(v.state.cards.map((c: any) => c.reminder.id)).toEqual(expect.arrayContaining(['other-type', 'other-order', 'converted']))
-    expect(v.state.cards.map((c: any) => c.reminder.id)).not.toContain('r1')
-    expect(v.state.cards.map((c: any) => c.reminder.id)).not.toContain('cleared')
+    expect(v.state.cards.map((c: any) => c.reminder.id)).toContain('r1')
+    expect(v.state.cards.map((c: any) => c.reminder.id)).toContain('cleared')
     route.query.n = 'unread'
     await flushVue()
     expect(v.state.cards.map((c: any) => c.reminder.id)).toContain('r1')
@@ -187,7 +224,7 @@ describe('工作台卡片流', () => {
     route.query.f = 'notifications'
     const v = await open()
     expect(v.state.cards.map((c: any) => c.key)).toContain('r:r1')
-    expect(v.state.filterOptions[0].label).toBe('待处理 —')
+    expect(v.state.filterOptions[0].label).toBe('我的待办 (—)')
     route.query.f = 'todo'; route.query.wo = 'WO2'
     await flushVue()
     expect(v.state.cards.map((c: any) => c.key)).toEqual(['t:t2'])
@@ -225,7 +262,7 @@ describe('工作台卡片流', () => {
   })
 
   it.each([
-    [undefined, 'todo', 3], ['todo', 'todo', 3], ['overdue', 'overdue', 1], ['today', 'today', 1], ['unread', 'unread', 2], ['bogus', 'todo', 3], ['notifications', 'notifications', 3],
+    [undefined, 'todo', 3], ['todo', 'todo', 3], ['overdue', 'todo', 3], ['today', 'todo', 3], ['unread', 'notifications', 2], ['bogus', 'todo', 3], ['notifications', 'notifications', 2],
   ])('?f=%s 过滤：active=%s，共 %i 条', async (f, active, total) => {
     route.query.f = f
     const v = await open()
@@ -241,7 +278,7 @@ describe('工作台卡片流', () => {
     route.query.f = 'todo'
     await flushVue()
     expect(v.state.filterTo('todo')).toEqual({ query: { x: '1', f: undefined } })
-    expect(v.state.filterTo('unread')).toEqual({ query: { x: '1', f: 'unread' } })
+    expect(v.state.filterTo('notifications')).toEqual({ query: { x: '1', f: 'notifications', n: undefined } })
     expect(v.state.cards.map((c: any) => c.key)).toEqual(['t:t1', 't:t3', 't:t2'])
     v.unmount()
   })
@@ -253,12 +290,12 @@ describe('工作台卡片流', () => {
 
     state.reminders = { items: [], unread: 0, digest: null, pinned: [] }; state.todos = []
     v = await open()
-    expect(v.state.filterOptions[0].label).toBe('待处理 0')
+    expect(v.state.filterOptions[0].label).toBe('我的待办 (0)')
     v.unmount()
 
     state.pending = true
     v = await open()
-    expect(v.state.filterOptions[3].label).toContain('—')
+    expect(v.state.filterOptions[1].label).toContain('—')
     v.unmount()
 
     state.todosError = new Error('x')
