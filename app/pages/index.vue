@@ -149,9 +149,10 @@ function onCardClick(c: Card) {
 
 <style scoped>
 .wb { display: flex; flex-direction: column; gap: 16px; }
-.controls { display: flex; flex-direction: column; gap: 12px; padding: 4px 20px 16px; }
-.views { align-self: flex-start; max-width: 100%; }
-.filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 4px 20px 16px; }
+.controls :deep(.ft-chips) { flex-basis: 100%; margin-bottom: 0; }
+.views { flex-shrink: 0; max-width: 100%; }
+.filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; max-width: 100%; }
 .filters :deep(.ant-select) { width: 180px; max-width: 100%; }
 .unread-switch { display: inline-flex; align-items: center; gap: 6px; color: var(--ft-text-2); font-size: 12px; white-space: nowrap; cursor: pointer; }
 .muted, .notification-hint { color: var(--ft-text-2); font-size: 12px; }
@@ -179,8 +180,9 @@ function onCardClick(c: Card) {
 .notification-title:focus-visible, summary:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 2px; }
 @media (max-width: 767px) {
   .controls { padding-inline: 12px; }
-  .views { align-self: stretch; font-size: 12px; }
+  .views { flex-basis: 100%; font-size: 12px; }
   .views :deep(.ant-segmented-item-label) { padding-inline: 7px; }
+  .filters { flex: 1; min-width: 0; }
   .filters :deep(.ant-select) { flex: 1; min-width: 120px; }
   .feed-rows { padding-inline: 12px; }
   .feed-rows :deep(.ft-li) { flex-wrap: wrap; }
