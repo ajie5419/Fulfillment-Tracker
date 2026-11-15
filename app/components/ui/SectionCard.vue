@@ -113,9 +113,9 @@ withDefaults(
   border: 1px solid var(--card-border);
   border-radius: var(--card-radius-outer);
   box-shadow: none;
-  padding: 10px 12px 12px;
+  padding: 8px 6px 6px;
 }
-.ft-section.tray > .head { padding: 2px 4px 10px; }
+.ft-section.tray > .head { padding: 2px 6px 8px; }
 .ft-section.tray > .head .title { font-size: 14.5px; }
 .ft-section.tray > .ft-section-panel {
   background: var(--card-surface-bg);
