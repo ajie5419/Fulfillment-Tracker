@@ -233,10 +233,6 @@ function clearFilters() {
   <div>
   <div class="risks">
     <NuxtLink v-if="returnTo" :to="returnTo">返回全盘统计（保留条件）</NuxtLink>
-    <div class="risks-head">
-      <UiRefreshButton @click="refresh()" />
-      <a-button type="primary" class="ft-btn-ink" @click="reporting = true">上报异常</a-button>
-    </div>
 
     <!-- 异常状态漏斗 KPI：点击联动过滤台账 -->
     <div class="kpi-row">
@@ -298,8 +294,8 @@ function clearFilters() {
         </div>
       </template>
       <template #extra>
-        <a-select v-model:value="filter.workOrderNumber" allow-clear show-search placeholder="全部工单" style="width: 168px" :options="woOptions" />
-        <a-select v-if="tab === 'issues'" v-model:value="filter.dept" style="width: 146px" :options="[{ value: '0', label: '责任部门：全部' }, { value: '1', label: '责任部门：本部门' }]" />
+        <a-select v-model:value="filter.workOrderNumber" allow-clear show-search placeholder="全部工单" style="width: 148px" :options="woOptions" />
+        <a-select v-if="tab === 'issues'" v-model:value="filter.dept" style="width: 142px" :options="[{ value: '0', label: '责任部门：全部' }, { value: '1', label: '责任部门：本部门' }]" />
         <UiFilterButton :count="activeChips.length" @clear="clearFilters">
           <template v-if="tab === 'alerts'">
             <div class="ft-filter-group">预警</div>
@@ -317,6 +313,8 @@ function clearFilters() {
             <a-checkbox v-model:checked="overdueOnly">只看超期</a-checkbox>
           </template>
         </UiFilterButton>
+        <UiRefreshButton @click="refresh()" />
+        <a-button type="primary" class="ft-btn-ink" @click="reporting = true">上报异常</a-button>
       </template>
 
       <div v-if="activeChips.length" class="chips-bar">
@@ -455,7 +453,6 @@ function clearFilters() {
 
 <style scoped>
 .risks { display: flex; flex-direction: column; gap: 16px; }
-.risks-head { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .tray-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .scope-pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500; background: var(--ft-fill); border: 1px solid var(--ft-border); color: var(--ft-text-2); }
