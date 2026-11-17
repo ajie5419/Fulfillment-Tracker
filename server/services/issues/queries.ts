@@ -8,13 +8,15 @@ import { CATEGORY_TEXT, DEFAULT_DEPT_NAME, SUPPLIER_CATEGORIES } from './constan
 import type { Actor, IssueFilter } from './types'
 import { decorate } from './loaders'
 import { projectIssueDetail } from './projection'
+import { resolveRiskScope, riskIssueWhere, canReadRiskIssue } from '../auth/risk-scope'
+import { FlowForbidden } from '../flow/errors'
 
 const READ_BATCH_SIZE = 500
 
 export type IssueRow = Awaited<ReturnType<typeof decorate>>[number]
 
 export async function listIssues(filter: IssueFilter, actor: Actor, now = new Date()): Promise<IssueRow[]> {
-  const where = issueWhere(filter, actor)
+  const where = { AND: [issueWhere(filter, actor), riskIssueWhere(await resolveRiskScope(actor))] }
   const rows: IssueRow[] = []
   let after: Pick<Issue, 'createdAt' | 'id'> | undefined
   // 内部工单详情和兼容旧风险页 / 驾驶舱需要全量；明细分页另走 listIssuesPage。
@@ -67,6 +69,7 @@ export async function listIssuesPage(filter: IssueFilter, actor: Actor, now = ne
 export async function getIssue(id: string, actor: Actor, now = new Date()) {
   const issue = await prisma.issue.findUnique({ where: { id }, include: { logs: { orderBy: { createdAt: 'asc' } } } })
   if (!issue) throw new FlowError('异常不存在', 'NOT_FOUND')
+  if (!canReadRiskIssue(await resolveRiskScope(actor), issue)) throw new FlowForbidden('无权查看该异常')
   const [row] = await decorate([issue], actor, now)
   if (!row) throw new FlowError('异常不存在', 'NOT_FOUND')
   const names = await loadNames({ user: issue.logs.map((l) => l.actorId) })

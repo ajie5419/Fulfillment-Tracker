@@ -12,7 +12,7 @@ const query = z.object({
   overdue: z.enum(['0', '1']).optional(),
 })
 
-/** 异常列表：按状态、分类、工单、本部门、我负责/我上报/等我处理筛选；只列可见工单的 */
+/** Responsibility scope is mandatory; query filters can only narrow it. */
 export default defineFlowHandler(async (event, user) => {
   const q = parseQuery(event, query)
   return listIssues(
@@ -23,7 +23,6 @@ export default defineFlowHandler(async (event, user) => {
       deptIds: q.dept === '1' ? await myDepartmentIds(user.qmsUserId) : undefined,
       mine: q.mine,
       overdue: q.overdue === '1',
-      visibleWorkOrders: scopeWorkOrders(await getScope(event)),
     },
     actorOf(event, user),
   )

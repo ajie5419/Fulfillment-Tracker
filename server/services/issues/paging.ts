@@ -7,6 +7,7 @@ import { deptIdsResolvingTo, loadDeptIndex } from '../auth/departments'
 import { OPEN_STATUSES } from './constants'
 import { judgeIssueOverdue } from './overdue'
 import type { Actor, IssueFilter } from './types'
+import { resolveRiskScope, riskIssueWhere } from '../auth/risk-scope'
 
 export function issueWhere(filter: IssueFilter, actor: Actor): Prisma.IssueWhereInput {
   const where: Prisma.IssueWhereInput = {}
@@ -72,7 +73,7 @@ export async function issuePageBuckets(filter: IssueFilter, actor: Actor, now: D
   ])
   const base = issueWhere(filter, actor)
   const overdue = overdueIssueWhere(now, offDays, thresholds.W4)
-  const common = [base, ...(actionable ? [actionable] : [])]
+  const common = [base, riskIssueWhere(await resolveRiskScope(actor)), ...(actionable ? [actionable] : [])]
   if (filter.overdue) return [{ AND: [...common, overdue] }]
   return [
     { AND: [...common, overdue] },

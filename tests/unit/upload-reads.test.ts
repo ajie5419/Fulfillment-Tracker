@@ -22,6 +22,8 @@ beforeEach(async () => {
   resetServiceDb()
   returns('uploadFile.findUnique', file)
   returns('uploadFile.findFirst', file)
+  returns('notifyRole.findMany', [])
+  returns('workOrderExt.findMany', [])
   vi.mocked(readFile).mockReset().mockImplementation((await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).readFile)
   vi.mocked(isReleaseParty).mockReset().mockResolvedValue(false)
   vi.mocked(logEvent).mockClear()

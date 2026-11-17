@@ -10,6 +10,7 @@ import { FlowError, FlowForbidden } from '../services/flow/errors'
 import { inspectionWorkOrders } from '../services/flow/inspection'
 import { CONFIRM_PLAN_NODE, PLAN_REF } from '../services/plan/constants'
 import { prisma } from './prisma'
+import { resolveRiskScope, canReadRiskIssue } from '../services/auth/risk-scope'
 
 export interface AuthUser {
   qmsUserId: string
@@ -86,8 +87,11 @@ export async function assertCanSeeStep(event: H3Event, stepId: string) {
 }
 
 export async function assertCanSeeIssue(event: H3Event, issueId: string) {
-  const issue = await prisma.issue.findUnique({ where: { id: issueId }, select: { workOrderNumber: true } })
-  if (issue) await assertCanSee(event, issue.workOrderNumber)
+  const issue = await prisma.issue.findUnique({ where: { id: issueId }, select: { workOrderNumber: true, responsibleUserId: true, reporterId: true, responsibleDeptId: true } })
+  if (issue) {
+    const user = requireUser(event)
+    if (!canReadRiskIssue(await resolveRiskScope({ userId: user.qmsUserId, isAdmin: isAdmin(event, user) }), issue)) throw forbidden()
+  }
 }
 
 /** 采购行、付款申请（R10）：按所属工单判断 */

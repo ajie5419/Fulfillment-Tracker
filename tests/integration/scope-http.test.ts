@@ -203,6 +203,90 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
   }
   const get = (path: string, s: Record<string, string>) => fetch(`${base}${path}`, { headers: { cookie: cookieHeader(s) } })
 
+  it('risk responsibility scope covers every role, tampered filters, details, photos and cross-department handoffs', async () => {
+    const tag = `RISK-${Date.now()}`
+    const users = ['h-tech', 'h-buyer', 'h-prod', 'h-qa', 'h-proc', 'h-worker', 'h-fin', 'h-leader']
+    const sessions = new Map(await Promise.all([...users, 'h-pm', 'h-pm2', 'h-lead', 'h-admin'].map(async id => [id, await login(id)] as const)))
+    const session = (id: string) => sessions.get(id)!
+    const created = await Promise.all(users.map((id, i) => db.issue.create({ data: {
+      issueNo: `${tag}-${i}`, workOrderNumber: i % 2 ? OTHER : MINE,
+      category: 'OTHER', description: 'Role-scoped risk fixture', source: 'MANUAL',
+      responsibleUserId: id, reporterId: id, responsibleDeptId: USER_DEPT[id] ?? null,
+    } })))
+    const ids = created.map(i => i.id)
+    const post = (id: string, path: string, body: object) => fetch(`${base}${path}`, { method: 'POST', headers: { cookie: cookieHeader(session(id)), 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const issueIds = async (user: string, suffix = '') => {
+      const response = await get(`/api/issues?dept=0${suffix}`, session(user))
+      expect(response.status).toBe(200)
+      return (await readApiBody(response)).filter((r: { id: string }) => ids.includes(r.id)).map((r: { id: string }) => r.id).sort()
+    }
+    const qa = created.find(i => i.responsibleUserId === 'h-qa')!
+    const roleIds: string[] = []
+    const drawingIds: string[] = []
+    let releaseId: string | undefined
+    let photoId: string | undefined
+    try {
+      roleIds.push((await db.notifyRole.create({ data: { userId: 'h-worker', role: 'OUTSOURCE_COORDINATOR' } })).id)
+      for (const user of users) {
+        const own = created.find(i => i.responsibleUserId === user)!
+        expect(await issueIds(user)).toEqual([own.id])
+        const page = await readApiBody(await get('/api/issues/page?dept=0&pageSize=100', session(user)))
+        expect(page.rows.filter((r: { id: string }) => ids.includes(r.id)).map((r: { id: string }) => r.id)).toEqual([own.id])
+        expect(await issueIds(user, `&workOrderNumber=${qa.workOrderNumber}`)).toEqual(own.workOrderNumber === qa.workOrderNumber ? [own.id] : [])
+        expect((await get(`/api/issues/${own.id}`, session(user))).status).toBe(200)
+        const other = user === 'h-qa' ? created[0]! : qa
+        expect((await get(`/api/issues/${other.id}`, session(user))).status).toBe(403)
+        expect((await post(user, `/api/issues/${other.id}/note`, { note: 'Not authorized' })).status).toBe(403)
+        expect((await post(user, `/api/issues/${other.id}/accept`, {})).status).toBe(403)
+      }
+      for (const user of ['h-lead', 'h-admin']) expect(await issueIds(user)).toEqual([...ids].sort())
+      expect(await issueIds('h-pm')).toEqual(created.filter(i => i.workOrderNumber === MINE).map(i => i.id).sort())
+      roleIds.push((await db.notifyRole.create({ data: { userId: 'h-pm', role: 'DEPT_HEAD', department: 'PURCHASE' } })).id)
+      expect(await issueIds('h-pm')).toEqual(created.filter(i => i.workOrderNumber === MINE || i.responsibleUserId === 'h-buyer').map(i => i.id).sort())
+      roleIds.push((await db.notifyRole.create({ data: { userId: 'h-proc', role: 'DEPT_HEAD', department: 'TECH' } })).id)
+      expect(await issueIds('h-proc')).toEqual(created.filter(i => ['h-tech', 'h-proc'].includes(i.responsibleUserId!)).map(i => i.id).sort())
+      roleIds.push((await db.notifyRole.create({ data: { userId: 'h-worker', role: 'PROJECT_DEPT_HEAD' } })).id)
+      expect(await issueIds('h-worker')).toEqual([...ids].sort())
+
+      // Bound photos follow the issue, even if the uploader can browse the work order.
+      const form = new FormData()
+      form.append('file', new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0x00])], { type: 'image/jpeg' }), 'risk.jpg')
+      const upload = await fetch(`${base}/api/uploads`, { method: 'POST', headers: { cookie: cookieHeader(session('h-tech')) }, body: form })
+      expect(upload.status).toBe(200)
+      photoId = (await readApiBody(upload))[0].id
+      await db.uploadFile.update({ where: { id: photoId }, data: { issueId: qa.id } })
+      expect((await get(`/api/files/${photoId}`, session('h-tech'))).status).toBe(404)
+      expect((await get(`/api/files/${photoId}`, session('h-qa'))).status).toBe(200)
+      expect((await get(`/api/files/${photoId}`, session('h-admin'))).status).toBe(200)
+
+      const old = new Date(Date.now() - 10 * 86400_000)
+      for (const ownerId of ['h-tech', 'h-buyer']) {
+        const drawing = await db.drawingTask.create({ data: { workOrderNumber: MINE, ownerId, componentName: `${tag}-${ownerId}`, planDate: old } })
+        drawingIds.push(drawing.id)
+        await db.alert.create({ data: { rule: 'W7', refType: 'drawing', refId: drawing.id, activeKey: `W7:drawing:${drawing.id}`, level: 'YELLOW', firstAt: old, levelAt: old } })
+      }
+      const release = await db.release.create({ data: { releaseNo: tag, type: 'DRAWING', workOrderNumber: MINE, description: 'Handoff', issuerId: 'h-tech', createdAt: old } })
+      releaseId = release.id
+      const receipt = await db.releaseReceipt.create({ data: { releaseId, userId: 'h-buyer', createdAt: old } })
+      await db.alert.create({ data: { rule: 'W5', refType: 'receipt', refId: receipt.id, activeKey: `W5:receipt:${receipt.id}`, level: 'YELLOW', firstAt: old, levelAt: old } })
+      const alertRows = async (user: string) => (await readApiBody(await get('/api/alerts', session(user)))) as { refId: string; canHandle: boolean; canConvert: boolean }[]
+      const techAlerts = await alertRows('h-tech')
+      expect(techAlerts.find(a => a.refId === drawingIds[0])?.canHandle).toBe(true)
+      expect(techAlerts.some(a => a.refId === drawingIds[1])).toBe(false)
+      expect(techAlerts.find(a => a.refId === receipt.id)).toMatchObject({ canHandle: false, canConvert: false })
+      expect((await alertRows('h-buyer')).find(a => a.refId === receipt.id)?.canHandle).toBe(true)
+      for (const user of ['h-prod', 'h-qa', 'h-fin', 'h-leader']) expect((await alertRows(user)).some(a => [...drawingIds, receipt.id].includes(a.refId))).toBe(false)
+      for (const user of ['h-pm', 'h-proc', 'h-lead', 'h-admin', 'h-worker']) expect((await alertRows(user)).filter(a => drawingIds.includes(a.refId))).toHaveLength(2)
+    } finally {
+      await db.alert.deleteMany({ where: { OR: [{ refId: { in: drawingIds } }, ...(releaseId ? [{ activeKey: { startsWith: 'W5:receipt:' }, refId: { in: (await db.releaseReceipt.findMany({ where: { releaseId }, select: { id: true } })).map(r => r.id) } }] : [])] } })
+      if (releaseId) await db.release.delete({ where: { id: releaseId } })
+      await db.drawingTask.deleteMany({ where: { id: { in: drawingIds } } })
+      if (photoId) await db.uploadFile.delete({ where: { id: photoId } })
+      await db.issue.deleteMany({ where: { id: { in: ids } } })
+      await db.notifyRole.deleteMany({ where: { id: { in: roleIds } } })
+    }
+  })
+
   it('项目全景 HTTP 权限跟随看板：未登录 401，项目经理只看自己，领导看全部', async () => {
     expect((await fetch(`${base}/api/panorama`)).status).toBe(401)
     for (const user of ['h-pm', 'h-lead', 'h-admin']) {

@@ -653,7 +653,7 @@ describe.skipIf(!DB)('项目部总计划（R14）', () => {
     view = await s.plan.getPlan(W9WO, await ctxOf('u-pm'))
     expect(view).toMatchObject({ deliveryDelayDays: 1, sourceNodes: 2, planAlertLevel: 'RED' })
     // 预警列表：工单级一行，跳到总计划页，不显示持续时长；节点级只有两个源头节点
-    const list = await s.reminders.listAlerts({ rule: 'W9', workOrderNumber: W9WO })
+    const list = await s.reminders.listAlerts({ rule: 'W9', workOrderNumber: W9WO, viewer: { userId: 'test-admin', isAdmin: true } })
     expect(list.filter((x) => x.refType === 'plan')).toMatchObject([{ level: 'RED', link: `/plan?wo=${W9WO}`, duration: null, subject: '总计划预计交期' }])
     expect(list.filter((x) => x.refType === 'planNode').map((x) => x.refId).sort()).toEqual([a.id, b.id].sort())
     const row = (await s.board.getBoard(undefined)).rows.find((r) => r.workOrderNumber === W9WO)!

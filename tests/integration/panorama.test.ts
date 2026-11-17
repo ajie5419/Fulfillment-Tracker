@@ -73,7 +73,7 @@ describe.skipIf(!DB)('项目全景与超期统一（服务）', () => {
 
   it('列表、看板、总览及驾驶舱使用统一超期结果，读取不改变预警持久化', async () => {
     const before = await db.alert.findMany({ orderBy: { id: 'asc' } })
-    const list = await issues.listIssues({ visibleWorkOrders: numbers }, { userId: 'viewer', isAdmin: false }, now)
+    const list = await issues.listIssues({ visibleWorkOrders: numbers }, { userId: 'viewer', isAdmin: true }, now)
     const result = await board.getBoard(numbers, now)
     for (const f of fixtures) if ('issueStatus' in f) {
       expect(list.find((i) => i.workOrderNumber === workOrderNumber(f.key))).toMatchObject({ overdue: f.overdue, overdueDays: f.days })

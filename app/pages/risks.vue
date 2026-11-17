@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * 风险（前端改版第二轮）：原"预警列表"和"异常列表"合成一页，页签 全部 / 预警 / 异常（?tab=all|alerts|issues）。
- * 顶部两张小横条图：按责任部门的风险数、按严重度（红色预警 / 黄色预警 / 超期异常 / 未超期异常），都按当前筛选算（口径见 shared/workbench.ts riskTallies）。
- * 数据沿用原接口 GET /api/alerts、GET /api/issues（权限、可见范围不变），筛选参数与原两页一致：
+ * Management charts summarize only server-authorized rows using shared/workbench.ts riskTallies.
+ * GET /api/alerts and GET /api/issues enforce responsibility scope independently of client filters:
  *   预警 ?rule= ?level= ；异常 ?status= ?category= ?dept= ?mine= ?overdue=1 ；共用 ?wo= ；?id= 打开某条异常的处理抽屉。
  * 原操作全部保留：预警"转异常"（责任人、项目经理、管理员）、去处理；异常点开抽屉受理 / 改派 / 处理 / 关闭 / 退回，右上角"上报异常"。
  * 旧地址 /alerts、/issues 带原参数重定向到这里（见 pages/alerts.vue、pages/issues.vue）。
@@ -14,6 +14,7 @@ const route = useRoute()
 const router = useRouter()
 const returnTo = computed(() => typeof route.query.returnTo === 'string' && route.query.returnTo.startsWith('/board?') ? route.query.returnTo : undefined)
 const { data: me } = await useMe()
+const managementView = computed(() => !!me.value?.can.overview || !!me.value?.deptHeadOf.length || !!me.value?.pmOf.length)
 const { data: workOrders } = await useWorkOrders()
 
 type Tab = 'all' | 'alerts' | 'issues'
@@ -29,8 +30,8 @@ const filter = reactive({
   // 异常（默认未关闭；地址栏 status=ALL 表示"全部状态"）
   status: (q('status') === 'ALL' ? undefined : (q('status') ?? 'UNCLOSED')) as string | undefined,
   category: q('category'),
-  // 部门负责人默认看本部门，可切换全部
-  dept: (route.query.dept as string) ?? (me.value?.deptHeadOf.length ? '1' : '0'),
+  // The server enforces role scope; this optional filter only narrows that union.
+  dept: (route.query.dept as string) ?? '0',
   mine: q('mine'),
   // 只看超期（从领导总览"超期异常"点进来）
   overdue: route.query.overdue === '1' ? '1' : undefined,
@@ -145,14 +146,14 @@ const heroSummary = computed(() => {
   if (sev.ISSUE_OPEN) parts.push(`待处理异常 ${sev.ISSUE_OPEN}`)
   const top = t.byDept[0]
   const deptNote = top && top.name !== NO_DEPT ? `，主要集中在${top.name}（${top.count} 项）` : ''
-  return `当前筛选下共 ${t.total} 项风险${parts.length ? `（${parts.join(' · ')}）` : ''}${deptNote}。`
+  return `可见范围内共 ${t.total} 项活动风险${parts.length ? `（${parts.join(' · ')}）` : ''}${managementView.value ? deptNote : ''}。`
 })
 const SEVERITY_TONE: Record<RiskSeverity, string> = { RED: 'late', YELLOW: 'risk', ISSUE_OVERDUE: 'upstream', ISSUE_OPEN: 'on-track' }
 const severityBars = computed(() => RISK_SEVERITIES.map((s) => ({ key: s, label: RISK_SEVERITY_TEXT[s], value: tallies.value.bySeverity[s], tone: SEVERITY_TONE[s] })))
 /** 部门多时只列前 8 个，其余合并 */
 const deptBars = computed(() => {
   const rows = tallies.value.byDept
-  const head = rows.slice(0, 8).map((r) => ({ key: r.name, label: r.name, value: r.count, tone: r.name === NO_DEPT ? 'none' : 'late' }))
+  const head = rows.slice(0, 8).map((r) => ({ key: r.name, label: r.name, value: r.count, tone: 'none' }))
   const rest = rows.slice(8).reduce((n, r) => n + r.count, 0)
   return rest ? [...head, { key: '__rest', label: '其他部门', value: rest, tone: 'none' }] : head
 })
@@ -195,18 +196,19 @@ const mineOptions = [
 ]
 const woOptions = computed(() => workOrders.value.map((w) => ({ value: w.workOrderNumber, label: w.workOrderNumber })))
 const ownerText = (owners: { name: string }[]) => owners.map((o) => o.name).join('、')
+const canHandleIssue = (issue: IssueRow) => issue.can.accept || issue.can.resolve || issue.can.reassign || issue.can.close || issue.can.reject
 const iconOf = (t: Tone) => (t === 'late' ? 'alert' : t === 'risk' || t === 'upstream' ? 'warn' : t === 'none' ? 'ring' : 'dot')
 const showAlertFilters = computed(() => tab.value !== 'issues')
 const showIssueFilters = computed(() => tab.value !== 'alerts')
 
 // ───── 筛选区简化（设计改版）：常用的工单留在工具栏，其余收进"筛选"面板；生效的条件在下方显示成可关闭的标签 ─────
 const tabOptions = computed(() => [
-  { value: 'all', label: `全部 ${alerts.value.length + issues.value.length}` },
+  { value: 'all', label: `全部记录 ${alerts.value.length + issues.value.length}` },
   { value: 'alerts', label: `预警 ${alerts.value.length}` },
   { value: 'issues', label: `异常 ${issues.value.length}` },
 ])
-/** 各条件的默认值：和上面 filter 初始化时的默认一致（状态默认"未关闭"，部门负责人默认看本部门） */
-const deptDefault = computed(() => (me.value?.deptHeadOf.length ? '1' : '0'))
+/** Optional department narrowing must not hide another role's responsibilities by default. */
+const deptDefault = computed(() => '0')
 const labelOf = (opts: { value: string; label: string }[], v?: string) => opts.find((o) => o.value === v)?.label ?? v
 /** 已生效（和默认不同）的条件；切到只看预警 / 只看异常时，另一类的条件不显示（它们本来也不参与筛选） */
 const activeChips = computed(() => {
@@ -216,7 +218,7 @@ const activeChips = computed(() => {
     if (filter.level) out.push({ key: 'level', text: `级别：${labelOf(levelOptions, filter.level)}`, clear: () => (filter.level = undefined) })
   }
   if (showIssueFilters.value) {
-    if (filter.dept !== deptDefault.value) out.push({ key: 'dept', text: `异常范围：${filter.dept === '1' ? '本部门' : '全部'}`, clear: () => (filter.dept = deptDefault.value) })
+    if (filter.dept !== deptDefault.value) out.push({ key: 'dept', text: `异常范围：${filter.dept === '1' ? '本部门' : '可见范围'}`, clear: () => (filter.dept = deptDefault.value) })
     if (filter.mine) out.push({ key: 'mine', text: labelOf(mineOptions, filter.mine) ?? filter.mine, clear: () => (filter.mine = undefined) })
     if (filter.status !== 'UNCLOSED') out.push({ key: 'status', text: `状态：${filter.status ? labelOf(statusOptions, filter.status) : '全部'}`, clear: () => (filter.status = 'UNCLOSED') })
     if (filter.category) out.push({ key: 'category', text: `分类：${labelOf(categoryOptions, filter.category)}`, clear: () => (filter.category = undefined) })
@@ -244,7 +246,7 @@ function clearFilters() {
       </template>
     </UiPageHero>
 
-    <div class="charts">
+    <div v-if="managementView && !summaryError" class="charts">
       <UiSectionCard icon="bars" title="按责任部门" :sub="`当前筛选下 ${tallies.total} 项风险；一条预警有多个责任部门时各算一次`" padding="tight">
         <UiBarList :items="deptBars" empty="没有风险" :label-width="84" />
       </UiSectionCard>
@@ -266,7 +268,7 @@ function clearFilters() {
           <template v-if="showIssueFilters">
             <div class="ft-filter-group">异常</div>
             <div class="ft-filter-row"><span>范围</span>
-              <a-segmented v-model:value="filter.dept" :options="[{ value: '1', label: '本部门' }, { value: '0', label: '全部' }]" block />
+              <a-segmented v-model:value="filter.dept" :options="[{ value: '1', label: '本部门' }, { value: '0', label: '可见范围' }]" block />
             </div>
             <label class="ft-filter-row"><span>与我</span><a-select v-model:value="filter.mine" allow-clear placeholder="全部人" :options="mineOptions" /></label>
             <label class="ft-filter-row"><span>状态</span><a-select v-model:value="filter.status" allow-clear placeholder="全部状态" :options="statusOptions" /></label>
@@ -281,7 +283,10 @@ function clearFilters() {
       </div>
 
       <a-spin :spinning="alertsPending || issuesPending">
-        <div v-if="!items.length" class="empty-box">
+        <a-result v-if="summaryError && !summaryPending" status="error" title="风险数据加载失败">
+          <template #extra><a-button @click="refresh()">重试</a-button></template>
+        </a-result>
+        <div v-else-if="!items.length" class="empty-box">
           <a-empty :description="tab === 'alerts' ? '没有活动中的预警' : tab === 'issues' ? '没有符合条件的异常' : '没有符合条件的预警和异常'" />
         </div>
         <div v-else class="feed-list">
@@ -309,7 +314,7 @@ function clearFilters() {
                 <span class="sq-badge" :class="`k-${it.a.level}`">{{ LEVEL_TEXT[it.a.level as AlertLevelKey] }}预警</span>
                 <a-button v-if="it.a.issue" size="small" class="issue-btn" @click="selected = it.a.issue.id">已转异常 {{ it.a.issue.issueNo }}</a-button>
                 <a-button v-else-if="it.a.canConvert" size="small" danger :loading="converting === it.a.id" @click="convert({ id: it.a.id, subject: it.a.subject })">转异常</a-button>
-                <NuxtLink v-if="it.a.link" :to="it.a.link" class="go">去处理 ›</NuxtLink>
+                <NuxtLink v-if="it.a.link" :to="it.a.link" class="go">{{ it.a.canHandle ? '去处理' : '查看详情' }}</NuxtLink>
               </div>
             </article>
             <!-- 异常：点开处理抽屉 -->
@@ -334,7 +339,7 @@ function clearFilters() {
               </div>
               <div class="ops">
                 <span class="sq-badge k-ISSUE">异常</span>
-                <a-button size="small" @click.stop="selected = it.i.id">处理 ›</a-button>
+                <a-button size="small" @click.stop="selected = it.i.id">{{ canHandleIssue(it.i) ? '去处理' : '查看详情' }}</a-button>
               </div>
             </article>
           </template>

@@ -351,6 +351,29 @@ exports[`issues service 搬移前特征 > detail 查询与完整投影 1`] = `
     [
       "notifyRole.findMany",
       {
+        "select": {
+          "department": true,
+          "role": true,
+        },
+        "where": {
+          "userId": "owner",
+        },
+      },
+    ],
+    [
+      "workOrderExt.findMany",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "projectManagerId": "owner",
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
         "where": {
           "userId": "owner",
         },
@@ -532,6 +555,29 @@ exports[`issues service 搬移前特征 > list 查询与完整投影 1`] = `
 {
   "calls": [
     [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "department": true,
+          "role": true,
+        },
+        "where": {
+          "userId": "owner",
+        },
+      },
+    ],
+    [
+      "workOrderExt.findMany",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "projectManagerId": "owner",
+        },
+      },
+    ],
+    [
       "issue.findMany",
       {
         "orderBy": [
@@ -544,18 +590,46 @@ exports[`issues service 搬移前特征 > list 查询与完整投影 1`] = `
         ],
         "take": 500,
         "where": {
-          "status": {
-            "in": [
-              "OPEN",
-              "ACCEPTED",
-              "RESOLVED",
-            ],
-          },
-          "workOrderNumber": {
-            "in": [
-              "WO",
-            ],
-          },
+          "AND": [
+            {
+              "status": {
+                "in": [
+                  "OPEN",
+                  "ACCEPTED",
+                  "RESOLVED",
+                ],
+              },
+              "workOrderNumber": {
+                "in": [
+                  "WO",
+                ],
+              },
+            },
+            {
+              "OR": [
+                {
+                  "responsibleUserId": "owner",
+                },
+                {
+                  "reporterId": "owner",
+                },
+                {
+                  "workOrderNumber": {
+                    "in": [
+                      "WO",
+                    ],
+                  },
+                },
+                {
+                  "responsibleDeptId": {
+                    "in": [
+                      "dept",
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
         },
       },
     ],
@@ -716,9 +790,36 @@ exports[`issues service 搬移前特征 > note 状态、日志、预警与工序
       {
         "select": {
           "id": true,
+          "reporterId": true,
+          "responsibleDeptId": true,
+          "responsibleUserId": true,
+          "workOrderNumber": true,
         },
         "where": {
           "id": "issue",
+        },
+      },
+    ],
+    [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "department": true,
+          "role": true,
+        },
+        "where": {
+          "userId": "owner",
+        },
+      },
+    ],
+    [
+      "workOrderExt.findMany",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "projectManagerId": "owner",
         },
       },
     ],

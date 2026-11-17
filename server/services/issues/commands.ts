@@ -14,6 +14,7 @@ import { issueTransaction, nextIssueNo } from './transaction'
 import { defaultResponsible, deptHeadOf } from './responsibility'
 import { issuePermissions, joinNote } from './calculation'
 import { loadPermContext } from './loaders'
+import { resolveRiskScope, canReadRiskIssue } from '../auth/risk-scope'
 
 export const MAX_PHOTOS = MAX_ISSUE_PHOTOS
 
@@ -250,8 +251,9 @@ export async function closeIssue(id: string, actor: Actor, note?: string | null)
 /** 备注：能看到这条异常的人都可以加，状态不变 */
 export async function addIssueNote(id: string, actor: Actor, note: string) {
   if (!note.trim()) throw new FlowError('请填写备注')
-  const issue = await prisma.issue.findUnique({ where: { id }, select: { id: true } })
+  const issue = await prisma.issue.findUnique({ where: { id }, select: { id: true, responsibleUserId: true, responsibleDeptId: true, reporterId: true, workOrderNumber: true } })
   if (!issue) throw new FlowError('异常不存在', 'NOT_FOUND')
+  if (!canReadRiskIssue(await resolveRiskScope(actor), issue)) throw new FlowForbidden('无权查看该异常')
   await prisma.$transaction(tx => recordIssueLog(tx, { data: { issueId: id, note: note.trim(), actorId: actor.userId } }))
   return { ok: true }
 }

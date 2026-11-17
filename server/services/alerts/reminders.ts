@@ -13,7 +13,8 @@ import { isPlanNodeAlert, planLink, planNodeAlertLink } from '../plan/constants'
 import { CONVERTIBLE_RULES, durationText, elapsedExcludingOffDays } from './rules'
 import { SCAN_RULES, type Target, collectTargets, loadOffDays, loadThresholds } from './scan'
 import { todayDay } from '../flow/dates'
-import { userDeptNames } from '../auth/departments'
+import { userDeptNames, userDeptIdentities } from '../auth/departments'
+import { resolveRiskScope, canReadRiskTarget, canReadRiskIssue } from '../auth/risk-scope'
 import { workBucket } from '../../../shared/workbench'
 import { stepLinkTab, type StepStatus } from '../../../shared/production'
 import { monitoringDetailLink } from '../../../shared/monitoring'
@@ -259,10 +260,8 @@ export interface AlertFilter {
   rule?: AlertRule
   level?: AlertLevel
   workOrderNumber?: string
-  /** 可见工单（undefined = 全部） */
-  visibleWorkOrders?: string[]
-  /** 当前用户，用于判断能否"转异常" */
-  viewer?: Viewer
+  /** Required for visibility as well as actions; omission must never imply global access. */
+  viewer: Viewer
 }
 
 /** 黄色预警手动转异常的权限：预警责任人、该工单项目经理、管理员 */
@@ -307,19 +306,22 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
   const [thresholds, offDays] = await Promise.all([loadThresholds(), loadOffDays()])
   const targets = new Map((await collectTargets(at, thresholds, offDays, filter.rule)).map((t) => [t.key, t]))
   const wos = [...new Set([...targets.values()].map((t) => t.workOrderNumber).filter((x): x is string => !!x))]
-  const [names, exts, issues, deptOf] = await Promise.all([
+  const issueIds = [...targets.values()].flatMap(t => t.refType === 'issue' ? [t.refId] : [])
+  const [names, exts, issues, deptOf, ownerDepartments, riskScope] = await Promise.all([
     loadNames({ user: [...targets.values()].flatMap((t) => t.ownerIds) }),
     wos.length ? prisma.workOrderExt.findMany({ where: { workOrderNumber: { in: wos } }, select: { workOrderNumber: true, projectManagerId: true } }) : [],
     prisma.issue.findMany({
-      where: { sourceKey: { in: alerts.filter((a) => a.status === 'CONVERTED').map((a) => alertSourceKey(a.id)) } },
-      select: { id: true, issueNo: true, sourceKey: true },
+      where: { OR: [{ sourceKey: { in: alerts.filter((a) => a.status === 'CONVERTED').map((a) => alertSourceKey(a.id)) } }, { id: { in: issueIds } }] },
+      select: { id: true, issueNo: true, sourceKey: true, responsibleUserId: true, responsibleDeptId: true, reporterId: true, workOrderNumber: true },
     }),
     // 责任部门（风险页按部门汇总）：与升级阶梯同一口径，见 scan.ts recipientsFor
     userDeptNames([...targets.values()].flatMap((t) => t.ownerIds)),
+    userDeptIdentities([...targets.values()].flatMap((t) => t.ownerIds)),
+    resolveRiskScope(filter.viewer),
   ])
   const pmOf = new Map(exts.map((e) => [e.workOrderNumber, e.projectManagerId]))
   const issueBySource = new Map(issues.flatMap((i) => (i.sourceKey ? [[i.sourceKey, i] as const] : [])))
-  const visible = filter.visibleWorkOrders ? new Set(filter.visibleWorkOrders) : null
+  const readableIssueIds = new Set(issues.filter(i => canReadRiskIssue(riskScope, i)).map(i => i.id))
   const rank = { RED: 0, YELLOW: 1, REMIND: 2 } as const
   return alerts
     .map((a) => {
@@ -327,7 +329,7 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
       // 对象状态刚变、下一轮扫描才消除的，不再列出
       if (!t) return null
       if (filter.workOrderNumber && t.workOrderNumber !== filter.workOrderNumber) return null
-      if (visible && (!t.workOrderNumber || !visible.has(t.workOrderNumber))) return null
+      if (t.refType === 'issue' ? !readableIssueIds.has(t.refId) : !canReadRiskTarget(riskScope, t, ownerDepartments)) return null
       const issue = a.status === 'CONVERTED' ? issueBySource.get(alertSourceKey(a.id)) : undefined
       return {
         id: a.id,
@@ -349,7 +351,8 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
         deptNames: t.deptNames?.length ? t.deptNames : [...new Set(t.ownerIds.map((id) => deptOf.get(id)).filter((x): x is string => !!x))],
         firstAt: a.firstAt,
         levelAt: a.levelAt,
-        issue: issue ? { id: issue.id, issueNo: issue.issueNo } : null,
+        issue: issue && readableIssueIds.has(issue.id) ? { id: issue.id, issueNo: issue.issueNo } : null,
+        canHandle: filter.viewer.isAdmin || t.ownerIds.includes(filter.viewer.userId),
         canConvert: a.status === 'ACTIVE' && canConvert(a.level, t, t.workOrderNumber ? pmOf.get(t.workOrderNumber) : null, filter.viewer),
         link: targetLink(t, a.level),
       }

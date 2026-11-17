@@ -300,7 +300,7 @@ describe.skipIf(!DB)('齐套（R12）', () => {
     const w8 = mine.items.find((i) => i.rule === 'W8')
     expect(w8?.link).toMatch(/^\/kitting\?id=/)
     expect(w8?.mobileLink).toBe(`/m${w8!.link}`)
-    const listed = await s.reminders.listAlerts({ rule: 'W8' })
+    const listed = await s.reminders.listAlerts({ rule: 'W8', viewer: { userId: 'test-admin', isAdmin: true } })
     expect(listed.find((x) => x.refId === soon.id)).toMatchObject({ link: `/kitting?id=${soon.id}`, duration: null, canConvert: false })
 
     // 齐套率到 100% → 下一轮扫描自动清除（到货不用碰节点）

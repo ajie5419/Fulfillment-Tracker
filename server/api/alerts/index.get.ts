@@ -8,13 +8,12 @@ const query = z.object({
   workOrderNumber: z.string().max(64).optional(),
 })
 
-/** 活动中的预警（及已转异常的），可按规则、级别、工单筛选；只列可见工单的，并标出当前用户能否"转异常" */
+/** Responsibility scope is mandatory; query filters can only narrow it. */
 export default defineFlowHandler(async (event, user) => {
   const q = parseQuery(event, query)
   return listAlerts({
     ...q,
     workOrderNumber: q.workOrderNumber || undefined,
-    visibleWorkOrders: scopeWorkOrders(await getScope(event)),
     viewer: actorOf(event, user),
   })
 })
