@@ -318,7 +318,7 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     expect(issue.description).toContain('不合格 1 件')
     expect((await db.routeStep.findUniqueOrThrow({ where: { id: p.weld.id } })).status).toBe('BLOCKED')
     // 工件页能看到"有异常"并跳到该异常
-    const parts = await s.steps.listParts(WO)
+    const parts = await s.steps.listParts(WO, { userId: 'test-reader', isAdmin: true })
     expect(parts.find((x) => x.id === p.part.id)!.steps[0]!.issues).toEqual([{ id: issue.id, issueNo: issue.issueNo }])
 
     // 上一道有异常：涂装的"安排发出"待办不计 W2

@@ -79,10 +79,10 @@ export async function getIssue(id: string, actor: Actor, now = new Date()) {
 }
 
 /** 某步骤上未关闭的异常（工件页"有异常"跳转用） */
-export async function openIssuesOfSteps(stepIds: string[]) {
+export async function openIssuesOfSteps(stepIds: string[], actor: Actor) {
   if (!stepIds.length) return new Map<string, { id: string; issueNo: string }[]>()
   const rows = await prisma.issue.findMany({
-    where: { refType: 'STEP', refId: { in: stepIds }, status: { not: 'CLOSED' } },
+    where: { AND: [riskIssueWhere(await resolveRiskScope(actor)), { refType: 'STEP', refId: { in: stepIds }, status: { not: 'CLOSED' } }] },
     orderBy: { createdAt: 'asc' },
     select: { id: true, issueNo: true, refId: true },
   })

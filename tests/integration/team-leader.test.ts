@@ -248,10 +248,10 @@ describe.skipIf(!DB)('班组长（生产管理重设计第二批）', () => {
     await finish(cut.id)
     const ctx = await s.auth.loadRoleContext('tl-lead', false)
     expect(ctx.leadOf).toEqual(['TL-TEAM'])
-    const mine = await s.workshop.listProduction({ workOrderNumber: WO, mine: { userId: 'tl-lead', teamIds: ctx.leadOf! } })
+    const mine = await s.workshop.listProduction({ workOrderNumber: WO, mine: { userId: 'tl-lead', teamIds: ctx.leadOf! } }, { userId: 'test-reader', isAdmin: true })
     expect(mine.rows.find((r) => r.stepId === weld.id)).toMatchObject({ column: 'ready', ownerId: null, leaderId: 'tl-lead', leaderName: 'tl-lead' })
     expect(mine.rows.some((r) => r.stepId === cut.id)).toBe(false) // 下料是 tl-a 的，不派班组
-    const plain = await s.workshop.listProduction({ workOrderNumber: WO, mine: { userId: 'tl-lead', teamIds: [] } })
+    const plain = await s.workshop.listProduction({ workOrderNumber: WO, mine: { userId: 'tl-lead', teamIds: [] } }, { userId: 'test-reader', isAdmin: true })
     expect(plain.rows.some((r) => r.stepId === weld.id)).toBe(false)
   })
 
@@ -271,7 +271,7 @@ describe.skipIf(!DB)('班组长（生产管理重设计第二批）', () => {
     const part = await s.steps.createPart(WO, { name: '外协第一道件', quantity: 1 })
     const send = await s.steps.addStep(part.id, { processId: 'TL-WELD', mode: 'EXTERNAL_OUTSOURCE', supplierId: 'TL-OUT', ownerId: 'tl-b' }, 'tl-a')
     const line = await db.purchaseLine.create({ data: { workOrderNumber: WO, partId: part.id, materialName: '钢板', quantity: 1, needDate: day('2026-11-20') } })
-    const row = async () => (await s.workshop.listProduction({ workOrderNumber: WO })).rows.find((r) => r.stepId === send.id)
+    const row = async () => (await s.workshop.listProduction({ workOrderNumber: WO }, { userId: 'test-reader', isAdmin: true })).rows.find((r) => r.stepId === send.id)
     const todosOfPart = () => db.todo.findMany({ where: { OR: [{ refId: part.id }, { refId: send.id }], status: 'OPEN' }, select: { ownerId: true, action: true } })
 
     await s.purchases.purchaseTx((tx) => s.purchases.refreshPartReady(tx, part.id, true))

@@ -11,6 +11,7 @@ import { requiresProcessForNode } from '../../../shared/process'
  * 超期：外协在外看承诺返回日，其余看要求完成日；可以开工的另看应开工日是否已过（startLateDays）。
  */
 import type { Prisma, StepStatus } from '@prisma/client'
+import type { Actor } from '../issues/types'
 import { prisma } from '../../utils/prisma'
 import { openIssuesOfSteps } from '../issues/issues'
 import { closedWorkOrders } from '../workorder/active'
@@ -63,7 +64,7 @@ function woWhere(filter: ProductionFilter): Prisma.PartWhereInput | undefined {
 }
 
 /** 生产调度的工序行 + 还没排工序的工件数 */
-export async function listProduction(filter: ProductionFilter) {
+export async function listProduction(filter: ProductionFilter, actor: Actor) {
   const now = filter.now ?? new Date()
   const partWhere = woWhere(filter)
   const steps = await prisma.routeStep.findMany({
@@ -121,7 +122,7 @@ export async function listProduction(filter: ProductionFilter) {
   const responsibles = await resolveStepResponsibles(prisma, shown.map((s) => ({ ...s, workOrderNumber: s.part.workOrderNumber })))
   const [names, issues] = await Promise.all([
     loadNames({ process: shown.map((s) => s.processId), supplier: shown.map((s) => s.supplierId), user: [...shown.map((s) => s.ownerId), ...responsibles] }),
-    openIssuesOfSteps(shown.filter((s) => s.status === 'BLOCKED').map((s) => s.id)),
+    openIssuesOfSteps(shown.filter((s) => s.status === 'BLOCKED').map((s) => s.id), actor),
   ])
   const rows = classified.map(({ s, column, stuck, prereq }, i) => {
     const leaderId = s.ownerId ? null : (responsibles[i] ?? null)
@@ -178,7 +179,7 @@ async function countUnroutedParts(filter: ProductionFilter): Promise<number> {
 export type ProductionRow = Awaited<ReturnType<typeof listProduction>>['rows'][number]
 
 /** 车间看板：同一批工序按列分组 */
-export async function listWorkshop(filter: ProductionFilter) {
-  const { rows } = await listProduction(filter)
+export async function listWorkshop(filter: ProductionFilter, actor: Actor) {
+  const { rows } = await listProduction(filter, actor)
   return WORKSHOP_COLUMNS.map((key) => ({ key, cards: rows.filter((c) => c.column === key) }))
 }

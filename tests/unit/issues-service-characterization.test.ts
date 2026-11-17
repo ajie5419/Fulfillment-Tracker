@@ -43,7 +43,7 @@ afterEach(() => vi.useRealTimers())
 
 describe('issues service 搬移前特征', () => {
   it.each(['list', 'detail', 'options', 'departments', 'open-steps'] as const)('%s 查询与完整投影', async action => {
-    const operations = { list: () => issues.listIssues({ status: 'UNCLOSED', mine: 'todo', overdue: true, visibleWorkOrders: ['WO'] }, actor, now), detail: () => issues.getIssue('issue', actor, now), options: () => issues.issueOptions(), departments: () => issues.myDepartmentIds('owner'), 'open-steps': () => issues.openIssuesOfSteps(['step']) }
+    const operations = { list: () => issues.listIssues({ status: 'UNCLOSED', mine: 'todo', overdue: true, visibleWorkOrders: ['WO'] }, actor, now), detail: () => issues.getIssue('issue', actor, now), options: () => issues.issueOptions(), departments: () => issues.myDepartmentIds('owner'), 'open-steps': () => issues.openIssuesOfSteps(['step'], actor) }
     expect({ result: await operations[action](), calls: serviceCalls }).toMatchSnapshot()
   })
 

@@ -197,7 +197,7 @@ describe.skipIf(!DB)('留言、搜索、车间看板、时间线', () => {
 
   it('车间看板：待开工只列"可以开工"的（第一道、或上一道已完成 / 已有报工）；按班组筛；完成的进近 7 天', async () => {
     const { cut, weld, paint } = await makePart(WO, '支腿')
-    const col = async (f: Parameters<typeof s.workshop.listWorkshop>[0]) => Object.fromEntries((await s.workshop.listWorkshop({ workOrderNumber: WO, ...f })).map((c) => [c.key, c.cards.map((x) => x.stepId)]))
+    const col = async (f: Parameters<typeof s.workshop.listWorkshop>[0]) => Object.fromEntries((await s.workshop.listWorkshop({ workOrderNumber: WO, ...f }, { userId: 'test-reader', isAdmin: true })).map((c) => [c.key, c.cards.map((x) => x.stepId)]))
     let b = await col({})
     expect(b.ready).toContain(cut.id)
     expect(b.ready).not.toContain(weld.id)
@@ -212,7 +212,7 @@ describe.skipIf(!DB)('留言、搜索、车间看板、时间线', () => {
     expect(team.ready).not.toContain(weld.id) // 组焊没派班组
     // 组焊开工后超期（要求完成日 2026-01-05 早已过）
     await s.flow.startStep({ stepId: weld.id, actorId: 'u-a', source: 'PC' })
-    const all = await s.workshop.listWorkshop({ workOrderNumber: WO })
+    const all = await s.workshop.listWorkshop({ workOrderNumber: WO }, { userId: 'test-reader', isAdmin: true })
     const weldCard = all.find((c) => c.key === 'working')!.cards.find((c) => c.stepId === weld.id)!
     expect(weldCard.overdueDays).toBeGreaterThan(0)
     await s.finish.finishStep({ stepId: cut.id, actorId: 'u-a', source: 'PC' })
@@ -228,18 +228,18 @@ describe.skipIf(!DB)('留言、搜索、车间看板、时间线', () => {
     await s.finish.finishStep({ stepId: cut.id, actorId: 'u-a', source: 'MOBILE', qty: 1, rest: 'SCRAP', note: '割偏' })
     await s.comments.addComment({ refType: 'part', refId: part.id, body: '补料已安排' }, 'u-b')
 
-    const t = await s.timeline.partTimeline(part.id)
+    const t = await s.timeline.partTimeline(part.id, { userId: 'test-reader', isAdmin: true })
     const kinds = t!.entries.map((e) => e.kind)
     expect(kinds).toEqual(expect.arrayContaining(['part', 'purchase', 'flow', 'issue', 'comment']))
     expect(t!.entries.at(-1)!.title).toBe('建档') // 新的在上，建档最早
     expect(t!.entries.some((e) => e.title.includes('报废 1 件') && e.tone === 'late' && e.sub?.includes('割偏'))).toBe(true)
     expect(t!.entries.some((e) => e.title === '到货"回转支承"' && e.tone === 'done')).toBe(true)
 
-    const counts = (await s.timeline.partRelatedCounts([part.id])).get(part.id)
+    const counts = (await s.timeline.partRelatedCounts([part.id], { userId: 'test-reader', isAdmin: true })).get(part.id)
     expect(counts).toEqual({ drawings: 0, drawingsDone: 0, purchases: 2, purchasesArrived: 1, openIssues: 1, comments: 1 })
     // 工件列表带上关联记录数
-    const listed = (await s.steps.listParts(WO)).find((p) => p.id === part.id)
+    const listed = (await s.steps.listParts(WO, { userId: 'test-reader', isAdmin: true })).find((p) => p.id === part.id)
     expect(listed?.related).toEqual(counts)
-    expect(await s.timeline.partTimeline('nope')).toBeNull()
+    expect(await s.timeline.partTimeline('nope', { userId: 'test-reader', isAdmin: true })).toBeNull()
   })
 })

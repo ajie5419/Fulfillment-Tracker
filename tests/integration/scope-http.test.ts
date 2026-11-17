@@ -287,6 +287,56 @@ describe.skipIf(!DB)('可见范围与照片（接口）', () => {
     }
   })
 
+  it('part timelines and production projections preserve issue responsibility scope', async () => {
+    const tag = `TIMELINE-${Date.now()}`
+    const process = await db.qmsProcess.create({ data: { id: tag, name: 'Scope test process', updatedAt: new Date() } })
+    const part = await db.part.create({ data: { workOrderNumber: MINE, name: tag } })
+    const step = await db.routeStep.create({ data: { partId: part.id, seq: 1, processId: process.id, mode: 'SELF', status: 'BLOCKED' } })
+    const issueData = { workOrderNumber: MINE, category: 'OTHER' as const, description: 'Restricted issue description', source: 'MANUAL' as const, responsibleUserId: 'h-qa', reporterId: 'h-buyer', responsibleDeptId: 'T-DEPT-QA' }
+    const closed = await db.issue.create({ data: { ...issueData, issueNo: `${tag}-PART`, refType: 'PART', refId: part.id, status: 'CLOSED', logs: { create: { fromStatus: 'RESOLVED', toStatus: 'CLOSED', actorId: 'h-qa', note: 'Verified' } } } })
+    const open = await db.issue.create({ data: { ...issueData, issueNo: `${tag}-STEP`, refType: 'STEP', refId: step.id } })
+    const head = await db.notifyRole.create({ data: { userId: 'h-proc', role: 'DEPT_HEAD', department: 'QUALITY' } })
+    try {
+      for (const [user, allowed] of [['h-tech', false], ['h-fin', false], ['h-qa', true], ['h-buyer', true], ['h-pm', true], ['h-proc', true], ['h-lead', true], ['h-admin', true]] as const) {
+        const session = await login(user)
+        const read = async (path: string) => {
+          const response = await get(path, session)
+          expect(response.status, `${user}: ${path}`).toBe(200)
+          return readApiBody(response)
+        }
+        expect((await get(`/api/issues/${open.id}`, session)).status).toBe(allowed ? 200 : 403)
+        const timeline = await read(`/api/parts/${part.id}/timeline`)
+        expect(timeline.entries.some((e: { kind: string }) => e.kind === 'part')).toBe(true)
+        const entries = timeline.entries.filter((e: { kind: string }) => e.kind === 'issue')
+        expect(entries).toHaveLength(allowed ? 3 : 0)
+        if (allowed) {
+          expect(entries.some((e: { title: string }) => e.title.includes(`${closed.issueNo} 已关闭`))).toBe(true)
+          expect(entries.some((e: { title: string }) => e.title.includes(open.issueNo))).toBe(true)
+        }
+        const detail = await read(`/api/parts/${part.id}`)
+        const listed = (await read(`/api/parts?workOrderNumber=${MINE}`)).find((p: { id: string }) => p.id === part.id)
+        for (const projected of [detail, listed]) {
+          expect(projected.related.openIssues).toBe(allowed ? 1 : 0)
+          expect(projected.steps[0].status).toBe('BLOCKED')
+          expect(projected.steps[0].issues).toEqual(allowed ? [{ id: open.id, issueNo: open.issueNo }] : [])
+        }
+        const production = await read(`/api/production?wo=${MINE}`)
+        const workshop = await read(`/api/workshop?wo=${MINE}`)
+        const rows = [...production.rows, ...workshop.flatMap((c: { cards: unknown[] }) => c.cards)].filter((r: { stepId: string }) => r.stepId === step.id)
+        expect(rows).toHaveLength(2)
+        for (const row of rows) {
+          expect(row.status).toBe('BLOCKED')
+          expect(row.issues).toEqual(allowed ? [{ id: open.id, issueNo: open.issueNo }] : [])
+        }
+      }
+    } finally {
+      await db.issue.deleteMany({ where: { id: { in: [closed.id, open.id] } } })
+      await db.part.delete({ where: { id: part.id } })
+      await db.qmsProcess.delete({ where: { id: process.id } })
+      await db.notifyRole.delete({ where: { id: head.id } })
+    }
+  })
+
   it('项目全景 HTTP 权限跟随看板：未登录 401，项目经理只看自己，领导看全部', async () => {
     expect((await fetch(`${base}/api/panorama`)).status).toBe(401)
     for (const user of ['h-pm', 'h-lead', 'h-admin']) {

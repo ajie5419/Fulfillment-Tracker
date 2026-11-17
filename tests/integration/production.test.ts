@@ -146,7 +146,7 @@ describe.skipIf(!DB)('生产管理补全', () => {
     expect(issue.description).toContain('焊接一班')
     expect(issue.sourceKey).toBe(`SCRAP:${events[0]!.id}`)
     // 已完成数量只算完工的 3 件
-    const parts = await s.steps.listParts(WO)
+    const parts = await s.steps.listParts(WO, { userId: 'test-reader', isAdmin: true })
     expect(parts.flatMap((p) => p.steps).find((x) => x.id === cut.id)?.returnedQty).toBe(3)
 
     // 全部报废（完成 0 件）也可以

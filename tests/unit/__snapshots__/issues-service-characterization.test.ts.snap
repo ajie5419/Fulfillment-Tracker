@@ -866,6 +866,29 @@ exports[`issues service 搬移前特征 > open-steps 查询与完整投影 1`] =
 {
   "calls": [
     [
+      "notifyRole.findMany",
+      {
+        "select": {
+          "department": true,
+          "role": true,
+        },
+        "where": {
+          "userId": "owner",
+        },
+      },
+    ],
+    [
+      "workOrderExt.findMany",
+      {
+        "select": {
+          "workOrderNumber": true,
+        },
+        "where": {
+          "projectManagerId": "owner",
+        },
+      },
+    ],
+    [
       "issue.findMany",
       {
         "orderBy": {
@@ -877,15 +900,43 @@ exports[`issues service 搬移前特征 > open-steps 查询与完整投影 1`] =
           "refId": true,
         },
         "where": {
-          "refId": {
-            "in": [
-              "step",
-            ],
-          },
-          "refType": "STEP",
-          "status": {
-            "not": "CLOSED",
-          },
+          "AND": [
+            {
+              "OR": [
+                {
+                  "responsibleUserId": "owner",
+                },
+                {
+                  "reporterId": "owner",
+                },
+                {
+                  "workOrderNumber": {
+                    "in": [
+                      "WO",
+                    ],
+                  },
+                },
+                {
+                  "responsibleDeptId": {
+                    "in": [
+                      "dept",
+                    ],
+                  },
+                },
+              ],
+            },
+            {
+              "refId": {
+                "in": [
+                  "step",
+                ],
+              },
+              "refType": "STEP",
+              "status": {
+                "not": "CLOSED",
+              },
+            },
+          ],
         },
       },
     ],

@@ -9,6 +9,8 @@ import { CATEGORY_TEXT, STATUS_TEXT as ISSUE_STATUS_TEXT } from '../issues/const
 import { countComments } from '../comments/comments'
 import { RETURN_TYPES } from './flow'
 import { loadNames } from './names'
+import type { Actor } from '../issues/types'
+import { resolveRiskScope, riskIssueWhere } from '../auth/risk-scope'
 
 const EVENT_TEXT = SHARED_FLOW_EVENT_TEXT
 const SOURCE_TEXT = SHARED_FLOW_SOURCE_TEXT
@@ -26,7 +28,7 @@ export interface TimelineEntry {
 const enc = encodeURIComponent
 const day = (d: Date) => d.toISOString().slice(0, 10)
 
-export async function partTimeline(partId: string) {
+export async function partTimeline(partId: string, actor: Actor) {
   const part = await prisma.part.findUnique({
     where: { id: partId },
     include: {
@@ -37,10 +39,12 @@ export async function partTimeline(partId: string) {
   })
   if (!part) return null
   const stepIds = part.steps.map((s) => s.id)
+  // Browsing a part does not grant access to every issue attached to it or its steps.
+  const issueScope = riskIssueWhere(await resolveRiskScope(actor))
   const [events, issues, comments] = await Promise.all([
     prisma.flowEvent.findMany({ where: { stepId: { in: stepIds } }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }] }),
     prisma.issue.findMany({
-      where: { OR: [{ refType: 'PART', refId: partId }, ...(stepIds.length ? [{ refType: 'STEP', refId: { in: stepIds } }] : [])] },
+      where: { AND: [issueScope, { OR: [{ refType: 'PART', refId: partId }, ...(stepIds.length ? [{ refType: 'STEP', refId: { in: stepIds } }] : [])] }] },
       include: { logs: { where: { toStatus: 'CLOSED' }, orderBy: { createdAt: 'desc' }, take: 1 } },
     }),
     prisma.comment.findMany({ where: { refType: 'part', refId: partId } }),
@@ -88,7 +92,7 @@ export async function partTimeline(partId: string) {
 }
 
 /** 工件卡片顶部的关联记录数：设计任务（设计完成 / 全部，不含已取消）、关键物料（已到货 / 全部）、未关闭异常、留言 */
-export async function partRelatedCounts(partIds: string[]) {
+export async function partRelatedCounts(partIds: string[], actor: Actor) {
   if (!partIds.length) return new Map<string, RelatedCounts>()
   const [drawings, purchases, steps, comments] = await Promise.all([
     prisma.drawingTaskPart.findMany({ where: { partId: { in: partIds }, task: { status: { not: 'CANCELLED' } } }, select: { partId: true, task: { select: { drawnDate: true } } } }),
@@ -98,7 +102,7 @@ export async function partRelatedCounts(partIds: string[]) {
   ])
   const partOfStep = new Map(steps.map((s) => [s.id, s.partId]))
   const issues = await prisma.issue.findMany({
-    where: { status: { not: 'CLOSED' }, OR: [{ refType: 'PART', refId: { in: partIds } }, ...(steps.length ? [{ refType: 'STEP', refId: { in: steps.map((s) => s.id) } }] : [])] },
+    where: { AND: [riskIssueWhere(await resolveRiskScope(actor)), { status: { not: 'CLOSED' }, OR: [{ refType: 'PART', refId: { in: partIds } }, ...(steps.length ? [{ refType: 'STEP', refId: { in: steps.map((s) => s.id) } }] : [])] }] },
     select: { refType: true, refId: true },
   })
   const out = new Map<string, RelatedCounts>(partIds.map((id) => [id, { drawings: 0, drawingsDone: 0, purchases: 0, purchasesArrived: 0, openIssues: 0, comments: comments.get(id) ?? 0 }]))
