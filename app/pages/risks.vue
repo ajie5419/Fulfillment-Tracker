@@ -147,17 +147,6 @@ function toggleFunnelOverdue() {
 
 const summaryError = computed(() => (tab.value === 'alerts' ? Boolean(alertsError.value) : Boolean(issuesError.value)))
 const summaryPending = computed(() => (tab.value === 'alerts' ? alertsPending.value : issuesPending.value))
-const heroSummary = computed(() => {
-  if (summaryError.value) return tab.value === 'alerts' ? '预警数据加载失败，暂无法汇总，请重试。' : '异常数据加载失败，暂无法汇总，请重试。'
-  if (tab.value === 'alerts') {
-    const red = alerts.value.filter((a) => a.status !== 'CONVERTED' && a.level === 'RED').length
-    const yellow = alerts.value.filter((a) => a.status !== 'CONVERTED' && a.level === 'YELLOW').length
-    return alerts.value.length ? `当前可见 ${alerts.value.length} 条系统预警（红 ${red} · 黄 ${yellow}），15 分钟自动更新。` : '当前筛选范围内暂无活动中的系统预警。'
-  }
-  const f = funnel.value
-  const total = issues.value.length
-  return total ? `当前列表共 ${total} 条异常（待受理 ${f.open} · 处理中 ${f.accepted} · 已超期 ${f.overdue} · 待确认 ${f.resolved}）。` : '当前筛选范围内暂无异常记录。'
-})
 
 // ───── 异常台账表格 & 预警列表 ─────
 const sortedIssues = computed(() =>
@@ -244,15 +233,10 @@ function clearFilters() {
   <div>
   <div class="risks">
     <NuxtLink v-if="returnTo" :to="returnTo">返回全盘统计（保留条件）</NuxtLink>
-    <UiPageHero title="风险与异常监控" :summary="heroSummary">
-      <template #titleAfter>
-        <UiHelpTip label="异常台账说明">「异常台账」用于追踪跨部门异常从受理、处理到验证关闭的全流程；「系统预警」由扫描任务每 15 分钟更新，红色预警与 QMS 不合格会自动转成异常。</UiHelpTip>
-      </template>
-      <template #actions>
-        <UiRefreshButton @click="refresh()" />
-        <a-button type="primary" class="ft-btn-ink" @click="reporting = true">上报异常</a-button>
-      </template>
-    </UiPageHero>
+    <div class="risks-head">
+      <UiRefreshButton @click="refresh()" />
+      <a-button type="primary" class="ft-btn-ink" @click="reporting = true">上报异常</a-button>
+    </div>
 
     <!-- 异常状态漏斗 KPI：点击联动过滤台账 -->
     <div class="kpi-row">
@@ -471,6 +455,7 @@ function clearFilters() {
 
 <style scoped>
 .risks { display: flex; flex-direction: column; gap: 16px; }
+.risks-head { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .tray-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .scope-pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500; background: var(--ft-fill); border: 1px solid var(--ft-border); color: var(--ft-text-2); }
