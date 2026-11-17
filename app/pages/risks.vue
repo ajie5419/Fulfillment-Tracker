@@ -306,12 +306,11 @@ function clearFilters() {
       />
     </div>
 
-    <UiSectionCard icon="shield" padding="none" title="风险明细" tray>
+    <UiSectionCard padding="none" title="风险明细" tray>
       <template #title>
         <div class="tray-title-row">
           <a-segmented v-model:value="tab" :options="tabOptions" class="tabs" />
-          <span v-if="tab === 'issues'" class="tray-hint">{{ filter.workOrderNumber ? `工单 ${filter.workOrderNumber}` : '点击任意行处理闭环' }}</span>
-          <span v-else class="tray-hint">15 分钟自动扫描 · 黄色预警可手动转异常</span>
+          <span v-if="tab === 'issues' && filter.status === 'UNCLOSED'" class="scope-pill">当前仅看：未关闭</span>
         </div>
       </template>
       <template #extra>
@@ -473,7 +472,7 @@ function clearFilters() {
 .risks { display: flex; flex-direction: column; gap: 16px; }
 .kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .tray-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.tray-hint { font-size: 12px; font-weight: 400; color: var(--ft-text-3); }
+.scope-pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500; background: var(--ft-fill); border: 1px solid var(--ft-border); color: var(--ft-text-2); }
 .muted { color: var(--ft-text-3); font-size: 12px; }
 .tabs { font-weight: normal; }
 .chips-bar { padding: 0 20px 10px; }

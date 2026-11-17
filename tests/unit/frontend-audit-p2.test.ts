@@ -78,7 +78,7 @@ describe('Frontend audit P2: accessibility, motion preferences, narrow-screen dr
 
     const risks = readFileSync('app/pages/risks.vue', 'utf8')
     expect(risks).toContain('<UiPageHero title="风险与异常监控" :summary="heroSummary">')
-    expect(risks).toContain('<UiSectionCard icon="shield" padding="none" title="风险明细"')
+    expect(risks).toContain('<UiSectionCard padding="none" title="风险明细"')
     expect(risks).toContain('<a-button type="primary" class="ft-btn-ink" @click="reporting = true">上报异常</a-button>')
     expect(risks).not.toContain('danger @click="reporting = true"')
     expect(risks).toContain("if (e.key === 'Enter' || e.key === ' ') {")
