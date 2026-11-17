@@ -288,13 +288,10 @@ function clearFilters() {
 
     <UiSectionCard padding="none" title="风险明细" tray>
       <template #title>
-        <div class="tray-title-row">
-          <a-segmented v-model:value="tab" :options="tabOptions" class="tabs" />
-          <span v-if="tab === 'issues' && filter.status === 'UNCLOSED'" class="scope-pill">当前仅看：未关闭</span>
-        </div>
+        <a-segmented v-model:value="tab" :options="tabOptions" class="tabs" />
       </template>
       <template #extra>
-        <UiFilterChips v-if="activeChips.length" :items="activeChips" @clear-all="clearFilters" />
+        <UiFilterChips v-if="activeChips.length" class="toolbar-chips" :items="activeChips" @clear-all="clearFilters" />
         <a-select v-model:value="filter.workOrderNumber" allow-clear show-search placeholder="全部工单" style="width: 148px" :options="woOptions" />
         <a-select v-if="tab === 'issues'" v-model:value="filter.dept" style="width: 142px" :options="[{ value: '0', label: '责任部门：全部' }, { value: '1', label: '责任部门：本部门' }]" />
         <UiFilterButton :count="activeChips.length" @clear="clearFilters">
@@ -451,8 +448,7 @@ function clearFilters() {
 <style scoped>
 .risks { display: flex; flex-direction: column; gap: 16px; }
 .kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.tray-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.scope-pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500; background: var(--ft-fill); border: 1px solid var(--ft-border); color: var(--ft-text-2); }
+.toolbar-chips { margin-bottom: 0; }
 .muted { color: var(--ft-text-3); font-size: 12px; }
 .tabs { font-weight: normal; }
 .empty-box { padding: 36px 20px; }
