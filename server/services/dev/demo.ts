@@ -481,7 +481,7 @@ export async function ensureDemoIssues() {
   if (await prisma.issue.count()) return 0
   const wo = await prisma.qmsWorkOrder.findFirst({ where: { isDeleted: false }, orderBy: { workOrderNumber: 'asc' }, select: { workOrderNumber: true } })
   if (!wo) return 0
-  const day = todayInFactory()
+  const day = dayFn(new Date())
   const samples = [
     {
       id: `${P}ISS-1`,
@@ -494,7 +494,7 @@ export async function ensureDemoIssues() {
       reporterId: 'u-003',
       responsibleDeptId: `${P}DEPT-TECH`,
       responsibleUserId: 'u-008',
-      dueDate: addDays(day, -2),
+      dueDate: day(-2),
     },
     {
       id: `${P}ISS-2`,
@@ -507,7 +507,7 @@ export async function ensureDemoIssues() {
       reporterId: 'u-006',
       responsibleDeptId: `${P}DEPT-PROD`,
       responsibleUserId: 'u-002',
-      dueDate: addDays(day, -1),
+      dueDate: day(-1),
     },
     {
       id: `${P}ISS-3`,
@@ -520,7 +520,7 @@ export async function ensureDemoIssues() {
       reporterId: 'u-006',
       responsibleDeptId: `${P}DEPT-QA`,
       responsibleUserId: 'u-006',
-      dueDate: addDays(day, 2),
+      dueDate: day(2),
     },
   ]
   await prisma.issue.createMany({ data: samples, skipDuplicates: true })
