@@ -18,7 +18,7 @@ const TABS: Tab[] = ['issues', 'alerts']
 const q = (k: string) => (route.query[k] as string) || undefined
 const tab = ref<Tab>(TABS.includes(route.query.tab as Tab) ? (route.query.tab as Tab) : 'issues')
 
-const filter = reactive({
+const readFilters = () => ({
   workOrderNumber: q('wo'),
   // 预警
   rule: q('rule'),
@@ -30,6 +30,13 @@ const filter = reactive({
   mine: q('mine'),
   overdue: route.query.overdue === '1' ? '1' : undefined,
 })
+const filter = reactive(readFilters())
+
+// Shared links and history navigation must update an already mounted page.
+watch(() => route.query, () => {
+  tab.value = TABS.includes(route.query.tab as Tab) ? route.query.tab as Tab : 'issues'
+  Object.assign(filter, readFilters())
+}, { deep: true })
 
 const { data: alerts, pending: alertsPending, error: alertsError, refresh: refreshAlerts } = await useApiFetch('/api/alerts', {
   query: computed(() => ({ rule: filter.rule, level: filter.level, workOrderNumber: filter.workOrderNumber })),
@@ -46,8 +53,16 @@ const { data: issues, pending: issuesPending, error: issuesError, refresh: refre
   })),
   default: () => [],
 })
+const { data: funnelRows, pending: funnelPending, error: funnelError, refresh: refreshFunnel } = await useApiFetch('/api/issues', {
+  key: 'risk-issue-funnel',
+  query: computed(() => ({
+    status: 'UNCLOSED', category: filter.category, workOrderNumber: filter.workOrderNumber,
+    dept: filter.dept, mine: filter.mine,
+  })),
+  default: () => [],
+})
 async function refresh() {
-  await Promise.all([refreshAlerts(), refreshIssues()])
+  await Promise.all([refreshAlerts(), refreshIssues(), refreshFunnel()])
 }
 
 const selected = ref<string | null>(q('id') ?? null)
@@ -114,19 +129,9 @@ function convert(row: { id: string; subject: string }) {
 type AlertRow = (typeof alerts.value)[number]
 type IssueRow = (typeof issues.value)[number]
 
-// ───── 状态漏斗 KPI（保留未关闭全量基数，避免点选某状态后其余卡片归零） ─────
-const unclosedSnapshot = ref<IssueRow[]>([])
-watch(
-  [issues, () => filter.status, () => filter.overdue],
-  ([rows, st, ov]) => {
-    if (st === 'UNCLOSED' && !ov) unclosedSnapshot.value = rows
-    else if (!unclosedSnapshot.value.length && rows.length) unclosedSnapshot.value = rows
-  },
-  { immediate: true },
-)
-const funnelSource = computed(() => (filter.status === 'UNCLOSED' && !filter.overdue ? issues.value : unclosedSnapshot.value))
+// Counts follow the current responsibility filters, independently of the selected lifecycle state.
 const funnel = computed(() => {
-  const rows = funnelSource.value
+  const rows = funnelRows.value
   return {
     open: rows.filter((i) => i.status === 'OPEN').length,
     accepted: rows.filter((i) => i.status === 'ACCEPTED').length,
@@ -134,6 +139,7 @@ const funnel = computed(() => {
     resolved: rows.filter((i) => i.status === 'RESOLVED').length,
   }
 })
+const funnelValue = (value: number) => funnelPending.value || funnelError.value ? '—' : value
 function toggleFunnelStatus(status: 'OPEN' | 'ACCEPTED' | 'RESOLVED') {
   tab.value = 'issues'
   filter.overdue = undefined
@@ -153,7 +159,7 @@ const sortedIssues = computed(() =>
   [...issues.value].sort((a, b) => {
     const rank = (x: IssueRow) => (x.status === 'CLOSED' ? 4 : x.overdue ? 0 : x.status === 'OPEN' ? 1 : x.status === 'ACCEPTED' ? 2 : 3)
     return rank(a) - rank(b)
-  }),
+  }).map(issue => ({ ...issue, primaryAction: primaryIssueAction(issue) })),
 )
 const sortedAlerts = computed(() =>
   [...alerts.value].sort((a, b) => {
@@ -238,7 +244,7 @@ function clearFilters() {
     <div class="kpi-row">
       <UiStatCard
         label="待受理"
-        :value="funnel.open"
+        :value="funnelValue(funnel.open)"
         unit="条"
         tone="risk"
         accent
@@ -250,7 +256,7 @@ function clearFilters() {
       />
       <UiStatCard
         label="处理中"
-        :value="funnel.accepted"
+        :value="funnelValue(funnel.accepted)"
         unit="条"
         tone="primary"
         accent
@@ -262,7 +268,7 @@ function clearFilters() {
       />
       <UiStatCard
         label="已超期"
-        :value="funnel.overdue"
+        :value="funnelValue(funnel.overdue)"
         unit="条"
         tone="late"
         accent
@@ -274,11 +280,11 @@ function clearFilters() {
       />
       <UiStatCard
         label="待关闭验证"
-        :value="funnel.resolved"
+        :value="funnelValue(funnel.resolved)"
         unit="条"
         tone="done"
         accent
-        icon="ok"
+        icon="check"
         clickable
         :active="tab === 'issues' && filter.status === 'RESOLVED'"
         sub="已提交处理结果，等确认关闭"
@@ -374,11 +380,11 @@ function clearFilters() {
               <template v-else-if="column.key === 'ops'">
                 <a-button
                   size="small"
-                  :type="primaryIssueAction(record).primary ? 'primary' : 'default'"
-                  :ghost="primaryIssueAction(record).primary"
+                  :type="record.primaryAction.primary ? 'primary' : 'default'"
+                  :ghost="record.primaryAction.primary"
                   @click.stop="selected = record.id"
                 >
-                  {{ primaryIssueAction(record).label }}
+                  {{ record.primaryAction.label }}
                 </a-button>
               </template>
             </template>
@@ -423,7 +429,7 @@ function clearFilters() {
                 </div>
               </template>
               <template v-else-if="column.key === 'time'">
-                <span class="mono" :title="`首次 ${factoryTimeText(record.firstAt)}`">{{ record.duration ? `持续 ${record.duration}` : '刚触发' }}</span>
+                <span class="mono" :title="`首次 ${factoryTimeText(record.firstAt)}`">{{ record.duration ? `持续 ${record.duration}` : `始于 ${factoryTimeText(record.firstAt)}` }}</span>
               </template>
               <template v-else-if="column.key === 'ops'">
                 <div class="table-ops">

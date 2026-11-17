@@ -15,17 +15,26 @@ function request(data: unknown) {
 }
 let alerts: ReturnType<typeof request>
 let issueRows: ReturnType<typeof request>
+let funnelRows: ReturnType<typeof request>
+const queries = new Map<string, Vue.ComputedRef<Record<string, unknown>>>()
 let routeQuery: Record<string, string> = {}
 beforeEach(() => {
-  routeQuery = {}
+  routeQuery = Vue.reactive({})
+  queries.clear()
   alerts = request([alert])
   issueRows = request([])
+  funnelRows = request([])
   for (const name of ['ref', 'computed', 'reactive', 'watch'] as const) vi.stubGlobal(name, Vue[name])
   for (const [key, value] of Object.entries(dictionaries)) vi.stubGlobal(key, value)
   vi.stubGlobal('useRoute', () => ({ query: routeQuery }))
   vi.stubGlobal('useRouter', () => ({ replace: vi.fn() }))
   vi.stubGlobal('useWorkOrders', async () => request([]))
-  vi.stubGlobal('useApiFetch', async (url: string) => url === '/api/alerts' ? alerts : issueRows)
+  vi.stubGlobal('useApiFetch', async (url: string, options: { key?: string; query: Vue.ComputedRef<Record<string, unknown>> }) => {
+    const key = options.key ?? url
+    queries.set(key, options.query)
+    return key === 'risk-issue-funnel' ? funnelRows : url === '/api/alerts' ? alerts : issueRows
+  })
+  vi.stubGlobal('dayText', (value: string | null) => value ?? '')
 })
 afterEach(() => { cleanups.splice(0).forEach(fn => fn()); vi.unstubAllGlobals() })
 
@@ -43,7 +52,7 @@ async function render() {
   const link = Vue.defineComponent({ setup: (_, { slots }) => () => Vue.h('a', slots.default?.()) })
   const wrapper = mount(Vue.defineComponent({ setup: () => () => Vue.h(Vue.Suspense, null, { default: () => Vue.h(component) }) }), {
     global: {
-      plugins: [(app: Vue.App) => Object.assign(app.config.globalProperties, dictionaries)],
+      plugins: [(app: Vue.App) => Object.assign(app.config.globalProperties, dictionaries, { dayText: (value: string | null) => value ?? '' })],
       stubs: {
         UiPageHero: container, UiSectionCard: container, ASpin: container, AResult: container, AButton: button, NuxtLink: link,
         AEmpty: true, ASegmented: true, ASelect: true, ACheckbox: true, ATable: tableStub, ATag: true, UiHelpTip: true, UiRefreshButton: true,
@@ -81,6 +90,42 @@ it('does not present a failed request as empty data and retries both sources', a
   await flushPromises()
   expect(alerts.refresh).toHaveBeenCalledTimes(1)
   expect(issueRows.refresh).toHaveBeenCalledTimes(1)
+  expect(funnelRows.refresh).toHaveBeenCalledTimes(1)
   expect(wrapper.text()).not.toContain('预警数据加载失败')
   expect(wrapper.findAll('.rrow')).toHaveLength(1)
+})
+
+it('counts the current work order independently of state filters and hides stale or failed counts', async () => {
+  Object.assign(routeQuery, { tab: 'issues', wo: 'WO-A', status: 'OPEN' })
+  funnelRows.data.value = [{ status: 'OPEN' }, { status: 'ACCEPTED' }]
+  const wrapper = await render()
+  const values = () => wrapper.findAll('ui-stat-card-stub').map(card => card.attributes('value'))
+  expect(queries.get('/api/issues')?.value).toMatchObject({ status: 'OPEN', workOrderNumber: 'WO-A' })
+  expect(queries.get('risk-issue-funnel')?.value).toMatchObject({ status: 'UNCLOSED', workOrderNumber: 'WO-A' })
+  expect(values()).toEqual(['1', '1', '0', '0'])
+  Object.assign(routeQuery, { wo: 'WO-B', status: 'RESOLVED', overdue: '1' })
+  funnelRows.pending.value = true
+  await flushPromises()
+  expect(queries.get('risk-issue-funnel')?.value).toMatchObject({ status: 'UNCLOSED', workOrderNumber: 'WO-B' })
+  expect(queries.get('risk-issue-funnel')?.value).not.toHaveProperty('overdue')
+  expect(values()).toEqual(['—', '—', '—', '—'])
+  funnelRows.pending.value = false
+  funnelRows.error.value = new Error('offline')
+  await flushPromises()
+  expect(values()).toEqual(['—', '—', '—', '—'])
+  funnelRows.error.value = null
+  funnelRows.data.value = [{ status: 'RESOLVED' }]
+  await flushPromises()
+  expect(values()).toEqual(['0', '0', '0', '1'])
+  routeQuery.tab = 'alerts'
+  await flushPromises()
+  expect(wrapper.find('.go').exists()).toBe(true)
+  expect(queries.get('/api/issues')?.value).toMatchObject({ status: 'RESOLVED', workOrderNumber: 'WO-B', overdue: '1' })
+})
+
+it('shows the actual first occurrence when an alert has no elapsed-duration label', async () => {
+  routeQuery.tab = 'alerts'
+  const wrapper = await render()
+  expect(wrapper.text()).toContain(`始于 ${workbench.factoryTimeText(alert.firstAt)}`)
+  expect(wrapper.text()).not.toContain('刚触发')
 })
