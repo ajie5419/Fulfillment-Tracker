@@ -163,22 +163,22 @@ const sortedAlerts = computed(() =>
 )
 
 const issueColumns = [
-  { title: '异常单号', key: 'issueNo', width: 145 },
-  { title: '工单 / 关联对象', key: 'ref', width: 170 },
-  { title: '问题描述与分类', key: 'desc' },
-  { title: '状态', key: 'status', width: 96 },
-  { title: '责任部门 / 责任人', key: 'owner', width: 155 },
-  { title: '要求解决日', key: 'dueDate', width: 135 },
-  { title: '操作', key: 'ops', width: 112, align: 'right' as const },
+  { title: '异常单号', key: 'issueNo', width: 132 },
+  { title: '工单', key: 'ref', width: 112 },
+  { title: '问题描述', key: 'desc', ellipsis: true },
+  { title: '状态', key: 'status', width: 92 },
+  { title: '责任部门 / 责任人', key: 'owner', width: 205 },
+  { title: '要求解决日', key: 'dueDate', width: 178 },
+  { title: '操作', key: 'ops', width: 100, align: 'right' as const },
 ]
 
 const alertColumns = [
-  { title: '级别 / 规则', key: 'level', width: 170 },
-  { title: '工单', key: 'wo', width: 120 },
-  { title: '预警对象与说明', key: 'subject' },
-  { title: '责任部门 / 责任人', key: 'owner', width: 170 },
-  { title: '持续 / 首次触发', key: 'time', width: 165 },
-  { title: '操作', key: 'ops', width: 185, align: 'right' as const },
+  { title: '级别 / 规则', key: 'level', width: 225 },
+  { title: '工单', key: 'wo', width: 112 },
+  { title: '预警对象与说明', key: 'subject', ellipsis: true },
+  { title: '责任部门 / 责任人', key: 'owner', width: 205 },
+  { title: '持续时间', key: 'time', width: 112 },
+  { title: '操作', key: 'ops', width: 172, align: 'right' as const },
 ]
 
 function primaryIssueAction(i: IssueRow): { label: string; primary: boolean } {
@@ -346,31 +346,30 @@ function clearFilters() {
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'issueNo'">
-                <div class="mono strong">{{ record.issueNo }}</div>
-                <div class="sub-line">{{ ISSUE_SOURCE_TEXT[record.source as keyof typeof ISSUE_SOURCE_TEXT] }}</div>
+                <span class="mono strong">{{ record.issueNo }}</span>
               </template>
               <template v-else-if="column.key === 'ref'">
-                <div @click.stop><WoLink :no="record.workOrderNumber" /></div>
-                <div v-if="record.refText" class="sub-line ellipsis" :title="record.refText">{{ record.refText }}</div>
+                <span @click.stop><WoLink :no="record.workOrderNumber" /></span>
               </template>
               <template v-else-if="column.key === 'desc'">
-                <div class="desc clamp" :title="record.description">{{ record.description }}</div>
-                <div class="sub-line">
-                  <span>{{ record.categoryText }}</span>
-                  <span v-if="record.photoCount"> · 照片 {{ record.photoCount }} 张</span>
-                  <span v-if="record.responsibleSupplierName"> · 外协：{{ record.responsibleSupplierName }}</span>
+                <div class="cell-inline" :title="`${record.categoryText}：${record.description}`">
+                  <span class="cat-chip">{{ record.categoryText }}</span>
+                  <span class="desc-text">{{ record.description }}</span>
                 </div>
               </template>
               <template v-else-if="column.key === 'status'">
                 <a-tag :color="ISSUE_STATUS_COLOR[record.status as IssueStatusKey]" class="tag">{{ ISSUE_STATUS_TEXT[record.status as IssueStatusKey] }}</a-tag>
               </template>
               <template v-else-if="column.key === 'owner'">
-                <div>{{ record.responsibleDeptName ?? '—' }}</div>
-                <div class="sub-line">{{ record.responsibleUserName ?? '未指定' }}</div>
+                <div class="cell-ellipsis" :title="`${record.responsibleDeptName ?? '—'} · ${record.responsibleUserName ?? '未指定'}`">
+                  <span>{{ record.responsibleDeptName ?? '—' }}</span>
+                  <span class="muted"> · {{ record.responsibleUserName ?? '未指定' }}</span>
+                </div>
               </template>
               <template v-else-if="column.key === 'dueDate'">
-                <div class="mono" :class="{ late: record.overdue }">{{ dayText(record.dueDate) || '—' }}</div>
-                <div v-if="record.overdue" class="sub-line late">{{ record.overdueDays ? `已超期 ${record.overdueDays} 天` : '待受理超时' }}</div>
+                <span class="mono" :class="{ late: record.overdue }">
+                  {{ dayText(record.dueDate) || '—' }}<template v-if="record.overdue"> · {{ record.overdueDays ? `超期 ${record.overdueDays} 天` : '受理超时' }}</template>
+                </span>
               </template>
               <template v-else-if="column.key === 'ops'">
                 <a-button
@@ -401,30 +400,30 @@ function clearFilters() {
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'level'">
-                <span class="sq-badge" :class="`k-${record.level}`">{{ LEVEL_TEXT[record.level as AlertLevelKey] }}预警</span>
-                <div class="sub-line">{{ RULE_TEXT[record.rule as keyof typeof RULE_TEXT] }}</div>
+                <div class="cell-inline">
+                  <span class="sq-badge" :class="`k-${record.level}`">{{ LEVEL_TEXT[record.level as AlertLevelKey] }}预警</span>
+                  <span class="muted cell-ellipsis">{{ RULE_TEXT[record.rule as keyof typeof RULE_TEXT] }}</span>
+                </div>
               </template>
               <template v-else-if="column.key === 'wo'">
                 <WoLink v-if="record.workOrderNumber" :no="record.workOrderNumber" />
                 <span v-else class="muted">—</span>
               </template>
               <template v-else-if="column.key === 'subject'">
-                <div class="strong">
-                  <NuxtLink v-if="record.link" :to="record.link" class="subject-link">{{ record.subject }}</NuxtLink>
-                  <span v-else>{{ record.subject }}</span>
+                <div class="cell-inline" :title="`${record.subject}${record.summary ? ` · ${record.summary}` : ''}`">
+                  <NuxtLink v-if="record.link" :to="record.link" class="strong subject-link">{{ record.subject }}</NuxtLink>
+                  <span v-else class="strong">{{ record.subject }}</span>
+                  <span v-if="record.summary" class="muted desc-text"> · {{ record.summary }}</span>
                 </div>
-                <div class="sub-line clamp" :title="record.summary">{{ record.summary }}</div>
               </template>
               <template v-else-if="column.key === 'owner'">
-                <div>{{ record.deptNames.length ? record.deptNames.join('、') : '—' }}</div>
-                <div class="sub-line">
-                  <template v-if="record.owners.length">{{ ownerText(record.owners) }}</template>
-                  <span v-else class="muted">未设置责任人</span>
+                <div class="cell-ellipsis">
+                  <span>{{ record.deptNames.length ? record.deptNames.join('、') : '—' }}</span>
+                  <span class="muted"> · {{ record.owners.length ? ownerText(record.owners) : '未设置' }}</span>
                 </div>
               </template>
               <template v-else-if="column.key === 'time'">
-                <div class="mono">{{ record.duration ? `已持续 ${record.duration}` : '刚触发' }}</div>
-                <div class="sub-line">首次 {{ factoryTimeText(record.firstAt) }}</div>
+                <span class="mono" :title="`首次 ${factoryTimeText(record.firstAt)}`">{{ record.duration ? `持续 ${record.duration}` : '刚触发' }}</span>
               </template>
               <template v-else-if="column.key === 'ops'">
                 <div class="table-ops">
@@ -452,16 +451,16 @@ function clearFilters() {
 .muted { color: var(--ft-text-3); font-size: 12px; }
 .tabs { font-weight: normal; }
 .empty-box { padding: 36px 20px; }
-.mono { font-variant-numeric: tabular-nums; }
-.sub-line { margin-top: 2px; font-size: 12px; color: var(--ft-text-3); }
-.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mono { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cell-inline { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cell-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.desc-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; color: var(--ft-text); }
+.cat-chip { flex: none; display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 5px; font-size: 11px; font-weight: 500; background: var(--ft-fill); border: 1px solid var(--ft-border); color: var(--ft-text-2); white-space: nowrap; }
 .late { color: var(--ft-late-text); font-weight: 500; }
-.strong { font-weight: 600; color: var(--ft-text); }
+.strong { font-weight: 600; color: var(--ft-text); white-space: nowrap; }
 .subject-link { color: var(--ft-text); }
 .subject-link:hover { color: var(--ft-primary-text); }
 .tag { margin-inline-end: 0; }
-.desc { font-size: 13px; color: var(--ft-text); line-height: 1.45; }
-.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 :deep(.issue-table-row) { cursor: pointer; }
 :deep(.issue-table-row:focus-visible) { outline: 2px solid var(--ft-primary); outline-offset: -2px; }
 .sq-badge { display: inline-flex; align-items: center; height: 21px; padding: 0 7px; border-radius: 5px; font-size: 11.5px; font-weight: 600; line-height: 21px; background: var(--ft-fill); color: var(--ft-text-2); white-space: nowrap; }
