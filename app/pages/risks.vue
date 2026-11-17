@@ -183,6 +183,15 @@ const issueColumns = [
   { title: '操作', key: 'ops', width: 112, align: 'right' as const },
 ]
 
+const alertColumns = [
+  { title: '级别 / 规则', key: 'level', width: 170 },
+  { title: '工单', key: 'wo', width: 120 },
+  { title: '预警对象与说明', key: 'subject' },
+  { title: '责任部门 / 责任人', key: 'owner', width: 170 },
+  { title: '持续 / 首次触发', key: 'time', width: 165 },
+  { title: '操作', key: 'ops', width: 185, align: 'right' as const },
+]
+
 function primaryIssueAction(i: IssueRow): { label: string; primary: boolean } {
   if (i.can.accept) return { label: '受理', primary: true }
   if (i.can.resolve) return { label: '去处理', primary: true }
@@ -297,9 +306,15 @@ function clearFilters() {
       />
     </div>
 
-    <UiSectionCard icon="shield" padding="none" title="风险明细" tray :sub="tab === 'issues' ? (filter.workOrderNumber ? `工单 ${filter.workOrderNumber}` : '点击任意异常行可查看流转记录并受理、改派、处理或关闭') : '系统自动扫描的进度偏离信号；黄色预警可在此手动转异常'">
+    <UiSectionCard icon="shield" padding="none" title="风险明细" tray>
+      <template #title>
+        <div class="tray-title-row">
+          <a-segmented v-model:value="tab" :options="tabOptions" class="tabs" />
+          <span v-if="tab === 'issues'" class="tray-hint">{{ filter.workOrderNumber ? `工单 ${filter.workOrderNumber}` : '点击任意行处理闭环' }}</span>
+          <span v-else class="tray-hint">15 分钟自动扫描 · 黄色预警可手动转异常</span>
+        </div>
+      </template>
       <template #extra>
-        <a-segmented v-model:value="tab" :options="tabOptions" class="tabs" />
         <a-select v-model:value="filter.workOrderNumber" allow-clear show-search placeholder="全部工单" style="width: 168px" :options="woOptions" />
         <UiFilterButton :count="activeChips.length" @clear="clearFilters">
           <template v-if="tab === 'alerts'">
@@ -395,38 +410,55 @@ function clearFilters() {
           </a-table>
         </template>
 
-        <!-- 系统预警升级池 -->
+        <!-- 系统预警升级池表格 -->
         <template v-else>
           <div v-if="!sortedAlerts.length" class="empty-box">
             <a-empty description="没有活动中的系统预警" />
           </div>
-          <div v-else class="feed-list">
-            <article v-for="a in sortedAlerts" :key="a.id" class="rrow">
-              <span class="row-badge" :class="`badge-${alertTone(a)}`" aria-hidden="true">
-                <UiStatusIcon :kind="alertIcon(a)" :tone="alertTone(a)" :size="15" />
-              </span>
-              <div class="main">
-                <div class="head">
-                  <NuxtLink v-if="a.link" :to="a.link" class="subject strong">{{ a.subject }}</NuxtLink>
-                  <span v-else class="subject strong">{{ a.subject }}</span>
-                  <span class="rule">{{ RULE_TEXT[a.rule as keyof typeof RULE_TEXT] }}</span>
+          <a-table
+            v-else
+            :columns="alertColumns"
+            :data-source="sortedAlerts"
+            row-key="id"
+            size="middle"
+            :pagination="{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false }"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'level'">
+                <span class="sq-badge" :class="`k-${record.level}`">{{ LEVEL_TEXT[record.level as AlertLevelKey] }}预警</span>
+                <div class="sub-line">{{ RULE_TEXT[record.rule as keyof typeof RULE_TEXT] }}</div>
+              </template>
+              <template v-else-if="column.key === 'wo'">
+                <WoLink v-if="record.workOrderNumber" :no="record.workOrderNumber" />
+                <span v-else class="muted">—</span>
+              </template>
+              <template v-else-if="column.key === 'subject'">
+                <div class="strong">
+                  <NuxtLink v-if="record.link" :to="record.link" class="subject-link">{{ record.subject }}</NuxtLink>
+                  <span v-else>{{ record.subject }}</span>
                 </div>
-                <div class="desc">{{ a.summary }}<span v-if="a.duration" class="muted">　已持续 {{ a.duration }}（不含停工日）</span></div>
-                <div class="meta">
-                  <span v-if="a.workOrderNumber">工单 <WoLink :no="a.workOrderNumber" /></span>
-                  <span>责任人 <template v-if="a.owners.length">{{ ownerText(a.owners) }}</template><span v-else class="muted">未设置</span></span>
-                  <span v-if="a.deptNames.length">{{ a.deptNames.join('、') }}</span>
-                  <span class="muted">首次 {{ factoryTimeText(a.firstAt) }} · 升级 {{ factoryTimeText(a.levelAt) }}</span>
+                <div class="sub-line clamp" :title="record.summary">{{ record.summary }}</div>
+              </template>
+              <template v-else-if="column.key === 'owner'">
+                <div>{{ record.deptNames.length ? record.deptNames.join('、') : '—' }}</div>
+                <div class="sub-line">
+                  <template v-if="record.owners.length">{{ ownerText(record.owners) }}</template>
+                  <span v-else class="muted">未设置责任人</span>
                 </div>
-              </div>
-              <div class="ops">
-                <span class="sq-badge" :class="`k-${a.level}`">{{ LEVEL_TEXT[a.level as AlertLevelKey] }}预警</span>
-                <a-button v-if="a.issue" size="small" class="issue-btn" @click="selected = a.issue.id">已转异常 {{ a.issue.issueNo }}</a-button>
-                <a-button v-else-if="a.canConvert" size="small" danger :loading="converting === a.id" @click="convert({ id: a.id, subject: a.subject })">转异常</a-button>
-                <NuxtLink v-if="a.link" :to="a.link" class="go">{{ a.canHandle ? '去处理' : '查看详情' }}</NuxtLink>
-              </div>
-            </article>
-          </div>
+              </template>
+              <template v-else-if="column.key === 'time'">
+                <div class="mono">{{ record.duration ? `已持续 ${record.duration}` : '刚触发' }}</div>
+                <div class="sub-line">首次 {{ factoryTimeText(record.firstAt) }}</div>
+              </template>
+              <template v-else-if="column.key === 'ops'">
+                <div class="table-ops">
+                  <a-button v-if="record.issue" size="small" class="issue-btn" @click="selected = record.issue.id">已转 {{ record.issue.issueNo }}</a-button>
+                  <a-button v-else-if="record.canConvert" size="small" danger :loading="converting === record.id" @click="convert({ id: record.id, subject: record.subject })">转异常</a-button>
+                  <NuxtLink v-if="record.link" :to="record.link" class="go">{{ record.canHandle ? '去处理' : '查看详情' }}</NuxtLink>
+                </div>
+              </template>
+            </template>
+          </a-table>
         </template>
       </a-spin>
     </UiSectionCard>
@@ -440,6 +472,8 @@ function clearFilters() {
 <style scoped>
 .risks { display: flex; flex-direction: column; gap: 16px; }
 .kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.tray-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tray-hint { font-size: 12px; font-weight: 400; color: var(--ft-text-3); }
 .muted { color: var(--ft-text-3); font-size: 12px; }
 .tabs { font-weight: normal; }
 .chips-bar { padding: 0 20px 10px; }
@@ -449,40 +483,21 @@ function clearFilters() {
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .late { color: var(--ft-late-text); font-weight: 500; }
 .strong { font-weight: 600; color: var(--ft-text); }
+.subject-link { color: var(--ft-text); }
+.subject-link:hover { color: var(--ft-primary-text); }
 .tag { margin-inline-end: 0; }
 .desc { font-size: 13px; color: var(--ft-text); line-height: 1.45; }
 .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 :deep(.issue-table-row) { cursor: pointer; }
 :deep(.issue-table-row:focus-visible) { outline: 2px solid var(--ft-primary); outline-offset: -2px; }
-
-.feed-list { display: flex; flex-direction: column; border-top: 1px solid var(--ft-border); }
-.rrow { display: flex; align-items: flex-start; gap: 13px; padding: 14px 20px; transition: background-color 0.14s; }
-.rrow + .rrow { border-top: 1px solid var(--card-border-subtle); }
-.rrow:hover { background: color-mix(in srgb, var(--ft-fill) 65%, transparent); }
-.row-badge { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin-top: 1px; border-radius: 9px; background-clip: padding-box; border: 1px solid var(--card-hairline); box-shadow: var(--card-badge-shadow); }
-.badge-late { background: var(--ft-late-bg); color: var(--ft-late-text); }
-.badge-risk { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
-.badge-primary { background: var(--ft-primary-bg); color: var(--ft-primary-text); }
-.badge-none { background: var(--ft-fill); color: var(--ft-text-3); }
 .sq-badge { display: inline-flex; align-items: center; height: 21px; padding: 0 7px; border-radius: 5px; font-size: 11.5px; font-weight: 600; line-height: 21px; background: var(--ft-fill); color: var(--ft-text-2); white-space: nowrap; }
 .k-RED { background: var(--ft-late-bg); color: var(--ft-late-text); }
 .k-YELLOW { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
 .k-REMIND { background: var(--ft-primary-bg); color: var(--ft-primary-text); }
-.main { flex: 1; min-width: 0; }
-.head { line-height: 22px; }
-.head > * { vertical-align: middle; }
-.head > * + * { margin-left: 8px; }
-.subject { font-size: 14px; line-height: 22px; word-break: break-word; }
-.rule { font-size: 12px; color: var(--ft-text-2); }
-.meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; font-size: 12px; color: var(--ft-text-2); }
-.ops { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; max-width: 260px; }
+.table-ops { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; white-space: nowrap; }
 .issue-btn { color: var(--ft-primary-text); border-color: var(--ft-primary-bg); }
 .go { font-size: 13px; white-space: nowrap; }
 
 @media (max-width: 991px) { .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 575px) {
-  .kpi-row { grid-template-columns: minmax(0, 1fr); }
-  .rrow { flex-wrap: wrap; padding: 12px 14px; }
-  .ops { width: 100%; max-width: none; justify-content: flex-start; padding-left: 47px; }
-}
+@media (max-width: 575px) { .kpi-row { grid-template-columns: minmax(0, 1fr); } }
 </style>

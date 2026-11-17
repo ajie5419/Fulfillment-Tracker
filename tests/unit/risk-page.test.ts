@@ -31,7 +31,14 @@ afterEach(() => { cleanups.splice(0).forEach(fn => fn()); vi.unstubAllGlobals() 
 
 async function render() {
   const component = loadComponent('app/pages/risks.vue', { '#shared/alert-rules': rules, '#shared/workbench': workbench })
-  const container = Vue.defineComponent({ props: ['title'], setup: (props, { slots }) => () => Vue.h('div', [props.title, slots.default?.(), slots.extra?.()]) })
+  const container = Vue.defineComponent({ props: ['title'], setup: (props, { slots }) => () => Vue.h('div', [props.title, slots.title?.(), slots.default?.(), slots.extra?.()]) })
+  const tableStub = Vue.defineComponent({
+    props: ['columns', 'dataSource'],
+    setup: (props, { slots }) => () => Vue.h('div', { class: 'table-stub' },
+      (props.dataSource as Record<string, unknown>[]).map(record =>
+        Vue.h('div', { class: 'rrow' }, (props.columns as { key: string }[]).map(column => slots.bodyCell?.({ column, record }))),
+      )),
+  })
   const button = Vue.defineComponent({ setup: (_, { slots }) => () => Vue.h('button', slots.default?.()) })
   const link = Vue.defineComponent({ setup: (_, { slots }) => () => Vue.h('a', slots.default?.()) })
   const wrapper = mount(Vue.defineComponent({ setup: () => () => Vue.h(Vue.Suspense, null, { default: () => Vue.h(component) }) }), {
@@ -39,7 +46,7 @@ async function render() {
       plugins: [(app: Vue.App) => Object.assign(app.config.globalProperties, dictionaries)],
       stubs: {
         UiPageHero: container, UiSectionCard: container, ASpin: container, AResult: container, AButton: button, NuxtLink: link,
-        AEmpty: true, ASegmented: true, ASelect: true, ACheckbox: true, ATable: true, ATag: true, UiHelpTip: true, UiRefreshButton: true,
+        AEmpty: true, ASegmented: true, ASelect: true, ACheckbox: true, ATable: tableStub, ATag: true, UiHelpTip: true, UiRefreshButton: true,
         UiStatCard: true, UiFilterButton: true, UiFilterChips: true, UiStatusIcon: true, WoLink: true, IssueDrawer: true, IssueReportModal: true,
       },
     },
