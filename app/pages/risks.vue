@@ -315,6 +315,7 @@ function clearFilters() {
       </template>
       <template #extra>
         <a-select v-model:value="filter.workOrderNumber" allow-clear show-search placeholder="全部工单" style="width: 168px" :options="woOptions" />
+        <a-select v-if="tab === 'issues'" v-model:value="filter.dept" style="width: 146px" :options="[{ value: '0', label: '责任部门：全部' }, { value: '1', label: '责任部门：本部门' }]" />
         <UiFilterButton :count="activeChips.length" @clear="clearFilters">
           <template v-if="tab === 'alerts'">
             <div class="ft-filter-group">预警</div>
@@ -453,7 +454,7 @@ function clearFilters() {
                 <div class="table-ops">
                   <a-button v-if="record.issue" size="small" class="issue-btn" @click="selected = record.issue.id">已转 {{ record.issue.issueNo }}</a-button>
                   <a-button v-else-if="record.canConvert" size="small" danger :loading="converting === record.id" @click="convert({ id: record.id, subject: record.subject })">转异常</a-button>
-                  <NuxtLink v-if="record.link" :to="record.link" class="go">{{ record.canHandle ? '去处理' : '查看详情' }}</NuxtLink>
+                  <NuxtLink v-if="record.link" :to="record.link" class="go"><a-button size="small">{{ record.canHandle ? '去处理' : '查看详情' }}</a-button></NuxtLink>
                 </div>
               </template>
             </template>
