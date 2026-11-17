@@ -479,7 +479,8 @@ async function seedDemoReleases() {
 /** 演示库还没有任何异常单时，补 3 条不同闭环状态的演示异常（待受理 / 处理中 / 待确认关闭）。 */
 export async function ensureDemoIssues() {
   if (await prisma.issue.count()) return 0
-  const wo = await prisma.qmsWorkOrder.findFirst({ where: { isDeleted: false }, orderBy: { workOrderNumber: 'asc' }, select: { workOrderNumber: true } })
+  // Synced work orders can coexist with demo data; reset only owns DEMO-prefixed records.
+  const wo = await prisma.qmsWorkOrder.findFirst({ where: { isDeleted: false, workOrderNumber: { startsWith: P } }, orderBy: { workOrderNumber: 'asc' }, select: { workOrderNumber: true } })
   if (!wo) return 0
   const day = dayFn(new Date())
   const samples = [

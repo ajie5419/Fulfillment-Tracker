@@ -9,6 +9,7 @@ describe.skipIf(!DB)('isolated demo identity and missing plan delivery', () => {
   let db: PrismaClient
   let repair: typeof import('../../server/services/dev/repair-isolated-demo').repairIsolatedDemo
   let reset: typeof import('../../server/services/dev/demo').resetDemo
+  let ensureIssues: typeof import('../../server/services/dev/demo').ensureDemoIssues
   let plan: typeof import('../../server/services/plan/plan')
   const wo = 'DEMO-IDENTITY-TEST'
   beforeAll(async () => {
@@ -17,9 +18,40 @@ describe.skipIf(!DB)('isolated demo identity and missing plan delivery', () => {
     db = (await import('../../server/utils/prisma')).prisma
     repair = (await import('../../server/services/dev/repair-isolated-demo')).repairIsolatedDemo
     reset = (await import('../../server/services/dev/demo')).resetDemo
+    ensureIssues = (await import('../../server/services/dev/demo')).ensureDemoIssues
     plan = await import('../../server/services/plan/plan')
   })
   afterAll(async () => { await db?.$disconnect() })
+
+  it('seeds issues only on active demo orders and resets them without touching synced records', async () => {
+    const realWo = '000-REAL-SEED-SENTINEL'
+    const demoWo = 'DEMO-SEED-SCOPE'
+    const deletedWo = 'DEMO-000-DELETED'
+    await reset(undefined, { preserveUsers: true })
+    await db.issue.deleteMany()
+    const order = { quantity: 1, status: 'OPEN', customerName: 'Seed scope fixture', deliveryDate: parseDay('2026-12-31'), updatedAt: new Date() }
+    await db.qmsWorkOrder.createMany({ data: [
+      { ...order, workOrderNumber: realWo },
+      { ...order, workOrderNumber: deletedWo, isDeleted: true },
+    ] })
+    try {
+      expect(await ensureIssues()).toBe(0)
+      expect(await db.issue.count()).toBe(0)
+      await db.qmsWorkOrder.create({ data: { ...order, workOrderNumber: demoWo } })
+      expect(await ensureIssues()).toBe(3)
+      expect(await db.issue.findMany({ select: { workOrderNumber: true } })).toEqual(Array.from({ length: 3 }, () => ({ workOrderNumber: demoWo })))
+      expect(await ensureIssues()).toBe(0)
+      const realIssue = await db.issue.create({ data: { issueNo: 'REAL-SEED-SENTINEL', workOrderNumber: realWo, category: 'OTHER', description: 'Preserve synced business record', source: 'MANUAL', reporterId: 'real-reporter' } })
+      await reset(undefined, { preserveUsers: true })
+      expect(await db.issue.count({ where: { id: { startsWith: 'DEMO-' } } })).toBe(0)
+      expect(await db.issue.findUnique({ where: { id: realIssue.id } })).toEqual(realIssue)
+      expect(await db.qmsWorkOrder.findUnique({ where: { workOrderNumber: realWo } })).not.toBeNull()
+    } finally {
+      await reset(undefined, { preserveUsers: true })
+      await db.issue.deleteMany({ where: { workOrderNumber: realWo } })
+      await db.qmsWorkOrder.deleteMany({ where: { workOrderNumber: realWo } })
+    }
+  })
 
   it('restores the broken identity, repairs only missing pending todos, and preserves identities through reset', async () => {
     await repair()
