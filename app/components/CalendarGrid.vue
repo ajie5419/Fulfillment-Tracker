@@ -52,7 +52,7 @@ const selUnits = computed(() => selItems.value.reduce((n, e) => n + qtyOf(e), 0)
 
 <template>
   <div class="cal-a">
-    <UiSectionCard padding="none">
+    <UiSectionCard tray padding="none">
       <div class="grid" role="group" aria-label="月日历，点日子看当天的工单">
         <div v-for="w in WEEKDAYS" :key="w" class="dow" aria-hidden="true">{{ w }}</div>
         <template v-for="d in days" :key="d">

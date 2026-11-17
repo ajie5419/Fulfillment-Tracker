@@ -1,5 +1,6 @@
 import { prisma } from '../../utils/prisma'
 import { ensureDemoIdentity } from './demo-identity'
+import { ensureDemoIssues } from './demo'
 import { deptHeads, loadPlans } from '../plan/plan'
 import { CONFIRM_PLAN_NODE, PLAN_REF } from '../plan/constants'
 
@@ -9,6 +10,7 @@ import { CONFIRM_PLAN_NODE, PLAN_REF } from '../plan/constants'
  */
 export async function repairIsolatedDemo() {
   await prisma.$transaction((tx) => ensureDemoIdentity(tx))
+  await ensureDemoIssues()
   const plans = await prisma.workOrderPlan.findMany({ where: { workOrderNumber: { startsWith: 'DEMO-' }, status: 'PUBLISHED' }, select: { workOrderNumber: true } })
   let created = 0
   for (const { workOrderNumber } of plans) {

@@ -139,7 +139,7 @@ function canSplitNode(n: DeptPlanNode, c: CanCreate): boolean {
         <UiStatCard label="本周到期" :value="data.summary.dueSoonTasks" unit="项" tone="upstream" accent icon="ring" sub="7 天内到期、还没完成的任务" />
       </div>
 
-      <UiSectionCard padding="none">
+      <UiSectionCard tray padding="none">
         <template #title>
           <span class="ft-title">部门计划<template v-if="data.deptText"> · {{ data.deptText }}</template>
             <UiHelpTip label="部门计划说明">项目部发布项目计划后，各部门在这里接收本部门负责的节点：接收后分解任务、指定责任人、给计划完成日（晚于节点日会标红）；做不到就退回并写原因，项目经理会收到提醒。已有设计任务或采购行可在对应页面编辑“所属总计划节点”关联过来。</UiHelpTip>

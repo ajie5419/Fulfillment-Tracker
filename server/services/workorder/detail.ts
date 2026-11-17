@@ -28,7 +28,7 @@ export async function getWorkOrderDetail(workOrderNumber: string, ctx: RoleConte
   const [plan, planRow, alerts, issues, assemblies, ext] = await Promise.all([
     getPlan(workOrderNumber, ctx, now),
     prisma.workOrderPlan.findUnique({ where: { workOrderNumber }, select: { createdAt: true, publishedAt: true } }),
-    listAlerts({ workOrderNumber, visibleWorkOrders, viewer }, now),
+    listAlerts({ workOrderNumber, viewer }, now),
     listIssues({ status: 'UNCLOSED', workOrderNumber, visibleWorkOrders }, viewer, now),
     prisma.assemblyNode.findMany({ where: { workOrderNumber }, include: NODE_LINKS }),
     prisma.workOrderExt.findUnique({ where: { workOrderNumber } }),

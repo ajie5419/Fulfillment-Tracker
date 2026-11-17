@@ -99,6 +99,22 @@ const cases = [
   ['drawings.vue', '/api/drawings/load', { week: { monday: '', sunday: '' }, rows: [] }, '没有未完成的设计任务'],
 ] as const
 
+it('mobile workbench omits daily summaries while retaining sync failure notices', async () => {
+  vi.stubGlobal('useTodos', async () => request([]))
+  vi.stubGlobal('useReminders', async () => request({
+    items: [], unread: 1,
+    digest: { id: 'digest', title: '每日汇总测试内容', level: 'RED', readAt: null, lines: ['汇总明细'] },
+    pinned: [{ id: 'sync', title: '同步故障测试内容', level: 'RED', lines: ['同步失败明细'] }],
+  }))
+  vi.stubGlobal('groupReminders', () => [])
+  vi.stubGlobal('logout', vi.fn())
+  const wrapper = await page('app/pages/m/index.vue')
+  expect(wrapper.text()).not.toContain('每日汇总')
+  expect(wrapper.text()).not.toContain('汇总明细')
+  expect(wrapper.text()).toContain('同步故障测试内容')
+  expect(wrapper.text()).toContain('同步失败明细')
+})
+
 it.each(cases)('%s：默认空值失败显示错误，点击重试调用原生 refresh', async (file, url, data, empty) => {
   requests.set('/api/releases/stats', request(null))
   requests.set('/api/drawings', request({ rows: [], total: 0, stats: null }))

@@ -228,7 +228,7 @@ describe.skipIf(!DB)('预警与提醒', () => {
     expect((await db.reminder.findFirstOrThrow({ where: { alertId: alert!.id, level: 'YELLOW', userId: 'u-out' } })).title).toMatch(/^【黄】.*组焊厂超承诺返回日 1 天未返/)
 
     // 预警列表能看到
-    const list = await s.reminders.listAlerts({ rule: 'W3', workOrderNumber: WO })
+    const list = await s.reminders.listAlerts({ rule: 'W3', workOrderNumber: WO, viewer: { userId: 'test-admin', isAdmin: true } })
     expect(list.find((a) => a.id === alert!.id)).toMatchObject({ level: 'YELLOW', owners: [{ id: 'u-out', name: '外协专员' }], link: `/outsource?tab=out&wo=${WO}&step=${weld.id}` })
     // 我的提醒：电脑端外协"在外"、手机"生产"在外，都定位到这道
     expect((await s.reminders.listReminders('u-out')).items.find((i) => i.alertId === alert!.id)).toMatchObject({ link: `/outsource?tab=out&wo=${WO}&step=${weld.id}`, mobileLink: `/m/work?seg=out&wo=${WO}&stepId=${weld.id}` })
@@ -389,7 +389,7 @@ describe.skipIf(!DB)('预警与提醒', () => {
     const mine = await s.reminders.listReminders('u-out', now)
     const card = mine.items.find((i) => i.alertId === y!.id)
     expect(card).toMatchObject({ rule: 'W10', mobileLink: `/m/work?seg=working&wo=${WO}&stepId=${late.id}`, link: `/production?tab=overdue&wo=${WO}&step=${late.id}` })
-    const list = await s.reminders.listAlerts({ rule: 'W10', workOrderNumber: WO }, now)
+    const list = await s.reminders.listAlerts({ rule: 'W10', workOrderNumber: WO, viewer: { userId: 'test-admin', isAdmin: true } }, now)
     expect(list.find((a) => a.refId === soon.id)).toMatchObject({ level: 'REMIND', link: `/production?tab=active&wo=${WO}&step=${soon.id}` })
     expect(list.find((a) => a.refId === late.id)).toMatchObject({ level: 'YELLOW', link: `/production?tab=overdue&wo=${WO}&step=${late.id}` })
     expect(list.find((a) => a.refId === late.id)).toMatchObject({ duration: null, summary: expect.stringContaining('仍未完工') })

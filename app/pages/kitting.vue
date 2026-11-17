@@ -148,7 +148,7 @@ const crossColumns = [
     </UiStatCard>
   </div>
   <a-alert v-if="ordersError" type="error" message="工单选项加载失败" :description="apiError(ordersError)"><template #action><a-button @click="refreshOrders()">重试</a-button></template></a-alert>
-  <a-card>
+  <UiSectionCard tray>
     <template #title>
       <span class="ft-title">齐套
         <UiHelpTip label="齐套说明">齐套率 = 已就绪项 ÷ 应有项：工件完成（最后一道工序完成）算就绪，关键物料到货算就绪，已取消的物料不计入。同一工件 / 物料可以挂在多个节点上。
@@ -250,7 +250,7 @@ const crossColumns = [
       </template>
     </a-table>
     </template>
-  </a-card>
+  </UiSectionCard>
   </div>
 
   <KittingNodeModal :open="editOpen" :node="editing" :work-order-number="filter.workOrderNumber" @close="editOpen = false" @done="saved" />

@@ -6,35 +6,55 @@ import { PLAN_STATUS_TEXT, planDisplayState } from '#shared/plan'
 const props = defineProps<{ data: PlanData; published: boolean }>()
 const displayState = computed(() => planDisplayState(props.data.plan?.status, props.data.nodes.length))
 const pastDraftDates = computed(() => !props.published && props.data.nodes.some(n => (n.startDate ?? n.planDate) < dayAfter(0)))
+const statusTone = computed(() => (displayState.value === 'NONE' ? 'none' : displayState.value === 'PUBLISHED' ? 'done' : 'primary'))
 </script>
 
 <template>
   <PlanDateConflicts :conflicts="data.dateConflicts" />
-  <a-descriptions :column="{ xs: 1, sm: 2, lg: 4 }" size="small" bordered class="summary">
-    <a-descriptions-item label="项目">{{ data.workOrder.projectName ?? '—' }}<span class="muted">　{{ data.workOrder.customerName }}</span></a-descriptions-item>
-    <a-descriptions-item label="工单号">{{ data.workOrder.workOrderNumber }}</a-descriptions-item>
-    <a-descriptions-item label="状态">
-      <a-tag :color="displayState === 'NONE' ? 'default' : displayState === 'PUBLISHED' ? 'green' : 'blue'">{{ PLAN_STATUS_TEXT[displayState] }}</a-tag>
-      <span v-if="data.plan?.templateName" class="muted">模板：{{ data.plan.templateName }}</span>
-      <div v-if="published" class="muted">{{ data.plan?.publishedByName }} {{ timeText(data.plan?.publishedAt) }} 发布</div>
-    </a-descriptions-item>
-    <a-descriptions-item label="合同生效日期">{{ data.workOrder.effectiveTime ?? '—' }}</a-descriptions-item>
-    <a-descriptions-item label="合同交期">{{ data.workOrder.deliveryDate ?? '—' }}</a-descriptions-item>
-    <a-descriptions-item label="预计交期">
-      <span :class="{ late: (data.deliveryDelayDays ?? 0) > 0 }">{{ data.expectedDelivery ?? '—' }}</span>
-    </a-descriptions-item>
-    <a-descriptions-item label="拖期天数">
-      <a-tag v-if="(data.deliveryDelayDays ?? 0) > 0" color="red">拖期 {{ data.deliveryDelayDays }} 天</a-tag>
-      <a-tag v-if="data.planAlertLevel" color="red" title="W9 交期风险：已通知项目经理、项目部负责人、分管领导">W9 交期风险</a-tag>
-      <span v-if="data.deliveryDelayDays != null && data.deliveryDelayDays <= 0" class="ok">不拖期</span>
-      <span v-else-if="data.deliveryDelayDays == null" class="muted">—</span>
-    </a-descriptions-item>
-    <a-descriptions-item label="延误节点">
-      <a-tag v-if="data.sourceNodes" color="orange" title="源头延误节点：自身就已延误（W9 只报这些）">源头 {{ data.sourceNodes }} 个</a-tag>
-      <span v-if="data.delayedNodes > data.sourceNodes" class="muted">另 {{ data.delayedNodes - data.sourceNodes }} 个受上游影响</span>
-      <span v-if="!data.delayedNodes" class="muted">0</span>
-    </a-descriptions-item>
-  </a-descriptions>
+
+  <div class="plan-meta-strip">
+    <div class="meta-item">
+      <span class="meta-label">项目 / 客户</span>
+      <span class="meta-val">{{ data.workOrder.projectName ?? '—' }} <span class="muted">{{ data.workOrder.customerName }}</span></span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">工单号</span>
+      <span class="meta-val strong">{{ data.workOrder.workOrderNumber }}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">计划状态</span>
+      <span class="meta-val">
+        <UiStatusTag :tone="statusTone">{{ PLAN_STATUS_TEXT[displayState] }}</UiStatusTag>
+        <span v-if="data.plan?.templateName" class="muted">模板：{{ data.plan.templateName }}</span>
+        <span v-if="published" class="muted">{{ data.plan?.publishedByName }} {{ timeText(data.plan?.publishedAt) }} 发布</span>
+      </span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">合同生效 / 交期</span>
+      <span class="meta-val">{{ data.workOrder.effectiveTime ?? '—' }} / <b>{{ data.workOrder.deliveryDate ?? '—' }}</b></span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">预计交期</span>
+      <span class="meta-val" :class="{ late: (data.deliveryDelayDays ?? 0) > 0 }">{{ data.expectedDelivery ?? '—' }}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">拖期结论</span>
+      <span class="meta-val">
+        <UiStatusTag v-if="(data.deliveryDelayDays ?? 0) > 0" tone="late">拖期 {{ data.deliveryDelayDays }} 天</UiStatusTag>
+        <UiStatusTag v-if="data.planAlertLevel" tone="late" title="W9 交期风险：已通知项目经理、项目部负责人、分管领导">W9 交期风险</UiStatusTag>
+        <span v-if="data.deliveryDelayDays != null && data.deliveryDelayDays <= 0" class="ok">不拖期</span>
+        <span v-else-if="data.deliveryDelayDays == null" class="muted">—</span>
+      </span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">延误节点</span>
+      <span class="meta-val">
+        <UiStatusTag v-if="data.sourceNodes" tone="upstream" title="源头延误节点：自身就已延误（W9 只报这些）">源头 {{ data.sourceNodes }} 个</UiStatusTag>
+        <span v-if="data.delayedNodes > data.sourceNodes" class="muted">另 {{ data.delayedNodes - data.sourceNodes }} 个受上游影响</span>
+        <span v-if="!data.delayedNodes" class="muted">0</span>
+      </span>
+    </div>
+  </div>
 
   <a-alert
     v-if="pastDraftDates"
@@ -60,9 +80,40 @@ const pastDraftDates = computed(() => !props.published && props.data.nodes.some(
 </template>
 
 <style scoped>
+.plan-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  background: var(--ft-tray-bg);
+  border: 1px solid var(--ft-border);
+  border-radius: var(--card-radius-inner);
+  font-variant-numeric: tabular-nums;
+}
+.meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.meta-label {
+  font-size: 11px;
+  color: var(--ft-text-3);
+  line-height: 1.3;
+}
+.meta-val {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ft-text);
+  line-height: 1.4;
+}
+.strong { font-weight: 600; }
 .muted { color: var(--ft-text-2); font-size: 12px; }
-.late { color: var(--ft-late); }
-.ok { color: var(--ft-done-text); }
-.summary { margin-bottom: 12px; }
+.late { color: var(--ft-late-text); font-weight: 600; }
+.ok { color: var(--ft-done-text); font-weight: 600; }
 .tip { margin-bottom: 12px; }
 </style>

@@ -4,9 +4,9 @@ import { listWorkshop } from '../services/flow/workshop'
 const query = z.object({ wo: z.string().max(64).optional(), supplierId: z.string().max(64).optional() })
 
 /** 车间看板（旧接口，生产调度的看板视图改用 /api/production）：工序按状态分列，可按工单、班组 / 外协厂筛选；只列可见工单 */
-export default defineFlowHandler(async (event) => {
+export default defineFlowHandler(async (event, user) => {
   const q = parseQuery(event, query)
   const visibleWorkOrders = scopeWorkOrders(await getScope(event))
   if (q.wo) await assertCanSee(event, q.wo)
-  return listWorkshop({ workOrderNumber: q.wo || undefined, supplierId: q.supplierId || undefined, visibleWorkOrders })
+  return listWorkshop({ workOrderNumber: q.wo || undefined, supplierId: q.supplierId || undefined, visibleWorkOrders }, actorOf(event, user))
 })

@@ -6,5 +6,5 @@
 </script>
 
 <template>
-  <a-card title="工序路线模板"><RouteTemplatesTab /></a-card>
+  <UiSectionCard tray title="工序路线模板"><RouteTemplatesTab /></UiSectionCard>
 </template>

@@ -18,5 +18,5 @@ export default defineFlowHandler(async (event, user) => {
     supplierId: q.supplierId || undefined,
     mine: q.mine === '1' ? { userId: user.qmsUserId, teamIds: (await getRoleContext(event)).leadOf ?? [] } : undefined,
     visibleWorkOrders,
-  })
+  }, actorOf(event, user))
 })

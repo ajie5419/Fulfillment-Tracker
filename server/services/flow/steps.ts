@@ -3,6 +3,7 @@
  * 规则只有两条：已有流转记录的步骤不能删除、不能调顺序；步骤负责人默认是创建人。
  */
 import type { PartDetail } from '../../../shared/flow-view'
+import type { Actor } from '../issues/types'
 export type { PartDetail } from '../../../shared/flow-view'
 import type { Prisma, StepMode } from '@prisma/client'
 import { prisma } from '../../utils/prisma'
@@ -63,20 +64,20 @@ export function needsFill(s: { status: string; ownerId: string | null; mode: Ste
 }
 
 /** 工单下的工件及其工序链（带名称、已返回数量），供页面直接展示 */
-export async function listParts(workOrderNumber: string) {
-  return loadParts({ workOrderNumber })
+export async function listParts(workOrderNumber: string, actor: Actor) {
+  return loadParts({ workOrderNumber }, actor)
 }
 
 /** 单个工件（工件抽屉）：同 listParts 的一行；不存在时报错 */
 /** 工件抽屉用的单个工件（接口 GET /api/parts/:id 再带上开工前提） */
 
-export async function getPart(partId: string): Promise<Omit<PartDetail, 'prereq'>> {
-  const [part] = await loadParts({ id: partId })
+export async function getPart(partId: string, actor: Actor): Promise<Omit<PartDetail, 'prereq'>> {
+  const [part] = await loadParts({ id: partId }, actor)
   if (!part) throw new FlowError('工件不存在或已删除')
   return part
 }
 
-async function loadParts(where: Prisma.PartWhereInput) {
+async function loadParts(where: Prisma.PartWhereInput, actor: Actor) {
   const parts = await prisma.part.findMany({
     where,
     orderBy: { createdAt: 'asc' },
@@ -96,9 +97,9 @@ async function loadParts(where: Prisma.PartWhereInput) {
     }),
     prisma.flowEvent.groupBy({ by: ['stepId'], where: { stepId: { in: stepIds } }, _count: { _all: true } }),
     // 有异常的步骤要能跳到对应异常
-    openIssuesOfSteps(steps.filter((s) => s.status === 'BLOCKED').map((s) => s.id)),
+    openIssuesOfSteps(steps.filter((s) => s.status === 'BLOCKED').map((s) => s.id), actor),
     // 卡片顶部的关联记录数（设计、物料、异常、留言）
-    partRelatedCounts(parts.map((p) => p.id)),
+    partRelatedCounts(parts.map((p) => p.id), actor),
   ])
   const returned = new Map(sums.map((s) => [s.stepId, s._sum.qty ?? 0]))
   const eventCount = new Map(counts.map((c) => [c.stepId, c._count._all]))

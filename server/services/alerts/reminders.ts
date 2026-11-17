@@ -13,7 +13,8 @@ import { isPlanNodeAlert, planLink, planNodeAlertLink } from '../plan/constants'
 import { CONVERTIBLE_RULES, durationText, elapsedExcludingOffDays } from './rules'
 import { SCAN_RULES, type Target, collectTargets, loadOffDays, loadThresholds } from './scan'
 import { todayDay } from '../flow/dates'
-import { userDeptNames } from '../auth/departments'
+import { userDeptNames, userDeptIdentities } from '../auth/departments'
+import { resolveRiskScope, canReadRiskTarget, canReadRiskIssue } from '../auth/risk-scope'
 import { workBucket } from '../../../shared/workbench'
 import { stepLinkTab, type StepStatus } from '../../../shared/production'
 import { monitoringDetailLink } from '../../../shared/monitoring'
@@ -26,6 +27,8 @@ interface Link {
 }
 
 interface LinkInfo extends Link {
+  /** Stable object identity lets clients attach alerts without guessing from titles or links. */
+  subject: { type: string; id: string }
   /** 所属工单（工作台卡片用）；对象删了或不属于某个工单为 null */
   workOrderNumber: string | null
   /** 对象的截止日 'YYYY-MM-DD'（工作台按它分组）：设计计划完成日（设计完成等客户确认时为客户确认计划日）、物料需求日、装配节点需求日、
@@ -137,7 +140,7 @@ async function linksFor(alertIds: string[]): Promise<Map<string, LinkInfo>> {
     const issue = a.status === 'CONVERTED' ? issueBySource.get(alertSourceKey(a.id)) : undefined
     if (issue) link = issueLink(issue.id)
     const f = facts.get(`${a.refType}:${a.refId}`) ?? { workOrderNumber: a.refType === 'plan' ? a.refId : null, dueDay: null }
-    out.set(a.id, { ...link, ...f, rule: a.rule, cleared: a.status === 'CLEARED', issueNo: issue?.issueNo ?? null })
+    out.set(a.id, { ...link, ...f, subject: { type: a.refType, id: a.refId }, rule: a.rule, cleared: a.status === 'CLEARED', issueNo: issue?.issueNo ?? null })
   }
   return out
 }
@@ -155,9 +158,11 @@ const isLinked = (kind: string | null) => !!kind && LINKED_KINDS.includes(kind)
 /** 预警/待办类提醒、跳转地址存在提醒上的通知 + 已读的同步失败提醒（未读的置顶，不在分组里重复出现） */
 const LISTED = { OR: [{ kind: null }, { kind: { in: LINKED_KINDS } }, { kind: 'SYNC_FAIL', readAt: { not: null } }] }
 
+/** Hidden daily summaries must not leave an unread badge with no visible notification. Null kinds are ordinary alerts. */
+const WORKBENCH_UNREAD = { readAt: null, OR: [{ kind: null }, { kind: { not: 'DIGEST' } }] }
+
 /**
- * 我的提醒。每日汇总（kind = DIGEST）单独返回最新一条作为置顶（digest），不混在分组列表里；
- * 生成新汇总时旧汇总已自动标为已读，所以未读数里最多只有当天这一条。
+ * The digest field is retained for response compatibility; workbenches neither display nor count it.
  * QMS 同步连续失败（kind = SYNC_FAIL，只发给管理员）未读时置顶（pinned），读过后回到红色分组里。
  */
 export async function listReminders(userId: string, now = new Date()) {
@@ -168,7 +173,7 @@ export async function listReminders(userId: string, now = new Date()) {
       take: 100,
       select: SELECT,
     }),
-    prisma.reminder.count({ where: { userId, readAt: null } }),
+    prisma.reminder.count({ where: { userId, ...WORKBENCH_UNREAD } }),
     // dedupeKey 里带日期（DIGEST:<YYYY-MM-DD>:<用户>），同一人按它倒序就是最新一天
     prisma.reminder.findFirst({ where: { userId, kind: 'DIGEST' }, orderBy: { dedupeKey: 'desc' }, select: SELECT }),
     prisma.reminder.findMany({ where: { userId, kind: 'SYNC_FAIL', readAt: null }, orderBy: { createdAt: 'desc' }, take: 5, select: SELECT }),
@@ -181,12 +186,13 @@ export async function listReminders(userId: string, now = new Date()) {
     digest: digest ? { ...digest, lines: (digest.body ?? '').split('\n').filter(Boolean) } : null,
     pinned: pinned.map((p) => ({ ...p, lines: (p.body ?? '').split('\n').filter(Boolean), link: SYNC_FAIL_LINK })),
     items: items.map((i) => {
-      const none = { workOrderNumber: null, dueDay: null }
+      const none = { workOrderNumber: null, dueDay: null, subject: null }
       if (i.kind === 'SYNC_FAIL') return card({ ...i, ...none, rule: null, cleared: false, issueNo: null, link: SYNC_FAIL_LINK, mobileLink: null })
       if (isLinked(i.kind)) return card({ ...i, ...none, workOrderNumber: woOfLink(i.link), rule: null, cleared: false, issueNo: null, link: i.link, mobileLink: mobileOf(i.link) })
       const l = i.alertId ? links.get(i.alertId) : undefined
       return card({
         ...i,
+        subject: l?.subject ?? null,
         workOrderNumber: l?.workOrderNumber ?? null,
         dueDay: l?.dueDay ?? null,
         rule: l?.rule ?? null,
@@ -207,9 +213,9 @@ function woOfLink(link: string | null): string | null {
   return new URLSearchParams(link.slice(q + 1)).get('wo')
 }
 
-/** 未读提醒数（菜单"工作台"角标，前端改版第二轮）：与 listReminders 的 unread 同一口径（本人的、未读的，含每日汇总） */
+/** Keep navigation badges consistent with the workbench, excluding hidden daily summaries. */
 export async function unreadCount(userId: string) {
-  return { unread: await prisma.reminder.count({ where: { userId, readAt: null } }) }
+  return { unread: await prisma.reminder.count({ where: { userId, ...WORKBENCH_UNREAD } }) }
 }
 
 export async function markRead(userId: string, id: string) {
@@ -254,10 +260,8 @@ export interface AlertFilter {
   rule?: AlertRule
   level?: AlertLevel
   workOrderNumber?: string
-  /** 可见工单（undefined = 全部） */
-  visibleWorkOrders?: string[]
-  /** 当前用户，用于判断能否"转异常" */
-  viewer?: Viewer
+  /** Required for visibility as well as actions; omission must never imply global access. */
+  viewer: Viewer
 }
 
 /** 黄色预警手动转异常的权限：预警责任人、该工单项目经理、管理员 */
@@ -302,19 +306,22 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
   const [thresholds, offDays] = await Promise.all([loadThresholds(), loadOffDays()])
   const targets = new Map((await collectTargets(at, thresholds, offDays, filter.rule)).map((t) => [t.key, t]))
   const wos = [...new Set([...targets.values()].map((t) => t.workOrderNumber).filter((x): x is string => !!x))]
-  const [names, exts, issues, deptOf] = await Promise.all([
+  const issueIds = [...targets.values()].flatMap(t => t.refType === 'issue' ? [t.refId] : [])
+  const [names, exts, issues, deptOf, ownerDepartments, riskScope] = await Promise.all([
     loadNames({ user: [...targets.values()].flatMap((t) => t.ownerIds) }),
     wos.length ? prisma.workOrderExt.findMany({ where: { workOrderNumber: { in: wos } }, select: { workOrderNumber: true, projectManagerId: true } }) : [],
     prisma.issue.findMany({
-      where: { sourceKey: { in: alerts.filter((a) => a.status === 'CONVERTED').map((a) => alertSourceKey(a.id)) } },
-      select: { id: true, issueNo: true, sourceKey: true },
+      where: { OR: [{ sourceKey: { in: alerts.filter((a) => a.status === 'CONVERTED').map((a) => alertSourceKey(a.id)) } }, { id: { in: issueIds } }] },
+      select: { id: true, issueNo: true, sourceKey: true, responsibleUserId: true, responsibleDeptId: true, reporterId: true, workOrderNumber: true },
     }),
     // 责任部门（风险页按部门汇总）：与升级阶梯同一口径，见 scan.ts recipientsFor
     userDeptNames([...targets.values()].flatMap((t) => t.ownerIds)),
+    userDeptIdentities([...targets.values()].flatMap((t) => t.ownerIds)),
+    resolveRiskScope(filter.viewer),
   ])
   const pmOf = new Map(exts.map((e) => [e.workOrderNumber, e.projectManagerId]))
   const issueBySource = new Map(issues.flatMap((i) => (i.sourceKey ? [[i.sourceKey, i] as const] : [])))
-  const visible = filter.visibleWorkOrders ? new Set(filter.visibleWorkOrders) : null
+  const readableIssueIds = new Set(issues.filter(i => canReadRiskIssue(riskScope, i)).map(i => i.id))
   const rank = { RED: 0, YELLOW: 1, REMIND: 2 } as const
   return alerts
     .map((a) => {
@@ -322,7 +329,7 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
       // 对象状态刚变、下一轮扫描才消除的，不再列出
       if (!t) return null
       if (filter.workOrderNumber && t.workOrderNumber !== filter.workOrderNumber) return null
-      if (visible && (!t.workOrderNumber || !visible.has(t.workOrderNumber))) return null
+      if (t.refType === 'issue' ? !readableIssueIds.has(t.refId) : !canReadRiskTarget(riskScope, t, ownerDepartments)) return null
       const issue = a.status === 'CONVERTED' ? issueBySource.get(alertSourceKey(a.id)) : undefined
       return {
         id: a.id,
@@ -344,7 +351,8 @@ export async function listAlerts(filter: AlertFilter, now = new Date()) {
         deptNames: t.deptNames?.length ? t.deptNames : [...new Set(t.ownerIds.map((id) => deptOf.get(id)).filter((x): x is string => !!x))],
         firstAt: a.firstAt,
         levelAt: a.levelAt,
-        issue: issue ? { id: issue.id, issueNo: issue.issueNo } : null,
+        issue: issue && readableIssueIds.has(issue.id) ? { id: issue.id, issueNo: issue.issueNo } : null,
+        canHandle: filter.viewer.isAdmin || t.ownerIds.includes(filter.viewer.userId),
         canConvert: a.status === 'ACTIVE' && canConvert(a.level, t, t.workOrderNumber ? pmOf.get(t.workOrderNumber) : null, filter.viewer),
         link: targetLink(t, a.level),
       }

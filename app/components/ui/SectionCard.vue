@@ -12,14 +12,15 @@ withDefaults(
     sub?: string
     padding?: 'normal' | 'tight' | 'none'
     flat?: boolean
+    tray?: boolean
     icon?: 'inbox' | 'shield' | 'bars' | 'chart' | 'list'
   }>(),
-  { title: undefined, sub: undefined, padding: 'normal', flat: false, icon: undefined },
+  { title: undefined, sub: undefined, padding: 'normal', flat: false, tray: false, icon: undefined },
 )
 </script>
 
 <template>
-  <section class="ft-section" :class="[{ flat, headless: !(title || $slots.title || $slots.extra) }]">
+  <section class="ft-section" :class="[{ flat, tray: tray && !flat, headless: !(title || $slots.title || $slots.extra) }]">
     <header v-if="title || $slots.title || $slots.extra" class="head">
       <div class="titles">
         <div v-if="title || $slots.title" class="title-line">
@@ -105,6 +106,27 @@ withDefaults(
 .ft-section.flat > .head { padding: 4px 2px 12px; }
 .ft-section.flat > .head .title { font-size: 16px; }
 .ft-section.flat > .ft-section-panel { padding: 0; }
+
+/* 浅灰托盘 + 纯白内嵌卡模式：外层浅灰大圆角托盘包裹标题与操作区，内部嵌入纯白 10px 圆角卡片 */
+.ft-section.tray {
+  background: var(--card-tray-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius-outer);
+  box-shadow: none;
+  padding: 8px 6px 6px;
+}
+.ft-section.tray > .head { padding: 2px 6px 8px; }
+.ft-section.tray > .head .title { font-size: 14.5px; }
+.ft-section.tray > .ft-section-panel {
+  background: var(--card-surface-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius-inner);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+}
+.ft-section.tray > .ft-section-panel.pad-normal { padding: 16px 20px; }
+.ft-section.tray > .ft-section-panel.pad-tight { padding: 12px 16px; }
+.ft-section.tray > .ft-section-panel.pad-none { padding: 0; border-radius: var(--card-radius-inner); }
 
 @media (max-width: 575px) {
   .head { padding: 14px 16px 8px; }

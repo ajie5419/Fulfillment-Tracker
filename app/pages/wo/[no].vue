@@ -327,7 +327,7 @@ function confirmCancel() {
 
         <div class="body">
           <!-- 时间线 -->
-          <UiSectionCard title="总计划时间线" class="timeline-card">
+          <UiSectionCard tray title="总计划时间线" class="timeline-card">
             <template v-if="d.nodes.length" #extra>
               <div class="legend">
                 <span><i class="lg plan" />计划</span>

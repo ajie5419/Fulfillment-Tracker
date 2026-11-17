@@ -7,6 +7,7 @@ type Endpoint<H extends EventHandler, B = never, Q = never> = { response: ApiPay
 
 /** 仅类型：响应取自端点，输入取自端点原有 schema；不引入服务端运行时代码。 */
 export interface ClientApi {
+  '/api/reminders': { GET: Endpoint<typeof import('../../server/api/reminders/index.get').default, never, never> }
   '/api/alerts/:id/convert': { POST: Endpoint<typeof import('../../server/api/alerts/[id]/convert.post').default, never, never> }
   '/api/alerts': { GET: Endpoint<typeof import('../../server/api/alerts/index.get').default, never, import('../../server/api/alerts/index.get').RequestQuery> }
   '/api/bom/excel': { POST: Endpoint<typeof import('../../server/api/bom/excel.post').default, FormData, never> }

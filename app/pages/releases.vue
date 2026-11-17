@@ -102,7 +102,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
   <a-alert v-else-if="statsError" type="error" message="发放统计加载失败" :description="apiError(statsError)"><template #action><a-button @click="refreshStats()">重试</a-button></template></a-alert>
   <a-alert v-if="ordersError" type="error" message="工单选项加载失败" :description="apiError(ordersError)"><template #action><a-button @click="refreshOrders()">重试</a-button></template></a-alert>
   <a-alert v-if="meError" type="error" message="用户权限加载失败" :description="apiError(meError)"><template #action><a-button @click="refreshMe()">重试</a-button></template></a-alert>
-  <a-card>
+  <UiSectionCard tray>
     <div class="ft-toolbar">
       <a-segmented v-model:value="filter.mine" :options="[{ value: '', label: '全部' }, { value: 'received', label: '发给我的' }, { value: 'issued', label: '我发出的' }]" />
       <div class="ft-toolbar-right">
@@ -164,7 +164,7 @@ const groupColumns = columns.filter((c) => c.key !== 'wo')
     </a-table>
     </div>
     </template>
-  </a-card>
+  </UiSectionCard>
   </div>
 
   <ReleaseCreateModal :open="creating" :work-order-number="filter.workOrderNumber" @close="creating = false" @done="created" />

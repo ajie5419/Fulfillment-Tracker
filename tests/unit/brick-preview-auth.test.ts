@@ -4,7 +4,7 @@ const resolveSession = vi.hoisted(() => vi.fn(async () => null))
 vi.mock('../../server/services/auth/session', () => ({ SESSION_COOKIE: 'ft_session', resolveSession }))
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks() })
 
-it('allows only the anonymous preview route while protecting similarly named pages and APIs', async () => {
+it('protects retired preview routes, similarly named pages and APIs', async () => {
   vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
   vi.stubGlobal('getCookie', () => undefined)
   vi.stubGlobal('prisma', {})
@@ -12,12 +12,10 @@ it('allows only the anonymous preview route while protecting similarly named pag
   const redirect = vi.fn()
   vi.stubGlobal('sendRedirect', redirect)
   const { default: handler } = await import('../../server/middleware/auth')
-  for (const path of ['/brick-demo', '/brick-demo/', '/brick-demo?preview=1']) {
+  for (const path of ['/brick-demo', '/brick-demo/', '/brick-demo?preview=1', '/brick-demo-private']) {
     await handler({ path } as never)
+    expect(redirect).toHaveBeenLastCalledWith(expect.anything(), `/auth/login?redirect=${encodeURIComponent(path)}`, 302)
   }
-  expect(resolveSession).not.toHaveBeenCalled()
-  expect(redirect).not.toHaveBeenCalled()
-  await handler({ path: '/brick-demo-private' } as never)
-  expect(redirect).toHaveBeenCalledWith(expect.anything(), '/auth/login?redirect=%2Fbrick-demo-private', 302)
+  expect(resolveSession).toHaveBeenCalledTimes(4)
   await expect(handler({ path: '/api/reminders/new' } as never)).rejects.toMatchObject({ statusCode: 401 })
 })

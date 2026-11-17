@@ -72,7 +72,7 @@ defineExpose({ refresh })
           </template>
         </UiStatCard>
       </div>
-      <UiSectionCard title="今天盯什么 · 红色清单" class="cockpit-list" padding="tight">
+      <UiSectionCard tray title="今天盯什么 · 红色清单" class="cockpit-list" padding="tight">
         <template #title>
           今天盯什么 · 红色清单
           <UiHelpTip>一单一行；主问题优先级红色工单 → 超期异常 → 停滞红线；同一工单的其他问题以胶囊列在同行、可点进各自详情；最多 10 单。停滞按 W11 上海自然日计算，包含停工日。</UiHelpTip>
@@ -129,7 +129,7 @@ defineExpose({ refresh })
         <NuxtLink v-else-if="topStage && topStage.count > 0" :to="stageRiskLinks[topStage.key] ?? '/risks'">{{ topStage.label }} {{ topStage.count }}</NuxtLink>
         <span v-else>暂无卡点</span>
       </p>
-      <UiSectionCard v-if="overview.data.value && !overview.error.value" title="卡点分布" padding="tight">
+      <UiSectionCard v-if="overview.data.value && !overview.error.value" tray title="卡点分布" padding="tight">
         <div class="ft-well compact-stage"><UiColumnChart :items="stageBars" highlight="late" :height="140" /></div>
       </UiSectionCard>
     </div>

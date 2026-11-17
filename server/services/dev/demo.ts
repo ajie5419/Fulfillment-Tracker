@@ -412,6 +412,7 @@ export async function seedDemo(opts: { skipUsers?: boolean } = {}) {
   })
   const releases = await seedDemoReleases()
   const planNodes = await seedDemoPlan(day, now)
+  await ensureDemoIssues()
   return {
     releases,
     planNodes,
@@ -473,6 +474,58 @@ async function seedDemoReleases() {
     ).catch(() => null)
   }
   return prisma.release.count({ where: { workOrderNumber: { startsWith: P } } })
+}
+
+/** 演示库还没有任何异常单时，补 3 条不同闭环状态的演示异常（待受理 / 处理中 / 待确认关闭）。 */
+export async function ensureDemoIssues() {
+  if (await prisma.issue.count()) return 0
+  // Synced work orders can coexist with demo data; reset only owns DEMO-prefixed records.
+  const wo = await prisma.qmsWorkOrder.findFirst({ where: { isDeleted: false, workOrderNumber: { startsWith: P } }, orderBy: { workOrderNumber: 'asc' }, select: { workOrderNumber: true } })
+  if (!wo) return 0
+  const day = dayFn(new Date())
+  const samples = [
+    {
+      id: `${P}ISS-1`,
+      issueNo: `${P}ISS-001`,
+      workOrderNumber: wo.workOrderNumber,
+      category: 'DESIGN' as const,
+      source: 'ALERT' as const,
+      status: 'OPEN' as const,
+      description: '主减速机输入轴图纸未按期完成设计并下发，影响采购启动',
+      reporterId: 'u-003',
+      responsibleDeptId: `${P}DEPT-TECH`,
+      responsibleUserId: 'u-008',
+      dueDate: day(-2),
+    },
+    {
+      id: `${P}ISS-2`,
+      issueNo: `${P}ISS-002`,
+      workOrderNumber: wo.workOrderNumber,
+      category: 'WORKSHOP' as const,
+      source: 'QMS_NONCONFORMING' as const,
+      status: 'ACCEPTED' as const,
+      description: '端面垂直度超差 0.4mm，需工艺评估返修方案并通知质检复检',
+      reporterId: 'u-006',
+      responsibleDeptId: `${P}DEPT-PROD`,
+      responsibleUserId: 'u-002',
+      dueDate: day(-1),
+    },
+    {
+      id: `${P}ISS-3`,
+      issueNo: `${P}ISS-003`,
+      workOrderNumber: wo.workOrderNumber,
+      category: 'OUTSOURCE_QUALITY' as const,
+      source: 'MANUAL' as const,
+      status: 'RESOLVED' as const,
+      description: '电机安装孔距与底座偏差，已按工艺补焊重钻，待质量现场验证关闭',
+      reporterId: 'u-006',
+      responsibleDeptId: `${P}DEPT-QA`,
+      responsibleUserId: 'u-006',
+      dueDate: day(2),
+    },
+  ]
+  await prisma.issue.createMany({ data: samples, skipDuplicates: true })
+  return samples.length
 }
 
 /**

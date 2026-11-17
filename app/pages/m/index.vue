@@ -15,11 +15,6 @@ async function openReminder(item: ReminderItem) {
   if (item.mobileLink) return navigateTo(item.mobileLink)
   if (item.rule === 'W1' && !item.cleared) showToast('待确认匹配请在电脑端处理')
 }
-const digestOpen = ref(false)
-async function openDigest() {
-  digestOpen.value = !digestOpen.value
-  if (data.value?.digest) await readDigest(data.value.digest)
-}
 async function readAll() {
   try {
     await readAllReminders()
@@ -191,14 +186,6 @@ function scrollToReminders() {
       <div class="digest-title"><van-tag type="danger">同步故障</van-tag> {{ p.title }}</div>
       <ol class="digest-lines">
         <li v-for="(l, i) in p.lines" :key="i">{{ l }}</li>
-      </ol>
-    </div>
-
-    <!-- 每日汇总置顶（方案 6.3） -->
-    <div v-if="data?.digest" class="digest" :class="[`lv-${data.digest.level}`, { unread: !data.digest.readAt }]" @click="openDigest">
-      <div class="digest-title"><van-tag type="primary">每日汇总</van-tag> {{ data.digest.title }}</div>
-      <ol v-if="digestOpen || !data.digest.readAt" class="digest-lines">
-        <li v-for="(l, i) in data.digest.lines" :key="i">{{ l }}</li>
       </ol>
     </div>
 

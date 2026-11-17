@@ -99,7 +99,7 @@ describe.skipIf(!DB)('R8 BOM 导入与路线模板', () => {
   it('导入：每行一个工件 + 按顺序的工序（自制、无负责人 → 待补充）；跳过的工序给出提示', async () => {
     const r = await s.bom.importBom(WO1, await load(WO1), ['bom-001', 'bom-002'])
     expect(r).toEqual({ created: 2, linked: 0, steps: 4, skipped: 0, missing: 0, warnings: ['支腿：工序"探伤"在 QMS 没有关联工序，已跳过'] })
-    const parts = await s.steps.listParts(WO1)
+    const parts = await s.steps.listParts(WO1, { userId: 'test-reader', isAdmin: true })
     expect(parts.map((p) => ({ name: p.name, drawingNo: p.drawingNo, quantity: p.quantity, qmsPartId: p.qmsPartId, qmsBomId: p.qmsBomId }))).toEqual([
       { name: '主梁结构件', drawingNo: 'ZL-001', quantity: 2, qmsPartId: 'qms-part-001', qmsBomId: 'bom-001' },
       { name: '支腿', drawingNo: 'ZT-002', quantity: 4, qmsPartId: 'qms-part-002', qmsBomId: 'bom-002' },
@@ -111,9 +111,9 @@ describe.skipIf(!DB)('R8 BOM 导入与路线模板', () => {
     // 补上负责人后不再待补充；改成外协但没选外协厂又算待补充
     const step = parts[1]!.steps[0]!
     await s.steps.updateStep(step.id, { ownerId: ACTOR })
-    expect((await s.steps.listParts(WO1))[1]!.steps[0]!.needsFill).toBe(false)
+    expect((await s.steps.listParts(WO1, { userId: 'test-reader', isAdmin: true }))[1]!.steps[0]!.needsFill).toBe(false)
     await s.steps.updateStep(step.id, { mode: 'EXTERNAL_OUTSOURCE' })
-    expect((await s.steps.listParts(WO1))[1]!.steps[0]!.needsFill).toBe(true)
+    expect((await s.steps.listParts(WO1, { userId: 'test-reader', isAdmin: true }))[1]!.steps[0]!.needsFill).toBe(true)
   })
 
   it('重复导入：已导入的跳过，绝不改已有工件；QMS 新增的行照常导入，已删的行单列', async () => {

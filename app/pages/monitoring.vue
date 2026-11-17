@@ -33,7 +33,7 @@ function changePage(value: number, size: number) {
   <a-result v-if="me && !me.can.overview" status="403" title="仅领导、项目部负责人和管理员可查看" />
   <div v-else>
   <MonitoringOverview v-if="me?.can.overview" :red-only="redOnly" />
-  <UiSectionCard title="状态监控清单" :sub="`在制对象 ${error ? '—' : data?.total ?? '—'} 项 · 按已停天数倒序`">
+  <UiSectionCard tray title="状态监控清单" :sub="`在制对象 ${error ? '—' : data?.total ?? '—'} 项 · 按已停天数倒序`">
     <template #extra><NuxtLink to="/board">返回项目总览</NuxtLink><UiRefreshButton :loading="pending" @click="refresh()" /></template>
     <div class="ft-toolbar">
       <a-segmented :value="entityType ?? 'all'" :options="entityOptions" @change="changeEntity($event === 'all' ? undefined : $event as MonitoringEntityType)" />

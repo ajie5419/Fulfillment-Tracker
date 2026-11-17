@@ -150,7 +150,7 @@ const receiptColumns = [
           :message="`你已${RECEIPT_STATUS_TEXT[detail.myReceipt.status].replace('已', '')}（${timeText(detail.myReceipt.actedAt)}）${detail.myReceipt.reason ? `：${detail.myReceipt.reason}` : ''}`"
         />
 
-        <a-descriptions :column="2" bordered size="small" class="block">
+        <a-descriptions :column="2" size="small" class="block meta-card">
           <a-descriptions-item label="类型"><a-tag :color="RELEASE_TYPE_COLOR[detail.type]">{{ detail.typeText }}</a-tag></a-descriptions-item>
           <a-descriptions-item label="版本号">{{ detail.version ?? '—' }}</a-descriptions-item>
           <a-descriptions-item label="工单" :span="2"><WoLink :no="detail.workOrderNumber" /><span class="muted">　{{ detail.projectName ?? detail.customerName }}</span></a-descriptions-item>
@@ -251,6 +251,7 @@ const receiptColumns = [
 
 <style scoped>
 .block { margin-bottom: 16px; }
+.meta-card { background: var(--ft-tray-bg); border: 1px solid var(--ft-border); border-radius: var(--card-radius-inner); padding: 12px 16px; }
 .muted { color: var(--ft-text-2); font-size: 12px; }
 .pre { white-space: pre-wrap; }
 .thumb { width: 96px; height: 96px; object-fit: cover; border-radius: 4px; border: 1px solid var(--ft-border); }

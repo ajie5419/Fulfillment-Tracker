@@ -318,7 +318,7 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     expect(issue.description).toContain('不合格 1 件')
     expect((await db.routeStep.findUniqueOrThrow({ where: { id: p.weld.id } })).status).toBe('BLOCKED')
     // 工件页能看到"有异常"并跳到该异常
-    const parts = await s.steps.listParts(WO)
+    const parts = await s.steps.listParts(WO, { userId: 'test-reader', isAdmin: true })
     expect(parts.find((x) => x.id === p.part.id)!.steps[0]!.issues).toEqual([{ id: issue.id, issueNo: issue.issueNo }])
 
     // 上一道有异常：涂装的"安排发出"待办不计 W2
@@ -494,7 +494,7 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
     expect(await db.reminder.count({ where: { alertId: alert.id } })).toBe(reminders)
     expect(await db.issue.count({ where: { source: 'ALERT', refId: p.paint.id } })).toBe(1)
     // 预警列表：显示已转异常
-    const list = await s.reminders.listAlerts({ workOrderNumber: WO })
+    const list = await s.reminders.listAlerts({ workOrderNumber: WO, viewer: admin })
     expect(list.find((a) => a.id === alert.id)).toMatchObject({ status: 'CONVERTED', issue: { id: issue.id, issueNo: issue.issueNo }, canConvert: false })
 
     // 自制步骤停滞 → 分类"车间"
@@ -521,7 +521,7 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
 
     const rows = await s.reminders.listAlerts({ workOrderNumber: WO, viewer: as('u-out') })
     expect(rows.find((a) => a.id === alert.id)!.canConvert).toBe(true)
-    expect((await s.reminders.listAlerts({ workOrderNumber: WO, viewer: as('u-worker') })).find((a) => a.id === alert.id)!.canConvert).toBe(false)
+    expect((await s.reminders.listAlerts({ workOrderNumber: WO, viewer: as('u-worker') })).some((a) => a.id === alert.id)).toBe(false)
     await expect(s.reminders.convertAlert(alert.id, as('u-worker'))).rejects.toBeInstanceOf(FlowForbidden)
     await expect(s.reminders.convertAlert(alert.id, as('u-pm2'))).rejects.toBeInstanceOf(FlowForbidden)
     // 别的工单的项目经理看不到
@@ -630,6 +630,7 @@ describe.skipIf(!DB)('异常闭环与看板', () => {
         category: 'OTHER' as const,
         description: 'List completeness regression',
         source: 'MANUAL' as const,
+        reporterId: 'u-worker',
         status: 'ACCEPTED' as const,
         responsibleUserId: i === 500 ? 'u-worker' : 'u-out',
         dueDate: i === 500 ? new Date('2026-10-25') : null,

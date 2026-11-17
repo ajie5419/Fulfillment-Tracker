@@ -145,6 +145,22 @@ describe.skipIf(!DB)('身份桥登录走通', () => {
     expect(await readApiBody(reminders)).toEqual({ items: [], unread: 0, digest: null, pinned: [] })
   })
 
+  it.each(['/plan', '/m'])('serves authenticated frontend HTML and its JavaScript bundle at %s', async (path) => {
+    const session = cookiesFrom((await login(path)).res)
+    const page = await get(path, session)
+    expect(page.status).toBe(200)
+    expect(page.headers.get('content-type')).toContain('text/html')
+    const html = await page.text()
+    expect(html).toContain('id="__nuxt"')
+    const asset = /<script\b[^>]*src="(\/_nuxt\/[^"?]+\.js)"/.exec(html)?.[1]
+    expect(asset).toBeTruthy()
+    const bundle = await get(asset!, session)
+    expect(bundle.status).toBe(200)
+    expect(bundle.headers.get('content-type')).toMatch(/javascript/)
+    expect((await bundle.text()).length).toBeGreaterThan(0)
+    expect((await get('/api/me', session)).status).toBe(200)
+  })
+
   it('同一个回调重放会被拒绝（授权码和登录状态一次性）', async () => {
     const { res, oauth, callback } = await login('/')
     expect(res.status).toBe(302)

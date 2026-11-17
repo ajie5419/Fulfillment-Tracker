@@ -14,6 +14,7 @@ import { basename, join, resolve, sep } from 'node:path'
 import { prisma } from '../../utils/prisma'
 import { FlowError, FlowHttpError } from '../flow/errors'
 import { isReleaseParty } from '../releases/releases'
+import { resolveRiskScope, canReadRiskIssue } from '../auth/risk-scope'
 import { XLSX_MIME } from '../bom/excel'
 import { MAX_PHOTO_BYTES, MAX_ATTACHMENT_BYTES, MAX_FILES_PER_REQUEST, MAX_BOM_BYTES, formatUploadLimit } from '../../../shared/upload-policy'
 
@@ -110,16 +111,16 @@ async function readStoredFile(dir: string, file: { id: string; storedName: strin
 
 /**
  * 读取前查记录。canSeeWorkOrder 由接口层传入（canSee 的唯一入口在 server/utils/auth.ts）：
- * 已绑定异常的按异常所属工单判断；已绑定发放单的按发放单所属工单判断，发放单的接收人也能读；
+ * Bound issue photos use the same responsibility scope as issue details; release attachments retain collaborative access.
  * 未绑定的只有上传人自己能读。不满足一律当"不存在"，不暴露文件是否存在。
  */
-export async function readUpload(dir: string, id: string, userId: string, canSeeWorkOrder: (wo: string) => boolean) {
+export async function readUpload(dir: string, id: string, userId: string, canSeeWorkOrder: (wo: string) => boolean, isAdmin = false) {
   if (!ID_RE.test(id)) return null
   const file = await prisma.uploadFile.findUnique({ where: { id } })
   if (!file) return null
   if (file.issueId) {
-    const issue = await prisma.issue.findUnique({ where: { id: file.issueId }, select: { workOrderNumber: true } })
-    if (!issue || !canSeeWorkOrder(issue.workOrderNumber)) return null
+    const issue = await prisma.issue.findUnique({ where: { id: file.issueId }, select: { workOrderNumber: true, responsibleUserId: true, responsibleDeptId: true, reporterId: true } })
+    if (!issue || !canReadRiskIssue(await resolveRiskScope({ userId, isAdmin }), issue)) return null
   } else if (file.releaseId) {
     const release = await prisma.release.findUnique({ where: { id: file.releaseId }, select: { workOrderNumber: true } })
     if (!release || !(canSeeWorkOrder(release.workOrderNumber) || (await isReleaseParty(file.releaseId, userId)))) return null

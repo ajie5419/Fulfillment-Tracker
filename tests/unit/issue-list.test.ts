@@ -32,7 +32,7 @@ function issue(index: number, fields: Partial<Issue> = {}): Issue {
   return {
     id: `issue-${String(index).padStart(5, '0')}`, issueNo: `YC-${index}`, workOrderNumber: 'WO',
     title: null, refType: null, refId: null, category: 'OTHER', description: `Issue ${index}`, photos: [],
-    reporterId: 'other', source: 'MANUAL', responsibleDeptId: null, responsibleUserId: 'other',
+    reporterId: actor.userId, source: 'MANUAL', responsibleDeptId: null, responsibleUserId: 'other',
     responsibleSupplierId: null, dueDate: null, status: 'OPEN', escalationLevel: 0, sourceKey: null,
     createdAt: new Date(+now - index * 1000), updatedAt: now, ...fields,
   }
@@ -73,7 +73,9 @@ beforeEach(() => {
     return 0
   }).slice(0, take))
   db.notifyRole.findMany.mockImplementation(async () => roles)
-  db.workOrderExt.findMany.mockImplementation(async ({ where }) => where.workOrderNumber.in.map((workOrderNumber: string) => ({ workOrderNumber, projectManagerId: managers[workOrderNumber] ?? null })))
+  db.workOrderExt.findMany.mockImplementation(async ({ where }) => where.projectManagerId
+    ? Object.entries(managers).filter(([, id]) => id === where.projectManagerId).map(([workOrderNumber, projectManagerId]) => ({ workOrderNumber, projectManagerId }))
+    : where.workOrderNumber.in.map((workOrderNumber: string) => ({ workOrderNumber, projectManagerId: managers[workOrderNumber] ?? null })))
   db.qmsDepartment.findMany.mockResolvedValue([
     { id: 'department', name: '技术科', parentId: null, isDeleted: false },
     { id: 'team', name: '设计班组', parentId: 'department', isDeleted: false },
@@ -184,7 +186,8 @@ describe('issue list completeness', () => {
     expect(rows).toHaveLength(996)
     expect(rows.every((r) => r.workOrderNumber === 'WO' && r.responsibleDeptId === 'team' && r.category === 'DESIGN' && r.responsibleUserId === actor.userId && r.status === 'OPEN')).toBe(true)
     for (const [query] of db.issue.findMany.mock.calls) {
-      const base = query.where.AND?.[0] ?? query.where
+      const scoped = query.where.AND?.[0] ?? query.where
+      const base = scoped.AND?.[0] ?? scoped
       expect(base.workOrderNumber).toEqual({ in: ['WO'], equals: 'WO' })
     }
   })

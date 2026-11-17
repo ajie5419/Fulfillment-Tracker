@@ -114,7 +114,7 @@ const backColumns = [
 
 <template>
   <div>
-  <a-card>
+  <UiSectionCard tray>
     <template #title>
       <span class="ft-title">外协 <UiHelpTip>待发出：厂外外协可以开工了，点"发出"登记外协厂、承诺返回日和随件发料。在外：按外协厂分组，超期的在前；返厂以 QMS 报检为准自动记上，QMS 漏报检时点"登记返厂"。待确认匹配：QMS 报检没自动对上工序的，选一个关联或忽略。</UiHelpTip></span>
     </template>
@@ -194,7 +194,7 @@ const backColumns = [
         </template>
       </a-table>
     </a-spin>
-  </a-card>
+  </UiSectionCard>
 
   <StepActionHost ref="host" @done="refreshAll()" />
   <PartDrawer :part-id="drawerPartId" @close="drawerPartId = null" @changed="refreshAll()" />

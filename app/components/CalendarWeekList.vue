@@ -69,7 +69,7 @@ watch(() => [props.focus, props.start], () => nextTick(scrollToFocus))
 </script>
 
 <template>
-  <UiSectionCard padding="none">
+  <UiSectionCard tray padding="none">
     <div ref="root">
       <a-table class="ft-table" :columns="columns" :data-source="rows" row-key="key" :pagination="false" :custom-row="customRow" :scroll="{ x: 640 }" size="middle">
         <template #bodyCell="{ column, record }">

@@ -116,7 +116,7 @@ describe.skipIf(!DB)('状态监控与 W11 扫描（真实 MySQL）', () => {
     await scan.scanRules(now)
     expect(await db.alert.count({ where: { rule: 'W11', refId: step.id } })).toBe(1)
     expect(await db.reminder.count({ where: { alertId: stepAlert.id, userId: 'T-MON-OWNER' } })).toBe(1)
-    const list = await reminders.listAlerts({ rule: 'W11', workOrderNumber: WO }, now)
+    const list = await reminders.listAlerts({ rule: 'W11', workOrderNumber: WO, viewer: { userId: 'test-admin', isAdmin: true } }, now)
     expect(list.find((r) => r.id === stepAlert.id)).toMatchObject({ duration: null, canConvert: false, link: expect.stringContaining(`step=${step.id}`) })
     const mine = await reminders.listReminders('T-MON-OWNER', now)
     expect(mine.items.find((r) => r.alertId === partAlert.id)).toMatchObject({ rule: 'W11', workOrderNumber: WO, link: expect.stringContaining(`part=${part.id}`) })

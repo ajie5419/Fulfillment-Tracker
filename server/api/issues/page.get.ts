@@ -17,7 +17,7 @@ export default defineFlowHandler(async (event, user) => {
   return listIssuesPage({ ...q,
     workOrderNumber: q.workOrderNumber || undefined,
     deptIds: q.dept === '1' ? await myDepartmentIds(user.qmsUserId) : undefined,
-    overdue: q.overdue === '1', visibleWorkOrders: scopeWorkOrders(await getScope(event)),
+    overdue: q.overdue === '1',
   }, actorOf(event, user), new Date(), q)
 })
 export type RequestQuery = z.input<typeof query>

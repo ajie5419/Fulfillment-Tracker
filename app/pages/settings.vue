@@ -141,15 +141,15 @@ const woColumns = [
 
 <template>
   <div>
-  <a-card v-if="me && !me.isAdmin && (me.can?.planTemplate || me.can?.teamLeader)" title="设置">
+  <UiSectionCard tray v-if="me && !me.isAdmin && (me.can?.planTemplate || me.can?.teamLeader)" title="设置">
     <a-tabs v-model:active-key="tab">
       <a-tab-pane v-if="me.can?.planTemplate" key="plan-templates" tab="总计划模板"><PlanTemplatesTab /></a-tab-pane>
       <a-tab-pane v-if="me.can?.teamLeader" key="team-leaders" tab="班组长"><TeamLeadersTab /></a-tab-pane>
     </a-tabs>
-  </a-card>
+  </UiSectionCard>
   <a-result v-else-if="me && !me.isAdmin" status="403" title="仅管理员可用" sub-title="管理员由环境变量 NUXT_ADMIN_USER_IDS 指定" />
   <a-result v-else-if="error" status="error" :title="apiError(error)" />
-  <a-card v-else-if="data" title="设置">
+  <UiSectionCard tray v-else-if="data" title="设置">
     <a-tabs v-model:active-key="tab">
       <a-tab-pane key="thresholds" tab="阈值">
         <p class="muted">全公司一套。通常停工日整天不计入，预警级别只升不降；W8、W11 按工厂时区自然日。W11 回落红线以下或状态计时重置后自动消除。</p>
@@ -331,7 +331,7 @@ const woColumns = [
         </a-table>
       </a-tab-pane>
     </a-tabs>
-  </a-card>
+  </UiSectionCard>
   </div>
 </template>
 

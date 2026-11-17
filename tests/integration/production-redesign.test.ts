@@ -85,7 +85,7 @@ describe.skipIf(!DB)('生产管理重设计（第一批）', () => {
     const paint = await s.steps.addStep(part.id, { processId: 'PRD-PAINT', mode: 'EXTERNAL_OUTSOURCE', supplierId: 'PRD-OUT', ownerId: 'prd-a' }, 'prd-a')
     return { part, cut, paint }
   }
-  const rowOf = async (stepId: string) => (await s.workshop.listProduction({ workOrderNumber: WO })).rows.find((r) => r.stepId === stepId)
+  const rowOf = async (stepId: string) => (await s.workshop.listProduction({ workOrderNumber: WO }, { userId: 'test-reader', isAdmin: true })).rows.find((r) => r.stepId === stepId)
 
   it('可以开工：第一道缺料算卡住并写明原因，料到齐后变可以开工；后面的道等上一道做完（排队中不列出）', async () => {
     const { part, cut, paint } = await makePart('缺料件')
@@ -103,16 +103,16 @@ describe.skipIf(!DB)('生产管理重设计（第一批）', () => {
   it('只看我的、已完工工单不列出、未排工序的工件计数', async () => {
     const { cut } = await makePart('乙的件')
     await s.steps.updateStep(cut.id, { ownerId: 'prd-b' })
-    const mine = await s.workshop.listProduction({ workOrderNumber: WO, mine: { userId: 'prd-b', teamIds: [] } })
+    const mine = await s.workshop.listProduction({ workOrderNumber: WO, mine: { userId: 'prd-b', teamIds: [] } }, { userId: 'test-reader', isAdmin: true })
     expect(mine.rows.map((r) => r.stepId)).toEqual([cut.id])
 
     const closed = await makePart('已完工工单的件', DONE_WO)
-    const all = await s.workshop.listProduction({})
+    const all = await s.workshop.listProduction({}, { userId: 'test-reader', isAdmin: true })
     expect(all.rows.some((r) => r.partId === closed.part.id)).toBe(false)
 
-    const before = (await s.workshop.listProduction({ workOrderNumber: WO })).unroutedParts
+    const before = (await s.workshop.listProduction({ workOrderNumber: WO }, { userId: 'test-reader', isAdmin: true })).unroutedParts
     await s.steps.createPart(WO, { name: '没排工序的件', quantity: 1 })
-    expect((await s.workshop.listProduction({ workOrderNumber: WO })).unroutedParts).toBe(before + 1)
+    expect((await s.workshop.listProduction({ workOrderNumber: WO }, { userId: 'test-reader', isAdmin: true })).unroutedParts).toBe(before + 1)
   })
 
   it('批量编排：班组只设到自制工序、外协厂只设到外协工序；已完成的不改；一道不合规整批不改并写明哪道', async () => {

@@ -25,7 +25,7 @@ async function create() {
 
 <template>
   <div class="purchase-plans-page">
-  <UiSectionCard>
+  <UiSectionCard tray>
     <a-alert v-if="workOrderError" type="error" message="工单选项加载失败"><template #action><a-button size="small" @click="refreshWorkOrders()">重试</a-button></template></a-alert>
     <div class="ft-toolbar">
       <div class="ft-toolbar-left">
