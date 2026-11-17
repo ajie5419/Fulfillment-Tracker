@@ -294,6 +294,7 @@ function clearFilters() {
         </div>
       </template>
       <template #extra>
+        <UiFilterChips v-if="activeChips.length" :items="activeChips" @clear-all="clearFilters" />
         <a-select v-model:value="filter.workOrderNumber" allow-clear show-search placeholder="全部工单" style="width: 148px" :options="woOptions" />
         <a-select v-if="tab === 'issues'" v-model:value="filter.dept" style="width: 142px" :options="[{ value: '0', label: '责任部门：全部' }, { value: '1', label: '责任部门：本部门' }]" />
         <UiFilterButton :count="activeChips.length" @clear="clearFilters">
@@ -316,10 +317,6 @@ function clearFilters() {
         <UiRefreshButton @click="refresh()" />
         <a-button type="primary" class="ft-btn-ink" @click="reporting = true">上报异常</a-button>
       </template>
-
-      <div v-if="activeChips.length" class="chips-bar">
-        <UiFilterChips :items="activeChips" @clear-all="clearFilters" />
-      </div>
 
       <a-spin :spinning="summaryPending">
         <a-result v-if="summaryError && !summaryPending" status="error" :title="tab === 'alerts' ? '预警数据加载失败' : '异常数据加载失败'">
@@ -458,7 +455,6 @@ function clearFilters() {
 .scope-pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500; background: var(--ft-fill); border: 1px solid var(--ft-border); color: var(--ft-text-2); }
 .muted { color: var(--ft-text-3); font-size: 12px; }
 .tabs { font-weight: normal; }
-.chips-bar { padding: 0 20px 10px; }
 .empty-box { padding: 36px 20px; }
 .mono { font-variant-numeric: tabular-nums; }
 .sub-line { margin-top: 2px; font-size: 12px; color: var(--ft-text-3); }
