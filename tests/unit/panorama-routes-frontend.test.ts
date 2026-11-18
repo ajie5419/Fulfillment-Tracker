@@ -56,18 +56,8 @@ describe('全景旧路由及手机总览导航', () => {
     const component = loadComponent('app/pages/board.vue', { '#shared/status': await import('../../shared/status'), '#shared/board-cockpit': await import('../../shared/board-cockpit') })
     const wrapper = render(component, { ASegmented: segmented, BoardSyncNotice: container, BoardOrderDirectory: Vue.defineComponent({ setup: () => () => Vue.h('p', '工单目录') }), BoardCockpit: Vue.defineComponent({ setup: () => () => Vue.h('p', '管理区域') }), UiRefreshButton: container, AButton: container, AResult: container, AEmpty: container, ASwitch: container, ASelect: container, UiStatCard: container, UiColumnChart: container, UiSectionCard: container, WorkOrderCreate: container, UiHelpTip: container })
     await flushPromises()
-    expect(wrapper.text()).not.toMatch(/全盘统计|风险工单/)
+    expect(wrapper.text()).not.toMatch(/全盘统计|风险工单|今天盯什么/)
     expect(wrapper.text()).toContain('工单目录')
-    expect(wrapper.text().includes('今天盯什么')).toBe(canOverview)
-    if (canOverview) {
-      await wrapper.findAll('button').find(button => button.text() === '今天盯什么')!.trigger('click')
-      await flushPromises()
-      expect(wrapper.text()).toContain('管理区域')
-      await wrapper.findAll('button').find(button => button.text() === '工单进展')!.trigger('click')
-      await flushPromises()
-      expect(route.query).toEqual({ view: 'tracking', manager: '' })
-      expect(wrapper.text()).toContain('工单目录')
-    }
   })
 
   it('手机异常下钻、切页签、打开抽屉均保留工单和返回条件，scope 仍交由原接口', async () => {

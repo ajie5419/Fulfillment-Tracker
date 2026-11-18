@@ -1,12 +1,6 @@
 <script setup lang="ts">
-import { BOARD_VIEWS, resolveBoardView, type BoardView } from '#shared/board-cockpit'
-
-const route = useRoute()
-const router = useRouter()
 const { data: me } = await useMe()
-const view = computed(() => resolveBoardView(!!me.value?.can.overview, route.query.view))
-const hasPageHead = computed(() => Boolean(me.value?.can.overview || me.value?.can.workOrder))
-function changeView(value: BoardView) { void router.replace({ query: { ...route.query, view: resolveBoardView(!!me.value?.can.overview, value) }, hash: route.hash }) }
+const hasPageHead = computed(() => Boolean(me.value?.can.workOrder))
 const syncNotice = ref<{ refresh: () => unknown } | null>(null)
 const activePanel = ref<{ refresh: () => unknown } | null>(null)
 async function refreshAll() { await Promise.all([syncNotice.value?.refresh(), activePanel.value?.refresh()]) }
@@ -28,17 +22,13 @@ async function onCreated(no: string) {
 <template>
   <div class="page">
     <div v-if="hasPageHead" class="page-head">
-      <div v-if="me?.can.overview" class="head-left">
-        <a-segmented :value="view" :options="BOARD_VIEWS" aria-label="项目总览视图" @change="changeView($event as BoardView)" />
-      </div>
       <div class="tools">
         <UiRefreshButton @click="refreshAll()" />
         <a-button v-if="me?.can.workOrder" type="primary" @click="createOpen = true">新建工单</a-button>
       </div>
     </div>
     <BoardSyncNotice ref="syncNotice" />
-    <BoardCockpit v-if="view === 'cockpit'" ref="activePanel" />
-    <BoardOrderDirectory v-else ref="activePanel" :show-refresh="!hasPageHead" @refresh="refreshAll()" />
+    <BoardOrderDirectory ref="activePanel" :show-refresh="!hasPageHead" @refresh="refreshAll()" />
     <WorkOrderEditModal v-if="me?.can.workOrder" :open="createOpen" :work-order="null" @close="createOpen = false" @done="onCreated" />
   </div>
 </template>
