@@ -1,39 +1,12 @@
 <script setup lang="ts">
 const { data: me } = await useMe()
-const hasPageHead = computed(() => Boolean(me.value?.can.workOrder))
 const syncNotice = ref<{ refresh: () => unknown } | null>(null)
 const activePanel = ref<{ refresh: () => unknown } | null>(null)
 async function refreshAll() { await Promise.all([syncNotice.value?.refresh(), activePanel.value?.refresh()]) }
-const createOpen = ref(false)
-async function onCreated(no: string) {
-  createOpen.value = false
-  // 工单下拉、看板一起刷新（回到总览时能看到新工单）；全站下拉的缓存也刷新
-  await Promise.all([refreshAll(), refreshNuxtData('work-orders')])
-  await navigateTo(`/wo/${encodeURIComponent(no)}`)
-  Modal.confirm({
-    title: '是否现在套模板生成总计划？',
-    content: `工单 ${no} 已建好。点“生成”去项目计划页，选模板后按模板生成。`,
-    okText: '生成',
-    cancelText: '稍后',
-    onOk: () => navigateTo({ path: '/plan', query: { wo: no } }),
-  })
-}
 </script>
 <template>
   <div class="page">
-    <div v-if="hasPageHead" class="page-head">
-      <div class="tools">
-        <UiRefreshButton @click="refreshAll()" />
-        <a-button v-if="me?.can.workOrder" type="primary" @click="createOpen = true">新建工单</a-button>
-      </div>
-    </div>
     <BoardSyncNotice ref="syncNotice" />
-    <BoardOrderDirectory ref="activePanel" :show-refresh="!hasPageHead" @refresh="refreshAll()" />
-    <WorkOrderEditModal v-if="me?.can.workOrder" :open="createOpen" :work-order="null" @close="createOpen = false" @done="onCreated" />
+    <BoardOrderDirectory ref="activePanel" :show-refresh="!me?.can.workOrder" @refresh="refreshAll()" />
   </div>
 </template>
-<style scoped>
-.page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 16px; }
-.head-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }
-</style>

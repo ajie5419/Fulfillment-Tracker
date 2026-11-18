@@ -79,7 +79,7 @@ defineExpose({ refresh: () => Promise.all([refresh(), tree.value?.refresh()]) })
 </script>
 
 <template>
-  <div class="directory" :class="{ mobile, detail: detailOpen, full: showRefresh && !mobile }">
+  <div class="directory" :class="{ mobile, detail: detailOpen }">
     <aside aria-label="工单目录">
       <div class="filters">
         <div class="line"><strong>在执行工单</strong><small v-if="ready">{{ data?.total }} / {{ data?.available }}</small></div>
@@ -129,8 +129,7 @@ defineExpose({ refresh: () => Promise.all([refresh(), tree.value?.refresh()]) })
 </template>
 
 <style scoped>
-.directory { display:grid; grid-template-columns:clamp(245px,23%,345px) minmax(0,1fr); height:clamp(350px,calc(100dvh - 170px),100dvh); border:1px solid var(--ft-border); border-radius:12px; overflow:hidden; background:var(--ft-fill); }
-.directory.full { height:clamp(350px,calc(100dvh - 118px),100dvh); }
+.directory { display:grid; grid-template-columns:clamp(245px,23%,345px) minmax(0,1fr); height:clamp(350px,calc(100dvh - 118px),100dvh); border:1px solid var(--ft-border); border-radius:12px; overflow:hidden; background:var(--ft-fill); }
 aside { display:flex; flex-direction:column; min-height:0; border-right:1px solid var(--ft-border); background:var(--ft-card-bg); }
 .filters,.pager { padding:12px 14px; }
 .line { display:flex; align-items:center; justify-content:space-between; gap:8px; }
