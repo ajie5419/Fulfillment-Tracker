@@ -56,28 +56,40 @@ const path = computed(() => {
   <p v-else-if="!data">正在读取总计划…</p>
   <template v-else>
     <section class="root">
-      <div class="heading"><h2>{{ data.workOrder.projectName || wo }}</h2>
-        <strong v-if="published && data.dateConflicts.length" class="risk">交期待核实</strong>
-        <strong v-else-if="(data.deliveryDelayDays ?? 0) > 0 && published" class="late">预计晚 {{ data.deliveryDelayDays }} 天</strong>
-        <strong v-else>{{ published && data.expectedDelivery ? '预计按期' : PLAN_STATUS_TEXT[state] }}</strong>
+      <div class="heading">
+        <h2>{{ data.workOrder.projectName || wo }}</h2>
+        <strong v-if="published && data.dateConflicts.length" class="state-pill risk">交期待核实</strong>
+        <strong v-else-if="(data.deliveryDelayDays ?? 0) > 0 && published" class="state-pill late">预计晚 {{ data.deliveryDelayDays }} 天</strong>
+        <strong v-else class="state-pill" :class="published && data.expectedDelivery ? 'done' : 'none'">{{ published && data.expectedDelivery ? '预计按期' : PLAN_STATUS_TEXT[state] }}</strong>
       </div>
-      <div class="meta"><NuxtLink :to="mobile ? {path:'/m/plan',query:{wo}} : '/wo/' + encodeURIComponent(wo)">{{ wo }}</NuxtLink>
+      <div class="meta">
+        <NuxtLink :to="mobile ? {path:'/m/plan',query:{wo}} : '/wo/' + encodeURIComponent(wo)" class="wo-link">{{ wo }}</NuxtLink>
         <span v-if="data.workOrder.customerName">{{ data.workOrder.customerName }}</span>
-        <span v-if="data.workOrder.projectManagerName">项目经理 {{ data.workOrder.projectManagerName }}</span></div>
-      <div class="dates"><span>合同交期 <b>{{ data.workOrder.deliveryDate || '—' }}</b></span>
-        <span>预计交期 <b>{{ published ? (data.dateConflicts.length ? '待核实' : data.expectedDelivery || '—') : '发布后计算' }}</b></span></div>
+        <span v-if="data.workOrder.projectManagerName">· 项目经理 {{ data.workOrder.projectManagerName }}</span>
+      </div>
+      <div class="root-foot">
+        <div class="dates">
+          <span>合同交期 <b>{{ data.workOrder.deliveryDate || '—' }}</b></span>
+          <span>预计交期 <b :class="{ risk: published && data.dateConflicts.length, late: published && (data.deliveryDelayDays ?? 0) > 0 }">{{ published ? (data.dateConflicts.length ? '待核实' : data.expectedDelivery || '—') : '发布后计算' }}</b></span>
+        </div>
+        <details v-if="data.dateConflicts.length" class="review">
+          <summary>查看日期问题（{{ data.dateConflicts.length }}）</summary>
+          <ul><li v-for="c in data.dateConflicts" :key="c.nodeId + c.code + c.message">{{ c.message }}</li></ul>
+        </details>
+      </div>
       <p v-if="sources[0]" class="reason">源头延误 · {{ sources[0].name }}，自身晚 {{ sources[0].selfDelayDays }} 天<span v-if="sources.length > 1">（共 {{ sources.length }} 个源头）</span></p>
-      <details v-if="data.dateConflicts.length" class="review"><summary>查看日期问题（{{ data.dateConflicts.length }}）</summary>
-        <ul><li v-for="c in data.dateConflicts" :key="c.nodeId + c.code + c.message">{{ c.message }}</li></ul>
-      </details>
     </section>
     <div v-if="groups.phases.size" class="tree" :class="{ vertical: mobile }" :style="{ '--phases': phaseColumns.length }">
       <section v-for="(column, i) in phaseColumns" :key="i" class="branch">
-        <div class="stack"><details v-for="[phase, roots] in column" :key="phase" class="phase" :open="path.phase === phase"><summary>{{ phase || '计划节点' }} <small>{{ roots.length }} 项</small></summary>
-          <div class="children">
-            <BoardPlanBranch v-for="node in roots" :key="node.id" :node="node" :children="groups.children" :expanded="path.ids" :published="published" />
-          </div>
-        </details></div>
+        <div class="col-stem" aria-hidden="true" />
+        <div class="stack">
+          <details v-for="[phase, roots] in column" :key="phase" class="phase" :open="path.phase === phase">
+            <summary><span>{{ phase || '计划节点' }}</span><small>{{ roots.length }} 项</small></summary>
+            <div class="children">
+              <BoardPlanBranch v-for="node in roots" :key="node.id" :node="node" :children="groups.children" :expanded="path.ids" :published="published" />
+            </div>
+          </details>
+        </div>
       </section>
     </div>
     <p v-else class="empty">该工单尚未编制总计划。</p>
@@ -85,26 +97,48 @@ const path = computed(() => {
 </template>
 
 <style scoped>
-.root { max-width:510px; padding:16px 18px; margin:auto; background:var(--ft-card-bg); border:1px solid var(--ft-border-hover); border-top:3px solid var(--ft-text-2); border-radius:8px; }
-.heading,.meta,.dates { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 12px; }.heading { justify-content:space-between; }
-h2 { font-size:19px; margin:0; }.heading strong,small,.meta { font-size:12px; }.meta { margin-top:4px; color:var(--ft-text-3); }
-.dates { margin-top:12px; font-size:13px; }.dates b { font-weight:500; }.reason { border-top:1px solid var(--ft-border); padding-top:7px; margin:8px 0 0; }
-.late,.reason { color:var(--ft-late-text); }.risk { color:var(--ft-risk-text); }
-.tree { position:relative; display:grid; grid-template-columns:repeat(var(--phases),minmax(0,1fr)); padding-top:20px; }
-.tree::before,.branch::before,.branch::after { content:''; position:absolute; }
-.tree::before,.branch::after { top:0; left:50%; height:20px; border-left:1px solid var(--ft-border-hover); }
-.branch { min-width:0; position:relative; padding:0 6px; }
-.branch::after { display:none; }
-.stack { border-left:1px solid var(--ft-border-hover); }
-.phase { position:relative; padding:12px 0 0 12px; }.phase::before { content:''; position:absolute; top:30px; left:0; width:12px; border-top:1px solid var(--ft-border-hover); }
-.branch::before { top:0; left:0; right:0; border-top:1px solid var(--ft-border-hover); }
-.branch:first-child::before { left:6px; }.branch:last-child::before { right:calc(100% - 6px); }.branch:only-child::before { left:6px; right:50%; }
-summary { cursor:pointer; background:var(--ft-card-bg); border:1px solid var(--ft-border); border-radius:6px; padding:9px; font-weight:600; overflow-wrap:anywhere; }
-small { color:var(--ft-text-3); font-weight:400; white-space:nowrap; }.children { margin-left:10px; border-left:1px solid var(--ft-border-hover); padding-left:13px; }
-.empty { text-align:center; margin-top:24px; color:var(--ft-text-3); }
-.review { margin-top:8px; }.review summary { border:0; padding:0; color:var(--ft-risk-text); font-weight:400; font-size:12px; }.review ul { padding-left:20px; font-size:12px; }
-.vertical { display:block; padding:0 0 0 12px; }.vertical::before,.vertical .branch::before { display:none; }
-@media(max-width:1000px) {
-  .tree { display:block; padding:0 0 0 12px; }.tree::before,.tree .branch::before { display:none; }
+.root { max-width: 480px; padding: 14px 18px; margin: auto; background: var(--card-surface-bg); border: 1px solid var(--card-border); border-radius: 14px; box-shadow: var(--card-shadow); }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+h2 { font-size: 17px; font-weight: 700; margin: 0; color: var(--ft-text); }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 4px; font-size: 12.5px; color: var(--ft-text-2); }
+.wo-link { color: var(--ft-primary-text); font-weight: 600; }
+.root-foot { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 14px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--card-border-subtle); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.dates { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--ft-text-2); }
+.dates b { font-weight: 600; color: var(--ft-text); }
+.dates b.risk, .risk { color: var(--ft-risk-text); }
+.dates b.late, .late, .reason { color: var(--ft-late-text); }
+.reason { border-top: 1px solid var(--card-border-subtle); padding-top: 8px; margin: 8px 0 0; font-size: 12.5px; }
+.state-pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+.state-pill.risk { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
+.state-pill.late { background: var(--ft-late-bg); color: var(--ft-late-text); }
+.state-pill.done { background: var(--ft-done-bg); color: var(--ft-done-text); }
+.state-pill.none { background: var(--ft-fill); color: var(--ft-text-2); }
+
+.tree { position: relative; display: grid; grid-template-columns: repeat(var(--phases), minmax(0, 1fr)); gap: 16px; padding-top: 18px; }
+.tree::before { content: ''; position: absolute; top: 0; left: 50%; height: 18px; border-left: 1.5px solid var(--ft-border-hover); }
+.branch { min-width: 0; position: relative; display: flex; flex-direction: column; }
+.branch::before { content: ''; position: absolute; top: 0; left: -8px; right: -8px; border-top: 1.5px solid var(--ft-border-hover); }
+.branch:first-child::before { left: 50%; }
+.branch:last-child::before { right: 50%; }
+.branch:only-child::before { display: none; }
+.col-stem { align-self: center; width: 1.5px; height: 14px; background: var(--ft-border-hover); flex: none; }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+
+.phase { background: var(--card-tray-bg); border: 1px solid var(--card-border); border-radius: var(--card-radius-outer); padding: 6px; }
+.phase > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; padding: 5px 8px; font-size: 13px; font-weight: 600; color: var(--ft-text); border-radius: 8px; list-style: none; }
+.phase > summary::before { content: '▸'; font-size: 11px; color: var(--ft-text-3); margin-right: 4px; }
+.phase[open] > summary::before { content: '▾'; }
+.phase > summary span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.phase > summary small { color: var(--ft-text-3); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+.children { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+
+.empty { text-align: center; margin-top: 24px; color: var(--ft-text-3); }
+.review summary { cursor: pointer; color: var(--ft-risk-text); font-weight: 500; font-size: 12px; }
+.review ul { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: var(--ft-text-2); }
+.vertical { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; }
+.vertical::before, .vertical .branch::before, .vertical .col-stem { display: none; }
+@media (max-width: 1000px) {
+  .tree { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; }
+  .tree::before, .branch::before, .col-stem { display: none; }
 }
 </style>
