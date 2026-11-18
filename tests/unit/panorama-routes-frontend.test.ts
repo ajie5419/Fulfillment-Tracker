@@ -32,29 +32,19 @@ describe('全景旧路由及手机总览导航', () => {
     vi.stubGlobal('navigateTo', navigate)
     render(loadComponent('app/pages/panorama.vue', { '#shared/panorama': panorama }))
     await flushPromises()
-    expect(navigate).toHaveBeenCalledWith({ path: mobile ? '/m/board' : '/board', query: { ...route.query, view: 'panorama' }, hash: '#list' }, { replace: true })
+    expect(navigate).toHaveBeenCalledWith({ path: mobile ? '/m/board' : '/board', query: { ...route.query, view: 'tracking' }, hash: '#list' }, { replace: true })
   })
 
-  it('手机页签修改与浏览器回退跟随 URL，保留统计条件', async () => {
-    const route = Vue.reactive({ query: { view: 'panorama', metric: 'abnormal', manager: '' } })
-    const replace = vi.fn(async (location: any) => { Object.assign(route.query, location.query) })
-    vi.stubGlobal('useRoute', () => route)
-    vi.stubGlobal('useRouter', () => ({ replace }))
-    const tabs = Vue.defineComponent({ props: ['active'], emits: ['update:active'], setup: (props, { emit, slots }) => () => Vue.h('div', [Vue.h('button', { onClick: () => emit('update:active', props.active === 'orders' ? 'panorama' : 'orders') }, '切换'), slots.default?.()]) })
-    const content = Vue.defineComponent({ props: { mobile: Boolean, listOnly: Boolean }, setup: props => () => Vue.h('p', props.mobile && props.listOnly ? '手机工单清单' : '手机统计') })
-    const wrapper = render(loadComponent('app/pages/m/board.vue'), { VanNavBar: container, VanTabs: tabs, VanTab: container, BoardPanorama: content })
+  it.each(['orders', 'panorama', 'board'])('手机旧入口 %s 直接进入目录', async view => {
+    vi.stubGlobal('useRoute', () => ({ query: { view } }))
+    const directory = Vue.defineComponent({ props: { mobile: Boolean }, setup: p => () => Vue.h('p', p.mobile ? '手机工单目录' : '') })
+    const wrapper = render(loadComponent('app/pages/m/board.vue'), { VanNavBar: container, BoardOrderDirectory: directory })
     await flushPromises()
-    expect(wrapper.text()).toContain('手机统计')
-    await wrapper.find('button').trigger('click')
-    await flushPromises()
-    expect(replace).toHaveBeenCalledWith({ query: { view: 'orders', metric: 'abnormal', manager: '' }, hash: '' })
-    expect(wrapper.text()).toContain('手机工单清单')
-    route.query.view = 'panorama'
-    await Vue.nextTick()
-    expect(wrapper.text()).toContain('手机统计')
+    expect(wrapper.text()).toContain('手机工单目录')
+    expect(wrapper.text()).not.toMatch(/全盘统计|风险工单/)
   })
 
-  it.each([false, true])('桌面页签可切统计，驾驶舱仍按权限展示 canOverview=%s', async canOverview => {
+  it.each([false, true])('桌面旧链接回到目录，驾驶舱仍按权限展示 canOverview=%s', async canOverview => {
     const route = Vue.reactive({ query: { view: 'panorama', manager: '' }, hash: '' })
     const replace = vi.fn(async (location: any) => { Object.assign(route.query, location.query) })
     vi.stubGlobal('useRoute', () => route)
@@ -64,19 +54,20 @@ describe('全景旧路由及手机总览导航', () => {
     vi.stubGlobal('useApiFetch', async (url: string) => ({ data: Vue.ref(url === '/api/work-orders' ? [] : { rows: [], summary: {}, sourceByDept: [], syncErrors: [], syncConfigured: false }), refresh: vi.fn(), pending: Vue.ref(false), error: Vue.ref(null) }))
     const segmented = Vue.defineComponent({ props: ['options'], emits: ['change'], setup: (props, { emit }) => () => Vue.h('div', props.options.map((option: any) => Vue.h('button', { onClick: () => emit('change', option.value) }, option.label))) })
     const component = loadComponent('app/pages/board.vue', { '#shared/status': await import('../../shared/status'), '#shared/board-cockpit': await import('../../shared/board-cockpit') })
-    const wrapper = render(component, { ASegmented: segmented, BoardPanorama: Vue.defineComponent({ setup: () => () => Vue.h('p', '统计区域') }), BoardCockpit: Vue.defineComponent({ setup: () => () => Vue.h('p', '管理区域') }), UiRefreshButton: container, AButton: container, AResult: container, AEmpty: container, ASwitch: container, ASelect: container, UiStatCard: container, UiColumnChart: container, UiSectionCard: container, WorkOrderCreate: container, UiHelpTip: container })
+    const wrapper = render(component, { ASegmented: segmented, BoardSyncNotice: container, BoardOrderDirectory: Vue.defineComponent({ setup: () => () => Vue.h('p', '工单目录') }), BoardCockpit: Vue.defineComponent({ setup: () => () => Vue.h('p', '管理区域') }), UiRefreshButton: container, AButton: container, AResult: container, AEmpty: container, ASwitch: container, ASelect: container, UiStatCard: container, UiColumnChart: container, UiSectionCard: container, WorkOrderCreate: container, UiHelpTip: container })
     await flushPromises()
-    expect(wrapper.text()).toContain('全盘统计')
-    expect(wrapper.text()).toContain('统计区域')
+    expect(wrapper.text()).not.toMatch(/全盘统计|风险工单/)
+    expect(wrapper.text()).toContain('工单目录')
     expect(wrapper.text().includes('今天盯什么')).toBe(canOverview)
     if (canOverview) {
       await wrapper.findAll('button').find(button => button.text() === '今天盯什么')!.trigger('click')
       await flushPromises()
       expect(wrapper.text()).toContain('管理区域')
+      await wrapper.findAll('button').find(button => button.text() === '工单进展')!.trigger('click')
+      await flushPromises()
+      expect(route.query).toEqual({ view: 'tracking', manager: '' })
+      expect(wrapper.text()).toContain('工单目录')
     }
-    await wrapper.findAll('button').find(button => button.text() === '全盘统计')!.trigger('click')
-    await flushPromises()
-    expect(route.query).toEqual({ view: 'panorama', manager: '' })
   })
 
   it('手机异常下钻、切页签、打开抽屉均保留工单和返回条件，scope 仍交由原接口', async () => {

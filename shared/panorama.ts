@@ -92,5 +92,5 @@ export function aggregatePanorama(rows: PanoramaRow[]): PanoramaData {
 }
 
 export function panoramaDestination(mobile: boolean, query: Record<string, unknown>, hash = '') {
-  return { path: mobile ? '/m/board' : '/board', query: { ...query, view: 'panorama' }, hash }
+  return { path: mobile ? '/m/board' : '/board', query: { ...query, view: 'tracking' }, hash }
 }

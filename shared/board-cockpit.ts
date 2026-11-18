@@ -2,16 +2,13 @@ import { stuckNode, type NodeState } from './status'
 import type { WoStatusFields } from './wo-status-capsules'
 
 /** /board 的视图只由权限和 URL 决定，同页提醒、前进 / 后退也遵循这一落点。 */
-export type BoardView = 'tracking' | 'cockpit' | 'board' | 'panorama'
+export type BoardView = 'tracking' | 'cockpit'
 export function resolveBoardView(canOverview: boolean, queryView: unknown): BoardView {
-  if (queryView === 'panorama') return 'panorama'
-  if (queryView === 'cockpit') return canOverview ? 'cockpit' : 'board'
-  return queryView === 'board' ? 'board' : 'tracking'
+  return canOverview && queryView === 'cockpit' ? 'cockpit' : 'tracking'
 }
 
-export const BOARD_VIEWS = [{ value: 'tracking', label: '工单进展' }, { value: 'cockpit', label: '今天盯什么' }, { value: 'board', label: '风险工单' }, { value: 'panorama', label: '全盘统计' }]
+export const BOARD_VIEWS = [{ value: 'tracking', label: '工单进展' }, { value: 'cockpit', label: '今天盯什么' }]
 export const OVERDUE_ISSUES_LINK = '/risks?tab=issues&overdue=1&dept=0'
-export const RED_WORK_ORDERS_LINK = '/board?view=board&color=RED'
 export const STAGNATION_RED_LINK = '/monitoring?level=RED'
 
 interface OverviewNumbers {
@@ -22,7 +19,7 @@ interface OverviewNumbers {
 /** 停滞只取完整集合的 redCount，不能使用 Top 长度。 */
 export function cockpitMetrics(overview: OverviewNumbers | null | undefined, releases: { pending: number } | null | undefined, monitoring?: { redCount: number } | null) {
   return [
-    { key: 'red', label: '红色工单', value: overview?.summary.red ?? '—', unit: '个', tone: 'late', to: RED_WORK_ORDERS_LINK },
+    { key: 'red', label: '红色工单', value: overview?.summary.red ?? '—', unit: '个', tone: 'late', to: undefined },
     { key: 'overdue', label: '超期异常', value: overview?.summary.overdueIssues ?? '—', unit: '条', tone: 'late', to: OVERDUE_ISSUES_LINK },
     { key: 'unsigned', label: '未签收发放', value: releases?.pending ?? '—', unit: '份', tone: 'risk', to: '/releases?progress=PENDING' },
     { key: 'shortage', label: '缺料项', value: overview?.stages.find((s) => s.key === 'shortage')?.count ?? '—', unit: '项', tone: 'risk', to: '/purchases?view=shortage' },

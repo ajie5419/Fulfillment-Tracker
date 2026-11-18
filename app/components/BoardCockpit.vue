@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cockpitMetrics, mergeCockpitItems, OVERDUE_ISSUES_LINK, RED_WORK_ORDERS_LINK } from '#shared/board-cockpit'
+import { cockpitMetrics, mergeCockpitItems, OVERDUE_ISSUES_LINK } from '#shared/board-cockpit'
 import type { MonitoredEntity } from '#shared/monitoring'
 
 async function fetchAllRedEntities(): Promise<MonitoredEntity[]> {
@@ -78,7 +78,6 @@ defineExpose({ refresh })
           <UiHelpTip>一单一行；主问题优先级红色工单 → 超期异常 → 停滞红线；同一工单的其他问题以胶囊列在同行、可点进各自详情；最多 10 单。停滞按 W11 上海自然日计算，包含停工日。</UiHelpTip>
         </template>
         <template #extra>
-          <NuxtLink :to="RED_WORK_ORDERS_LINK">全部红色工单</NuxtLink>
           <NuxtLink :to="OVERDUE_ISSUES_LINK">全部超期异常</NuxtLink>
           <NuxtLink to="/monitoring">查看全部监控</NuxtLink>
         </template>

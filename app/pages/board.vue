@@ -4,21 +4,11 @@ import { BOARD_VIEWS, resolveBoardView, type BoardView } from '#shared/board-coc
 const route = useRoute()
 const router = useRouter()
 const { data: me } = await useMe()
-const view = computed(() => resolveBoardView(!!me.value?.can.overview, route.query.view ?? (route.query.color || route.query.layout || route.query.closed ? 'board' : undefined)))
-// 显式请求无权查看的 cockpit 时清正 URL；其余参数和锚点保留。
-if (!me.value?.can.overview && route.query.view === 'cockpit') {
-  await navigateTo({ path: '/board', query: { ...route.query, view: 'board' }, hash: route.hash }, { replace: true })
-}
-watch(() => route.query.view, (value) => {
-  if (!me.value?.can.overview && value === 'cockpit') void router.replace({ query: { ...route.query, view: 'board' }, hash: route.hash })
-})
+const view = computed(() => resolveBoardView(!!me.value?.can.overview, route.query.view))
 function changeView(value: BoardView) { void router.replace({ query: { ...route.query, view: resolveBoardView(!!me.value?.can.overview, value) }, hash: route.hash }) }
-const panorama = ref<{ refresh: () => Promise<void> } | null>(null)
-const viewOptions = computed(() => BOARD_VIEWS.filter(item => item.value !== 'cockpit' || me.value?.can.overview))
-const cockpit = ref<{ refresh: () => Promise<void> } | null>(null)
 const syncNotice = ref<{ refresh: () => unknown } | null>(null)
 const activePanel = ref<{ refresh: () => unknown } | null>(null)
-async function refreshAll() { await Promise.all([syncNotice.value?.refresh(), activePanel.value?.refresh(), cockpit.value?.refresh(), panorama.value?.refresh()]) }
+async function refreshAll() { await Promise.all([syncNotice.value?.refresh(), activePanel.value?.refresh()]) }
 const createOpen = ref(false)
 async function onCreated(no: string) {
   createOpen.value = false
@@ -37,18 +27,16 @@ async function onCreated(no: string) {
 <template>
   <div class="page">
     <div class="page-head">
-      <div class="head-left">
-        <a-segmented :value="view" :options="viewOptions" aria-label="项目总览视图" @change="changeView($event as BoardView)" />
+      <div v-if="me?.can.overview" class="head-left">
+        <a-segmented :value="view" :options="BOARD_VIEWS" aria-label="项目总览视图" @change="changeView($event as BoardView)" />
       </div>
       <div class="tools">
         <UiRefreshButton @click="refreshAll()" />
         <a-button v-if="me?.can.workOrder" type="primary" @click="createOpen = true">新建工单</a-button>
       </div>
     </div>
-    <BoardSyncNotice v-if="view !== 'board'" ref="syncNotice" />
-    <BoardCockpit v-if="view === 'cockpit' && me?.can.overview" ref="cockpit" />
-    <BoardPanorama v-else-if="view === 'panorama'" ref="panorama" />
-    <BoardRiskOrders v-else-if="view === 'board'" ref="activePanel" />
+    <BoardSyncNotice ref="syncNotice" />
+    <BoardCockpit v-if="view === 'cockpit'" ref="activePanel" />
     <BoardOrderDirectory v-else ref="activePanel" />
     <WorkOrderEditModal v-if="me?.can.workOrder" :open="createOpen" :work-order="null" @close="createOpen = false" @done="onCreated" />
   </div>
