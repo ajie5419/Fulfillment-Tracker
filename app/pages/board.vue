@@ -5,6 +5,7 @@ const route = useRoute()
 const router = useRouter()
 const { data: me } = await useMe()
 const view = computed(() => resolveBoardView(!!me.value?.can.overview, route.query.view))
+const hasPageHead = computed(() => Boolean(me.value?.can.overview || me.value?.can.workOrder))
 function changeView(value: BoardView) { void router.replace({ query: { ...route.query, view: resolveBoardView(!!me.value?.can.overview, value) }, hash: route.hash }) }
 const syncNotice = ref<{ refresh: () => unknown } | null>(null)
 const activePanel = ref<{ refresh: () => unknown } | null>(null)
@@ -26,7 +27,7 @@ async function onCreated(no: string) {
 </script>
 <template>
   <div class="page">
-    <div class="page-head">
+    <div v-if="hasPageHead" class="page-head">
       <div v-if="me?.can.overview" class="head-left">
         <a-segmented :value="view" :options="BOARD_VIEWS" aria-label="项目总览视图" @change="changeView($event as BoardView)" />
       </div>
@@ -37,7 +38,7 @@ async function onCreated(no: string) {
     </div>
     <BoardSyncNotice ref="syncNotice" />
     <BoardCockpit v-if="view === 'cockpit'" ref="activePanel" />
-    <BoardOrderDirectory v-else ref="activePanel" />
+    <BoardOrderDirectory v-else ref="activePanel" :show-refresh="!hasPageHead" @refresh="refreshAll()" />
     <WorkOrderEditModal v-if="me?.can.workOrder" :open="createOpen" :work-order="null" @close="createOpen = false" @done="onCreated" />
   </div>
 </template>

@@ -2,7 +2,8 @@
 import { DELIVERY_HORIZON_DAYS, DIRECTORY_PAGE_SIZE, DIRECTORY_SEARCH_LIMIT, type DeliveryFilter } from '#shared/board-directory'
 import { PLAN_STATUS_TEXT } from '#shared/plan'
 
-const props = defineProps<{ mobile?: boolean }>()
+const props = defineProps<{ mobile?: boolean; showRefresh?: boolean }>()
+const emit = defineEmits<{ refresh: [] }>()
 const route = useRoute()
 const router = useRouter()
 const params = computed((previous?: { page: number; pageSize: number; q: string; delivery: DeliveryFilter; mine: '1' | '0' }) => {
@@ -78,7 +79,7 @@ defineExpose({ refresh: () => Promise.all([refresh(), tree.value?.refresh()]) })
 </script>
 
 <template>
-  <div class="directory" :class="{ mobile, detail: detailOpen }">
+  <div class="directory" :class="{ mobile, detail: detailOpen, full: showRefresh && !mobile }">
     <aside aria-label="工单目录">
       <div class="filters">
         <div class="line"><strong>在执行工单</strong><small v-if="ready">{{ data?.total }} / {{ data?.available }}</small></div>
@@ -113,8 +114,11 @@ defineExpose({ refresh: () => Promise.all([refresh(), tree.value?.refresh()]) })
     <section ref="workspace" class="workspace" aria-label="工单进展">
       <div class="line toolbar">
         <small class="caption">工单进展</small><button class="back" @click="update({ dir: '1' })">‹ 工单目录</button>
-        <div><button :disabled="!selected || absoluteIndex <= 0" @click="advance(-1)">上一单</button>
-          <button :disabled="!selected || absoluteIndex + 1 >= (data?.total ?? 0)" @click="advance(1)">下一单</button></div>
+        <div class="toolbar-actions">
+          <UiRefreshButton v-if="showRefresh" @click="emit('refresh')" />
+          <button :disabled="!selected || absoluteIndex <= 0" @click="advance(-1)">上一单</button>
+          <button :disabled="!selected || absoluteIndex + 1 >= (data?.total ?? 0)" @click="advance(1)">下一单</button>
+        </div>
       </div>
       <BoardOrderPlan v-if="selected && (!props.mobile || detailOpen)" :key="selected.workOrderNumber" ref="tree" :wo="selected.workOrderNumber" :mobile="mobile" />
       <p v-else-if="error" role="alert">工单目录加载失败。<button @click="refresh()">重试</button></p>
@@ -126,6 +130,7 @@ defineExpose({ refresh: () => Promise.all([refresh(), tree.value?.refresh()]) })
 
 <style scoped>
 .directory { display:grid; grid-template-columns:clamp(245px,23%,345px) minmax(0,1fr); height:clamp(350px,calc(100dvh - 170px),100dvh); border:1px solid var(--ft-border); border-radius:12px; overflow:hidden; background:var(--ft-fill); }
+.directory.full { height:clamp(350px,calc(100dvh - 118px),100dvh); }
 aside { display:flex; flex-direction:column; min-height:0; border-right:1px solid var(--ft-border); background:var(--ft-card-bg); }
 .filters,.pager { padding:12px 14px; }
 .line { display:flex; align-items:center; justify-content:space-between; gap:8px; }
@@ -143,7 +148,7 @@ label,small { font-size:12px; }
 .order b { overflow-wrap:anywhere; }.order .line small { flex-shrink:0; }.late { color:var(--ft-late-text); }
 .pager { border-top:1px solid var(--ft-border); }
 .workspace { min-width:0; overflow:auto; padding:16px clamp(12px,2vw,32px) 32px; }
-.toolbar { margin-bottom:18px; }.toolbar button+button { margin-left:5px; }.back { display:none; }
+.toolbar { margin-bottom:18px; }.toolbar-actions { display:flex; align-items:center; gap:6px; }.back { display:none; }
 .mobile { display:block; height:calc(100dvh - 165px); min-height:320px; }
 .mobile aside,.mobile .workspace { height:100%; }.mobile .workspace,.mobile.detail aside,.mobile .caption { display:none; }
 .mobile.detail .workspace,.mobile .back { display:block; }
