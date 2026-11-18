@@ -141,7 +141,7 @@ label,small { font-size:12px; }
 .order[aria-pressed=true] { background:var(--ft-primary-bg); box-shadow:inset 3px 0 var(--ft-primary); }
 .order b { overflow-wrap:anywhere; }.order .line small { flex-shrink:0; }.late { color:var(--ft-late-text); }
 .pager { border-top:1px solid var(--ft-border); }
-.workspace { min-width:0; overflow:auto; padding:16px clamp(12px,2vw,32px) 32px; }
+.workspace { min-width:0; overflow:auto; padding:18px clamp(16px,2vw,24px) 28px; background:var(--card-surface-bg); }
 .dir-head-right { display:flex; align-items:center; gap:6px; }
 .toolbar { display:none; margin-bottom:14px; }.back { display:none; }
 .mobile { display:block; height:calc(100dvh - 165px); min-height:320px; }

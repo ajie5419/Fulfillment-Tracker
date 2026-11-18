@@ -267,11 +267,15 @@ const blockedChain = computed(() => {
         </button>
       </div>
 
-      <!-- C：部门接力进度条 + 阻塞因果链 -->
-      <div class="relay-grid">
+      <!-- C：部门接力进度条 + 阻塞因果链（无阻塞时部门接力铺满双列，不留大块空白） -->
+      <div class="relay-grid" :class="{ single: !sources[0] && !blockedChain.length }">
         <div class="tray">
-          <div class="tray-head"><span>各部门接力完成度</span><small>按叶子节点</small></div>
-          <div class="inset relay-list">
+          <div class="tray-head">
+            <span>各部门接力完成度</span>
+            <small v-if="!sources[0] && !blockedChain.length" class="ok-badge">✓ 当前无阻塞延误</small>
+            <small v-else>按叶子节点</small>
+          </div>
+          <div class="inset relay-list" :class="{ 'relay-cols': !sources[0] && !blockedChain.length }">
             <div v-for="d in deptRelay" :key="d.dept" class="dept-row">
               <span class="dept-name">{{ d.dept }}</span>
               <div class="dept-bar"><i :class="`fill-${d.tone}`" :style="{ width: `${d.pct}%` }" /></div>
@@ -280,8 +284,8 @@ const blockedChain = computed(() => {
           </div>
         </div>
 
-        <div class="tray">
-          <div class="tray-head"><span>阻塞传导链</span><small>{{ blockedChain.length ? '源头 → 下游影响' : '无阻塞' }}</small></div>
+        <div v-if="sources[0] || blockedChain.length" class="tray">
+          <div class="tray-head"><span>阻塞传导链</span><small>源头 → 下游影响</small></div>
           <div class="inset chain-box">
             <p v-if="sources[0]" class="reason">源头延误 · {{ sources[0].name }}，自身晚 {{ sources[0].selfDelayDays }} 天<span v-if="sources.length > 1">（共 {{ sources.length }} 个源头）</span></p>
             <div v-if="blockedChain.length" class="chain-row">
@@ -293,7 +297,6 @@ const blockedChain = computed(() => {
                 </div>
               </template>
             </div>
-            <div v-else class="clean-tip">当前未发现源头延误或上下游阻塞</div>
           </div>
         </div>
       </div>
@@ -326,6 +329,7 @@ const blockedChain = computed(() => {
                 <span class="state-pill" :class="p.tone === 'primary' ? 'none' : p.tone">{{ p.hasSource ? '有延误' : p.hasUpstream ? '受影响' : p.done === p.total && p.total > 0 ? '已完成' : '按计划' }}</span>
               </div>
               <div v-if="ganttRange" class="p-gantt">
+                <span v-for="m in monthTicks" :key="m.label" class="g-grid" :style="{ left: `${m.left}%` }" />
                 <span class="g-today" :style="{ left: `${ganttRange.todayPct}%` }" />
                 <span v-if="ganttRange.duePct != null" class="g-due" :style="{ left: `${ganttRange.duePct}%` }" />
                 <template v-if="p.bar">
@@ -376,15 +380,15 @@ h2 { font-size: 17px; font-weight: 700; margin: 0; color: var(--ft-text); }
 .ruler-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ft-done); border-radius: 999px; }
 .ruler-today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--ft-text); }
 
-.pipeline { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-.stage-card { text-align: left; background: var(--card-surface-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; transition: border-color 0.14s, box-shadow 0.14s; }
-.stage-card:hover { border-color: var(--ft-border-hover); box-shadow: var(--card-shadow); }
+.pipeline { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.stage-card { text-align: left; background: var(--card-surface-bg); border: 1px solid var(--card-hairline); border-radius: 11px; padding: 10px 11px; box-shadow: var(--card-shadow); cursor: pointer; display: flex; flex-direction: column; gap: 6px; transition: border-color 0.14s, box-shadow 0.14s, transform 0.14s; }
+.stage-card:hover { border-color: var(--ft-border-hover); box-shadow: var(--card-shadow-hover); transform: translateY(-1px); }
 .stage-card.active { border-color: var(--ft-primary); box-shadow: 0 0 0 1px var(--ft-primary); }
-.st-top { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ft-text-3); font-variant-numeric: tabular-nums; }
-.st-name { font-size: 13px; font-weight: 600; color: var(--ft-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-bar { height: 5px; border-radius: 999px; background: var(--ft-fill); overflow: hidden; }
+.st-top { display: flex; justify-content: space-between; font-size: 11px; color: var(--ft-text-3); font-variant-numeric: tabular-nums; }
+.st-name { font-size: 12.5px; font-weight: 600; color: var(--ft-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-bar { height: 4px; border-radius: 999px; background: var(--ft-fill); overflow: hidden; }
 .st-bar i { display: block; height: 100%; border-radius: 999px; }
-.st-foot { font-size: 11.5px; color: var(--ft-text-3); font-variant-numeric: tabular-nums; }
+.st-foot { font-size: 11px; color: var(--ft-text-3); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .fill-done { background: var(--ft-done); }
 .fill-late { background: var(--ft-late); }
@@ -396,14 +400,18 @@ h2 { font-size: 17px; font-weight: 700; margin: 0; color: var(--ft-text); }
 .text-primary { color: var(--ft-primary-text); }
 
 .relay-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 12px; }
+.relay-grid.single { grid-template-columns: minmax(0, 1fr); }
 .tray { background: var(--card-tray-bg); border: 1px solid var(--card-border); border-radius: var(--card-radius-outer); padding: 8px 6px 6px; }
 .tray-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 8px 8px; font-size: 12.5px; font-weight: 600; color: var(--ft-text); }
 .tray-head small { font-size: 11.5px; font-weight: 400; color: var(--ft-text-3); }
-.inset { background: var(--card-surface-bg); border: 1px solid var(--card-border); border-radius: var(--card-radius-inner); overflow: hidden; }
+.tray-head .ok-badge { color: var(--ft-done-text); background: var(--ft-done-bg); padding: 1px 8px; border-radius: 999px; font-weight: 500; }
+.inset { background: var(--card-surface-bg); border: 1px solid var(--card-hairline); border-radius: var(--card-radius-inner); box-shadow: var(--card-shadow); overflow: hidden; }
 
 .relay-list { padding: 4px 12px; }
-.dept-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 12.5px; }
-.dept-row + .dept-row { border-top: 1px solid var(--card-border-subtle); }
+.relay-list.relay-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; }
+.dept-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 12.5px; border-bottom: 1px solid var(--card-border-subtle); }
+.relay-list:not(.relay-cols) .dept-row:last-child { border-bottom: none; }
+.relay-list.relay-cols .dept-row:nth-last-child(-n+2) { border-bottom: none; }
 .dept-name { width: 64px; flex: none; font-weight: 500; color: var(--ft-text); }
 .dept-bar { flex: 1; height: 6px; border-radius: 999px; background: var(--ft-fill); overflow: hidden; }
 .dept-bar i { display: block; height: 100%; border-radius: 999px; }
@@ -434,7 +442,8 @@ h2 { font-size: 17px; font-weight: 700; margin: 0; color: var(--ft-text); }
 .p-name small { font-size: 11.5px; color: var(--ft-text-3); font-variant-numeric: tabular-nums; }
 .p-dept { font-size: 12px; color: var(--ft-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .p-gantt { position: relative; height: 18px; }
-.g-today { position: absolute; top: -9px; bottom: -9px; width: 1.5px; background: var(--ft-primary); opacity: 0.5; }
+.g-grid { position: absolute; top: -9px; bottom: -9px; border-left: 1px solid var(--card-border-subtle); }
+.g-today { position: absolute; top: -9px; bottom: -9px; width: 1.5px; background: var(--ft-primary); opacity: 0.55; }
 .g-due { position: absolute; top: -9px; bottom: -9px; border-left: 1.5px dashed var(--ft-late); opacity: 0.6; }
 .bar-plan { position: absolute; top: 3px; height: 12px; border-radius: 4px; background: var(--ft-fill); border: 1px solid var(--ft-border); }
 .bar-real { position: absolute; top: 5px; height: 8px; border-radius: 4px; }
@@ -446,7 +455,9 @@ h2 { font-size: 17px; font-weight: 700; margin: 0; color: var(--ft-text); }
 .state-pill.none { background: var(--ft-fill); color: var(--ft-text-2); }
 .empty { text-align: center; margin-top: 24px; color: var(--ft-text-3); }
 
-@media (max-width: 900px) { .relay-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1120px) { .pipeline { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .relay-grid, .relay-list.relay-cols { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) { .pipeline { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 820px) {
   .gantt-head, .phase > summary { grid-template-columns: minmax(0, 1fr) auto; }
   .gantt-head > div:nth-child(2), .gantt-head > div:nth-child(4), .p-dept, .p-gantt { display: none; }
