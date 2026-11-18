@@ -5,16 +5,16 @@ import { cockpitMetrics, mergeCockpitItems, redWorkOrderStages, resolveBoardView
 
 describe('项目总览权限与 URL 落点', () => {
   it.each([
-    [true, undefined, 'cockpit'], [true, 'cockpit', 'cockpit'], [true, 'board', 'board'],
-    [true, 'unknown', 'cockpit'], [true, ['board', 'cockpit'], 'cockpit'],
-    [false, undefined, 'board'], [false, 'cockpit', 'board'], [false, 'board', 'board'], [false, 'unknown', 'board'],
+    [true, undefined, 'tracking'], [true, 'cockpit', 'cockpit'], [true, 'board', 'board'],
+    [true, 'unknown', 'tracking'], [true, ['board', 'cockpit'], 'tracking'],
+    [false, undefined, 'tracking'], [false, 'cockpit', 'board'], [false, 'board', 'board'], [false, 'unknown', 'tracking'],
   ])('overview=%s, view=%s → %s', (permission, query, expected) => {
     expect(resolveBoardView(permission as boolean, query)).toBe(expected)
   })
   it('同页深链、返回、权限变化直接改变落点', () => {
     const route = reactive({ view: undefined as unknown, canOverview: true })
     const view = computed(() => resolveBoardView(route.canOverview, route.view))
-    expect(view.value).toBe('cockpit')
+    expect(view.value).toBe('tracking')
     route.view = 'board'
     expect(view.value).toBe('board')
     route.view = 'cockpit'
