@@ -30,7 +30,6 @@ const index = computed(() => {
   return pos >= 0 ? pos : route.query.edge === 'last' ? rows.value.length - 1 : 0
 })
 const selected = computed(() => rows.value[index.value])
-const absoluteIndex = computed(() => (params.value.page - 1) * DIRECTORY_PAGE_SIZE + index.value)
 const list = ref<HTMLElement>()
 const workspace = ref<HTMLElement>()
 const tree = ref<{ refresh: () => unknown }>()
@@ -56,11 +55,6 @@ function select(wo: string) {
   const query = { ...route.query, wo, edge: undefined, dir: undefined }
   return props.mobile && !detailOpen.value ? router.push({ query }) : router.replace({ query })
 }
-function advance(step: -1 | 1) {
-  const next = rows.value[index.value + step]
-  if (next) return select(next.workOrderNumber)
-  return turn(params.value.page + step, step > 0 ? 'first' : 'last')
-}
 watch([ready, pages], () => {
   if (ready.value && params.value.page > Math.max(1, pages.value)) void turn(Math.max(1, pages.value))
 })
@@ -82,7 +76,13 @@ defineExpose({ refresh: () => Promise.all([refresh(), tree.value?.refresh()]) })
   <div class="directory" :class="{ mobile, detail: detailOpen }">
     <aside aria-label="工单目录">
       <div class="filters">
-        <div class="line"><strong>在执行工单</strong><small v-if="ready">{{ data?.total }} / {{ data?.available }}</small></div>
+        <div class="line">
+          <strong>在执行工单</strong>
+          <div class="dir-head-right">
+            <small v-if="ready">{{ data?.total }} / {{ data?.available }}</small>
+            <UiRefreshButton v-if="showRefresh" @click="emit('refresh')" />
+          </div>
+        </div>
         <input v-model="search" type="search" aria-label="搜索工单" placeholder="搜工单号、项目或客户" :maxlength="DIRECTORY_SEARCH_LIMIT" @input="scheduleSearch" @keydown.enter="searchNow">
         <div class="line">
           <select :value="params.delivery" aria-label="交期筛选" @change="filter({ delivery: ($event.target as HTMLSelectElement).value })">
@@ -113,12 +113,7 @@ defineExpose({ refresh: () => Promise.all([refresh(), tree.value?.refresh()]) })
     </aside>
     <section ref="workspace" class="workspace" aria-label="工单进展">
       <div class="line toolbar">
-        <small class="caption">工单进展</small><button class="back" @click="update({ dir: '1' })">‹ 工单目录</button>
-        <div class="toolbar-actions">
-          <UiRefreshButton v-if="showRefresh" @click="emit('refresh')" />
-          <button :disabled="!selected || absoluteIndex <= 0" @click="advance(-1)">上一单</button>
-          <button :disabled="!selected || absoluteIndex + 1 >= (data?.total ?? 0)" @click="advance(1)">下一单</button>
-        </div>
+        <button class="back" @click="update({ dir: '1' })">‹ 工单目录</button>
       </div>
       <BoardOrderPlan v-if="selected && (!props.mobile || detailOpen)" :key="selected.workOrderNumber" ref="tree" :wo="selected.workOrderNumber" :mobile="mobile" />
       <p v-else-if="error" role="alert">工单目录加载失败。<button @click="refresh()">重试</button></p>
@@ -147,12 +142,13 @@ label,small { font-size:12px; }
 .order b { overflow-wrap:anywhere; }.order .line small { flex-shrink:0; }.late { color:var(--ft-late-text); }
 .pager { border-top:1px solid var(--ft-border); }
 .workspace { min-width:0; overflow:auto; padding:16px clamp(12px,2vw,32px) 32px; }
-.toolbar { margin-bottom:18px; }.toolbar-actions { display:flex; align-items:center; gap:6px; }.back { display:none; }
+.dir-head-right { display:flex; align-items:center; gap:6px; }
+.toolbar { display:none; margin-bottom:14px; }.back { display:none; }
 .mobile { display:block; height:calc(100dvh - 165px); min-height:320px; }
-.mobile aside,.mobile .workspace { height:100%; }.mobile .workspace,.mobile.detail aside,.mobile .caption { display:none; }
-.mobile.detail .workspace,.mobile .back { display:block; }
+.mobile aside,.mobile .workspace { height:100%; }.mobile .workspace,.mobile.detail aside { display:none; }
+.mobile.detail .workspace,.mobile .toolbar,.mobile .back { display:block; }
 @media(max-width:700px) {
   .directory { display:block; } aside,.workspace { height:100%; }
-  .workspace,.detail aside,.caption { display:none; }.detail .workspace,.back { display:block; }
+  .workspace,.detail aside { display:none; }.detail .workspace,.toolbar,.back { display:block; }
 }
 </style>
