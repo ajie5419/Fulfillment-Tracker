@@ -34,17 +34,17 @@ const groups = computed(() => {
       { key: '/dept-plan', label: '部门计划', sections: ['deptPlan'] },
       { key: '/drawings', label: '设计任务', sections: ['tech'] },
       // 工艺（zhao 10-27）：按部件跟踪料单、工艺状态；工艺部改，技术部、生产部、项目经理、领导只读
-      { key: '/process', label: '工艺', sections: ['process'] },
+      { key: '/process', label: '工艺任务', sections: ['process'] },
       { key: '/releases', label: '发放签收', sections: ['tech', 'releases'] },
-      { key: '/purchase-plans', label: '采购计划下发', sections: ['tech', 'purchase'] },
+      { key: '/purchase-plans', label: '采购计划', sections: ['tech', 'purchase'] },
       { key: '/purchases', label: '采购到货', sections: ['purchase'] },
       { key: '/payments', label: '付款申请', sections: ['purchase', 'payments'] },
-      { key: '/kitting', label: '齐套', sections: ['production', 'kitting'] },
-      // 生产管理重设计（zhao 10-26）：按任务拆成 生产调度（开工完工、超期、卡住）/ 工序编排（排工序链）/ 外协（发出、在外、待确认匹配）；
+      { key: '/kitting', label: '齐套详情', sections: ['production', 'kitting'] },
+      // 生产管理重设计（zhao 10-26）：按任务拆成 生产调度（开工完工、超期、卡住）/ 工序编排（排工序链）/ 外协管理（发出、在外、待确认匹配）；
       // 旧地址 /workshop、/unmatched 跳到对应页面
       { key: '/production', label: '生产调度', sections: ['production'] },
       { key: '/parts', label: '工序编排', sections: ['production'] },
-      { key: '/outsource', label: '外协', sections: ['production'] },
+      { key: '/outsource', label: '外协管理', sections: ['production'] },
     ]) },
     { title: '其他', items: [
       // 项目部负责人（总计划模板）、生产部（班组长）也能进设置页，只看到各自那一页
@@ -80,12 +80,12 @@ const ROUTE_TITLES: Record<string, string> = {
   '/': '工作台', '/calendar': '项目日历', '/risks': '异常处理',
   '/panorama': '项目全景',
   '/board': '项目总览', '/plan': '项目计划', '/dept-plan': '部门计划',
-  '/drawings': '设计任务', '/process': '工艺', '/releases': '发放签收',
-  '/purchase-plans': '采购计划下发', '/purchases': '采购到货', '/payments': '付款申请', '/kitting': '齐套',
-  '/production': '生产调度', '/parts': '工序编排', '/outsource': '外协',
+  '/drawings': '设计任务', '/process': '工艺任务', '/releases': '发放签收',
+  '/purchase-plans': '采购计划', '/purchases': '采购到货', '/payments': '付款申请', '/kitting': '齐套详情',
+  '/production': '生产调度', '/parts': '工序编排', '/outsource': '外协管理',
   '/settings': '设置', '/dev': '演示工具', '/templates': '工序路线模板',
   '/wo': '工单详情', '/overview': '项目总览', '/issues': '异常处理',
-  '/alerts': '异常处理', '/workshop': '生产调度', '/unmatched': '外协',
+  '/alerts': '异常处理', '/workshop': '生产调度', '/unmatched': '外协管理',
 }
 const current = computed(() => {
   const path = route.value.path
