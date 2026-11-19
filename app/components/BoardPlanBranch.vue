@@ -9,6 +9,7 @@ export interface GanttRange {
   spanMs: number
   todayPct: number
   duePct: number | null
+  ticks?: number[]
 }
 
 const props = defineProps<{
@@ -57,6 +58,7 @@ const bars = computed(() => {
           <small v-else class="state-pill">草稿</small>
         </div>
         <div v-if="gantt" class="col-gantt">
+          <span v-for="(left, idx) in gantt.ticks ?? []" :key="idx" class="g-grid" :style="{ left: `${left}%` }" />
           <span class="g-today" :style="{ left: `${gantt.todayPct}%` }" />
           <span v-if="gantt.duePct != null" class="g-due" :style="{ left: `${gantt.duePct}%` }" />
           <template v-if="bars">
@@ -103,17 +105,18 @@ summary {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  padding: 7px 12px 7px 26px;
+  padding: 7px 12px;
   list-style: none;
   transition: background-color 0.12s;
 }
 summary:hover { background: color-mix(in srgb, var(--ft-fill) 65%, transparent); }
-.col-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.col-name { display: flex; align-items: center; gap: 6px; min-width: 0; padding-left: 14px; }
 .node-name { font-size: 12.5px; font-weight: 500; color: var(--ft-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .col-dept { font-size: 12px; color: var(--ft-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .col-state { display: flex; align-items: center; }
 .col-gantt { position: relative; height: 18px; }
-.g-today { position: absolute; top: -8px; bottom: -8px; width: 1.5px; background: var(--ft-primary); opacity: 0.5; }
+.g-grid { position: absolute; top: -8px; bottom: -8px; border-left: 1px solid var(--card-border-subtle); }
+.g-today { position: absolute; top: -8px; bottom: -8px; width: 1.5px; background: var(--ft-primary); opacity: 0.55; }
 .g-due { position: absolute; top: -8px; bottom: -8px; border-left: 1.5px dashed var(--ft-late); opacity: 0.6; }
 .bar-plan { position: absolute; top: 3px; height: 12px; border-radius: 4px; background: var(--ft-fill); border: 1px solid var(--ft-border); }
 .bar-real { position: absolute; top: 5px; height: 8px; border-radius: 4px; background: var(--ft-primary); }
@@ -139,7 +142,7 @@ summary:hover { background: color-mix(in srgb, var(--ft-fill) 65%, transparent);
 .pushed { color: var(--ft-risk-text); }
 .task { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--card-border-subtle); color: var(--ft-text-2); }
 .task a { color: var(--ft-primary-text); font-weight: 500; }
-.nested :deep(summary) { padding-left: 38px; }
+.nested :deep(.col-name) { padding-left: 28px; }
 
 @media (max-width: 820px) {
   summary { grid-template-columns: minmax(0, 1fr) auto; padding-left: 16px; }

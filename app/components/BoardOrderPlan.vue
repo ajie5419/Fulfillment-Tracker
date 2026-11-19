@@ -81,11 +81,20 @@ const ganttRange = computed<GanttRange | null>(() => {
   const maxMs = Math.max(...msList) + 4 * DAY_MS
   const spanMs = Math.max(DAY_MS, maxMs - minMs)
   const clamp = (m: number) => Math.max(0, Math.min(100, ((m - minMs) / spanMs) * 100))
+  const ticks: number[] = []
+  const start = new Date(minMs)
+  const cur = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1))
+  while (cur.getTime() <= maxMs) {
+    const left = ((cur.getTime() - minMs) / spanMs) * 100
+    if (left >= 0 && left <= 92) ticks.push(left)
+    cur.setUTCMonth(cur.getUTCMonth() + 1)
+  }
   return {
     minMs,
     spanMs,
     todayPct: Number.isFinite(todayMs) ? clamp(todayMs) : 0,
     duePct: Number.isFinite(deliveryMs) ? clamp(deliveryMs + DAY_MS) : null,
+    ticks,
   }
 })
 
