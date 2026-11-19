@@ -154,7 +154,7 @@ const enc = encodeURIComponent
                 <span v-if="r.unsplit" class="chip chip-risk">未分解 {{ r.unsplit }}</span>
                 <span v-if="r.sourceNodes" class="chip chip-late">源头延误 {{ r.sourceNodes }}</span>
                 <span v-if="r.dateConflicts.length" class="chip chip-late">日期冲突 / 待核实</span>
-                <span v-if="!r.pendingConfirm && !r.unsplit && !r.sourceNodes && !r.dateConflicts.length && r.status === 'PUBLISHED'" class="chip chip-ok">推进正常</span>
+                <span v-if="!r.pendingConfirm && !r.unsplit && !isLate(r) && !r.dateConflicts.length && r.status === 'PUBLISHED'" class="chip chip-ok">推进正常</span>
               </div>
 
               <div class="col-op" @click.stop>

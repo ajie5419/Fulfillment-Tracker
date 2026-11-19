@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { DAY_MS, todayDay } from '#shared/dates'
 import { PLAN_STATUS_TEXT, planDisplayState } from '#shared/plan'
 import type { PlanData } from '../composables/usePlanData'
 import type { GanttRange } from './BoardPlanBranch.vue'
@@ -12,7 +13,6 @@ const { data, error, refresh } = useApiFetch<PlanData>('/api/plan', {
 defineExpose({ refresh })
 
 type Node = PlanData['nodes'][number]
-const DAY_MS = 86_400_000
 const toMs = (d?: string | null) => (d ? Date.parse(`${d}T00:00:00Z`) : Number.NaN)
 
 const state = computed(() => planDisplayState(data.value?.plan?.status, data.value?.nodes.length ?? 0))
@@ -54,15 +54,14 @@ const path = computed(() => {
 
 // ───── A：工期标尺 + 阶段里程碑统计 ─────
 const allNodes = computed(() => data.value?.nodes ?? [])
-const leafNodes = computed(() => {
-  const parentIds = new Set(allNodes.value.map((n) => n.parentId).filter(Boolean))
-  return allNodes.value.filter((n) => !parentIds.has(n.id))
-})
-const totalProgress = computed(() => {
-  const total = leafNodes.value.length
-  const done = leafNodes.value.filter((n) => n.done).length
+const countsForProgress = (node: Node) => !groups.value.children.has(node.id) || node.taskCount > 0
+const progressNodes = computed(() => allNodes.value.filter(countsForProgress))
+function progressOf(nodes: Node[]) {
+  const total = nodes.length
+  const done = nodes.filter((node) => node.done).length
   return { done, total, pct: total ? Math.round((done / total) * 100) : 0 }
-})
+}
+const totalProgress = computed(() => progressOf(progressNodes.value))
 
 const ganttRange = computed<GanttRange | null>(() => {
   const msList: number[] = []
@@ -75,7 +74,7 @@ const ganttRange = computed<GanttRange | null>(() => {
   const deliveryMs = toMs(data.value?.workOrder.deliveryDate)
   if (Number.isFinite(deliveryMs)) msList.push(deliveryMs)
   if (!msList.length) return null
-  const todayStr = data.value?.today ?? new Date().toISOString().slice(0, 10)
+  const todayStr = todayDay()
   const todayMs = toMs(todayStr)
   const minMs = Math.min(...msList) - 2 * DAY_MS
   const maxMs = Math.max(...msList) + 4 * DAY_MS
@@ -120,7 +119,7 @@ const rulerStats = computed(() => {
   const starts = nodes.map((n) => n.startDate ?? n.planDate).filter(Boolean).sort()
   const startDay = starts[0] ?? '—'
   const dueDay = data.value?.workOrder.deliveryDate || '—'
-  const todayStr = data.value?.today ?? new Date().toISOString().slice(0, 10)
+  const todayStr = todayDay()
   const sMs = toMs(starts[0])
   const dMs = toMs(data.value?.workOrder.deliveryDate)
   const tMs = toMs(todayStr)
@@ -141,11 +140,7 @@ const phaseSummaries = computed(() => {
   }
   return [...groups.value.phases.entries()].map(([phase, roots]) => {
     const pool = byPhase.get(phase) ?? roots
-    const parentIds = new Set(pool.map((n) => n.parentId).filter(Boolean))
-    const leaves = pool.filter((n) => !parentIds.has(n.id))
-    const done = leaves.filter((n) => n.done).length
-    const total = leaves.length
-    const pct = total ? Math.round((done / total) * 100) : 0
+    const { done, total, pct } = progressOf(pool.filter(countsForProgress))
     const hasSource = published.value && pool.some((n) => n.source)
     const hasUpstream = published.value && pool.some((n) => n.upstream)
     const tone = hasSource ? 'late' : hasUpstream ? 'risk' : total > 0 && done === total ? 'done' : 'primary'
@@ -191,7 +186,7 @@ const visiblePhases = computed(() =>
 // ───── C：部门接力完成度 + 阻塞传导链 ─────
 const deptRelay = computed(() => {
   const map = new Map<string, { dept: string; done: number; total: number; late: number }>()
-  for (const n of leafNodes.value) {
+  for (const n of progressNodes.value) {
     const dept = n.deptText || '未分部门'
     const cur = map.get(dept) ?? { dept, done: 0, total: 0, late: 0 }
     cur.total += 1
@@ -207,8 +202,8 @@ const deptRelay = computed(() => {
 })
 
 const blockedChain = computed(() => {
-  if (!published.value || !sources.value.length) return []
   const src = sources.value[0]
+  if (!published.value || !src) return []
   const downstream = allNodes.value.filter((n) => n.upstream && n.pushedBy?.code === src.code).slice(0, 2)
   return [src, ...downstream]
 })
