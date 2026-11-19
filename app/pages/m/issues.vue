@@ -92,7 +92,7 @@ const logText = (l: Detail['logs'][number]) =>
         <van-button size="small" type="danger" round icon="plus" @click="navigateTo('/m/issue-new')">上报</van-button>
       </template>
     </van-nav-bar>
-    <van-cell v-if="workOrderNumber" :title="`工单：${workOrderNumber}`" :to="returnTo" :is-link="!!returnTo" value="返回统计" />
+    <van-cell v-if="workOrderNumber" :title="`工单：${workOrderNumber}`" :to="returnTo" :is-link="!!returnTo" :value="returnTo ? '返回项目总览' : undefined" />
     <van-tabs v-model:active="tab">
       <van-tab title="未关闭异常" name="all" />
       <van-tab title="等我处理" name="todo" />

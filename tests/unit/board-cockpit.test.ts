@@ -5,22 +5,22 @@ import { cockpitMetrics, mergeCockpitItems, redWorkOrderStages, resolveBoardView
 
 describe('项目总览权限与 URL 落点', () => {
   it.each([
-    [true, undefined, 'cockpit'], [true, 'cockpit', 'cockpit'], [true, 'board', 'board'],
-    [true, 'unknown', 'cockpit'], [true, ['board', 'cockpit'], 'cockpit'],
-    [false, undefined, 'board'], [false, 'cockpit', 'board'], [false, 'board', 'board'], [false, 'unknown', 'board'],
+    [true, undefined, 'tracking'], [true, 'cockpit', 'cockpit'], [true, 'board', 'tracking'],
+    [true, 'unknown', 'tracking'], [true, ['board', 'cockpit'], 'tracking'],
+    [false, undefined, 'tracking'], [false, 'cockpit', 'tracking'], [false, 'board', 'tracking'], [false, 'unknown', 'tracking'],
   ])('overview=%s, view=%s → %s', (permission, query, expected) => {
     expect(resolveBoardView(permission as boolean, query)).toBe(expected)
   })
   it('同页深链、返回、权限变化直接改变落点', () => {
     const route = reactive({ view: undefined as unknown, canOverview: true })
     const view = computed(() => resolveBoardView(route.canOverview, route.view))
-    expect(view.value).toBe('cockpit')
+    expect(view.value).toBe('tracking')
     route.view = 'board'
-    expect(view.value).toBe('board')
+    expect(view.value).toBe('tracking')
     route.view = 'cockpit'
     expect(view.value).toBe('cockpit')
     route.canOverview = false
-    expect(view.value).toBe('board')
+    expect(view.value).toBe('tracking')
   })
 })
 
@@ -28,7 +28,7 @@ describe('驾驶舱数字映射', () => {
   const overview = { summary: { red: 7, overdueIssues: 12 }, stages: [{ key: 'drawing', count: 88 }, { key: 'shortage', count: 9 }] }
   it('只取既有字段，红色和超期来自 overview；未签收来自 releases.pending；缺料按 stage key 取', () => {
     expect(cockpitMetrics(overview, { pending: 5 }, { redCount: 23 }).map((m) => [m.key, m.value, m.to])).toEqual([
-      ['red', 7, '/board?view=board&color=RED'], ['overdue', 12, '/risks?tab=issues&overdue=1&dept=0'],
+      ['red', 7, undefined], ['overdue', 12, '/risks?tab=issues&overdue=1&dept=0'],
       ['unsigned', 5, '/releases?progress=PENDING'], ['shortage', 9, '/purchases?view=shortage'],
       ['stagnation', 23, '/monitoring?level=RED'],
     ])

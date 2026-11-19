@@ -1,4 +1,6 @@
-import { paginationSchema, type PageInput, type PageResult } from '../../../shared/pagination'
+import { DELIVERY_HORIZON_DAYS, type DeliveryFilter } from '../../../shared/board-directory'
+import { addDays, parseDay } from '../../../shared/dates'
+import { MAX_PAGE_SIZE, paginationSchema, type PageInput, type PageResult } from '../../../shared/pagination'
 import type { Prisma } from '@prisma/client'
 import type { PlanListStatus } from '../../../shared/plan'
 /**
@@ -17,9 +19,9 @@ import { loadPlans } from './plan'
 
 export type { PlanListStatus } from '../../../shared/plan'
 
-async function planRows(visibleWorkOrders: string[] | undefined, ctx: RoleContext, now = new Date(), opts: { withClosed?: boolean; paging?: { skip: number; take: number } } = {}) {
+async function planRows(visibleWorkOrders: string[] | undefined, ctx: RoleContext, now = new Date(), opts: { withClosed?: boolean; where?: Prisma.QmsWorkOrderWhereInput; paging?: { skip: number; take: number } } = {}) {
   const workOrders = await prisma.qmsWorkOrder.findMany({
-    where: { ...(opts.withClosed ? { isDeleted: false } : ACTIVE_WO_WHERE), ...(visibleWorkOrders ? { workOrderNumber: { in: visibleWorkOrders } } : {}) },
+    where: opts.where ?? { ...(opts.withClosed ? { isDeleted: false } : ACTIVE_WO_WHERE), ...(visibleWorkOrders ? { workOrderNumber: { in: visibleWorkOrders } } : {}) },
     orderBy: [{ deliveryDate: 'asc' }, { workOrderNumber: 'asc' }],
     ...opts.paging,
     select: { workOrderNumber: true, projectName: true, customerName: true, deliveryDate: true, status: true },
@@ -98,4 +100,48 @@ export async function listPlansPage(visibleWorkOrders: string[] | undefined, ctx
     prisma.qmsWorkOrder.count({ where }),
   ])
   return { rows: current.rows, total, page, pageSize }
+}
+
+export async function listBoardDirectory(scope: string[] | undefined, ctx: RoleContext, options: {
+  page: number; pageSize: number; q: string; delivery: DeliveryFilter; mine: string
+}, now = new Date()) {
+  const { q, page, pageSize, delivery } = options
+  const today = shanghaiDay(now)
+  const until = addDays(today, DELIVERY_HORIZON_DAYS)
+  const base = { ...ACTIVE_WO_WHERE, ...(scope && { workOrderNumber: { in: scope } }) }
+  const where: Prisma.QmsWorkOrderWhereInput = {
+    AND: [base,
+      ...(options.mine === '1' ? [{ workOrderNumber: { in: [...ctx.pmOf] } }] : []),
+      ...(q ? [{ OR: [{ workOrderNumber: { contains: q } }, { projectName: { contains: q } }, { customerName: { contains: q } }] }] : []),
+      ...(delivery === 'soon' ? [{ deliveryDate: { gte: parseDay(today), lt: parseDay(addDays(until, 1)) } }] : []),
+    ],
+  }
+  const slice = (skip: number, take: number) => planRows(scope, ctx, now, { where, paging: { skip, take } })
+  const offset = (page - 1) * pageSize
+  let total = 0
+  let matches: Awaited<ReturnType<typeof planRows>>['rows'] = []
+  const available = await prisma.qmsWorkOrder.count({ where: base })
+  if (delivery === 'late') {
+    // Forecasts depend on the whole plan. Filter completed forecasts before paginating matches.
+    for (let skip = 0; ; skip += MAX_PAGE_SIZE) {
+      const batch = await slice(skip, MAX_PAGE_SIZE)
+      for (const row of batch.rows) {
+        if ((row.delayDays ?? 0) <= 0) continue
+        if (total >= offset && matches.length < pageSize) matches.push(row)
+        total++
+      }
+      if (batch.rows.length < MAX_PAGE_SIZE) break
+    }
+  } else {
+    const [result, count] = await Promise.all([slice(offset, pageSize),
+      q || options.mine === '1' || delivery === 'soon' ? prisma.qmsWorkOrder.count({ where }) : available])
+    total = count
+    matches = result.rows
+  }
+  const rows = matches.map(({ workOrderNumber, projectName, customerName, deliveryDate, delayDays, expectedDelivery, dateConflicts, status }) => ({
+    workOrderNumber, projectName, customerName, delayDays, expectedDelivery, status,
+    review: status === 'PUBLISHED' && dateConflicts.length > 0,
+    dueSoon: deliveryDate >= today && deliveryDate <= until,
+  }))
+  return { rows, page, pageSize, total, available }
 }

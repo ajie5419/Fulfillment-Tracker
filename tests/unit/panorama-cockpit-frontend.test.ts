@@ -4,7 +4,6 @@ import { flushPromises, mount } from '@vue/test-utils'
 import * as Vue from 'vue'
 import * as boardCockpitShared from '../../shared/board-cockpit'
 import * as monitoringShared from '../../shared/monitoring'
-import * as panoramaShared from '../../shared/panorama'
 import { loadComponent } from '../helpers/vue-component'
 
 const cleanups: (() => void)[] = []
@@ -54,73 +53,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanups.splice(0).forEach((fn) => fn())
   vi.unstubAllGlobals()
-})
-
-describe('全盘统计双端组件', () => {
-  async function render(mobile = false, opts: { error?: boolean; pending?: boolean; empty?: boolean } = {}) {
-    const route = Vue.reactive({ query: {} as Record<string, unknown>, fullPath: mobile ? '/m/board?view=orders&manager=pm' : '/board?view=panorama&manager=pm' })
-    const replace = vi.fn(async (location: any) => { route.query = location.query })
-    const refresh = vi.fn()
-    const row = { workOrderNumber: 'WO-01', projectName: '项目', projectManagerId: 'pm', projectManagerName: '张经理', productLine: null, status: 'IN_PROGRESS', color: 'RED', openIssues: 2 }
-    vi.stubGlobal('useRoute', () => route)
-    vi.stubGlobal('useRouter', () => ({ replace }))
-    vi.stubGlobal('useApiFetch', async (url: string, options: any) => {
-      expect(url).toBe('/api/board')
-      expect(options.query).toEqual({ closed: '1' })
-      return { data: Vue.ref(opts.empty ? { rows: [] } : { rows: [row] }), pending: Vue.ref(!!opts.pending), error: Vue.ref(opts.error ? new Error('网络超时') : null), refresh }
-    })
-    const component = loadComponent('app/components/BoardPanorama.vue', {
-      '#shared/panorama': panoramaShared,
-      '#shared/status': await import('../../shared/status'),
-    })
-    const link = Vue.defineComponent({ props: ['to'], setup: (props, { slots }) => () => Vue.h('a', { href: typeof props.to === 'string' ? props.to : props.to.path + '?' + new URLSearchParams(props.to.query).toString() }, slots.default?.()) })
-    const wrapper = mount(Vue.defineComponent({ setup: () => () => Vue.h(Vue.Suspense, null, { default: () => Vue.h(component, { mobile }) }) }), {
-      global: {
-        plugins: [(app: Vue.App) => { Object.assign(app.config.globalProperties, { apiError: (error: Error) => error.message }) }],
-        stubs: { UiPageHero: container, UiStatCard: container, UiSectionCard: container, UiListItem: container, UiRefreshButton: button, AResult: container, AButton: button, VanButton: button, VanCell: container, VanEmpty: container, MCard: container, NuxtLink: link },
-      },
-    })
-    cleanups.push(() => wrapper.unmount())
-    await flushPromises()
-    return { wrapper, route, replace, refresh }
-  }
-
-  it.each([false, true])('统计、分组及清单双端一致且保留工单处理上下文 mobile=%s', async mobile => {
-    const { wrapper, replace } = await render(mobile)
-    expect(wrapper.text()).toContain('有风险在制工单')
-    expect(wrapper.text()).toContain('待接入')
-    expect(wrapper.text()).toContain('张经理')
-    expect(wrapper.text()).toContain('未指定产品线')
-    expect(wrapper.text()).toContain('WO-01')
-    const riskGroup = wrapper.findAll('button').find(item => item.text() === '有风险 1')
-    expect(riskGroup).toBeDefined()
-    await riskGroup!.trigger('click')
-    await flushPromises()
-    expect(replace).toHaveBeenCalledWith(expect.objectContaining({ query: expect.objectContaining({ metric: 'abnormal', manager: 'pm', view: mobile ? 'orders' : 'panorama' }) }))
-    const processing = wrapper.findAll('a').find(item => item.attributes('href')?.startsWith(mobile ? '/m/issues?' : '/risks?'))!
-    const destination = new URL(processing.attributes('href') ?? '', 'https://example.test')
-    expect(destination.pathname).toBe(mobile ? '/m/issues' : '/risks')
-    expect(destination.searchParams.get(mobile ? 'workOrderNumber' : 'wo')).toBe('WO-01')
-    expect(destination.searchParams.get('returnTo')).toContain(mobile ? '/m/board?' : '/board?')
-  })
-
-  it.each([false, true])('失败可重试且不误显空数据 mobile=%s', async mobile => {
-    const { wrapper, refresh } = await render(mobile, { error: true })
-    if (!mobile) expect(wrapper.text()).toContain('全盘统计加载失败')
-    expect(wrapper.text()).not.toContain('此条件下没有可见工单')
-    expect(wrapper.text()).not.toContain('WO-01')
-    await wrapper.findAll('button').find(item => item.text() === '重试')!.trigger('click')
-    expect(refresh).toHaveBeenCalledOnce()
-  })
-
-  it.each([false, true])('空数据与加载中分别呈现 mobile=%s', async mobile => {
-    const empty = await render(mobile, { empty: true })
-    expect(empty.wrapper.text()).toContain('此条件下没有可见工单')
-    const loading = await render(mobile, { pending: true })
-    expect(loading.wrapper.text()).toContain('正在加载可见工单')
-    expect(loading.wrapper.text()).not.toContain('此条件下没有可见工单')
-    expect(loading.wrapper.text()).toContain('—')
-  })
 })
 
 describe('驾驶舱红色清单 BoardCockpit.vue 呈现与 also 胶囊', () => {

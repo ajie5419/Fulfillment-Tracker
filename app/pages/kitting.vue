@@ -150,7 +150,7 @@ const crossColumns = [
   <a-alert v-if="ordersError" type="error" message="工单选项加载失败" :description="apiError(ordersError)"><template #action><a-button @click="refreshOrders()">重试</a-button></template></a-alert>
   <UiSectionCard tray>
     <template #title>
-      <span class="ft-title">齐套
+      <span class="ft-title">齐套详情
         <UiHelpTip label="齐套说明">齐套率 = 已就绪项 ÷ 应有项：工件完成（最后一道工序完成）算就绪，关键物料到货算就绪，已取消的物料不计入。同一工件 / 物料可以挂在多个节点上。
       <template v-if="stats">需求日前 {{ stats.yellowDays }} 天内仍未齐套黄色预警，{{ stats.redDays ? `前 ${stats.redDays} 天内（含当天）` : '当天' }}或已过红色（阈值在设置里改）；</template>新建、编辑节点限生产经理、该工单项目经理、管理员。</UiHelpTip>
       </span>

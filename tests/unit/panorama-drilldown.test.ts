@@ -47,14 +47,14 @@ describe('全景兼容链接及页签权限', () => {
   it.each([true, false])('旧链接保留可用参数、空分组和锚点，mobile=%s', mobile => {
     const query = { manager: '', productLine: 'A / 中文', metric: 'abnormal', wo: 'WO-01', view: 'cockpit', extra: ['a', 'b'] }
     const destination = panoramaDestination(mobile, query, '#orders')
-    expect(destination).toEqual({ path: mobile ? '/m/board' : '/board', query: { ...query, view: 'panorama' }, hash: '#orders' })
+    expect(destination).toEqual({ path: mobile ? '/m/board' : '/board', query: { ...query, view: 'tracking' }, hash: '#orders' })
     expect(query.view).toBe('cockpit')
   })
-  it('统计人人可看但驾驶舱权限不扩大', () => {
-    expect(resolveBoardView(false, 'panorama')).toBe('panorama')
-    expect(resolveBoardView(true, 'panorama')).toBe('panorama')
-    expect(resolveBoardView(false, 'cockpit')).toBe('board')
-    expect(resolveBoardView(false, undefined)).toBe('board')
-    expect(resolveBoardView(true, undefined)).toBe('cockpit')
+  it('旧视图回到工单进展，驾驶舱沿用原权限', () => {
+    expect(resolveBoardView(false, 'panorama')).toBe('tracking')
+    expect(resolveBoardView(true, 'panorama')).toBe('tracking')
+    expect(resolveBoardView(false, 'cockpit')).toBe('tracking')
+    expect(resolveBoardView(false, undefined)).toBe('tracking')
+    expect(resolveBoardView(true, undefined)).toBe('tracking')
   })
 })

@@ -238,7 +238,7 @@ function clearFilters() {
 <template>
   <div>
   <div class="risks">
-    <NuxtLink v-if="returnTo" :to="returnTo">返回全盘统计（保留条件）</NuxtLink>
+    <NuxtLink v-if="returnTo" :to="returnTo">返回项目总览</NuxtLink>
 
     <!-- 异常状态漏斗 KPI：点击联动过滤台账 -->
     <div class="kpi-row">

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const requestFetch = useApiRequestFetch()
 /**
- * 新建 / 编辑工单（履约新建工单 10-27：工单由履约维护，保存时实际写入 QMS 工单库）。项目总览"新建工单"、工单详情"编辑工单"共用。
+ * Work order fields shared by the creation and editing modes.
  *   工单号（新建必填，编辑只读）、客户（QMS 客户字典现取，必选）、项目名称、事业部（本地已同步的 QMS 部门，可空）、数量（≥1）、交期、
  *   状态（仅编辑：未开工 / 进行中 / 已完工；取消走详情页"取消工单"）、项目经理、产品线、是否试点（后三项存履约 work_order_ext）。
  * 新建时项目经理默认填当前登录用户；只看自己负责工单的人（me.limited）改成别人或清空时，提交前确认"建好后你将看不到这张工单"。

@@ -1,17 +1,22 @@
 <script setup lang="ts">
 /**
- * 项目计划（zhao 10-22：总计划从工单详情里拿出来，单独成菜单页；工单详情只留概览）。
- *   不带 ?wo：全部在做工单的计划一览——统计卡（已发布 / 草稿 / 未编制 / 交期风险，点了按它筛选）+ 表格
- *     （计划状态、节点完成、待确认、未分解、源头延误、预计交期），点一行进该工单的计划。
- *   带 ?wo（&node= 定位节点）：该工单的总计划编制 / 发布 / 调整（PlanEditor；接收、分解在部门计划页 /dept-plan）。
- *   提醒、待办、W9 通知里的链接一直是 /plan?wo=&node=，直接落在这里；旧的 /wo/:no?tab=plan 跳过来。
+ * 项目计划（总计划一览 + 单工单计划编排）：
+ *   不带 ?wo：全部在做工单的计划卡片流（按状态分段筛选 + 进度条 + 待办/风险胶囊），点卡片进入该工单总计划。
+ *   带 ?wo（&node= 定位节点）：该工单的总计划编制 / 发布 / 调整（PlanEditor）。
  */
 import { PLAN_STATUS_TEXT as STATUS_TEXT, type PlanListStatus } from '#shared/plan'
 
 const route = useRoute()
 const router = useRouter()
+const { data: me } = await useMe()
 const wo = computed(() => (typeof route.query.wo === 'string' ? route.query.wo : ''))
 useHead({ title: computed(() => (wo.value ? `${wo.value} · 项目计划` : '项目计划')) })
+const createOpen = ref(false)
+async function onCreated(no: string) {
+  createOpen.value = false
+  await Promise.all([refresh(), refreshNuxtData('work-orders')])
+  await navigateTo({ path: '/plan', query: { wo: no } })
+}
 
 // ───── 一览 ─────
 const showClosed = computed({
@@ -24,7 +29,6 @@ const { data, pending, error, refresh } = await useApiFetch('/api/plan/list', {
   immediate: !wo.value,
   watch: [showClosed],
 })
-// 从某个工单的计划返回一览时再取（进页面时带着 ?wo 就没取过）
 watch(wo, (v, old) => {
   if (!v && old) refresh()
 })
@@ -36,35 +40,28 @@ const filter = computed<Filter>({
   get: () => (FILTERS.includes(route.query.status as Filter) ? (route.query.status as Filter) : 'all'),
   set: (v) => void router.replace({ query: { ...route.query, status: v === 'all' ? undefined : v } }),
 })
-const toggle = (v: Filter) => (filter.value = filter.value === v ? 'all' : v)
 const isLate = (r: Row) => (r.delayDays ?? 0) > 0 || r.sourceNodes > 0
 const rows = computed(() => {
   const f = filter.value
   const list = data.value.rows.filter((r) => (f === 'all' ? true : f === 'late' ? isLate(r) : r.status === f))
-  // 在做的在前；同组按交期（服务端已按交期排）
   return [...list.filter((r) => !r.closed), ...list.filter((r) => r.closed)]
 })
 
-const STATUS_TONE: Record<PlanListStatus, 'done' | 'primary' | 'none'> = { PUBLISHED: 'done', DRAFT: 'primary', NONE: 'none' }
+const filterOptions = computed(() => [
+  { value: 'all', label: `全部 ${data.value.summary.total}` },
+  { value: 'PUBLISHED', label: `已发布 ${data.value.summary.published}` },
+  { value: 'DRAFT', label: `草稿 ${data.value.summary.draft}` },
+  { value: 'NONE', label: `未编制 ${data.value.summary.none}` },
+  { value: 'late', label: `交期风险 ${data.value.summary.late}` },
+])
 
+const STATUS_TONE: Record<PlanListStatus, 'done' | 'primary' | 'none'> = { PUBLISHED: 'done', DRAFT: 'primary', NONE: 'none' }
 const woOptions = computed(() => data.value.rows.map((r) => ({ value: r.workOrderNumber, label: `${r.workOrderNumber}　${r.projectName ?? r.customerName ?? ''}` })))
 function openPlan(no: unknown) {
   if (typeof no === 'string' && no) navigateTo({ path: '/plan', query: { wo: no } })
 }
-const customRow = (r: Row) => ({ class: 'click-row', onClick: () => openPlan(r.workOrderNumber) })
-
-const columns = [
-  { title: '工单', key: 'wo', width: 200 },
-  { title: '项目经理', key: 'pm', width: 96 },
-  { title: '合同交期', key: 'delivery', width: 104 },
-  { title: '计划状态', key: 'status', width: 150 },
-  { title: '节点完成', key: 'nodes', width: 90, align: 'center' as const },
-  { title: '待接收', key: 'confirm', width: 76, align: 'center' as const },
-  { title: '未分解', key: 'unsplit', width: 76, align: 'center' as const },
-  { title: '源头延误', key: 'source', width: 86, align: 'center' as const },
-  { title: '预计交期', key: 'expected', width: 120 },
-  { title: '', key: 'op', width: 104, fixed: 'right' as const },
-]
+const donePct = (r: Row) => (r.nodeCount ? Math.round((r.doneNodes / r.nodeCount) * 100) : 0)
+const opText = (r: Row) => (r.canEdit && r.status === 'NONE' ? '去编制' : r.canEdit && !r.closed ? '查看 / 调整' : '查看')
 const enc = encodeURIComponent
 </script>
 
@@ -78,124 +75,161 @@ const enc = encodeURIComponent
         </div>
         <NuxtLink :to="`/wo/${enc(wo)}`">工单详情 ›</NuxtLink>
       </div>
-      <!-- key：换工单时重建，避免上一个工单打开的编辑框（节点 ID）带到新工单里被保存 -->
       <PlanEditor :key="wo" :wo="wo" />
     </template>
 
-    <!-- 一览 -->
+    <!-- 一览：Linear 风格项目进度条卡片流 -->
     <template v-else>
-      <div class="page-head">
-        <span class="head-hint">
-          总计划编制、发布与节点跟踪
-          <UiHelpTip label="项目计划说明">每个工单一份总计划：项目经理、项目部按模板编制、发布、调整；发布后各部门在“部门计划”里接收本部门的节点、分解任务、委派责任人。点一行进入该工单的计划。</UiHelpTip>
-        </span>
-        <div class="tools">
-          <a-select
-            :value="undefined"
-            show-search
-            option-filter-prop="label"
-            placeholder="搜工单号 / 项目"
-            :options="woOptions"
-            class="wo-search"
-            aria-label="搜工单进计划"
-            :not-found-content="'没有可见的工单'"
-            @change="openPlan"
-          />
-          <label class="closed-switch"><a-switch v-model:checked="showClosed" size="small" />显示已完工</label>
-          <UiRefreshButton @click="refresh()" />
-        </div>
-      </div>
-
-      <!-- 取不到数据时明确说加载失败，不把默认的空列表当成"没有工单" -->
       <a-result v-if="error" status="error" title="项目计划加载失败" :sub-title="apiError(error)">
         <template #extra><a-button type="primary" @click="refresh()">重试</a-button></template>
       </a-result>
-      <template v-else>
-      <div class="ft-stats summary">
-        <UiStatCard label="已发布" :value="data.summary.published" unit="个工单" tone="done" icon="check" clickable :active="filter === 'PUBLISHED'" @click="toggle('PUBLISHED')" />
-        <UiStatCard label="草稿" :value="data.summary.draft" unit="个工单" tone="primary" icon="dot" clickable :active="filter === 'DRAFT'" @click="toggle('DRAFT')" />
-        <UiStatCard label="未编制" :value="data.summary.none" unit="个工单" tone="none" icon="ring" clickable :active="filter === 'NONE'" @click="toggle('NONE')" />
-        <UiStatCard label="交期风险" :value="data.summary.late" unit="个工单" tone="late" icon="alert" sub="预计拖期或有源头延误节点" clickable :active="filter === 'late'" @click="toggle('late')" />
-      </div>
 
-      <UiSectionCard tray padding="none">
-        <div class="ft-toolbar bar">
-          <a-segmented
-            v-model:value="filter"
-            :options="[{ value: 'all', label: '全部' }, { value: 'PUBLISHED', label: '已发布' }, { value: 'DRAFT', label: '草稿' }, { value: 'NONE', label: '未编制' }, { value: 'late', label: '交期风险' }]"
-          />
-          <span class="ft-muted small">共 {{ rows.length }} 个工单<template v-if="data.summary.unsplit"> · {{ data.summary.unsplit }} 个工单还有未分解的节点</template></span>
+      <div v-else class="plan-tray">
+        <div class="tray-head">
+          <div class="tray-left">
+            <a-segmented v-model:value="filter" :options="filterOptions" />
+            <UiHelpTip label="项目计划说明">每个工单一份总计划：项目经理、项目部按模板编制、发布、调整；发布后各部门在“部门计划”里接收本部门的节点、分解任务、委派责任人。点卡片进入该工单的计划。</UiHelpTip>
+          </div>
+          <div class="tools">
+            <a-select
+              :value="undefined"
+              show-search
+              option-filter-prop="label"
+              placeholder="搜工单号 / 项目"
+              :options="woOptions"
+              class="wo-search"
+              aria-label="搜工单进计划"
+              :not-found-content="'没有可见的工单'"
+              @change="openPlan"
+            />
+            <label class="closed-switch"><a-switch v-model:checked="showClosed" size="small" />显示已完工</label>
+            <UiRefreshButton @click="refresh()" />
+            <a-button v-if="me?.can.workOrder" type="primary" class="ft-btn-ink" @click="createOpen = true">新建工单</a-button>
+          </div>
         </div>
-        <a-table class="ft-table" :columns="columns" :data-source="rows" row-key="workOrderNumber" size="middle" :loading="pending" :pagination="false" :custom-row="customRow" :scroll="{ x: 1090 }">
-          <template #emptyText><a-empty :description="filter === 'all' ? '没有在做的工单' : '没有符合条件的工单'" /></template>
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'wo'">
-              <NuxtLink :to="{ path: '/plan', query: { wo: record.workOrderNumber } }" @click.stop>{{ record.workOrderNumber }}</NuxtLink>
-              <div class="ft-muted small ellipsis">{{ record.projectName ?? record.customerName }}</div>
-            </template>
-            <template v-else-if="column.key === 'pm'">{{ record.projectManagerName ?? '—' }}</template>
-            <template v-else-if="column.key === 'delivery'">{{ record.deliveryDate }}</template>
-            <template v-else-if="column.key === 'status'">
-              <UiStatusTag v-if="record.closed" tone="none">已完工</UiStatusTag>
-              <UiStatusTag v-else :tone="STATUS_TONE[record.status as PlanListStatus]">{{ STATUS_TEXT[record.status as PlanListStatus] }}</UiStatusTag>
-              <div v-if="record.publishedDay" class="ft-muted small">{{ record.publishedDay }} {{ record.publishedByName ?? '' }}</div>
-            </template>
-            <template v-else-if="column.key === 'nodes'">
-              <span v-if="record.nodeCount">{{ record.doneNodes }}/{{ record.nodeCount }}</span>
-              <span v-else class="ft-muted">—</span>
-            </template>
-            <template v-else-if="column.key === 'confirm'">
-              <span v-if="record.pendingConfirm" class="risk">{{ record.pendingConfirm }}</span>
-              <span v-else class="ft-muted">0</span>
-            </template>
-            <template v-else-if="column.key === 'unsplit'">
-              <span v-if="record.unsplit" class="risk">{{ record.unsplit }}</span>
-              <span v-else class="ft-muted">0</span>
-            </template>
-            <template v-else-if="column.key === 'source'">
-              <span v-if="record.sourceNodes" class="late">{{ record.sourceNodes }}</span>
-              <span v-else class="ft-muted">0</span>
-            </template>
-            <template v-else-if="column.key === 'expected'">
-              <span v-if="record.dateConflicts.length" class="late">日期冲突 / 待核实</span>
-              <template v-else-if="record.expectedDelivery">
-                <span :class="{ late: (record.delayDays ?? 0) > 0 }">{{ record.expectedDelivery }}</span>
-                <div v-if="(record.delayDays ?? 0) > 0" class="late small">拖期 {{ record.delayDays }} 天</div>
-              </template>
-              <span v-else class="ft-muted" title="发布后按总计划推算">—</span>
-            </template>
-            <template v-else-if="column.key === 'op'">
-              <NuxtLink class="nowrap" :to="{ path: '/plan', query: { wo: record.workOrderNumber } }" @click.stop>
-                {{ record.canEdit && record.status === 'NONE' ? '去编制' : record.canEdit && !record.closed ? '查看 / 调整' : '查看' }}
-              </NuxtLink>
-            </template>
-          </template>
-        </a-table>
-      </UiSectionCard>
-      </template>
+
+        <a-spin :spinning="pending">
+          <div v-if="!rows.length" class="empty-inset">
+            <a-empty :description="filter === 'all' ? '没有在做的工单' : '没有符合条件的工单'" />
+          </div>
+          <div v-else class="card-list">
+            <article
+              v-for="r in rows"
+              :key="r.workOrderNumber"
+              class="plan-card"
+              role="button"
+              tabindex="0"
+              @click="openPlan(r.workOrderNumber)"
+              @keydown.enter="openPlan(r.workOrderNumber)"
+              @keydown.space.prevent="openPlan(r.workOrderNumber)"
+            >
+              <div class="col-main">
+                <div class="title-row">
+                  <NuxtLink class="wo-code" :to="{ path: '/plan', query: { wo: r.workOrderNumber } }" @click.stop>{{ r.workOrderNumber }}</NuxtLink>
+                  <span class="proj-name">{{ r.projectName ?? r.customerName }}</span>
+                  <UiStatusTag v-if="r.closed" tone="none">已完工</UiStatusTag>
+                  <UiStatusTag v-else :tone="STATUS_TONE[r.status as PlanListStatus]">{{ STATUS_TEXT[r.status as PlanListStatus] }}</UiStatusTag>
+                </div>
+                <div class="sub-row">
+                  <span v-if="r.publishedDay">{{ r.publishedDay }} 发布</span>
+                  <span v-if="r.deliveryDate">合同交期 {{ r.deliveryDate }}</span>
+                  <span v-if="r.expectedDelivery && !r.dateConflicts.length" :class="{ late: (r.delayDays ?? 0) > 0 }">
+                    预计交期 {{ r.expectedDelivery }}<template v-if="(r.delayDays ?? 0) > 0">（拖期 {{ r.delayDays }} 天）</template>
+                  </span>
+                </div>
+              </div>
+
+              <div class="col-prog">
+                <div class="prog-head">
+                  <span>节点进度 <b>{{ r.nodeCount ? `${r.doneNodes} / ${r.nodeCount}` : '—' }}</b></span>
+                  <span class="pct">{{ donePct(r) }}%</span>
+                </div>
+                <div class="prog-track">
+                  <i class="prog-fill" :class="{ late: isLate(r), done: r.nodeCount > 0 && r.doneNodes === r.nodeCount }" :style="{ width: `${donePct(r)}%` }" />
+                </div>
+              </div>
+
+              <div class="col-badges">
+                <span v-if="r.pendingConfirm" class="chip chip-risk">待接收 {{ r.pendingConfirm }}</span>
+                <span v-if="r.unsplit" class="chip chip-risk">未分解 {{ r.unsplit }}</span>
+                <span v-if="r.sourceNodes" class="chip chip-late">源头延误 {{ r.sourceNodes }}</span>
+                <span v-if="r.dateConflicts.length" class="chip chip-late">日期冲突 / 待核实</span>
+                <span v-if="!r.pendingConfirm && !r.unsplit && !isLate(r) && !r.dateConflicts.length && r.status === 'PUBLISHED'" class="chip chip-ok">推进正常</span>
+              </div>
+
+              <div class="col-op" @click.stop>
+                <NuxtLink :to="{ path: '/plan', query: { wo: r.workOrderNumber } }">
+                  <a-button size="small" type="primary" ghost>{{ opText(r) }}</a-button>
+                </NuxtLink>
+              </div>
+            </article>
+          </div>
+        </a-spin>
+      </div>
     </template>
+    <WorkOrderEditModal v-if="me?.can.workOrder" :open="createOpen" :work-order="null" @close="createOpen = false" @done="onCreated" />
   </div>
 </template>
 
 <style scoped>
-.page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 16px; }
-.head-hint { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ft-text-2); }
-.tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }
-.wo-search { width: 240px; }
-.closed-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ft-text-2); cursor: pointer; white-space: nowrap; }
-.summary { margin-bottom: 16px; }
-.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 20px; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 16px; }
 .crumbs { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--ft-text-2); }
 .sep { color: var(--ft-text-3); }
-.small { font-size: 12px; }
-.nowrap { white-space: nowrap; }
-.ellipsis { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.late { color: var(--ft-late-text); font-weight: 600; }
-.risk { color: var(--ft-risk-text); font-weight: 600; }
-:deep(.click-row) { cursor: pointer; }
+
+.plan-tray { background: var(--card-tray-bg); border: 1px solid var(--card-border); border-radius: var(--card-radius-outer); padding: 8px 6px 6px; }
+.tray-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 2px 6px 8px; }
+.tray-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }
+.wo-search { width: 220px; }
+.closed-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ft-text-2); cursor: pointer; white-space: nowrap; }
+
+.empty-inset { background: var(--card-surface-bg); border: 1px solid var(--card-border); border-radius: var(--card-radius-inner); padding: 40px 20px; }
+.card-list { display: flex; flex-direction: column; gap: 6px; }
+.plan-card {
+  background: var(--card-surface-bg);
+  border: 1px solid var(--card-hairline);
+  border-radius: var(--card-radius-inner);
+  box-shadow: var(--card-shadow);
+  padding: 14px 18px;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(170px, 1fr) minmax(180px, 1.2fr) auto;
+  align-items: center;
+  gap: 16px;
+  cursor: pointer;
+  transition: border-color 0.14s, box-shadow 0.14s;
+}
+.plan-card:hover { border-color: var(--ft-border-hover); box-shadow: var(--card-shadow-hover); }
+.plan-card:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: -2px; }
+
+.col-main { min-width: 0; }
+.title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wo-code { font-size: 14px; font-weight: 600; color: var(--ft-primary-text); font-variant-numeric: tabular-nums; }
+.proj-name { font-size: 14px; font-weight: 600; color: var(--ft-text); }
+.sub-row { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 5px; font-size: 12px; color: var(--ft-text-3); font-variant-numeric: tabular-nums; }
+.late { color: var(--ft-late-text); font-weight: 500; }
+
+.col-prog { min-width: 0; }
+.prog-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--ft-text-2); font-variant-numeric: tabular-nums; }
+.prog-head b { color: var(--ft-text); font-weight: 600; }
+.pct { color: var(--ft-text-3); }
+.prog-track { height: 6px; margin-top: 6px; border-radius: 999px; background: var(--ft-fill); overflow: hidden; }
+.prog-fill { display: block; height: 100%; border-radius: 999px; background: var(--ft-primary); transition: width 0.2s; }
+.prog-fill.done { background: var(--ft-done); }
+.prog-fill.late { background: var(--ft-risk); }
+
+.col-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.chip-risk { background: var(--ft-risk-bg); color: var(--ft-risk-text); }
+.chip-late { background: var(--ft-late-bg); color: var(--ft-late-text); }
+.chip-ok { background: var(--ft-done-bg); color: var(--ft-done-text); }
+
+.col-op { white-space: nowrap; }
+
+@media (max-width: 1020px) {
+  .plan-card { grid-template-columns: minmax(0, 1fr) auto; }
+  .col-prog, .col-badges { grid-column: 1 / -1; }
+}
 @media (max-width: 600px) {
-  .wo-search { width: 100%; }
-  .tools { width: 100%; }
+  .wo-search, .tools { width: 100%; }
 }
 </style>
