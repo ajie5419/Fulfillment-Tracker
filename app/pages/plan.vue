@@ -8,8 +8,15 @@ import { PLAN_STATUS_TEXT as STATUS_TEXT, type PlanListStatus } from '#shared/pl
 
 const route = useRoute()
 const router = useRouter()
+const { data: me } = await useMe()
 const wo = computed(() => (typeof route.query.wo === 'string' ? route.query.wo : ''))
 useHead({ title: computed(() => (wo.value ? `${wo.value} · 项目计划` : '项目计划')) })
+const createOpen = ref(false)
+async function onCreated(no: string) {
+  createOpen.value = false
+  await Promise.all([refresh(), refreshNuxtData('work-orders')])
+  await navigateTo({ path: '/plan', query: { wo: no } })
+}
 
 // ───── 一览 ─────
 const showClosed = computed({
@@ -97,6 +104,7 @@ const enc = encodeURIComponent
             />
             <label class="closed-switch"><a-switch v-model:checked="showClosed" size="small" />显示已完工</label>
             <UiRefreshButton @click="refresh()" />
+            <a-button v-if="me?.can.workOrder" type="primary" class="ft-btn-ink" @click="createOpen = true">新建工单</a-button>
           </div>
         </div>
 
@@ -159,6 +167,7 @@ const enc = encodeURIComponent
         </a-spin>
       </div>
     </template>
+    <WorkOrderEditModal v-if="me?.can.workOrder" :open="createOpen" :work-order="null" @close="createOpen = false" @done="onCreated" />
   </div>
 </template>
 
